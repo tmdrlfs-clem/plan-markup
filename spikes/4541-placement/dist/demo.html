@@ -1,0 +1,2640 @@
+<title>4541 Placement Lab</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: drawing-office workbench. Zone list | to-scale plan canvas | rule report. Panels stack under 980px. */
+:root {
+  --bg: #0e1828;        /* deep blue-slate ground */
+  --panel: #142236;
+  --panel-2: #1a2b44;
+  --line: #2b4062;
+  --grid: #1c2d47;
+  --fg: #dde7f3;
+  --muted: #8ea3bf;
+  --accent: #ff8a3d;    /* brand orange */
+  --accent-ink: #1b0f05;
+  --warn: #f2d24b;
+  --danger: #f04d5e;
+  --ok: #4fc58f;
+  --zone: #18304f;
+  --wall: #e8eef7;
+  --hole: #0a1220;
+  --cov: rgba(80, 160, 255, 0.11);
+  --cov-line: rgba(140, 195, 255, 0.7);
+  --head: #ff8a3d;
+  --shadow: #050a12;
+  --font-ui: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #e9eef5; --panel: #ffffff; --panel-2: #f2f5fa; --line: #c3cfdf; --grid: #dbe3ee;
+    --fg: #13213a; --muted: #55698a; --accent: #d9601a; --accent-ink: #ffffff;
+    --warn: #8a6d00; --danger: #c8283c; --ok: #16804f;
+    --zone: #dbe7f6; --wall: #13213a; --hole: #9fb0c8;
+    --cov: rgba(40, 110, 220, 0.09); --cov-line: rgba(40, 110, 220, 0.6); --head: #d9601a; --shadow: #9fb0c8;
+    color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: #e9eef5; --panel: #ffffff; --panel-2: #f2f5fa; --line: #c3cfdf; --grid: #dbe3ee;
+  --fg: #13213a; --muted: #55698a; --accent: #d9601a; --accent-ink: #ffffff;
+  --warn: #8a6d00; --danger: #c8283c; --ok: #16804f;
+  --zone: #dbe7f6; --wall: #13213a; --hole: #9fb0c8;
+  --cov: rgba(40, 110, 220, 0.09); --cov-line: rgba(40, 110, 220, 0.6); --head: #d9601a; --shadow: #9fb0c8;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 var(--font-ui);
+  font-variant-numeric: tabular-nums;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 14px 20px;
+}
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; margin-bottom: 4px; }
+h1 { font-size: 20px; font-weight: 700; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+h1 .tag { color: var(--accent); }
+.sub { color: var(--muted); font-size: 13px; }
+.note { color: var(--muted); font-size: 12.5px; margin: 0 0 12px; border-left: 3px solid var(--warn); padding-left: 8px; }
+.app { display: grid; grid-template-columns: 250px minmax(0, 1fr) 330px; gap: 12px; align-items: start; }
+@media (max-width: 980px) { .app { grid-template-columns: minmax(0, 1fr); } }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 3px; box-shadow: 3px 3px 0 var(--shadow); min-width: 0; }
+.panel h2 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0; padding: 10px 12px 6px; font-weight: 600; }
+/* zone list */
+.list { list-style: none; margin: 0; padding: 0 6px 8px; max-height: calc(100vh - 140px); overflow: auto; }
+@media (max-width: 980px) { .list { max-height: 260px; } }
+.list button {
+  width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; align-items: center;
+  text-align: left; background: transparent; color: var(--fg); border: 1px solid transparent; border-radius: 3px;
+  padding: 6px 8px; font: inherit; cursor: pointer;
+}
+.list button:hover { background: var(--panel-2); }
+.list button[aria-current="true"] { background: var(--panel-2); border-color: var(--accent); }
+.list .nm { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.list .meta { grid-column: 1; font-size: 11.5px; color: var(--muted); }
+.list .grp { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); padding: 10px 8px 2px; }
+.chip { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 2px; border: 1px solid currentColor; white-space: nowrap; grid-row: 1 / span 2; grid-column: 2; }
+.chip.ok { color: var(--ok); } .chip.warn { color: var(--warn); } .chip.fail { color: var(--danger); } .chip.wait { color: var(--muted); }
+/* stage */
+.stage { display: flex; flex-direction: column; min-width: 0; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: end; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+.field { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.field .row { display: flex; align-items: center; gap: 6px; text-transform: none; letter-spacing: 0; color: var(--fg); font-size: 12.5px; }
+select, input[type="range"] { font: inherit; }
+select { background: var(--panel-2); color: var(--fg); border: 1px solid var(--line); border-radius: 3px; padding: 4px 6px; font-size: 13px; }
+input[type="range"] { width: 110px; accent-color: var(--accent); }
+.btn { font: inherit; font-size: 13px; font-weight: 600; padding: 6px 12px; border-radius: 3px; border: 1px solid var(--line); background: var(--panel-2); color: var(--fg); cursor: pointer; box-shadow: 2px 2px 0 var(--shadow); }
+.btn:hover { border-color: var(--accent); }
+.btn:active { transform: translate(1px, 1px); box-shadow: 1px 1px 0 var(--shadow); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+.canvas-wrap { position: relative; height: min(68vh, 640px); min-height: 340px; }
+canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: default; }
+.hint { position: absolute; left: 10px; top: 8px; font-size: 12px; color: var(--muted); background: color-mix(in srgb, var(--panel) 85%, transparent); padding: 3px 8px; border-radius: 2px; pointer-events: none; max-width: calc(100% - 20px); }
+.busy { position: absolute; right: 10px; top: 8px; font-size: 12px; color: var(--accent); font-weight: 600; }
+.zonetabs { display: flex; gap: 6px; padding: 8px 12px; border-top: 1px solid var(--line); flex-wrap: wrap; font-size: 12.5px; }
+.zonetabs button { font: inherit; background: transparent; color: var(--muted); border: 1px solid var(--line); border-radius: 2px; padding: 3px 8px; cursor: pointer; }
+.zonetabs button[aria-pressed="true"] { color: var(--fg); border-color: var(--accent); }
+/* report */
+.report { padding: 0 12px 12px; display: flex; flex-direction: column; gap: 10px; }
+.verdict { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 3px; border: 1px solid currentColor; font-weight: 600; }
+.verdict .big { font-size: 22px; line-height: 1; }
+.verdict.ok { color: var(--ok); } .verdict.warn { color: var(--warn); } .verdict.fail { color: var(--danger); }
+.verdict small { display: block; font-weight: 400; color: var(--fg); font-size: 12.5px; }
+dl { display: grid; grid-template-columns: auto auto; justify-content: space-between; gap: 3px 12px; margin: 0; font-size: 13px; }
+dt { color: var(--muted); } dd { margin: 0; text-align: right; font-weight: 500; }
+dd.bad { color: var(--danger); } dd.near { color: var(--warn); }
+.sec { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); border-top: 1px solid var(--line); padding-top: 8px; font-weight: 600; }
+.flags { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.flags button { width: 100%; text-align: left; font: inherit; font-size: 12.5px; color: var(--fg); background: var(--panel-2); border: 1px solid var(--line); border-left: 3px solid var(--line); border-radius: 2px; padding: 6px 8px; cursor: pointer; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 8px; }
+.flags .e { border-left-color: var(--danger); } .flags .w { border-left-color: var(--warn); }
+.flags .ic { font-weight: 700; } .flags .e .ic { color: var(--danger); } .flags .w .ic { color: var(--warn); }
+.flags .code { font-size: 11px; color: var(--muted); }
+.empty { color: var(--muted); font-size: 12.5px; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--muted); }
+.legend span::before { content: ""; display: inline-block; width: 9px; height: 9px; margin-right: 5px; vertical-align: -1px; border-radius: 50%; }
+.legend .l-row::before { background: var(--head); }
+.legend .l-lock::before { background: transparent; border: 2px solid var(--fg); }
+.legend .l-gap::before { background: var(--warn); border-radius: 1px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<header>
+  <h1><span class="tag">4541</span> Placement Lab</h1>
+  <span class="sub">NZS 4541 head auto-placement + independent checker · rule set nzs4541 v1</span>
+</header>
+<p class="note">Spike prototype — layouts are advisory; the designer remains responsible for compliance.</p>
+
+<div class="app">
+  <nav class="panel" aria-label="Sample zones">
+    <h2>Sample zones</h2>
+    <ul class="list" id="list"></ul>
+  </nav>
+
+  <section class="panel stage" aria-label="Plan">
+    <div class="toolbar">
+      <label class="field" for="hazard">Hazard
+        <select id="hazard"><option>ELH</option><option>OH1</option><option>OH2</option><option>OH3</option></select>
+      </label>
+      <label class="field" for="pattern">Pattern
+        <select id="pattern"><option value="rectangular">Rectangular</option><option value="staggered">Staggered</option></select>
+      </label>
+      <div class="field">Pref. spacing
+        <span class="row"><input type="checkbox" id="spOn" aria-label="Use preferred spacing"><input type="range" id="sp" min="1800" max="4600" step="50" aria-label="Preferred spacing"><output id="spOut">auto</output></span>
+      </div>
+      <div class="field">Pref. wall dist.
+        <span class="row"><input type="checkbox" id="wdOn" aria-label="Use preferred wall distance"><input type="range" id="wd" min="50" max="2300" step="50" aria-label="Preferred wall distance"><output id="wdOut">auto</output></span>
+      </div>
+      <label class="field" for="cov">Coverage
+        <select id="cov"><option value="circle">Circle (Rc)</option><option value="square">Square</option><option value="off">Off</option></select>
+      </label>
+      <button class="btn primary" id="place" type="button">Place heads</button>
+      <button class="btn" id="reset" type="button">Reset moves</button>
+      <button class="btn" id="draw" type="button" aria-pressed="false">Draw zone</button>
+    </div>
+    <div class="canvas-wrap">
+      <canvas id="cv" aria-label="Zone plan with sprinkler heads, drawn to scale"></canvas>
+      <div class="hint" id="hint"></div>
+      <div class="busy" id="busy" hidden>Placing…</div>
+    </div>
+    <div class="zonetabs" id="zonetabs" hidden></div>
+  </section>
+
+  <aside class="panel" aria-label="Report">
+    <h2>Zone report</h2>
+    <div class="report" id="report"></div>
+  </aside>
+</div>
+
+<script>
+/* ===== Rule set nzs4541 v1 (data) — src/rules.js ===== */
+const Rules = (() => {
+// Rule set nzs4541 v1 as data (figures in metres / square metres).
+// Placement figures founder-confirmed 2026-10-16. Extra named tables (e.g. a future
+// `obstructions` table) carry their own `verified` flag (design §9.5 hook).
+
+const NZS4541_V1 = {
+  id: 'nzs4541',
+  version: '1',
+  verified: true,
+  source: 'Placement figures founder-confirmed against NZS 4541, 2026-10-16',
+  units: 'm',
+  hazards: {
+    ELH: { Amax: 21, Smax: 4.6, Smin: 1.8, Wmax: 2.3, WmaxReduced: 1.5, Wmin: 0.05 },
+    OH1: { Amax: 12, Smax: 4.0, Smin: 1.8, Wmax: 2.0, WmaxReduced: 1.5, Wmin: 0.05 },
+    OH2: { Amax: 12, Smax: 4.0, Smin: 1.8, Wmax: 2.0, WmaxReduced: 1.5, Wmin: 0.05 },
+    OH3: { Amax: 12, Smax: 4.0, Smin: 1.8, Wmax: 2.0, WmaxReduced: 1.5, Wmin: 0.05 },
+  },
+  tables: {},
+};
+
+const HAZARDS = ['ELH', 'OH1', 'OH2', 'OH3'];
+
+// Validates a rule set the way the production Zod schema would (Smin < Smax, Wmin < Wmax, all > 0).
+function validateRuleSet(rs) {
+  const problems = [];
+  for (const h of Object.keys(rs.hazards)) {
+    const f = rs.hazards[h];
+    for (const k of ['Amax', 'Smax', 'Smin', 'Wmax', 'Wmin']) if (!(f[k] > 0)) problems.push(`${h}.${k} must be > 0`);
+    if (!(f.Smin < f.Smax)) problems.push(`${h}: Smin must be < Smax`);
+    if (!(f.Wmin < f.Wmax)) problems.push(`${h}: Wmin must be < Wmax`);
+  }
+  return problems;
+}
+
+return { NZS4541_V1, HAZARDS, validateRuleSet };
+})();
+</script>
+<script>
+/* ===== Sample zones — src/zones.js ===== */
+const Zones = (() => {
+// Sample zones for the placement spike. Real millimetres, y axis up, zone-local coordinates.
+// `hand` = the hand-worked count from design §5 where one exists (draft-0 figures; see README for
+// the v1 recomputation). Each sample may hold several zones (open-plan pair).
+
+const P = (...xy) => { const out = []; for (let i = 0; i < xy.length; i += 2) out.push({ x: xy[i], y: xy[i + 1] }); return out; };
+const rect = (x0, y0, x1, y1) => P(x0, y0, x1, y0, x1, y1, x0, y1);
+const sq = (cx, cy, s) => rect(cx - s / 2, cy - s / 2, cx + s / 2, cy + s / 2);
+const rot = (pts, deg) => { const a = deg * Math.PI / 180, c = Math.cos(a), s = Math.sin(a); return pts.map(p => ({ x: Math.round((p.x * c - p.y * s) * 1000) / 1000, y: Math.round((p.x * s + p.y * c) * 1000) / 1000 })); };
+
+// Raster stair-step trace (dynamic-fill style): every edge of the ring is redrawn as axis-parallel
+// steps of px mm, the way a trace of a slightly skewed wall comes out.
+function staircase(ring, px = 30) {
+  const out = [];
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i], b = ring[(i + 1) % ring.length];
+    const dx = b.x - a.x, dy = b.y - a.y;
+    out.push({ x: a.x, y: a.y });
+    const horiz = Math.abs(dx) >= Math.abs(dy);
+    const n = Math.round(Math.abs(horiz ? dy : dx) / px);
+    for (let k = 1; k <= n; k++) {
+      const t = (k - 0.5) / n;
+      if (horiz) { out.push({ x: a.x + dx * t, y: a.y + dy * (k - 1) / n }); out.push({ x: a.x + dx * t, y: a.y + dy * k / n }); }
+      else { out.push({ x: a.x + dx * (k - 1) / n, y: a.y + dy * t }); out.push({ x: a.x + dx * k / n, y: a.y + dy * t }); }
+    }
+    if (n > 0) { // snap the vertex onto the last step so the trace stays axis-parallel
+      const l = out[out.length - 1];
+      if (horiz) out.push({ x: b.x, y: l.y }); else out.push({ x: l.x, y: b.y });
+    }
+  }
+  const r3 = v => Math.round(v * 1000) / 1000;
+  const ded = [];
+  for (const p of out) { const l = ded[ded.length - 1]; if (!l || Math.hypot(l.x - p.x, l.y - p.y) > 0.5) ded.push({ x: r3(p.x), y: r3(p.y) }); }
+  if (Math.hypot(ded[0].x - ded[ded.length - 1].x, ded[0].y - ded[ded.length - 1].y) < 0.5) ded.pop();
+  return ded;
+}
+
+const Z2 = P(0, 0, 12000, 0, 12000, 4000, 6000, 4000, 6000, 9000, 0, 9000);
+const Z4 = P(0, 0, 12000, 0, 12000, 3000, 0, 9000);
+
+const SAMPLES = [
+  { id: 'Z1', name: 'Z1 Rectangle 10 × 6 m', group: 'NFR9',
+    zones: [{ zoneId: 'Z1', hazard: 'OH1', outer: rect(0, 0, 10000, 6000) }],
+    hand: { OH1: 6, ELH: 6 }, alsoHazards: ['ELH'] },
+  { id: 'Z2', name: 'Z2 L-shape', group: 'NFR9',
+    zones: [{ zoneId: 'Z2', hazard: 'ELH', outer: Z2 }],
+    hand: { OH1: 8, ELH: 6 }, alsoHazards: ['OH1'] },
+  { id: 'Z3', name: 'Z3 Right triangle 8 × 6 m', group: 'NFR9',
+    zones: [{ zoneId: 'Z3', hazard: 'ELH', outer: P(0, 0, 8000, 0, 0, 6000) }],
+    hand: { OH1: 5, ELH: 3 }, alsoHazards: ['OH1'] },
+  { id: 'Z4', name: 'Z4 Diagonal wall', group: 'NFR9',
+    zones: [{ zoneId: 'Z4', hazard: 'ELH', outer: Z4 }],
+    hand: { OH1: 8, ELH: 5 }, alsoHazards: ['OH1'] },
+  { id: 'Z4r', name: 'Z4r Diagonal wall, rotated 30°', group: 'NFR9',
+    zones: [{ zoneId: 'Z4r', hazard: 'ELH', outer: rot(Z4, 30) }],
+    hand: { OH1: 8, ELH: 5 }, alsoHazards: ['OH1'] },
+  { id: 'Z5', name: 'Z5 Corridor 20 × 1.6 m', group: 'NFR9',
+    zones: [{ zoneId: 'Z5', hazard: 'OH1', outer: rect(0, 0, 20000, 1600) }],
+    hand: { OH1: 5, ELH: 5 }, alsoHazards: ['ELH'] },
+  { id: 'Z5r', name: 'Z5 Corridor rotated 45°', group: 'NFR9',
+    zones: [{ zoneId: 'Z5r', hazard: 'OH1', outer: rot(rect(0, 0, 20000, 1600), 45) }],
+    hand: { OH1: 5 } },
+  { id: 'Z5L', name: 'Z5 L-corridor 1.6 m', group: 'NFR9',
+    zones: [{ zoneId: 'Z5L', hazard: 'ELH', outer: P(0, 0, 20000, 0, 20000, 1600, 1600, 1600, 1600, 12000, 0, 12000) }] },
+  { id: 'Z6', name: 'Z6 Hall with 3 columns', group: 'named',
+    zones: [{ zoneId: 'Z6', hazard: 'OH1', outer: rect(0, 0, 16800, 9000), holes: [sq(4200, 4500, 600), sq(8400, 4500, 600), sq(12600, 4500, 600)] }],
+    hand: { OH1: 15 } },
+  { id: 'Z7', name: 'Z7 Room around a 4 m shaft', group: 'named',
+    zones: [{ zoneId: 'Z7', hazard: 'OH1', outer: rect(0, 0, 12000, 12000), holes: [rect(4000, 4000, 8000, 8000)] }] },
+  { id: 'Z8', name: 'Z8 Noisy L (stair-step trace)', group: 'named',
+    zones: [{ zoneId: 'Z8', hazard: 'ELH', outer: staircase(rot(Z2, 1)) }],
+    hand: { ELH: 6 } },
+  { id: 'U', name: 'U-shape', group: 'shapes',
+    zones: [{ zoneId: 'U', hazard: 'ELH', outer: P(0, 0, 14000, 0, 14000, 10000, 10000, 10000, 10000, 4000, 4000, 4000, 4000, 10000, 0, 10000) }] },
+  { id: 'T', name: 'T-shape', group: 'shapes',
+    zones: [{ zoneId: 'T', hazard: 'OH1', outer: P(5000, 0, 10000, 0, 10000, 8000, 15000, 8000, 15000, 12000, 0, 12000, 0, 8000, 5000, 8000) }] },
+  { id: 'R2', name: 'Meeting room, 45° splay', group: 'shapes',
+    zones: [{ zoneId: 'R2', hazard: 'ELH', outer: P(0, 0, 7200, 0, 7200, 3600, 5400, 5400, 0, 5400) }],
+    hand: { ELH: 4 } },
+  { id: 'C25', name: 'Corridor 18 × 2.5 m', group: 'shapes',
+    zones: [{ zoneId: 'C25', hazard: 'ELH', outer: rect(0, 0, 18000, 2500) }] },
+  { id: 'SMALL', name: 'Small office 3 × 2.8 m (1 head)', group: 'shapes',
+    zones: [{ zoneId: 'SMALL', hazard: 'ELH', outer: rect(0, 0, 3000, 2800) }], hand: { ELH: 1 } },
+  { id: 'OCT', name: 'Irregular 8-sided room', group: 'shapes',
+    zones: [{ zoneId: 'OCT', hazard: 'OH1', outer: P(0, 0, 8200, 0, 10400, 2600, 10400, 6200, 7600, 8800, 3000, 8800, 800, 6900, 0, 3500) }] },
+  { id: 'COLS', name: 'Office floor with 6 columns', group: 'shapes',
+    zones: [{ zoneId: 'COLS', hazard: 'ELH', outer: rect(0, 0, 21600, 14400),
+      holes: [5400, 10800, 16200].flatMap(x => [4800, 9600].map(y => sq(x, y, 450))) }] },
+  { id: 'OPEN', name: 'Open plan: office (ELH) + kitchen (OH1)', group: 'shapes',
+    zones: [
+      { zoneId: 'OFFICE', hazard: 'ELH', outer: rect(0, 0, 12000, 9000), openEdges: [{ a: { x: 12000, y: 0 }, b: { x: 12000, y: 9000 } }] },
+      { zoneId: 'KITCHEN', hazard: 'OH1', outer: rect(12000, 0, 18000, 9000), openEdges: [{ a: { x: 12000, y: 0 }, b: { x: 12000, y: 9000 } }] },
+    ] },
+  { id: 'STAG', name: 'Store room, staggered pattern', group: 'shapes',
+    zones: [{ zoneId: 'STAG', hazard: 'OH2', pattern: 'staggered', outer: rect(0, 0, 14000, 9000) }] },
+  { id: 'TILE', name: 'Tiled office, 1200 × 600 grid (preferred)', group: 'shapes',
+    zones: [{ zoneId: 'TILE', hazard: 'ELH', outer: rect(0, 0, 9600, 7200),
+      grid: { angleDeg: 0, pitchX: 1200, pitchY: 600, originX: 0, originY: 0, mode: 'preferred' } }] },
+  { id: 'Z9', name: 'Z9 Tile room (required)', group: 'named',
+    zones: [{ zoneId: 'Z9', hazard: 'OH1', outer: rect(0, 0, 7200, 6000),
+      grid: { angleDeg: 0, pitchX: 1200, pitchY: 600, originX: 0, originY: 0, mode: 'required' } }] },
+  { id: 'R1', name: 'R1 Perimeter office L (387 m²)', group: 'named',
+    zones: [{ zoneId: 'R1', hazard: 'ELH',
+      outer: P(0, 0, 30000, 0, 30000, 22000, 21000, 22000, 21000, 9000, 0, 9000),
+      holes: [[4200, 1500], [12600, 1500], [21000, 1500], [28500, 1500], [28500, 9600], [28500, 18000]].map(([x, y]) => sq(x, y, 600)),
+      grid: { angleDeg: 0, pitchX: 1200, pitchY: 600, originX: 0, originY: 0, mode: 'preferred' } }] },
+  { id: 'Z10', name: 'Z10 Too narrow (6 m × 90 mm)', group: 'infeasible', infeasible: true,
+    zones: [{ zoneId: 'Z10', hazard: 'ELH', outer: rect(0, 0, 6000, 90) }] },
+  { id: 'BOW', name: 'Invalid outline (bow-tie)', group: 'infeasible', infeasible: true,
+    zones: [{ zoneId: 'BOW', hazard: 'ELH', outer: P(0, 0, 6000, 4000, 6000, 0, 0, 4000) }] },
+];
+
+return { SAMPLES };
+})();
+</script>
+<script>
+/* ===== Placer geometry kernel — src/geometry.js ===== */
+const Geometry = (() => {
+// Placer-side geometry kernel. Units: millimetres, y axis up. Pure functions, no DOM.
+// The oracle has its own, separately written kernel (see oracle.js) on purpose.
+
+function ringArea(r) {
+  let a = 0;
+  for (let i = 0, n = r.length; i < n; i++) {
+    const p = r[i], q = r[(i + 1) % n];
+    a += p.x * q.y - q.x * p.y;
+  }
+  return a / 2;
+}
+
+function orientRing(r, ccw) {
+  const a = ringArea(r);
+  return (a > 0) === ccw ? r.slice() : r.slice().reverse();
+}
+
+function bbox(pts) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const p of pts) {
+    if (p.x < x0) x0 = p.x; if (p.x > x1) x1 = p.x;
+    if (p.y < y0) y0 = p.y; if (p.y > y1) y1 = p.y;
+  }
+  return { x0, y0, x1, y1 };
+}
+
+function pointInRing(p, r) {
+  let inside = false;
+  for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+    const a = r[i], b = r[j];
+    if ((a.y > p.y) !== (b.y > p.y)) {
+      const x = a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y);
+      if (x > p.x) inside = !inside;
+    }
+  }
+  return inside;
+}
+
+function pointInRegion(p, outer, holes) {
+  if (!pointInRing(p, outer)) return false;
+  for (const h of holes) if (pointInRing(p, h)) return false;
+  return true;
+}
+
+function distPointSeg(p, a, b) {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const L2 = dx * dx + dy * dy;
+  let t = L2 > 0 ? ((p.x - a.x) * dx + (p.y - a.y) * dy) / L2 : 0;
+  if (t < 0) t = 0; else if (t > 1) t = 1;
+  const ex = a.x + t * dx - p.x, ey = a.y + t * dy - p.y;
+  return Math.sqrt(ex * ex + ey * ey);
+}
+
+function orient(a, b, c) { return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x); }
+
+function onSeg(a, b, p) {
+  return Math.min(a.x, b.x) - 1e-9 <= p.x && p.x <= Math.max(a.x, b.x) + 1e-9 &&
+         Math.min(a.y, b.y) - 1e-9 <= p.y && p.y <= Math.max(a.y, b.y) + 1e-9;
+}
+
+// True when segment a-b is blocked by edge c-d. Proper crossings block; the segment
+// passing through an edge endpoint (grazing a corner) also blocks (conservative);
+// a or b lying on the edge itself does not block.
+function segBlocked(a, b, c, d) {
+  const o1 = orient(a, b, c), o2 = orient(a, b, d);
+  const o3 = orient(c, d, a), o4 = orient(c, d, b);
+  if (((o1 > 0 && o2 < 0) || (o1 < 0 && o2 > 0)) && ((o3 > 0 && o4 < 0) || (o3 < 0 && o4 > 0))) return true;
+  if (o1 === 0 && onSeg(a, b, c) && !same(c, a) && !same(c, b) && o3 !== 0 && o4 !== 0) return true;
+  if (o2 === 0 && onSeg(a, b, d) && !same(d, a) && !same(d, b) && o3 !== 0 && o4 !== 0) return true;
+  return false;
+}
+function same(p, q) { return Math.abs(p.x - q.x) < 1e-9 && Math.abs(p.y - q.y) < 1e-9; }
+
+function segIntersectPoint(a, b, c, d) {
+  const rx = b.x - a.x, ry = b.y - a.y, sx = d.x - c.x, sy = d.y - c.y;
+  const den = rx * sy - ry * sx;
+  if (Math.abs(den) < 1e-12) return null;
+  const t = ((c.x - a.x) * sy - (c.y - a.y) * sx) / den;
+  const u = ((c.x - a.x) * ry - (c.y - a.y) * rx) / den;
+  if (t <= 1e-9 || t >= 1 - 1e-9 || u <= 1e-9 || u >= 1 - 1e-9) return null;
+  return { x: a.x + t * rx, y: a.y + t * ry };
+}
+
+function rotatePt(p, ang) {
+  const c = Math.cos(ang), s = Math.sin(ang);
+  return { x: p.x * c - p.y * s, y: p.x * s + p.y * c };
+}
+function rotateRing(r, ang) { return r.map(p => rotatePt(p, ang)); }
+
+// Remove duplicate (<tol) and collinear (<tol off the chord) vertices.
+function cleanRing(r, tol = 5) {
+  const pts = r.map(p => ({ x: p.x, y: p.y }));
+  let changed = true;
+  while (changed && pts.length > 3) {
+    changed = false;
+    for (let i = 0; i < pts.length && pts.length > 3; i++) {
+      const n = pts.length, p = pts[(i + n - 1) % n], q = pts[i], s = pts[(i + 1) % n];
+      const dup = Math.hypot(q.x - p.x, q.y - p.y) < tol;
+      const col = distPointSeg(q, p, s) < 0.5 && ((q.x - p.x) * (s.x - q.x) + (q.y - p.y) * (s.y - q.y)) > 0;
+      if (dup || col) { pts.splice(i, 1); changed = true; i--; }
+    }
+  }
+  return pts;
+}
+
+// Douglas-Peucker on a closed ring (used only for decomposition of noisy outlines).
+function simplifyRing(r, tol) {
+  if (r.length < 8) return r.slice();
+  // split at the two farthest-apart vertices (deterministic)
+  let i0 = 0, i1 = 0, best = -1;
+  for (let i = 0; i < r.length; i++) {
+    const d = (r[i].x - r[0].x) ** 2 + (r[i].y - r[0].y) ** 2;
+    if (d > best) { best = d; i1 = i; }
+  }
+  const chainA = r.slice(i0, i1 + 1), chainB = r.slice(i1).concat([r[0]]);
+  const sa = dp(chainA, tol), sb = dp(chainB, tol);
+  const out = sa.slice(0, -1).concat(sb.slice(0, -1));
+  return out.length >= 3 ? cleanRing(out, 5) : r.slice();
+}
+function dp(pts, tol) {
+  if (pts.length <= 2) return pts.slice();
+  let idx = -1, dmax = -1;
+  for (let i = 1; i < pts.length - 1; i++) {
+    const d = distPointSeg(pts[i], pts[0], pts[pts.length - 1]);
+    if (d > dmax) { dmax = d; idx = i; }
+  }
+  if (dmax <= tol) return [pts[0], pts[pts.length - 1]];
+  const a = dp(pts.slice(0, idx + 1), tol), b = dp(pts.slice(idx), tol);
+  return a.slice(0, -1).concat(b);
+}
+
+function isConvex(r) {
+  let sign = 0;
+  for (let i = 0; i < r.length; i++) {
+    const c = orient(r[i], r[(i + 1) % r.length], r[(i + 2) % r.length]);
+    if (Math.abs(c) < 1e-6) continue;
+    const s = c > 0 ? 1 : -1;
+    if (sign === 0) sign = s; else if (s !== sign) return false;
+  }
+  return true;
+}
+
+// First self-intersection between any two edges of the given rings, or null.
+function findSelfIntersection(rings) {
+  const edges = [];
+  rings.forEach((r, ri) => r.forEach((p, i) => edges.push({ ri, i, n: r.length, a: p, b: r[(i + 1) % r.length] })));
+  for (let i = 0; i < edges.length; i++) {
+    const e = edges[i];
+    for (let j = i + 1; j < edges.length; j++) {
+      const f = edges[j];
+      if (e.ri === f.ri && (f.i === e.i + 1 || (e.i === 0 && f.i === e.n - 1))) continue;
+      if (Math.max(e.a.x, e.b.x) < Math.min(f.a.x, f.b.x) || Math.max(f.a.x, f.b.x) < Math.min(e.a.x, e.b.x)) continue;
+      if (Math.max(e.a.y, e.b.y) < Math.min(f.a.y, f.b.y) || Math.max(f.a.y, f.b.y) < Math.min(e.a.y, e.b.y)) continue;
+      const p = segIntersectPoint(e.a, e.b, f.a, f.b);
+      if (p) return p;
+    }
+  }
+  return null;
+}
+
+// Intervals of the horizontal line y inside a single ring (even-odd).
+function ringRowIntervals(r, y) {
+  const xs = [];
+  for (let i = 0, n = r.length; i < n; i++) {
+    const a = r[i], b = r[(i + 1) % n];
+    if ((a.y > y) !== (b.y > y)) xs.push(a.x + (y - a.y) * (b.x - a.x) / (b.y - a.y));
+  }
+  xs.sort((p, q) => p - q);
+  const out = [];
+  for (let i = 0; i + 1 < xs.length; i += 2) if (xs[i + 1] - xs[i] > 1e-6) out.push([xs[i], xs[i + 1]]);
+  return out;
+}
+
+function subtractIntervals(base, cuts) {
+  let cur = base.map(v => v.slice());
+  for (const [c0, c1] of cuts) {
+    const next = [];
+    for (const [a, b] of cur) {
+      if (c1 <= a || c0 >= b) { next.push([a, b]); continue; }
+      if (c0 > a) next.push([a, c0]);
+      if (c1 < b) next.push([c1, b]);
+    }
+    cur = next;
+  }
+  return cur.filter(([a, b]) => b - a > 1e-6);
+}
+
+function mergeIntervals(iv) {
+  const s = iv.slice().sort((p, q) => p[0] - q[0]);
+  const out = [];
+  for (const v of s) {
+    if (out.length && v[0] <= out[out.length - 1][1]) out[out.length - 1][1] = Math.max(out[out.length - 1][1], v[1]);
+    else out.push(v.slice());
+  }
+  return out;
+}
+
+// Uniform grid of segments for fast visibility / clearance queries.
+class SegIndex {
+  constructor(segs, cell = 1000) {
+    this.segs = segs; this.cell = cell; this.map = new Map(); this.stamp = 0;
+    this.marks = new Int32Array(segs.length);
+    segs.forEach((s, k) => {
+      const i0 = Math.floor(Math.min(s.a.x, s.b.x) / cell), i1 = Math.floor(Math.max(s.a.x, s.b.x) / cell);
+      const j0 = Math.floor(Math.min(s.a.y, s.b.y) / cell), j1 = Math.floor(Math.max(s.a.y, s.b.y) / cell);
+      for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
+        const key = i * 100003 + j;
+        let arr = this.map.get(key); if (!arr) this.map.set(key, arr = []);
+        arr.push(k);
+      }
+    });
+  }
+  forBox(x0, y0, x1, y1, fn) {
+    const c = this.cell; this.stamp++;
+    const i0 = Math.floor(x0 / c), i1 = Math.floor(x1 / c), j0 = Math.floor(y0 / c), j1 = Math.floor(y1 / c);
+    for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
+      const arr = this.map.get(i * 100003 + j); if (!arr) continue;
+      for (const k of arr) {
+        if (this.marks[k] === this.stamp) continue;
+        this.marks[k] = this.stamp;
+        if (fn(this.segs[k]) === true) return true;
+      }
+    }
+    return false;
+  }
+  visible(a, b) {
+    return !this.forBox(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.max(a.x, b.x), Math.max(a.y, b.y),
+      s => segBlocked(a, b, s.a, s.b));
+  }
+  clearance(p, r) {
+    let best = Infinity;
+    this.forBox(p.x - r, p.y - r, p.x + r, p.y + r, s => { const d = distPointSeg(p, s.a, s.b); if (d < best) best = d; });
+    return best;
+  }
+}
+
+return { ringArea, orientRing, bbox, pointInRing, pointInRegion, distPointSeg, segBlocked, segIntersectPoint, rotatePt, rotateRing, cleanRing, simplifyRing, isConvex, findSelfIntersection, ringRowIntervals, subtractIntervals, mergeIntervals, SegIndex };
+})();
+</script>
+<script>
+/* ===== PLACER — frame search x bay decomposition x row sweep with exact 1-D DP — src/placer.js ===== */
+const Placer = (() => {
+// NZS 4541 sprinkler head auto-placement (spike #2, design docs/4541-placement-design.md §3).
+//
+// frame search × bay decomposition × row sweep, each row solved by an exact 1-D stabbing DP.
+// Every hard constraint is a demand or a DP transition rule; there is no repair stage.
+// Units: mm, zone-local frame. Pure and deterministic: no Math.random, no Date, no caches.
+//
+// This module never imports the oracle, and the oracle never imports this module.
+
+const {
+  ringArea, orientRing, bbox, pointInRing, pointInRegion, distPointSeg, rotatePt, rotateRing,
+  cleanRing, simplifyRing, isConvex, findSelfIntersection, ringRowIntervals, subtractIntervals,
+  mergeIntervals, SegIndex,
+} = Geometry;
+const MU_COV = 75;    // reach margin for sampled coverage demands (100 mm lattice: any point is ≤71 mm from a sample)
+const MU_WALL = 30;   // reach margin for wall samples (50 mm step)
+const TOL = 0.5;      // tolerance on exact analytic limits (the oracle allows 1 mm)
+const LAT = 100;      // coverage lattice step
+const BND = 50;       // boundary sample step
+const CSTEP = 50;     // DP candidate step along a row
+const SMALL_HOLE = 1000; // holes up to this size do not cut bays (they still are walls)
+const NUDGE = 0.5;    // boundary samples are tested for visibility from 0.5 mm inside the wall
+const MAX_GAPFILL = 3;
+const TRACE_TOL = 40;
+
+// ---------------------------------------------------------------------------------------------
+// Public entry point
+
+let DEBUG = null;
+/** Test hook: receives one record per evaluated bay row-set variant. */
+function setPlacerDebug(fn) { DEBUG = fn; }
+
+/**
+ * @param input {zoneId, outer:[{x,y}], holes?:[[{x,y}]], hazard, pattern?:'rectangular'|'staggered',
+ *               prefs?:{spacing?:mm, wallDist?:mm}, grid?:{angleDeg,pitchX,pitchY,originX,originY,mode},
+ *               locked?:[{id,x,y}], openEdges?:[{a:{x,y},b:{x,y}}], neighbourHeads?:[{x,y}],
+ *               frameDeg?:number, reducedWallDist?:boolean}     (all coordinates in mm)
+ * @param ruleset rule set data (rules.js)
+ * @returns {ok, heads, notes, error?}
+ */
+function placeZone(input, ruleset, opts = {}) {
+  const hz = ruleset.hazards[input.hazard];
+  if (!hz) return fail('INVALID_ZONE', [], `Unknown hazard class ${input.hazard}`);
+  const R = {
+    Amax: hz.Amax * 1e6, Smax: hz.Smax * 1000, Smin: hz.Smin * 1000,
+    Wmax: (input.reducedWallDist ? hz.WmaxReduced : hz.Wmax) * 1000, Wmin: hz.Wmin * 1000,
+  };
+  R.Rc = 0.5 * Math.sqrt(R.Smax ** 2 + (R.Amax / R.Smax) ** 2);
+
+  const prep = prepare(input);
+  if (!prep.ok) return { ok: false, error: prep.error, heads: [], notes: null };
+
+  const prefs = {
+    spacing: input.prefs?.spacing ? clamp(input.prefs.spacing, R.Smin, R.Smax) : null,
+    wallDist: input.prefs?.wallDist ? clamp(input.prefs.wallDist, R.Wmin + 1, R.Wmax) : null,
+  };
+  const pattern = input.pattern === 'staggered' ? 'staggered' : 'rectangular';
+  const grid = input.grid && input.grid.mode !== 'off' ? input.grid : null;
+
+  // Admissible region: some point must keep Wmin from every wall.
+  const adm = admissibleProbe(prep, R);
+  if (!adm) {
+    return fail('NO_ADMISSIBLE_REGION', prep.outerWorld,
+      `No point in this zone is ${R.Wmin} mm or more from every wall (zone narrower than 2 × Wmin = ${2 * R.Wmin} mm). No heads placed.`,
+      centroidOf(prep.outerWorld));
+  }
+
+  const frames = frameCandidates(prep, grid, input.frameDeg);
+  let best = null, tried = 0;
+  for (let fi = 0; fi < frames.length; fi++) {
+    const F = buildFrame(prep, frames[fi], R, grid);
+    const decs = decompositions(F);
+    for (let di = 0; di < decs.length; di++) {
+      const res = layoutDecomposition(F, decs[di], R, prefs, pattern, grid);
+      tried++;
+      res.score = [res.unresolved.length + res.h4.length, res.heads.length, res.gapFill, res.cost, fi, di];
+      res.frame = F; res.decName = decs[di].name; res.bayCount = decs[di].bays.length;
+      if (!best || lexLess(res.score, best.score)) best = res;
+    }
+  }
+
+  // Back to world coordinates.
+  const F = best.frame;
+  const toWorld = p => { const q = rotatePt(p, F.theta); return { x: q.x + prep.ox, y: q.y + prep.oy }; };
+  const heads = [];
+  const counters = new Map();
+  for (const h of best.heads) {
+    const w = toWorld(h);
+    if (h.kind === 'locked') { heads.push({ id: h.id, x: h.wx, y: h.wy, kind: 'locked' }); continue; }
+    const key = `${h.bay}:${h.row}`;
+    const k = counters.get(key) || 0; counters.set(key, k + 1);
+    heads.push({ id: `${opts.idPrefix || ''}${input.zoneId || 'Z'}:${h.bay}:${h.row}:${k}`, x: round3(w.x), y: round3(w.y), kind: h.kind, rowId: `${h.bay}:${h.row}` });
+  }
+  const unresolvedWorld = best.unresolved.map(s => toWorld(s));
+  const notes = {
+    frameDeg: round3(F.theta * 180 / Math.PI),
+    decomposition: best.decName, bays: best.bayCount, rows: best.rowCount,
+    exceptions: { gapFill: best.gapFill, offsetRow: 0 },
+    unresolved: unresolvedWorld.length, h4Violations: best.h4.length,
+    variantsTried: tried, rule: R,
+  };
+  if (grid) {
+    const stops = heads.filter(h => onTileStop(h, grid)).length;
+    notes.tileAligned = { onStop: stops, total: heads.length };
+    if (grid.mode === 'required' && !opts.noDelta) {
+      const free = placeZone({ ...input, grid: null }, ruleset, { ...opts, noDelta: true });
+      if (free.ok) notes.tileAligned.extraHeadsVsUnaligned = heads.length - free.heads.length;
+    }
+  }
+  if (unresolvedWorld.length) {
+    return {
+      ok: false, heads, notes,
+      error: { code: 'UNCOVERABLE_PIECE', where: unresolvedWorld.slice(0, 50),
+        message: `${unresolvedWorld.length} sample point(s) could not be reached by any admissible head position under the hard constraints.` },
+    };
+  }
+  return { ok: true, heads, notes };
+}
+
+function tileStopAt(grid, x, y) {
+  const a = (grid.angleDeg || 0) * Math.PI / 180;
+  const p = rotatePt({ x: x - (grid.originX || 0), y: y - (grid.originY || 0) }, -a);
+  const i = Math.round(p.x / grid.pitchX - 0.5), j = Math.round(p.y / grid.pitchY - 0.5);
+  const q = rotatePt({ x: (i + 0.5) * grid.pitchX, y: (j + 0.5) * grid.pitchY }, a);
+  return { x: q.x + (grid.originX || 0), y: q.y + (grid.originY || 0) };
+}
+function onTileStop(h, grid) { const s = tileStopAt(grid, h.x, h.y); return Math.hypot(s.x - h.x, s.y - h.y) < 1.5; }
+
+// ---------------------------------------------------------------------------------------------
+// Preparation (§3.6): zone-local mm, clean, orient, validate.
+
+function prepare(input) {
+  const raw = (input.outer || []).map(p => ({ x: +p.x, y: +p.y }));
+  if (raw.length < 3 || raw.some(p => !isFinite(p.x) || !isFinite(p.y))) {
+    return { ok: false, error: { code: 'INVALID_ZONE', where: raw, message: 'Zone outline needs at least 3 valid points.' } };
+  }
+  const bb = bbox(raw), ox = bb.x0, oy = bb.y0;
+  const loc = p => ({ x: +p.x - ox, y: +p.y - oy });
+  const outer = orientRing(cleanRing(raw.map(loc)), true);
+  const holes = (input.holes || []).map(h => orientRing(cleanRing(h.map(loc)), false)).filter(h => h.length >= 3);
+  const world = p => ({ x: p.x + ox, y: p.y + oy });
+  const si = outer.length >= 3 ? findSelfIntersection([outer, ...holes]) : null;
+  if (si) {
+    return { ok: false, error: { code: 'INVALID_ZONE', where: [world(si)], outline: raw, message: 'Zone outline crosses itself (or a hole crosses the outline) at the marked point.' } };
+  }
+  if (outer.length < 3 || Math.abs(ringArea(outer)) < 1e4) {
+    return { ok: false, error: { code: 'INVALID_ZONE', where: raw, message: 'Zone area is zero or too small.' } };
+  }
+  for (const h of holes) {
+    if (!h.every(p => pointInRing(p, outer))) {
+      return { ok: false, error: { code: 'INVALID_ZONE', where: h.map(world), message: 'A hole (column) lies outside the zone outline.' } };
+    }
+  }
+  const open = (input.openEdges || []).map(e => ({ a: loc(e.a), b: loc(e.b) }));
+  const outerOpen = outer.map((p, i) => {
+    const q = outer[(i + 1) % outer.length];
+    return open.some(e => distPointSeg(p, e.a, e.b) < 2 && distPointSeg(q, e.a, e.b) < 2);
+  });
+  return {
+    ok: true, ox, oy, outer, holes, outerOpen,
+    outerWorld: raw,
+    locked: (input.locked || []).map(h => ({ ...loc(h), id: h.id, wx: h.x, wy: h.y })),
+    neighbours: (input.neighbourHeads || []).map(loc),
+    gridLocal: input.grid ? { ...input.grid, originX: (input.grid.originX || 0) - ox, originY: (input.grid.originY || 0) - oy } : null,
+  };
+}
+
+// Trace tolerance (see oracle): sight lines from samples near a wall are tested from a probe
+// pushed TRACE_TOL into the room. Smaller than the oracle's 50 mm so the placer is never the more
+// generous of the two.
+function pushProbe(v, nx, ny, a, outer, holes, idx) {
+  const d0 = Math.abs((v.x - a.x) * nx + (v.y - a.y) * ny);
+  for (let t = TRACE_TOL - d0; t > 0.5; t /= 2) {
+    const q = { x: v.x + nx * t, y: v.y + ny * t };
+    if (pointInRegion(q, outer, holes) && idx.visible(v, q)) return q;
+  }
+  return v;
+}
+function latticeProbe(p, outer, holes, idx) {
+  let best = null, bd = TRACE_TOL;
+  idx.forBox(p.x - TRACE_TOL, p.y - TRACE_TOL, p.x + TRACE_TOL, p.y + TRACE_TOL, s => {
+    const d = distPointSeg(p, s.a, s.b); if (d < bd) { bd = d; best = s; }
+  });
+  return best ? pushProbe(p, best.nx, best.ny, best.a, outer, holes, idx) : p;
+}
+
+function barrierSegs(outer, holes, outerOpen) {
+  const segs = [];
+  const add = (a, b) => {
+    const L = Math.hypot(b.x - a.x, b.y - a.y); if (L < 1e-9) return;
+    const nx = -(b.y - a.y) / L, ny = (b.x - a.x) / L;
+    segs.push({ a, b, nx, ny, c: nx * a.x + ny * a.y });
+  };
+  outer.forEach((p, i) => { if (!outerOpen[i]) add(p, outer[(i + 1) % outer.length]); });
+  for (const h of holes) h.forEach((p, i) => add(p, h[(i + 1) % h.length]));
+  return segs;
+}
+
+function admissibleProbe(prep, R) {
+  const idx = new SegIndex(barrierSegs(prep.outer, prep.holes, prep.outerOpen));
+  const need = R.Wmin + 1;
+  const ok = p => pointInRegion(p, prep.outer, prep.holes) && idx.clearance(p, need + 1) >= need;
+  const bb = bbox(prep.outer);
+  for (let y = bb.y0 + 50; y < bb.y1; y += 100) for (let x = bb.x0 + 50; x < bb.x1; x += 100) if (ok({ x, y })) return true;
+  // fine probe along every wall, offset inward by the clearance (catches slim zones)
+  for (const r of [prep.outer, ...prep.holes]) {
+    for (let i = 0; i < r.length; i++) {
+      const a = r[i], b = r[(i + 1) % r.length], L = Math.hypot(b.x - a.x, b.y - a.y);
+      const nx = -(b.y - a.y) / L, ny = (b.x - a.x) / L;
+      for (let s = 0; s <= L; s += 20) {
+        const p = { x: a.x + (b.x - a.x) * s / L + nx * (need + 0.5), y: a.y + (b.y - a.y) * s / L + ny * (need + 0.5) };
+        if (ok(p)) return true;
+      }
+    }
+  }
+  return false;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Frames (§3.2): length-weighted edge-angle histogram mod 90°, top two peaks plus 0°.
+// Rows run along the frame x axis, so each angle is also tried turned by 90°.
+
+function frameCandidates(prep, grid, override) {
+  let base;
+  if (override != null) base = [override * Math.PI / 180];
+  else if (grid) base = [(grid.angleDeg || 0) * Math.PI / 180];
+  else {
+    const edges = [];
+    for (const r of [prep.outer, ...prep.holes]) r.forEach((p, i) => {
+      const q = r[(i + 1) % r.length];
+      const L = Math.hypot(q.x - p.x, q.y - p.y);
+      let a = Math.atan2(q.y - p.y, q.x - p.x) * 180 / Math.PI; a = ((a % 90) + 90) % 90;
+      edges.push({ a, L });
+    });
+    const bins = new Float64Array(360);
+    for (const e of edges) bins[Math.floor(e.a / 0.25) % 360] += e.L;
+    const sm = new Float64Array(360);
+    for (let i = 0; i < 360; i++) for (let k = -6; k <= 6; k++) sm[i] += bins[(i + k + 360) % 360];
+    let p1 = 0; for (let i = 1; i < 360; i++) if (sm[i] > sm[p1]) p1 = i;
+    let p2 = -1;
+    for (let i = 0; i < 360; i++) {
+      const dd = Math.min(Math.abs(i - p1), 360 - Math.abs(i - p1));
+      if (dd <= 12 || sm[i] < 0.15 * sm[p1]) continue;
+      if (p2 < 0 || sm[i] > sm[p2]) p2 = i;
+    }
+    const peakAngle = (pi) => {
+      const c = pi * 0.25 + 0.125; let sx = 0, sy = 0;
+      for (const e of edges) {
+        let d = Math.abs(e.a - c); d = Math.min(d, 90 - d);
+        if (d <= 1.5) { sx += e.L * Math.cos(e.a * 4 * Math.PI / 180); sy += e.L * Math.sin(e.a * 4 * Math.PI / 180); }
+      }
+      let a = Math.atan2(sy, sx) * 180 / Math.PI / 4; if (a < 0) a += 90;
+      return a;
+    };
+    const list = [peakAngle(p1)];
+    if (p2 >= 0) list.push(peakAngle(p2));
+    if (!list.some(a => Math.min(a, 90 - a) < 1)) list.push(0);
+    base = list.map(a => (Math.min(a, 90 - a) < 1e-6 ? 0 : a) * Math.PI / 180);
+  }
+  const out = [];
+  for (const a of base) for (const t of [a, a + Math.PI / 2]) {
+    if (!out.some(b => Math.abs(b - t) < 1e-9)) out.push(t);
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Frame context: rotated geometry, barrier index, samples.
+
+function buildFrame(prep, theta, R, grid) {
+  const rot = -theta;
+  const outer = rotateRing(prep.outer, rot);
+  const holes = prep.holes.map(h => rotateRing(h, rot));
+  const segs = barrierSegs(outer, holes, prep.outerOpen);
+  const idx = new SegIndex(segs);
+  const bb = bbox(outer);
+
+  const lat = [];
+  const ix0 = Math.ceil((bb.x0 - 50) / LAT), ix1 = Math.floor((bb.x1 - 50) / LAT);
+  const iy0 = Math.ceil((bb.y0 - 50) / LAT), iy1 = Math.floor((bb.y1 - 50) / LAT);
+  for (let iy = iy0; iy <= iy1; iy++) {
+    const y = 50 + iy * LAT;
+    const runs = subtractIntervals(ringRowIntervals(outer, y), holes.flatMap(h => ringRowIntervals(h, y)));
+    for (const [a, b] of runs) {
+      for (let ix = Math.max(ix0, Math.ceil((a - 50) / LAT)); ix <= ix1 && 50 + ix * LAT <= b; ix++) {
+        const x = 50 + ix * LAT;
+        const lp = latticeProbe({ x, y }, outer, holes, idx);
+        lat.push({ t: 0, x, y, vx: lp.x, vy: lp.y, ix, iy });
+      }
+    }
+  }
+  const bnd = [], wall = [];
+  // columns (holes up to SMALL_HOLE): block sight, need Wmin, but no Wmax rule (founder decision 2026-10-17)
+  const rings = [{ r: outer, open: prep.outerOpen, column: false },
+    ...holes.map(h => { const b = bbox(h); return { r: h, open: null, column: Math.max(b.x1 - b.x0, b.y1 - b.y0) <= SMALL_HOLE }; })];
+  for (const { r, open, column } of rings) {
+    for (let i = 0; i < r.length; i++) {
+      const a = r[i], b = r[(i + 1) % r.length];
+      const L = Math.hypot(b.x - a.x, b.y - a.y); if (L < 1e-6) continue;
+      const dx = (b.x - a.x) / L, dy = (b.y - a.y) / L, nx = -dy, ny = dx; // left normal points into the region
+      const n = Math.max(1, Math.ceil(L / BND));
+      const isWall = !(open && open[i]) && !column;
+      for (let k = 0; k <= n; k++) {
+        const s = k * L / n;                     // includes both vertices
+        const x = a.x + dx * s, y = a.y + dy * s;
+        // probe point just inside the room (tighter than the oracle's 1 mm, so the placer is never
+        // more generous about sight lines in corner pockets); shrinks in acute corners
+        let v = null;
+        const end = k === 0 ? 1 : k === n ? -1 : 0;
+        for (let dl = NUDGE; dl > 1e-4; dl /= 3) {
+          const q = { x: x + nx * dl + dx * end * dl * 2, y: y + ny * dl + dy * end * dl * 2 };
+          if (pointInRegion(q, outer, holes)) { v = q; break; }
+          const tws = end ? [end] : [1, -1];
+          for (const tw of tws) {
+            for (const [fn, fa] of [[0.25, 1], [0.05, 2]]) {
+              const q2 = { x: x + nx * dl * fn + dx * tw * dl * fa, y: y + ny * dl * fn + dy * tw * dl * fa };
+              if (pointInRegion(q2, outer, holes)) { v = q2; break; }
+            }
+            if (v) break;
+          }
+          if (v) break;
+        }
+        if (!v) v = { x, y };   // sliver corner: test sight lines from the boundary point itself
+        v = pushProbe(v, nx, ny, a, outer, holes, idx);
+        bnd.push({ t: 1, x, y, vx: v.x, vy: v.y });
+        if (isWall) wall.push({ t: 2, x, y, vx: v.x, vy: v.y, nx, ny, c: nx * a.x + ny * a.y });
+      }
+    }
+  }
+
+  // Decomposition geometry: noisy outlines are simplified for bay cutting only.
+  const simplified = outer.length > 40;
+  const douter = simplified ? orientRing(simplifyRing(outer, 40), true) : outer;
+  const dholes = holes.map(h => (h.length > 40 ? orientRing(simplifyRing(h, 40), false) : h));
+
+  const rotP = p => rotatePt(p, rot);
+  let gridF = null;
+  if (grid) {
+    const o = rotP({ x: prep.gridLocal.originX, y: prep.gridLocal.originY });
+    // frame is the grid angle or the grid angle + 90° (pitches swap; tile centres are symmetric)
+    const rel = Math.abs(((theta - (grid.angleDeg || 0) * Math.PI / 180) % Math.PI + Math.PI) % Math.PI);
+    const turned = Math.abs(rel - Math.PI / 2) < 1e-6;
+    gridF = { ox: o.x, oy: o.y, px: turned ? grid.pitchY : grid.pitchX, py: turned ? grid.pitchX : grid.pitchY, mode: grid.mode };
+  }
+  return {
+    theta, outer, holes, segs, idx, bb, lat, bnd, wall, simplified, douter, dholes, grid: gridF,
+    locked: prep.locked.map(h => ({ ...rotP(h), id: h.id, wx: h.wx, wy: h.wy, kind: 'locked', bay: -1 })),
+    neighbours: prep.neighbours.map(h => ({ ...rotP(h), bay: -2 })),
+    R,
+  };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Bay decomposition (§3.3): none | cutH | cutV. Cuts are trapezoid slabs at the vertices of the
+// outline and of large holes, merged back wherever no vertex interrupts the slab boundary;
+// this equals cutting with axis-parallel rays from the reflex vertices.
+
+function decompositions(F) {
+  const large = F.dholes.filter(h => { const b = bbox(h); return Math.max(b.x1 - b.x0, b.y1 - b.y0) > SMALL_HOLE; });
+  const small = F.holes.filter(h => { const b = bbox(h); return Math.max(b.x1 - b.x0, b.y1 - b.y0) <= SMALL_HOLE; });
+  const mkBay = (ring, holes, id) => {
+    const bb = bbox(ring);
+    const hs = holes.filter(h => { const b = bbox(h); return b.x1 > bb.x0 && b.x0 < bb.x1 && b.y1 > bb.y0 && b.y0 < bb.y1; });
+    const convex = isConvex(ring);
+    return { id, ring, holes: hs, bb, area: Math.abs(ringArea(ring)) - hs.reduce((s, h) => s + Math.abs(ringArea(h)), 0),
+      convex, fast: convex && hs.length === 0 && !F.simplified };
+  };
+  const out = [{ name: 'none', bays: [mkBay(F.douter, F.dholes, 0)] }];
+  let reflex = large.reduce((s, h) => s + h.length, 0);
+  for (let i = 0; i < F.douter.length; i++) {
+    const a = F.douter[(i + F.douter.length - 1) % F.douter.length], b = F.douter[i], c = F.douter[(i + 1) % F.douter.length];
+    if ((b.x - a.x) * (c.y - b.y) - (b.y - a.y) * (c.x - b.x) < -1e-6) reflex++;
+  }
+  if (reflex === 0) return out;
+  const rings = [F.douter, ...large];
+  const cutH = trapezoidBays(rings).map((r, i) => mkBay(r, small, i));
+  const T = r => r.map(p => ({ x: p.y, y: p.x }));
+  const cutV = trapezoidBays(rings.map(T)).map(r => orientRing(T(r), true)).map((r, i) => mkBay(r, small, i));
+  const cuts = [{ name: 'cutH', bays: cutH }, { name: 'cutV', bays: cutV }].filter(d => d.bays.length > 1);
+  if (reflex > 12 && cuts.length === 2) cuts.splice(cuts[0].bays.length <= cuts[1].bays.length ? 1 : 0, 1);
+  return out.concat(cuts);
+}
+
+function trapezoidBays(rings) {
+  const ys0 = rings.flat().map(p => p.y).sort((a, b) => a - b);
+  const ys = [];
+  for (const y of ys0) if (!ys.length || y - ys[ys.length - 1] > 0.5) ys.push(y);
+  const edges = [];
+  for (const r of rings) r.forEach((p, i) => { const q = r[(i + 1) % r.length]; if (Math.abs(q.y - p.y) > 1e-9) edges.push([p, q]); });
+  const slabs = [];
+  let id = 0;
+  for (let k = 0; k + 1 < ys.length; k++) {
+    const ylo = ys[k], yhi = ys[k + 1], ym = (ylo + yhi) / 2;
+    const xs = [];
+    for (const [a, b] of edges) {
+      if (Math.min(a.y, b.y) < ym && Math.max(a.y, b.y) > ym) {
+        const f = y => a.x + (y - a.y) * (b.x - a.x) / (b.y - a.y);
+        xs.push({ m: f(ym), b: f(ylo), t: f(yhi) });
+      }
+    }
+    xs.sort((p, q) => p.m - q.m);
+    const traps = [];
+    for (let i = 0; i + 1 < xs.length; i += 2) {
+      traps.push({ id: id++, k, ylo, yhi, xlb: xs[i].b, xlt: xs[i].t, xrb: xs[i + 1].b, xrt: xs[i + 1].t });
+    }
+    slabs.push(traps);
+  }
+  const all = slabs.flat();
+  const parent = all.map((_, i) => i);
+  const find = i => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+  for (let k = 0; k + 1 < slabs.length; k++) {
+    for (const T of slabs[k]) {
+      const ups = slabs[k + 1].filter(U => U.xlb < T.xrt - 1 && U.xrb > T.xlt + 1);
+      if (ups.length !== 1) continue;
+      const U = ups[0];
+      const downs = slabs[k].filter(S => S.xrt > U.xlb + 1 && S.xlt < U.xrb - 1);
+      if (downs.length === 1 && Math.abs(T.xlt - U.xlb) < 1 && Math.abs(T.xrt - U.xrb) < 1) parent[find(U.id)] = find(T.id);
+    }
+  }
+  const groups = new Map();
+  for (const T of all) { const g = find(T.id); if (!groups.has(g)) groups.set(g, []); groups.get(g).push(T); }
+  const out = [];
+  for (const g of [...groups.keys()].sort((a, b) => a - b)) {
+    const st = groups.get(g).sort((a, b) => a.k - b.k);
+    const ring = [{ x: st[0].xlb, y: st[0].ylo }];
+    for (const T of st) ring.push({ x: T.xlt, y: T.yhi });
+    for (let i = st.length - 1; i >= 0; i--) { ring.push({ x: st[i].xrt, y: st[i].yhi }); ring.push({ x: st[i].xrb, y: st[i].ylo }); }
+    const r = cleanRing(ring, 1);
+    if (r.length >= 3 && Math.abs(ringArea(r)) > 1e3) out.push(orientRing(r, true));
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Layout for one decomposition: bays largest first, each bay picks its best row-set variant.
+
+function layoutDecomposition(F, dec, R, prefs, pattern, grid) {
+  const bays = dec.bays;
+  // assign samples to bays
+  const per = bays.map(() => ({ lat: [], bnd: [], wall: [] }));
+  const assign = (s, key) => {
+    let bi = -1, inside = false;
+    for (let i = 0; i < bays.length; i++) {
+      const b = bays[i].bb;
+      if (s.vx < b.x0 - 1 || s.vx > b.x1 + 1 || s.vy < b.y0 - 1 || s.vy > b.y1 + 1) continue;
+      if (pointInRing({ x: s.vx, y: s.vy }, bays[i].ring)) { bi = i; inside = true; break; }
+    }
+    if (bi < 0) {
+      let bd = Infinity;
+      for (let i = 0; i < bays.length; i++) {
+        const r = bays[i].ring;
+        for (let k = 0; k < r.length; k++) { const d = distPointSeg({ x: s.vx, y: s.vy }, r[k], r[(k + 1) % r.length]); if (d < bd) { bd = d; bi = i; } }
+      }
+    }
+    per[bi][key].push({ s, bay: bi, inside });
+  };
+  for (const s of F.lat) assign(s, 'lat');
+  for (const s of F.bnd) assign(s, 'bnd');
+  for (const s of F.wall) assign(s, 'wall');
+
+  const order = bays.map((b, i) => i).sort((a, b) => (bays[b].area - bays[a].area) || (a - b));
+  const placedCov = F.locked.slice();
+  const placedSp = F.locked.concat(F.neighbours);
+  const heads = F.locked.slice();
+  let unresolved = [], gapFill = 0, cost = 0, rowCount = 0;
+  const alignXs = [];
+  for (const bi of order) {
+    const res = layoutBay(F, bays[bi], bi, per[bi], { R, prefs, pattern, grid, placedCov, placedSp, alignXs });
+    for (const h of res.heads) { heads.push(h); placedCov.push(h); placedSp.push(h); alignXs.push(h.x); }
+    unresolved = unresolved.concat(res.unresolved);
+    gapFill += res.gapFill; cost += res.cost; rowCount += res.rows;
+  }
+  // H4 self-check (max spacing to nearest visible peer) — an engine claim the oracle will verify.
+  const h4 = [];
+  const own = heads;
+  for (const h of own) {
+    if (h.kind === 'locked') continue;
+    let nn = Infinity, any = false;
+    for (const g of own.concat(F.neighbours)) {
+      if (g === h) continue;
+      const d = Math.hypot(g.x - h.x, g.y - h.y);
+      if (d >= nn) continue;
+      if (F.idx.visible(h, g)) { any = true; nn = d; }
+    }
+    if (any && nn > R.Smax + TOL) h4.push(h);
+  }
+  return { heads, unresolved, gapFill, cost, h4, rowCount };
+}
+
+function layoutBay(F, bay, bi, samples, ctx) {
+  const variants = rowVariants(F, bay, ctx);
+  const modes = bay.fast ? [false] : [false, true];
+  const all = [];
+  for (const rows of variants) for (const defer of modes) {
+    if (defer && !all[all.length - 1].sawShadow) continue;   // identical to the run without deferral
+    const res = layoutRows(F, bay, bi, samples, rows, { ...ctx, defer });
+    if (DEBUG) DEBUG({ frameDeg: Math.round(F.theta * 180 / Math.PI), bay: bi, rows: rows.map(Math.round), defer, heads: res.heads.length, unresolved: res.unresolved.length, unresAt: res.unresolved.slice(0, 3).map(p => [Math.round(p.x), Math.round(p.y), p.t]) });
+    all.push(res);
+  }
+  if (!all.length) return { heads: [], unresolved: samples.lat.map(o => o.s), gapFill: 0, cost: 0, rows: 0 };
+  all.sort(cmpBay);
+  if (all[0].unresolved.length) {
+    // only the most promising layouts get gap-fill heads
+    const top = all.slice(0, 3).map(r => applyGapFill(F, bay, bi, samples, r, ctx));
+    all.splice(0, 3, ...top);
+    all.sort(cmpBay);
+  }
+  return all[0];
+}
+function cmpBay(a, b) {
+  return (a.unresolved.length - b.unresolved.length) || (a.heads.length - b.heads.length) ||
+    (a.gapFill - b.gapFill) || (a.cost - b.cost);
+}
+
+function rowVariants(F, bay, ctx) {
+  const { R, prefs } = ctx, grid = F.grid;
+  const y0 = bay.bb.y0, y1 = bay.bb.y1, H = y1 - y0;
+  let m = Math.max(1, Math.ceil(H / R.Smax - 1e-9));
+  while (H / (2 * m) > R.Wmax + TOL) m++;
+  const out = [];
+  const push = rows => { if (!out.some(o => o.length === rows.length && o.every((y, i) => Math.abs(y - rows[i]) < 0.5))) out.push(rows); };
+  const okD = rows => rows.every((y, i) => i === 0 || (rows[i] - rows[i - 1] >= R.Smin - TOL && rows[i] - rows[i - 1] <= R.Smax + TOL));
+  for (let k = 0; k < 3; k++) {
+    const mm = m + k;
+    if (mm > 1 && H / mm < R.Smin - TOL) break;
+    const uni = Array.from({ length: mm }, (_, i) => y0 + (i + 0.5) * H / mm);
+    if (!grid || grid.mode !== 'required') push(uni);
+    if (mm > 2) {
+      // edge rows pulled out to Wmax: interior rows bunch up (helps rows see both faces of columns)
+      const o = R.Wmax - 1, D = (H - 2 * o) / (mm - 1);
+      if (D >= R.Smin && D <= R.Smax) push(Array.from({ length: mm }, (_, i) => y0 + o + i * D));
+    }
+    if (prefs.wallDist && mm > 1) {
+      const o = prefs.wallDist, D = (H - 2 * o) / (mm - 1);
+      if (D >= R.Smin && D <= R.Smax && o <= D / 2 + TOL) push(Array.from({ length: mm }, (_, i) => y0 + o + i * D));
+    }
+    if (grid) {
+      const snapped = [];
+      for (const y of uni) {
+        const j = Math.round((y - grid.oy) / grid.py - 0.5);
+        let best = null;
+        for (const jj of [j - 1, j, j + 1]) {
+          const ys = grid.oy + (jj + 0.5) * grid.py;
+          if (ys <= y0 + R.Wmin || ys >= y1 - R.Wmin) continue;
+          if (!best || Math.abs(ys - y) < Math.abs(best - y)) best = ys;
+        }
+        if (best != null && !snapped.some(v => Math.abs(v - best) < 1)) snapped.push(best);
+      }
+      if (snapped.length === mm && okD(snapped)) push(snapped);
+    }
+  }
+  return out;
+}
+
+// --- Row sweep for one bay and one row set ----------------------------------------------------
+
+function layoutRows(F, bay, bi, samples, rows, ctx) {
+  const { R, prefs, pattern } = ctx;
+  const m = rows.length;
+  const y0 = bay.bb.y0, y1 = bay.bb.y1;
+  const lo = rows.map((y, j) => (j === 0 ? y0 : (rows[j - 1] + y) / 2));
+  const hi = rows.map((y, j) => (j === m - 1 ? y1 : (y + rows[j + 1]) / 2));
+  const bandOf = y => { for (let j = 0; j < m - 1; j++) if (y < hi[j]) return j; return m - 1; };
+
+  const info = rows.map((y, j) => {
+    const d = Math.max(y - lo[j], hi[j] - y);
+    const Srect = d < R.Rc ? 2 * Math.sqrt(R.Rc * R.Rc - d * d) : 0;
+    const S = Math.min(R.Smax, Srect, R.Amax / (2 * Math.max(d, 1)));
+    const runs = rowRuns(bay, y);
+    const clean = cleanIntervals(bay, runs, lo[j], hi[j]);
+    return { y, d, Srect, S, runs, clean, base: rowCandidates(F, bay, y, runs, R, prefs) };
+  });
+
+  // bucket samples by band; drop lattice samples dominated inside clean columns
+  const bands = rows.map(() => []);
+  for (const o of samples.lat) {
+    const j = bandOf(o.s.y), I = info[j];
+    const iv = findIv(I.clean, o.s.x);
+    if (iv) {
+      const iyLo = Math.ceil((lo[j] - 50) / LAT - 1e-9);
+      const iyHi = j === m - 1 ? Math.floor((hi[j] - 50) / LAT + 1e-9) : Math.ceil((hi[j] - 50) / LAT - 1e-9) - 1;
+      if (o.s.iy !== iyLo && o.s.iy !== iyHi) continue;
+    }
+    bands[j].push({ o, iv });
+  }
+  for (const o of samples.bnd) { const j = bandOf(o.s.y); bands[j].push({ o, iv: findIv(info[j].clean, o.s.x) }); }
+  for (const o of samples.wall) { const j = bandOf(o.s.y); bands[j].push({ o, iv: null }); }
+  for (let j = 0; j < m; j++) {
+    for (const iv of info[j].clean) for (const x of [iv[0], iv[1]]) for (const y of [lo[j] + 1, hi[j] - 1]) {
+      if (hi[j] - lo[j] < 3 || !pointInRegion({ x, y }, F.outer, F.holes)) continue;
+      bands[j].push({ o: { s: { t: 3, x, y, vx: x, vy: y }, inside: true }, iv });
+    }
+  }
+
+  const heads = [];
+  const unresolved = [];
+  const cov = new HeadGrid(ctx.placedCov, R.Rc);
+  let carry = [], cost = 0, prevRowXs = null, prevS = 0, row0 = null, row0S = 0, sawShadow = false;
+  for (let j = 0; j < m; j++) {
+    const I = info[j];
+    const spHeads = ctx.placedSp.concat(heads);
+    // targets for alignment / stagger
+    let targets = [], restrict = false;
+    if (pattern === 'staggered' && row0 && row0.length) {
+      // staggered (§3.10): odd rows on the half-offset lattice of the first row, even rows on it;
+      // heads beyond the lattice span are free (end heads near walls)
+      targets = j % 2 ? staggerTargets(row0, row0S) : row0.slice();
+      restrict = true;
+    } else if (prevRowXs && prevRowXs.length) targets = prevRowXs.slice();
+    else if (pattern !== 'staggered') targets = ctx.alignXs.filter(x => x >= bay.bb.x0 && x <= bay.bb.x1);
+    let cands = finalCandidates(F, bay, I, targets, spHeads, R);
+    if (restrict && targets.length) {
+      const tmin = targets[0], tmax = targets[targets.length - 1];
+      const keep = cands.filter(c => c.x < tmin - 1 || c.x > tmax + 1 || targets.some(t => Math.abs(t - c.x) < 1));
+      if (keep.length) cands = keep;
+    }
+
+    const items = bands[j].map(b => ({ o: b.o, iv: b.iv, own: true })).concat(carry.map(o => ({ o, iv: null, own: false })));
+    // look-ahead: samples of the next band the next row cannot reach at all are served here
+    if (j + 1 < m) {
+      const N = info[j + 1];
+      for (const b of bands[j + 1]) {
+        if (b.o.s.t === 3) continue;
+        const r = demandRange(F, bay, bi, b.o, null, N, N.base, R, true);
+        if (!r) items.push({ o: b.o, iv: null, own: false, pulled: true });
+      }
+    }
+    carry = [];
+    const demands = [], dItems = [];
+    for (const it of items) {
+      if (satisfied(F, bay, bi, it.o, cov, R)) continue;
+      const r = demandRange(F, bay, bi, it.o, it.own ? it.iv : null, I, cands, R, false);
+      if (!r) {
+        if (it.pulled) continue;               // stays with its own band
+        if (j + 1 < m) carry.push(it.o); else unresolved.push(it.o);
+        continue;
+      }
+      if (r.shadowed) sawShadow = true;
+      if (r.shadowed && ctx.defer && j + 1 < m && !it.pulled) {
+        // partly in a wall's shadow from this row: let the next row serve it when it can
+        const N = info[j + 1];
+        if (demandRange(F, bay, bi, it.o, null, N, N.base, R, true)) { carry.push(it.o); continue; }
+      }
+      demands.push(r); dItems.push(it);
+    }
+    let sol = stabDP(cands, demands, I, R, prefs, targets, pattern, F.grid);
+    // Demands that cannot all be met on this row (two narrow windows closer than Smin): hand the
+    // narrowest on to the next row (or report it) and solve again. Bounded.
+    if (!sol && DEBUG) DEBUG({ dpFail: j, y: I.y, S: I.S, n: cands.length, cx: cands.map(c => Math.round(c.x) + ":" + c.seg).join(" ").slice(0, 600), dem: demands.slice(0, 400).map(([a, b]) => Math.round(cands[a].x) + "-" + Math.round(cands[b].x)).filter((v, i, arr) => arr.indexOf(v) === i).join(" ") });
+    for (let tries = 0; !sol && demands.length && tries < 40; tries++) {
+      let k = 0;
+      for (let i = 1; i < demands.length; i++) if (demands[i][1] - demands[i][0] < demands[k][1] - demands[k][0]) k = i;
+      const it = dItems[k];
+      demands.splice(k, 1); dItems.splice(k, 1);
+      if (!it.pulled) (j + 1 < m ? carry : unresolved).push(it.o);
+      sol = stabDP(cands, demands, I, R, prefs, targets, pattern, F.grid);
+    }
+    if (!sol) {
+      for (const it of dItems) if (!it.pulled) (j + 1 < m ? carry : unresolved).push(it.o);
+      prevRowXs = []; continue;
+    }
+    cost += sol.cost;
+    const xs = [];
+    for (const k of sol.idx) { const c = cands[k]; const h = { x: c.x, y: I.y, bay: bi, row: j, kind: 'row' }; heads.push(h); cov.add(h); xs.push(c.x); }
+    prevRowXs = xs; prevS = I.S;
+    if (!row0 && xs.length) { row0 = xs.slice(); row0S = I.S; }
+  }
+
+  // gap-fill (§3.4 step 6): bounded, labelled exceptions
+  const rest = unresolved.filter(o => !satisfied(F, bay, bi, o, cov, R));
+  return { heads, rest, unresolved: rest.map(o => o.s), cov, gapFill: 0, cost, rows: m, sawShadow };
+}
+
+// gap-fill (§3.4 step 6): bounded, labelled exceptions, applied to a finished row layout
+function applyGapFill(F, bay, bi, samples, res, ctx) {
+  const { R } = ctx;
+  let rest = res.rest, gapFill = 0;
+  const heads = res.heads.slice();
+  for (let it = 0; it < MAX_GAPFILL && rest.length; it++) {
+    const h = bestGapFill(F, bay, bi, samples, rest, ctx.placedSp.concat(heads), R);
+    if (!h) break;
+    const g = { ...h, bay: bi, row: 'g', kind: 'gapFill' };
+    heads.push(g);
+    gapFill++;
+    const one = new HeadGrid([g], R.Rc);
+    rest = rest.filter(o => !satisfied(F, bay, bi, o, one, R));
+  }
+  return { ...res, heads, rest, unresolved: rest.map(o => o.s), gapFill, cost: res.cost + gapFill * 50 };
+}
+
+// Half-offset lattice of a row: midpoints of its consecutive heads. Positions beyond the span are
+// left free so end heads can sit within Wmax of the walls.
+function staggerTargets(xs, S) {
+  const s = xs.slice().sort((a, b) => a - b);
+  const out = [];
+  for (let i = 0; i + 1 < s.length; i++) if (s[i + 1] - s[i] <= S + 1) out.push((s[i] + s[i + 1]) / 2);
+  return out;
+}
+
+function rowRuns(bay, y) {
+  const base = ringRowIntervals(bay.ring, y);
+  const cuts = bay.holes.flatMap(h => ringRowIntervals(h, y));
+  return subtractIntervals(base, cuts);
+}
+
+// x-intervals where the whole band [lo, hi] above/below the row is free of walls.
+function cleanIntervals(bay, runs, lo, hi) {
+  const a = lo + 0.5, b = hi - 0.5;
+  const blocked = [];
+  for (const r of [bay.ring, ...bay.holes]) {
+    for (let i = 0; i < r.length; i++) {
+      const p = r[i], q = r[(i + 1) % r.length];
+      const ylo = Math.min(p.y, q.y), yhi = Math.max(p.y, q.y);
+      if (yhi <= a || ylo >= b) continue;
+      if (Math.abs(q.y - p.y) < 1e-9) { blocked.push([Math.min(p.x, q.x), Math.max(p.x, q.x)]); continue; }
+      const f = y => p.x + (y - p.y) * (q.x - p.x) / (q.y - p.y);
+      const xa = f(Math.max(ylo, a)), xb = f(Math.min(yhi, b));
+      blocked.push([Math.min(xa, xb), Math.max(xa, xb)]);
+    }
+  }
+  return subtractIntervals(runs, mergeIntervals(blocked).map(([u, v]) => [u - 1e-6, v + 1e-6]));
+}
+function findIv(ivs, x) { for (const iv of ivs) if (x >= iv[0] && x <= iv[1]) return iv; return null; }
+
+function rowCandidates(F, bay, y, runs, R, prefs) {
+  const out = [];
+  const need = R.Wmin + 1;
+  runs.forEach(([a, b], ri) => {
+    const xs = [];
+    for (let x = Math.ceil(a / CSTEP) * CSTEP; x <= b; x += CSTEP) xs.push(x);
+    const L = b - a;
+    const n0 = Math.max(1, Math.ceil(L / R.Smax - 1e-9));
+    for (let n = n0; n <= n0 + 2; n++) for (let k = 0; k < n; k++) xs.push(a + (k + 0.5) * L / n);
+    if (prefs.wallDist) {
+      const o = prefs.wallDist;
+      for (let n = n0; n <= n0 + 2; n++) for (let k = 0; k < n; k++) xs.push(n === 1 ? a + L / 2 : a + o + k * (L - 2 * o) / (n - 1));
+    }
+    xs.push(a + need, b - need);
+    if (F.grid) {
+      const i0 = Math.ceil((a - F.grid.ox) / F.grid.px - 0.5), i1 = Math.floor((b - F.grid.ox) / F.grid.px - 0.5);
+      for (let i = i0; i <= i1; i++) xs.push(F.grid.ox + (i + 0.5) * F.grid.px);
+    }
+    for (const x of xs) {
+      if (x < a || x > b) continue;
+      const p = { x, y };
+      if (!pointInRegion(p, F.outer, F.holes)) continue;
+      if (F.idx.clearance(p, need + 1) < need) continue;
+      out.push({ x, y, run: ri, stop: F.grid ? isStop(F.grid, x, y) : false });
+    }
+  });
+  out.sort((p, q) => p.x - q.x);
+  const ded = [];
+  for (const c of out) {
+    const l = ded[ded.length - 1];
+    if (l && Math.abs(l.x - c.x) < 1) { l.stop = l.stop || c.stop; continue; }
+    ded.push(c);
+  }
+  return ded;
+}
+function isStop(g, x, y) {
+  const fx = (x - g.ox) / g.px - 0.5, fy = (y - g.oy) / g.py - 0.5;
+  return Math.abs(fx - Math.round(fx)) * g.px < 1 && Math.abs(fy - Math.round(fy)) * g.py < 1;
+}
+
+function finalCandidates(F, bay, I, targets, spHeads, R) {
+  let list = I.base;
+  if (targets.length) {
+    const extra = [];
+    const need = R.Wmin + 1;
+    for (const x of targets) {
+      const ri = I.runs.findIndex(([a, b]) => x >= a && x <= b);
+      if (ri < 0) continue;
+      const p = { x, y: I.y };
+      if (!pointInRegion(p, F.outer, F.holes) || F.idx.clearance(p, need + 1) < need) continue;
+      extra.push({ x, y: I.y, run: ri, stop: F.grid ? isStop(F.grid, x, I.y) : false });
+    }
+    if (extra.length) {
+      list = list.concat(extra).sort((p, q) => p.x - q.x);
+      const ded = [];
+      for (const c of list) { const l = ded[ded.length - 1]; if (l && Math.abs(l.x - c.x) < 0.5) continue; ded.push(c); }
+      list = ded;
+    }
+  }
+  const req = F.grid && F.grid.mode === 'required';
+  const smin = R.Smin + TOL;
+  const out = [];
+  let seg = 0, last = null, excludedSince = false;
+  for (const c of list) {
+    if (req && !c.stop) continue;
+    let bad = false;
+    for (const h of spHeads) {
+      const dx = h.x - c.x, dy = h.y - c.y;
+      if (dx * dx + dy * dy < smin * smin && F.idx.visible(c, h)) { bad = true; break; }
+    }
+    if (bad) { excludedSince = true; continue; }
+    if (!last || last.run !== c.run || excludedSince || c.x - last.x > (req ? F.grid.px + 1 : 110)) seg++;
+    out.push({ ...c, seg });
+    last = c; excludedSince = false;
+  }
+  return out;
+}
+
+// Is sample s already served by one of `heads`?
+function satisfied(F, bay, bi, o, grid, R) {
+  const s = o.s;
+  if (s.t === 2) {
+    const r = R.Rc - MU_WALL, r2 = r * r;
+    return grid.near(s.x, s.y, h => {
+      const dx = h.x - s.x, dy = h.y - s.y;
+      if (dx * dx + dy * dy > r2) return false;
+      if (Math.abs(s.nx * h.x + s.ny * h.y - s.c) > R.Wmax + TOL) return false;
+      return visibleFrom(F, bay, bi, h, o);
+    });
+  }
+  const r = R.Rc - MU_COV, r2 = r * r;
+  return grid.near(s.x, s.y, h => {
+    const dx = h.x - s.x, dy = h.y - s.y;
+    if (dx * dx + dy * dy > r2) return false;
+    return visibleFrom(F, bay, bi, h, o);
+  });
+}
+function visibleFrom(F, bay, bi, h, o) {
+  if (bay.fast && h.bay === bi && o.inside) return true;
+  return F.idx.visible(h, { x: o.s.vx, y: o.s.vy });
+}
+
+// Uniform grid over heads, cell = Rc, so any head within reach is in the 3 x 3 neighbourhood.
+class HeadGrid {
+  constructor(heads, cell) { this.cell = cell; this.map = new Map(); for (const h of heads) this.add(h); }
+  add(h) {
+    const k = Math.floor(h.x / this.cell) * 100003 + Math.floor(h.y / this.cell);
+    let a = this.map.get(k); if (!a) this.map.set(k, a = []); a.push(h);
+  }
+  near(x, y, fn) {
+    const i0 = Math.floor(x / this.cell), j0 = Math.floor(y / this.cell);
+    for (let i = i0 - 1; i <= i0 + 1; i++) for (let j = j0 - 1; j <= j0 + 1; j++) {
+      const a = this.map.get(i * 100003 + j); if (!a) continue;
+      for (const h of a) if (fn(h)) return true;
+    }
+    return false;
+  }
+}
+
+// Demand of sample s on row I as a candidate index range [a, b], or null when no candidate serves it.
+function demandRange(F, bay, bi, o, iv, I, C, R, probeOnly) {
+  if (!C.length) return null;
+  const s = o.s;
+  const y = I.y;
+  let ra = null;
+  if (iv && s.t !== 2) {
+    const h = I.Srect / 2 - TOL;
+    ra = idxRange(C, Math.max(iv[0], s.x - h), Math.min(iv[1], s.x + h));
+    // unclipped rect window is at least as wide as the circle window: skip the sight-line work
+    if (ra && s.x - h >= iv[0] && s.x + h <= iv[1] && Math.abs(s.y - y) >= I.d - LAT) return ra;
+  }
+  let lo, hi;
+  if (s.t === 2) {
+    const r = R.Rc - MU_WALL, dy = s.y - y;
+    if (Math.abs(dy) >= r) return ra;
+    const hw = Math.sqrt(r * r - dy * dy);
+    lo = s.x - hw; hi = s.x + hw;
+    const W = R.Wmax + TOL * 0.6;
+    if (Math.abs(s.nx) < 1e-9) { if (Math.abs(s.ny * y - s.c) > W) return null; }
+    else {
+      const u = (s.c - W - s.ny * y) / s.nx, v = (s.c + W - s.ny * y) / s.nx;
+      lo = Math.max(lo, Math.min(u, v)); hi = Math.min(hi, Math.max(u, v));
+    }
+  } else {
+    const r = R.Rc - MU_COV, dy = s.y - y;
+    if (Math.abs(dy) < r) { const hw = Math.sqrt(r * r - dy * dy); lo = s.x - hw; hi = s.x + hw; }
+  }
+  let ca = null;
+  if (lo !== undefined && hi >= lo) {
+    const rg = idxRange(C, lo, hi);
+    if (rg) ca = visibleRun(F, bay, bi, o, C, rg, probeOnly);
+  }
+  if (ra && ca) {
+    if (ca[0] <= ra[1] + 1 && ra[0] <= ca[1] + 1) return [Math.min(ra[0], ca[0]), Math.max(ra[1], ca[1])];
+    return ra;
+  }
+  return ra || ca;
+}
+
+function idxRange(C, lo, hi) {
+  if (hi < lo) return null;
+  let a = 0, b = C.length;
+  while (a < b) { const m = (a + b) >> 1; if (C[m].x < lo - 1e-9) a = m + 1; else b = m; }
+  const first = a;
+  a = first; b = C.length;
+  while (a < b) { const m = (a + b) >> 1; if (C[m].x <= hi + 1e-9) a = m + 1; else b = m; }
+  const last = a - 1;
+  return first <= last ? [first, last] : null;
+}
+
+// Candidates in [a, b] that see the sample, as the contiguous run nearest to the sample's x.
+// Visibility along the row line is computed once per sample as the complement of the "shadows"
+// that wall edges cast from the sample onto the row line (closed shadows: grazing blocks).
+function visibleRun(F, bay, bi, o, C, [a, b], probeOnly) {
+  const s = o.s;
+  const sv = { x: s.vx, y: s.vy };
+  if (bay.fast && o.inside) return [a, b];
+  const r = C[a].y, dy = r - sv.y;
+  const xa = Math.min(C[a].x, sv.x) - 1, xb = Math.max(C[b].x, sv.x) + 1;
+  const sh = [];
+  const BIG = 1e12;
+  if (Math.abs(dy) < 1e-6) {
+    F.idx.forBox(xa, r - 1, xb, r + 1, e => {
+      if (e.a.y === e.b.y || (e.a.y - r) * (e.b.y - r) > 0) return;
+      const x = e.a.x + (r - e.a.y) * (e.b.x - e.a.x) / (e.b.y - e.a.y);
+      sh.push(x < sv.x ? [-BIG, x] : [x, BIG]);
+    });
+  } else {
+    const ylo = Math.min(sv.y, r), yhi = Math.max(sv.y, r);
+    const proj = P => {
+      const h = P.y - sv.y;
+      if (Math.abs(h) < 1e-9) return P.x >= sv.x ? BIG : -BIG;
+      return sv.x + (P.x - sv.x) * dy / h;
+    };
+    F.idx.forBox(xa, ylo, xb, yhi, e => {
+      const p = e.a, q = e.b;
+      let t0 = 0, t1 = 1;
+      if (Math.abs(q.y - p.y) < 1e-12) { if (p.y <= ylo || p.y >= yhi) return; }
+      else {
+        const u = (ylo - p.y) / (q.y - p.y), v = (yhi - p.y) / (q.y - p.y);
+        t0 = Math.max(0, Math.min(u, v)); t1 = Math.min(1, Math.max(u, v));
+        if (t0 >= t1) return;
+      }
+      const P1 = { x: p.x + t0 * (q.x - p.x), y: p.y + t0 * (q.y - p.y) };
+      const P2 = { x: p.x + t1 * (q.x - p.x), y: p.y + t1 * (q.y - p.y) };
+      const X1 = proj(P1), X2 = proj(P2);
+      sh.push([Math.min(X1, X2), Math.max(X1, X2)]);
+    });
+  }
+  const shadows = mergeIntervals(sh);
+  const free = k => { const x = C[k].x; for (const [u, v] of shadows) { if (x < u) return true; if (x <= v) return false; } return true; };
+  let c0 = a;
+  { let lo = a, hi = b; while (lo < hi) { const m = (lo + hi) >> 1; if (C[m].x < s.x) lo = m + 1; else hi = m; } c0 = lo; }
+  if (c0 > a && Math.abs(C[c0 - 1].x - s.x) < Math.abs(C[c0].x - s.x)) c0--;
+  const vis = free;
+  let start = -1;
+  for (let d = 0; c0 - d >= a || c0 + d <= b; d++) {
+    if (c0 - d >= a && vis(c0 - d)) { start = c0 - d; break; }
+    if (d > 0 && c0 + d <= b && vis(c0 + d)) { start = c0 + d; break; }
+  }
+  if (start < 0) return null;
+  if (probeOnly) return [start, start];
+  let l = start, rr = start;
+  while (l - 1 >= a && vis(l - 1)) l--;
+  while (rr + 1 <= b && vis(rr + 1)) rr++;
+  const out = [l, rr];
+  if (l > a || rr < b) out.shadowed = true;
+  return out;
+}
+
+// --- Exact 1-D stabbing DP (§3.4 step 5) ------------------------------------------------------
+// Candidates sorted by x; each demand is an index range that must contain a head. A transition
+// i -> k is valid iff no demand lies strictly between i and k, and (same visible run) the gap is
+// within [Smin, S_row] for the same segment, >= Smin otherwise. Objective: (count, cost).
+
+function stabDP(C, demands, I, R, prefs, targets, pattern, grid) {
+  if (!demands.length) return { idx: [], cost: 0 };
+  const n = C.length;
+  if (!n) return null;
+  const INF = 1 << 30;
+  const suf = new Int32Array(n + 1).fill(INF);
+  let maxA = -1;
+  for (const [a, b] of demands) { if (b < suf[a]) suf[a] = b; if (a > maxA) maxA = a; }
+  for (let i = n - 1; i >= 0; i--) if (suf[i + 1] < suf[i]) suf[i] = suf[i + 1];
+  const runs = I.runs;
+  const sp = prefs.spacing, wp = prefs.wallDist;
+  const gapCost = g => (sp ? (g - sp) ** 2 : g * g) / 1e6;
+  const endCost = e => (wp ? (e - wp) ** 2 : 2 * e * e) / 1e6;
+  const startC = i => endCost(C[i].x - runs[C[i].run][0]);
+  const finC = i => endCost(runs[C[i].run][1] - C[i].x);
+  const tsorted = targets.slice().sort((a, b) => a - b);
+  const node = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    let c = 0;
+    if (tsorted.length) {
+      let dmin = Infinity;
+      for (const t of tsorted) { const d = Math.abs(t - C[i].x); if (d < dmin) dmin = d; }
+      const w = pattern === 'staggered' ? 4 : 0.6;
+      c += w * Math.min(dmin, 600) ** 2 / 1e6;
+    }
+    if (grid && !C[i].stop) c += 4;
+    node[i] = c;
+  }
+  const cnt = new Int32Array(n).fill(INF);
+  const cst = new Float64Array(n).fill(Infinity);
+  const prev = new Int32Array(n).fill(-1);
+  const better = (c1, k1, c2, k2) => c1 < c2 || (c1 === c2 && k1 < k2 - 1e-12);
+  const allMinB = suf[0];
+  for (let i = 0; i < n && i <= allMinB; i++) { cnt[i] = 1; cst[i] = node[i] + startC(i); }
+  const smin = R.Smin - TOL, S = I.S + TOL;
+  for (let i = 0; i < n; i++) {
+    if (cnt[i] >= INF) continue;
+    const lim = suf[i + 1];
+    if (lim >= INF) continue;               // nothing left to the right: ending here is optimal
+    for (let k = i + 1; k <= lim && k < n; k++) {
+      const g = C[k].x - C[i].x;
+      const sameRun = C[k].run === C[i].run;
+      if (sameRun && g < smin) continue;
+      const sameSeg = C[k].seg === C[i].seg;
+      if (sameSeg && g > S) { // jump to the next segment
+        let kk = k; while (kk + 1 <= lim && kk + 1 < n && C[kk + 1].seg === C[i].seg) kk++;
+        k = kk; continue;
+      }
+      const c = cst[i] + node[k] + (sameSeg ? gapCost(g) : finC(i) + startC(k));
+      const ct = cnt[i] + 1;
+      if (better(ct, c, cnt[k], cst[k])) { cnt[k] = ct; cst[k] = c; prev[k] = i; }
+    }
+  }
+  let bi = -1, bc = INF, bcost = Infinity;
+  for (let i = Math.max(0, maxA); i < n; i++) {
+    if (cnt[i] >= INF) continue;
+    const c = cst[i] + finC(i);
+    if (better(cnt[i], c, bc, bcost)) { bi = i; bc = cnt[i]; bcost = c; }
+  }
+  if (bi < 0) return null;
+  const idx = [];
+  for (let k = bi; k >= 0; k = prev[k]) idx.push(k);
+  idx.reverse();
+  return { idx, cost: bcost };
+}
+
+function bestGapFill(F, bay, bi, samples, rest, spHeads, R) {
+  const U = rest.length > 120 ? rest.filter((_, i) => i % Math.ceil(rest.length / 120) === 0) : rest;
+  const need = R.Wmin + 1, smin = R.Smin + TOL, reach = R.Rc - MU_COV;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const o of U) { x0 = Math.min(x0, o.s.x); y0 = Math.min(y0, o.s.y); x1 = Math.max(x1, o.s.x); y1 = Math.max(y1, o.s.y); }
+  const sp = new HeadGrid(spHeads, R.Smin + 1);
+  let best = null, bestN = 0;
+  for (const o of samples.lat) {
+    const p = o.s;
+    if ((p.ix + p.iy) % 2) continue;
+    if (p.x < x0 - reach || p.x > x1 + reach || p.y < y0 - reach || p.y > y1 + reach) continue;
+    if (F.idx.clearance(p, need + 1) < need) continue;
+    if (sp.near(p.x, p.y, h => { const dx = h.x - p.x, dy = h.y - p.y; return dx * dx + dy * dy < smin * smin && F.idx.visible(p, h); })) continue;
+    const one = new HeadGrid([{ x: p.x, y: p.y, bay: bi }], R.Rc);
+    let n = 0;
+    for (const u of U) if (satisfied(F, bay, bi, u, one, R)) n++;
+    if (n > bestN) { bestN = n; best = { x: p.x, y: p.y }; }
+  }
+  return best;
+}
+
+// ---------------------------------------------------------------------------------------------
+
+function fail(code, where, message, at) {
+  return { ok: false, heads: [], notes: null, error: { code, where: at ? [at] : where, outline: where, message } };
+}
+function centroidOf(r) { let x = 0, y = 0; for (const p of r) { x += p.x; y += p.y; } return { x: x / r.length, y: y / r.length }; }
+function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+function lexLess(a, b) { for (let i = 0; i < a.length; i++) { if (a[i] < b[i] - 1e-12) return true; if (a[i] > b[i] + 1e-12) return false; } return false; }
+function round3(v) { return Math.round(v * 1000) / 1000; }
+
+return { setPlacerDebug, placeZone, tileStopAt };
+})();
+</script>
+<script>
+/* ===== ORACLE — independent checker (imports nothing; own kernel, own 100 mm lattice) — src/oracle.js ===== */
+const Oracle = (() => {
+// Independent verification oracle for NZS 4541 head layouts (design §4).
+//
+// INDEPENDENCE RULES: this module imports nothing (not the placer, not its geometry kernel, not
+// the rule module). It receives only the original zone polygon in mm, the heads and the raw rule
+// figures. It never sees frames, rows, bays or the placer's samples. It samples its own lattice
+// (100 mm, phase 37/61 mm from the bbox corner) and its own boundary points (every 50 mm).
+// Exact limits with a 1 mm tolerance, no safety margin.
+
+const TOL_MM = 1;
+const STEP = 100, PHASE_X = 37, PHASE_Y = 61, EDGE_STEP = 50;
+// Trace tolerance: a sample closer than this to a wall is judged for sight lines from a probe point
+// pushed this far into the room, so sub-50 mm tracing artefacts (stair-step pockets) cannot decide
+// visibility. Coverage distance is still measured from the sample itself.
+const TRACE_TOL = 50;
+const COLUMN_MAX_MM = 1000;
+
+// ---- own minimal kernel (deliberately duplicated, written differently) ------------------------
+
+function signedArea(poly) {
+  let s = 0;
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i], b = poly[i === poly.length - 1 ? 0 : i + 1];
+    s += (b.x - a.x) * (b.y + a.y);
+  }
+  return -s / 2;
+}
+
+function insideRing(px, py, poly) {
+  let wn = 0; // winding number
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i], b = poly[(i + 1) % poly.length];
+    if (a.y <= py) {
+      if (b.y > py && (b.x - a.x) * (py - a.y) - (px - a.x) * (b.y - a.y) > 0) wn++;
+    } else if (b.y <= py && (b.x - a.x) * (py - a.y) - (px - a.x) * (b.y - a.y) < 0) wn--;
+  }
+  return wn !== 0;
+}
+
+function segPointDistance(px, py, ax, ay, bx, by) {
+  const vx = bx - ax, vy = by - ay;
+  const len2 = vx * vx + vy * vy;
+  if (len2 === 0) return Math.hypot(px - ax, py - ay);
+  const t = Math.max(0, Math.min(1, ((px - ax) * vx + (py - ay) * vy) / len2));
+  return Math.hypot(px - (ax + t * vx), py - (ay + t * vy));
+}
+
+// Parametric test: does the open segment p->q touch the closed edge e (excluding contact at p or q)?
+function crosses(px, py, qx, qy, e) {
+  const rx = qx - px, ry = qy - py, sx = e.bx - e.ax, sy = e.by - e.ay;
+  const den = rx * sy - ry * sx;
+  if (Math.abs(den) < 1e-12) return false; // parallel / collinear: not a blocker
+  const wx = e.ax - px, wy = e.ay - py;
+  const t = (wx * sy - wy * sx) / den;
+  const u = (wx * ry - wy * rx) / den;
+  return t > 1e-9 && t < 1 - 1e-9 && u >= -1e-12 && u <= 1 + 1e-12;
+}
+
+class EdgeBuckets {
+  constructor(edges, size) {
+    this.edges = edges; this.size = size; this.cells = new Map(); this.seen = new Uint32Array(edges.length); this.tick = 1;
+    edges.forEach((e, k) => {
+      const c0 = Math.floor(Math.min(e.ax, e.bx) / size), c1 = Math.floor(Math.max(e.ax, e.bx) / size);
+      const r0 = Math.floor(Math.min(e.ay, e.by) / size), r1 = Math.floor(Math.max(e.ay, e.by) / size);
+      for (let c = c0; c <= c1; c++) for (let r = r0; r <= r1; r++) {
+        const key = `${c},${r}`;
+        if (!this.cells.has(key)) this.cells.set(key, []);
+        this.cells.get(key).push(k);
+      }
+    });
+  }
+  each(x0, y0, x1, y1, fn) {
+    const s = this.size; this.tick++;
+    for (let c = Math.floor(x0 / s); c <= Math.floor(x1 / s); c++) {
+      for (let r = Math.floor(y0 / s); r <= Math.floor(y1 / s); r++) {
+        const list = this.cells.get(`${c},${r}`);
+        if (!list) continue;
+        for (const k of list) {
+          if (this.seen[k] === this.tick) continue;
+          this.seen[k] = this.tick;
+          if (fn(this.edges[k])) return true;
+        }
+      }
+    }
+    return false;
+  }
+  clearSight(px, py, qx, qy) {
+    return !this.each(Math.min(px, qx), Math.min(py, qy), Math.max(px, qx), Math.max(py, qy), e => crosses(px, py, qx, qy, e));
+  }
+}
+
+// ---- zone model ----------------------------------------------------------------------------------
+
+function buildZone(zone) {
+  const fix = (ring, wantPositive) => {
+    const pts = ring.map(p => ({ x: +p.x, y: +p.y }));
+    return (signedArea(pts) > 0) === wantPositive ? pts : pts.reverse();
+  };
+  const outer = fix(zone.outer, true);
+  const holes = (zone.holes || []).map(h => fix(h, false));
+  const open = zone.openEdges || [];
+  const isOpen = (a, b) => open.some(o =>
+    segPointDistance(a.x, a.y, o.a.x, o.a.y, o.b.x, o.b.y) < 2 && segPointDistance(b.x, b.y, o.a.x, o.a.y, o.b.x, o.b.y) < 2);
+  const walls = [];      // barriers: block sight, carry the wall-distance rule
+  const allEdges = [];
+  // Column = a hole whose largest extent is at most COLUMN_MAX_MM. Columns block spray and need Wmin
+  // clearance, but carry no Wmax rule (founder decision 2026-10-17, option a). Larger holes (shafts,
+  // voids) are real walls.
+  const isColumn = ring => {
+    const xs = ring.map(p => p.x), ys = ring.map(p => p.y);
+    return Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) <= COLUMN_MAX_MM;
+  };
+  const addRing = (ring, outerRing) => {
+    const column = !outerRing && isColumn(ring);
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i], b = ring[(i + 1) % ring.length];
+      const len = Math.hypot(b.x - a.x, b.y - a.y);
+      if (len === 0) continue;
+      const e = { ax: a.x, ay: a.y, bx: b.x, by: b.y, len, open: outerRing && isOpen(a, b), column };
+      // inward unit normal: region lies to the left for a positive outer ring and a negative hole ring
+      e.inx = -(b.y - a.y) / len; e.iny = (b.x - a.x) / len;
+      allEdges.push(e);
+      if (!e.open) walls.push(e);
+    }
+  };
+  addRing(outer, true);
+  holes.forEach(h => addRing(h, false));
+  let area = Math.abs(signedArea(outer));
+  for (const h of holes) area -= Math.abs(signedArea(h));
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const p of outer) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
+  return { outer, holes, walls, allEdges, area, box: { x0, y0, x1, y1 }, buckets: new EdgeBuckets(walls, 1000) };
+}
+
+// Push a probe point along the inward normal of edge e until it is tol mm from that wall, as long
+// as it stays in the room and in sight of where it started.
+function pushInto(Z, x, y, e, tol) {
+  const d0 = Math.abs((x - e.ax) * e.inx + (y - e.ay) * e.iny);
+  for (let t = tol - d0; t > 0.5; t /= 2) {
+    const cx = x + e.inx * t, cy = y + e.iny * t;
+    if (inRegion(Z, cx, cy) && Z.buckets.clearSight(x, y, cx, cy)) return { x: cx, y: cy };
+  }
+  return { x, y };
+}
+function latticeProbe(Z, p) {
+  let best = null, bd = TRACE_TOL;
+  Z.buckets.each(p.x - TRACE_TOL, p.y - TRACE_TOL, p.x + TRACE_TOL, p.y + TRACE_TOL, e => {
+    const d = segPointDistance(p.x, p.y, e.ax, e.ay, e.bx, e.by);
+    if (d < bd) { bd = d; best = e; }
+    return false;
+  });
+  if (best) { const q = pushInto(Z, p.x, p.y, best, TRACE_TOL); p.px = q.x; p.py = q.y; }
+  return p;
+}
+
+function inRegion(Z, x, y) {
+  if (!insideRing(x, y, Z.outer)) return false;
+  for (const h of Z.holes) if (insideRing(x, y, h)) return false;
+  return true;
+}
+
+function figures(ruleset, hazard, reduced) {
+  const f = ruleset.hazards[hazard];
+  const Smax = f.Smax * 1000, Amax = f.Amax * 1e6;
+  return {
+    Smax, Amax, Smin: f.Smin * 1000, Wmin: f.Wmin * 1000,
+    Wmax: (reduced ? f.WmaxReduced : f.Wmax) * 1000,
+    Rc: Math.sqrt(Smax * Smax + (Amax / Smax) * (Amax / Smax)) / 2,
+  };
+}
+
+// ---- main check --------------------------------------------------------------------------------
+
+/**
+ * @param zone {outer, holes?, openEdges?} in mm (original polygon)
+ * @param heads [{id, x, y}] in mm
+ * @param ruleset raw rule set data, hazard 'ELH'|'OH1'|'OH2'|'OH3'
+ * @param opts {neighbours?: [{zone, heads}], reducedWallDist?}
+ */
+function checkZone(zone, heads, ruleset, hazard, opts = {}) {
+  const fig = figures(ruleset, hazard, opts.reducedWallDist);
+  const Z = buildZone(zone);
+  const flags = [];
+  const H = heads.map(h => ({ id: h.id, x: +h.x, y: +h.y }));
+  const nb = (opts.neighbours || []).map(n => ({ Z: buildZone(n.zone), heads: n.heads.map(h => ({ id: h.id, x: +h.x, y: +h.y })) }));
+
+  const see = (a, b) => Z.buckets.clearSight(a.x, a.y, b.x, b.y);
+  const seeAcross = (a, b) => see(a, b) && nb.every(n => n.Z.buckets.clearSight(a.x, a.y, b.x, b.y));
+
+  // head grid for neighbourhood queries
+  const cell = fig.Rc;
+  const grid = new Map();
+  H.forEach((h, i) => {
+    const key = `${Math.floor(h.x / cell)},${Math.floor(h.y / cell)}`;
+    if (!grid.has(key)) grid.set(key, []);
+    grid.get(key).push(i);
+  });
+  const near = (x, y, fn) => {
+    const cx = Math.floor(x / cell), cy = Math.floor(y / cell);
+    for (let i = cx - 1; i <= cx + 1; i++) for (let j = cy - 1; j <= cy + 1; j++) {
+      const list = grid.get(`${i},${j}`);
+      if (list) for (const k of list) if (fn(H[k], k)) return true;
+    }
+    return false;
+  };
+
+  // C6 inside / clearance
+  let minWall = Infinity;
+  for (const h of H) {
+    if (!inRegion(Z, h.x, h.y)) {
+      flags.push({ code: 'OUTSIDE', severity: 'error', headIds: [h.id], where: { x: h.x, y: h.y }, message: 'Head is outside the zone or inside a column/hole.' });
+      continue;
+    }
+    let d = Infinity;
+    for (const e of Z.walls) d = Math.min(d, segPointDistance(h.x, h.y, e.ax, e.ay, e.bx, e.by));
+    minWall = Math.min(minWall, d);
+    if (d < fig.Wmin - TOL_MM) {
+      flags.push({ code: 'WALL_CLEARANCE', severity: 'error', headIds: [h.id], where: { x: h.x, y: h.y }, value: d, limit: fig.Wmin,
+        message: `Head is ${fmtM(d)} from a wall; minimum is ${fmtM(fig.Wmin)}.` });
+    }
+  }
+
+  // samples
+  const lattice = [];
+  const { x0, y0, x1, y1 } = Z.box;
+  let gi = 0;
+  for (let y = y0 + PHASE_Y, gj = 0; y < y1; y += STEP, gj++) {
+    gi = 0;
+    for (let x = x0 + PHASE_X; x < x1; x += STEP, gi++) if (inRegion(Z, x, y)) lattice.push(latticeProbe(Z, { x, y, gi, gj }));
+  }
+  const boundary = [];
+  for (const e of Z.allEdges) {
+    for (let s = 0; s < e.len; s += EDGE_STEP) {
+      const t = s / e.len;
+      const x = e.ax + (e.bx - e.ax) * t, y = e.ay + (e.by - e.ay) * t;
+      // probe point for sight lines: just inside the room (shrinks in acute corners; at a vertex
+      // it also steps along the edge)
+      const ux = (e.bx - e.ax) / e.len, uy = (e.by - e.ay) / e.len;
+      let px = x, py = y;
+      for (let d = 1; d > 1e-4; d /= 3) {
+        const along = s === 0 ? 4 * d : (e.len - s < 4 * d ? -2 * d : 0);
+        const cx = x + e.inx * d + ux * along, cy = y + e.iny * d + uy * along;
+        if (inRegion(Z, cx, cy)) { px = cx; py = cy; break; }
+        const bx = x + e.inx * d * 0.1 + ux * along, by = y + e.iny * d * 0.1 + uy * along; // sliver corners
+        if (along && inRegion(Z, bx, by)) { px = bx; py = by; break; }
+      }
+      const pr = pushInto(Z, px, py, e, TRACE_TOL);
+      boundary.push({ x, y, e, px: pr.x, py: pr.y });
+    }
+  }
+
+  // C1 coverage (lattice + boundary)
+  const reach = fig.Rc + TOL_MM;
+  const covered = p => near(p.x, p.y, h => {
+    const d = Math.hypot(h.x - p.x, h.y - p.y);
+    return d <= reach && see(h, { x: p.px ?? p.x, y: p.py ?? p.y });
+  });
+  const holesL = [];
+  let coveredCount = 0;
+  for (const p of lattice) { if (covered(p)) coveredCount++; else holesL.push(p); }
+  const holesB = boundary.filter(p => !covered(p));
+  const clusters = clusterGaps(holesL, holesB);
+  for (const c of clusters) {
+    flags.push({ code: 'UNCOVERED', severity: 'error', headIds: [], where: c.at, value: c.areaM2,
+      message: `Uncovered area ≈ ${c.areaM2.toFixed(2)} m² (${c.n} sample point${c.n > 1 ? 's' : ''}) — no visible head within ${fmtM(fig.Rc)}.` });
+  }
+
+  // C2 wall distance (perpendicular to the wall line, head visible and within Rc)
+  let worstWall = 0;
+  const wallBad = [];
+  for (const p of boundary) {
+    if (p.e.open || p.e.column) continue;   // Wmax applies to real walls only
+    let best = Infinity;
+    near(p.x, p.y, h => {
+      const d = Math.hypot(h.x - p.x, h.y - p.y);
+      if (d > reach) return false;
+      const perp = Math.abs((h.x - p.e.ax) * p.e.inx + (h.y - p.e.ay) * p.e.iny);
+      if (perp < best && see(h, { x: p.px, y: p.py })) best = perp;
+      return false;
+    });
+    if (best > worstWall) worstWall = best;
+    if (best > fig.Wmax + TOL_MM) wallBad.push({ p, best });
+  }
+  // one flag per run of consecutive failing samples on the same edge
+  for (let i = 0; i < wallBad.length; i++) {
+    const run = [wallBad[i]];
+    while (i + 1 < wallBad.length && wallBad[i + 1].p.e === wallBad[i].p.e) run.push(wallBad[++i]);
+    const mid = run[Math.floor(run.length / 2)];
+    const worst = Math.max(...run.map(r => r.best));
+    flags.push({ code: 'WALL_DIST', severity: 'error', headIds: [], where: { x: mid.p.x, y: mid.p.y }, value: worst, limit: fig.Wmax,
+      message: isFinite(worst)
+        ? `Wall stretch ${(run.length * EDGE_STEP / 1000).toFixed(2)} m long: nearest visible head is ${fmtM(worst)} from the wall line (max ${fmtM(fig.Wmax)}).`
+        : `Wall stretch ${(run.length * EDGE_STEP / 1000).toFixed(2)} m long has no visible head within ${fmtM(fig.Rc)}.` });
+  }
+
+  // C3 / C4 spacing (visible pairs only; neighbours across open edges included)
+  const peers = H.map(h => ({ ...h, own: true })).concat(nb.flatMap(n => n.heads.map(h => ({ ...h, own: false }))));
+  let minSp = Infinity, maxNN = 0;
+  for (let i = 0; i < H.length; i++) {
+    const h = H[i];
+    let nn = Infinity;
+    for (let j = 0; j < peers.length; j++) {
+      if (j === i) continue;
+      const g = peers[j];
+      const d = Math.hypot(g.x - h.x, g.y - h.y);
+      if (d >= nn && d >= fig.Smin) continue;
+      if (!(g.own ? see(h, g) : seeAcross(h, g))) continue;
+      if (d < nn) nn = d;
+      if (d < minSp) minSp = d;
+      if (d < fig.Smin - TOL_MM && (!g.own || j > i)) {
+        flags.push({ code: 'MIN_SPACING', severity: 'error', headIds: [h.id, g.id], where: { x: (h.x + g.x) / 2, y: (h.y + g.y) / 2 }, value: d, limit: fig.Smin,
+          message: `Heads ${fmtM(d)} apart${g.own ? '' : ' (across the open edge to the next zone)'}; minimum is ${fmtM(fig.Smin)}.` });
+      }
+    }
+    if (isFinite(nn)) {
+      maxNN = Math.max(maxNN, nn);
+      if (nn > fig.Smax + TOL_MM) {
+        flags.push({ code: 'MAX_SPACING', severity: 'error', headIds: [h.id], where: { x: h.x, y: h.y }, value: nn, limit: fig.Smax,
+          message: `Nearest visible head is ${fmtM(nn)} away; maximum spacing is ${fmtM(fig.Smax)}.` });
+      }
+    }
+  }
+
+  // C5 area per head (warnings only, founder decision 2). Local cells: lattice points given to the
+  // nearest visible head (own discrete Voronoi, clipped by sight lines).
+  const areaM2 = Z.area / 1e6;
+  const perHead = H.length ? areaM2 / H.length : Infinity;
+  if (H.length && perHead > fig.Amax / 1e6 + 1e-9) {
+    flags.push({ code: 'AREA_ZONE', severity: 'warning', headIds: [], where: centroid(Z.outer), value: perHead, limit: fig.Amax / 1e6,
+      message: `Zone area per head ${perHead.toFixed(2)} m² exceeds ${fig.Amax / 1e6} m².` });
+  }
+  const cellCount = new Array(H.length).fill(0);
+  if (H.length) {
+    for (const p of lattice) {
+      const cand = [];
+      near(p.x, p.y, (h, k) => { cand.push([(h.x - p.x) ** 2 + (h.y - p.y) ** 2, k]); return false; });
+      cand.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+      for (const [, k] of cand) if (see(H[k], p)) { cellCount[k]++; break; }
+    }
+  }
+  let maxLocal = 0;
+  cellCount.forEach((n, k) => {
+    const a = n * STEP * STEP / 1e6;
+    maxLocal = Math.max(maxLocal, a);
+    if (a > fig.Amax / 1e6 * 1.0 + 0.05) {
+      flags.push({ code: 'AREA_LOCAL', severity: 'warning', headIds: [H[k].id], where: { x: H[k].x, y: H[k].y }, value: a, limit: fig.Amax / 1e6,
+        message: `Local cell of this head ≈ ${a.toFixed(1)} m² (over ${fig.Amax / 1e6} m²).` });
+    }
+  });
+
+  if (!H.length) {
+    flags.push({ code: 'NO_HEADS', severity: 'error', headIds: [], where: centroid(Z.outer), message: 'No heads in this zone.' });
+  }
+  if (!ruleset.verified) flags.push({ code: 'RULES_UNVERIFIED', severity: 'warning', headIds: [], message: 'Rule figures are not verified.' });
+
+  const errors = flags.filter(f => f.severity === 'error');
+  return {
+    hazard, ruleSet: { id: ruleset.id, version: ruleset.version, verified: !!ruleset.verified },
+    figures: fig,
+    headCount: H.length,
+    areaM2,
+    areaPerHeadM2: perHead,
+    maxLocalAreaM2: maxLocal,
+    minSpacingM: isFinite(minSp) ? minSp / 1000 : null,
+    maxNNSpacingM: H.length > 1 ? maxNN / 1000 : null,
+    worstWallDistM: isFinite(worstWall) ? worstWall / 1000 : Infinity,
+    minWallDistM: isFinite(minWall) ? minWall / 1000 : null,
+    coverage: lattice.length ? coveredCount / lattice.length : 0,
+    samples: { lattice: lattice.length, boundary: boundary.length },
+    flags,
+    errors: errors.length,
+    warnings: flags.length - errors.length,
+    pass: errors.length === 0,
+  };
+}
+
+// 4-connected clusters of uncovered lattice points; uncovered boundary points join the nearest
+// cluster within 150 mm or form their own.
+function clusterGaps(lat, bnd) {
+  const key = (i, j) => `${i},${j}`;
+  const idx = new Map(lat.map((p, k) => [key(p.gi, p.gj), k]));
+  const comp = new Array(lat.length).fill(-1);
+  const groups = [];
+  for (let k = 0; k < lat.length; k++) {
+    if (comp[k] >= 0) continue;
+    const g = [k]; comp[k] = groups.length;
+    for (let q = 0; q < g.length; q++) {
+      const p = lat[g[q]];
+      for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const n = idx.get(key(p.gi + di, p.gj + dj));
+        if (n !== undefined && comp[n] < 0) { comp[n] = groups.length; g.push(n); }
+      }
+    }
+    groups.push(g.map(i => lat[i]));
+  }
+  for (const b of bnd) {
+    let gi = -1, bd = 150;
+    groups.forEach((g, i) => { for (const p of g) { const d = Math.hypot(p.x - b.x, p.y - b.y); if (d < bd) { bd = d; gi = i; } } });
+    if (gi >= 0) groups[gi].push(b); else groups.push([b]);
+  }
+  return groups.map(g => {
+    let sx = 0, sy = 0; for (const p of g) { sx += p.x; sy += p.y; }
+    const cx = sx / g.length, cy = sy / g.length;
+    let at = g[0], bd = Infinity;
+    for (const p of g) { const d = Math.hypot(p.x - cx, p.y - cy); if (d < bd) { bd = d; at = p; } }
+    const nLat = g.filter(p => p.gi !== undefined).length;
+    return { at: { x: at.x, y: at.y }, n: g.length, areaM2: Math.max(nLat, 1) * STEP * STEP / 1e6 };
+  });
+}
+
+function centroid(r) { let x = 0, y = 0; for (const p of r) { x += p.x; y += p.y; } return { x: x / r.length, y: y / r.length }; }
+function fmtM(mm) { return isFinite(mm) ? `${(mm / 1000).toFixed(3)} m` : '∞'; }
+
+/**
+ * Per-head coverage polygons for the overlay (design §9.5 hook: the overlay draws polygons, so
+ * baffled shapes can drop in later). Visual only — verdicts always come from checkZone.
+ * shape: 'circle' (radius Rc) or 'square' (side Rc·√2, turned to frameRad).
+ */
+function coveragePolygons(zone, heads, ruleset, hazard, shape = 'circle', frameRad = 0, rays = 96) {
+  const fig = figures(ruleset, hazard);
+  const Z = buildZone(zone);
+  return heads.map(h => {
+    const pts = [];
+    for (let k = 0; k < rays; k++) {
+      const a = (k / rays) * Math.PI * 2;
+      const dx = Math.cos(a), dy = Math.sin(a);
+      let r = fig.Rc;
+      if (shape === 'square') {
+        const half = fig.Rc / Math.SQRT2;
+        const lx = Math.abs(dx * Math.cos(frameRad) + dy * Math.sin(frameRad));
+        const ly = Math.abs(-dx * Math.sin(frameRad) + dy * Math.cos(frameRad));
+        r = half / Math.max(lx, ly);
+      }
+      // clip at the first wall hit
+      const qx = h.x + dx * r, qy = h.y + dy * r;
+      Z.buckets.each(Math.min(h.x, qx), Math.min(h.y, qy), Math.max(h.x, qx), Math.max(h.y, qy), e => {
+        const sx = e.bx - e.ax, sy = e.by - e.ay;
+        const den = dx * sy - dy * sx;
+        if (Math.abs(den) < 1e-12) return false;
+        const wx = e.ax - h.x, wy = e.ay - h.y;
+        const t = (wx * sy - wy * sx) / den, u = (wx * dy - wy * dx) / den;
+        if (t > 0 && t < r && u >= 0 && u <= 1) r = t;
+        return false;
+      });
+      pts.push({ x: h.x + dx * r, y: h.y + dy * r });
+    }
+    return { id: h.id, pts };
+  });
+}
+
+return { checkZone, coveragePolygons };
+})();
+</script>
+<script>
+/* ===== Composition layer (stands in for the engine worker) — src/site.js ===== */
+const Site = (() => {
+// Composition layer (stands in for the engine worker): places the zones of one site in order,
+// passing earlier zones' heads as neighbours across open edges, then checks every zone with the
+// independent oracle. Placer and oracle stay unaware of each other.
+
+const { placeZone } = Placer;
+const { checkZone } = Oracle;
+function runSite(zones, ruleset, opts = {}) {
+  const now = opts.now || (() => 0);
+  const lockedById = opts.locked || {};
+  const placed = [];
+  for (const z of zones) {
+    const neighbourHeads = placed.filter(p => p.res.heads.length).flatMap(p => p.res.heads);
+    const t0 = now();
+    const res = placeZone({ ...z, locked: lockedById[z.zoneId] || z.locked, neighbourHeads }, ruleset);
+    const ms = now() - t0;
+    placed.push({ zone: z, res, ms });
+  }
+  for (const p of placed) p.report = checkOne(p, placed, ruleset, now);
+  return placed;
+}
+
+function checkOne(p, all, ruleset, now = () => 0) {
+  const t0 = now();
+  const neighbours = all.filter(q => q !== p).map(q => ({ zone: q.zone, heads: q.res.heads }));
+  const rep = checkZone(p.zone, p.res.heads, ruleset, p.zone.hazard, { neighbours });
+  rep.checkMs = now() - t0;
+  return rep;
+}
+
+return { runSite, checkOne };
+})();
+</script>
+<script>
+/* ===== Demo UI — demo/app.js ===== */
+// Demo UI for the placement spike. Uses the inlined modules: Rules, Zones, Placer, Oracle, Site.
+(() => {
+  const RS = Rules.NZS4541_V1;
+  const now = () => performance.now();
+  const $ = id => document.getElementById(id);
+  const cv = $('cv'), ctx = cv.getContext('2d');
+
+  // ---- state ------------------------------------------------------------------------------------
+  const clone = o => JSON.parse(JSON.stringify(o));
+  const samples = Zones.SAMPLES.map(s => ({ ...clone(s), results: null }));
+  const S = { cur: 0, active: 0, cov: 'circle', drawing: null, drag: null, hover: null, focus: null };
+
+  function cssVar(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+
+  // ---- placement / checking ---------------------------------------------------------------------
+  function runSample(s) {
+    const zones = s.zones.map(z => ({ ...z, locked: z.lockedHeads || [] }));
+    const site = Site.runSite(zones, RS, { now });
+    s.results = site;
+    return site;
+  }
+  function recheck(s) {
+    for (const p of s.results) p.report = Site.checkOne(p, s.results, RS, now);
+  }
+  function statusOf(s) {
+    if (!s.results) return { cls: 'wait', text: '…', icon: '' };
+    if (s.infeasible) {
+      const ok = s.results.every(p => !p.res.ok && p.res.error);
+      return ok ? { cls: 'fail', text: 'no layout', icon: '✕' } : { cls: 'warn', text: 'check', icon: '⚠' };
+    }
+    const err = s.results.reduce((a, p) => a + (p.report ? p.report.errors : 0) + (p.res.ok ? 0 : 1), 0);
+    const warn = s.results.reduce((a, p) => a + (p.report ? p.report.warnings : 0), 0);
+    if (err) return { cls: 'fail', text: 'FAIL', icon: '✕' };
+    if (warn) return { cls: 'warn', text: 'WARN', icon: '⚠' };
+    return { cls: 'ok', text: 'PASS', icon: '✓' };
+  }
+  const headCount = s => (s.results ? s.results.reduce((a, p) => a + p.res.heads.length, 0) : null);
+
+  // ---- list ---------------------------------------------------------------------------------------
+  const GROUPS = { NFR9: 'NFR9 zones', named: 'Named test zones', shapes: 'Shapes & cases', infeasible: 'Infeasible inputs', custom: 'Drawn by you' };
+  function renderList() {
+    const ul = $('list'); ul.textContent = '';
+    let lastGroup = null;
+    samples.forEach((s, i) => {
+      if (s.group !== lastGroup) {
+        lastGroup = s.group;
+        const g = document.createElement('li'); g.className = 'grp'; g.textContent = GROUPS[s.group] || s.group; ul.appendChild(g);
+      }
+      const li = document.createElement('li');
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.setAttribute('aria-current', i === S.cur ? 'true' : 'false');
+      const st = statusOf(s), n = headCount(s);
+      const hz = [...new Set(s.zones.map(z => z.hazard))].join(' + ');
+      b.innerHTML = `<span class="nm"></span><span class="chip ${st.cls}">${st.icon} ${st.text}</span><span class="meta"></span>`;
+      b.querySelector('.nm').textContent = s.name;
+      b.querySelector('.meta').textContent = `${hz} · ${n == null ? '…' : n + ' head' + (n === 1 ? '' : 's')}`;
+      b.addEventListener('click', () => select(i));
+      li.appendChild(b); ul.appendChild(li);
+    });
+  }
+
+  function select(i) {
+    S.cur = i; S.active = 0; S.focus = null;
+    const s = samples[i];
+    if (!s.results) { busy(true); setTimeout(() => { runSample(s); busy(false); refresh(true); }, 20); }
+    refresh(true);
+  }
+  function busy(on) { $('busy').hidden = !on; }
+
+  // ---- controls -----------------------------------------------------------------------------------
+  function activeZone() { return samples[S.cur].zones[S.active]; }
+  function syncControls() {
+    const z = activeZone(); if (!z) return;
+    const f = RS.hazards[z.hazard];
+    $('hazard').value = z.hazard;
+    $('pattern').value = z.pattern || 'rectangular';
+    const sp = $('sp'), wd = $('wd');
+    sp.min = f.Smin * 1000; sp.max = f.Smax * 1000;
+    wd.min = Math.max(100, f.Wmin * 1000); wd.max = f.Wmax * 1000;
+    $('spOn').checked = !!z.prefs?.spacing; $('wdOn').checked = !!z.prefs?.wallDist;
+    sp.value = z.prefs?.spacing || Math.round(f.Smax * 800); wd.value = z.prefs?.wallDist || Math.round(f.Wmax * 600);
+    sp.disabled = !$('spOn').checked; wd.disabled = !$('wdOn').checked;
+    $('spOut').textContent = $('spOn').checked ? (sp.value / 1000).toFixed(2) + ' m' : 'auto';
+    $('wdOut').textContent = $('wdOn').checked ? (wd.value / 1000).toFixed(2) + ' m' : 'auto';
+  }
+  function readControls() {
+    const z = activeZone();
+    z.hazard = $('hazard').value;
+    z.pattern = $('pattern').value;
+    const f = RS.hazards[z.hazard];
+    const sp = $('sp'), wd = $('wd');
+    sp.min = f.Smin * 1000; sp.max = f.Smax * 1000; wd.max = f.Wmax * 1000;
+    z.prefs = { spacing: $('spOn').checked ? +sp.value : null, wallDist: $('wdOn').checked ? +wd.value : null };
+    syncControls();
+  }
+  ['hazard', 'pattern'].forEach(id => $(id).addEventListener('change', () => { readControls(); place(); }));
+  ['spOn', 'wdOn'].forEach(id => $(id).addEventListener('change', () => { readControls(); place(); }));
+  ['sp', 'wd'].forEach(id => {
+    $(id).addEventListener('input', () => { readControls(); });
+    $(id).addEventListener('change', () => { readControls(); place(); });
+  });
+  $('cov').addEventListener('change', e => { S.cov = e.target.value; draw(); });
+  $('place').addEventListener('click', () => place());
+  $('reset').addEventListener('click', () => { samples[S.cur].zones.forEach(z => { z.lockedHeads = []; }); place(); });
+  $('draw').addEventListener('click', () => (S.drawing ? cancelDraw() : startDraw()));
+
+  function place() {
+    const s = samples[S.cur];
+    busy(true);
+    setTimeout(() => { runSample(s); busy(false); refresh(false); }, 20);
+  }
+
+  // ---- view transform -------------------------------------------------------------------------------
+  let view = { s: 0.05, cx: 0, cy: 0, w: 0, h: 0 };
+  function fit() {
+    const r = cv.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    cv.width = Math.round(r.width * dpr); cv.height = Math.round(r.height * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    view.w = r.width; view.h = r.height;
+    let pts;
+    if (S.drawing) pts = [{ x: 0, y: 0 }, { x: 24000, y: 16000 }];
+    else pts = samples[S.cur].zones.flatMap(z => z.outer);
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const p of pts) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
+    const pad = 46;
+    view.s = Math.min((view.w - 2 * pad) / Math.max(x1 - x0, 1000), (view.h - 2 * pad - 20) / Math.max(y1 - y0, 1000));
+    view.cx = (x0 + x1) / 2; view.cy = (y0 + y1) / 2;
+    view.box = { x0, y0, x1, y1 };
+  }
+  const W2S = p => ({ x: view.w / 2 + (p.x - view.cx) * view.s, y: (view.h - 20) / 2 - (p.y - view.cy) * view.s });
+  const S2W = (x, y) => ({ x: view.cx + (x - view.w / 2) / view.s, y: view.cy - (y - (view.h - 20) / 2) / view.s });
+
+  // ---- drawing -------------------------------------------------------------------------------------
+  function path(ring) { ring.forEach((p, i) => { const q = W2S(p); if (i) ctx.lineTo(q.x, q.y); else ctx.moveTo(q.x, q.y); }); ctx.closePath(); }
+
+  function draw() {
+    const C = { bg: cssVar('--bg'), zone: cssVar('--zone'), wall: cssVar('--wall'), hole: cssVar('--hole'), grid: cssVar('--grid'),
+      muted: cssVar('--muted'), fg: cssVar('--fg'), cov: cssVar('--cov'), covLine: cssVar('--cov-line'), head: cssVar('--head'),
+      warn: cssVar('--warn'), danger: cssVar('--danger'), accent: cssVar('--accent'), line: cssVar('--line') };
+    ctx.clearRect(0, 0, view.w, view.h);
+    ctx.fillStyle = C.bg; ctx.fillRect(0, 0, view.w, view.h);
+    drawGrid(C);
+    if (S.drawing) { drawDraft(C); drawScale(C); return; }
+    const s = samples[S.cur];
+    s.zones.forEach((z, zi) => {
+      ctx.beginPath(); path(z.outer); (z.holes || []).forEach(h => path(h));
+      ctx.fillStyle = C.zone; ctx.fill('evenodd');
+      if (z.grid) drawTiles(z, C);
+    });
+    // coverage overlay (per-head polygons from the oracle module; visual only)
+    if (s.results && S.cov !== 'off') {
+      s.results.forEach(p => {
+        if (!p.res.heads.length) return;
+        const frame = (p.res.notes?.frameDeg || 0) * Math.PI / 180;
+        const polys = Oracle.coveragePolygons(p.zone, p.res.heads, RS, p.zone.hazard, S.cov, frame, 72);
+        ctx.fillStyle = C.cov; ctx.strokeStyle = C.covLine; ctx.lineWidth = 0.8;
+        for (const poly of polys) { ctx.beginPath(); path(poly.pts); ctx.fill(); ctx.stroke(); }
+      });
+    }
+    s.zones.forEach((z, zi) => {
+      // holes
+      (z.holes || []).forEach(h => { ctx.beginPath(); path(h); ctx.fillStyle = C.hole; ctx.fill(); ctx.strokeStyle = C.wall; ctx.lineWidth = 1.5; ctx.stroke(); });
+      // walls (open edges dashed)
+      const r = z.outer;
+      for (let i = 0; i < r.length; i++) {
+        const a = r[i], b = r[(i + 1) % r.length];
+        const open = (z.openEdges || []).some(o => near(a, o) && near(b, o));
+        const A = W2S(a), B = W2S(b);
+        ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y);
+        ctx.setLineDash(open ? [6, 5] : []);
+        ctx.strokeStyle = open ? C.muted : C.wall; ctx.lineWidth = open ? 1.2 : (zi === S.active && s.zones.length > 1 ? 2.6 : 2);
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+      if (s.zones.length > 1) {
+        const c = W2S(centroid(z.outer));
+        ctx.fillStyle = C.muted; ctx.font = '600 11px Inter, system-ui, sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText(`${z.zoneId} · ${z.hazard}`, c.x, c.y);
+      }
+    });
+    drawDims(C);
+    if (s.results) {
+      s.results.forEach(p => {
+        for (const h of p.res.heads) drawHead(h, C, S.drag && S.drag.h === h, S.hover === h);
+        // flags
+        if (p.report) for (const f of p.report.flags) if (f.where) drawFlag(f, C);
+        if (!p.res.ok && p.res.error) {
+          const pts = (p.res.error.where || []).slice(0, 20);
+          for (const w of pts) drawCross(W2S(w), C.danger, 7);
+          if (p.res.error.outline) { ctx.beginPath(); path(p.res.error.outline); ctx.strokeStyle = C.danger; ctx.setLineDash([4, 3]); ctx.lineWidth = 1.5; ctx.stroke(); ctx.setLineDash([]); }
+        }
+      });
+    }
+    if (S.focus) { const q = W2S(S.focus); ctx.beginPath(); ctx.arc(q.x, q.y, 16, 0, Math.PI * 2); ctx.strokeStyle = C.accent; ctx.lineWidth = 2; ctx.stroke(); }
+    drawScale(C);
+  }
+  function near(p, o) {
+    const dx = o.b.x - o.a.x, dy = o.b.y - o.a.y, L2 = dx * dx + dy * dy;
+    const t = Math.max(0, Math.min(1, ((p.x - o.a.x) * dx + (p.y - o.a.y) * dy) / L2));
+    return Math.hypot(o.a.x + t * dx - p.x, o.a.y + t * dy - p.y) < 2;
+  }
+  function centroid(r) { let x = 0, y = 0; r.forEach(p => { x += p.x; y += p.y; }); return { x: x / r.length, y: y / r.length }; }
+
+  function drawGrid(C) {
+    // 1 m drafting grid
+    const a = S2W(0, view.h), b = S2W(view.w, 0);
+    const step = view.s * 1000 < 8 ? 5000 : 1000;
+    ctx.strokeStyle = C.grid; ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let x = Math.ceil(a.x / step) * step; x <= b.x; x += step) { const q = W2S({ x, y: 0 }); ctx.moveTo(Math.round(q.x) + 0.5, 0); ctx.lineTo(Math.round(q.x) + 0.5, view.h); }
+    for (let y = Math.ceil(a.y / step) * step; y <= b.y; y += step) { const q = W2S({ x: 0, y }); ctx.moveTo(0, Math.round(q.y) + 0.5); ctx.lineTo(view.w, Math.round(q.y) + 0.5); }
+    ctx.stroke();
+  }
+  function drawTiles(z, C) {
+    const g = z.grid;
+    ctx.save(); ctx.beginPath(); path(z.outer); ctx.clip();
+    ctx.strokeStyle = C.line; ctx.lineWidth = 0.7; ctx.beginPath();
+    const bb = view.box;
+    for (let x = g.originX + Math.floor((bb.x0 - g.originX) / g.pitchX) * g.pitchX; x <= bb.x1; x += g.pitchX) { const p = W2S({ x, y: bb.y0 }), q = W2S({ x, y: bb.y1 }); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); }
+    for (let y = g.originY + Math.floor((bb.y0 - g.originY) / g.pitchY) * g.pitchY; y <= bb.y1; y += g.pitchY) { const p = W2S({ x: bb.x0, y }), q = W2S({ x: bb.x1, y }); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); }
+    ctx.stroke(); ctx.restore();
+  }
+  function drawHead(h, C, dragging, hover) {
+    const q = W2S(h);
+    const r = Math.max(4, Math.min(7, view.s * 120));
+    ctx.lineWidth = 1.6;
+    if (h.kind === 'gapFill') {
+      ctx.fillStyle = C.warn; ctx.fillRect(q.x - r, q.y - r, 2 * r, 2 * r);
+      ctx.strokeStyle = C.bg; ctx.strokeRect(q.x - r, q.y - r, 2 * r, 2 * r);
+    } else {
+      ctx.beginPath(); ctx.arc(q.x, q.y, r, 0, Math.PI * 2);
+      ctx.fillStyle = C.head; ctx.fill(); ctx.strokeStyle = C.bg; ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(q.x - r * 0.55, q.y); ctx.lineTo(q.x + r * 0.55, q.y); ctx.moveTo(q.x, q.y - r * 0.55); ctx.lineTo(q.x, q.y + r * 0.55);
+      ctx.strokeStyle = C.bg; ctx.lineWidth = 1.2; ctx.stroke();
+    }
+    if (h.kind === 'locked') { ctx.beginPath(); ctx.arc(q.x, q.y, r + 3.5, 0, Math.PI * 2); ctx.strokeStyle = C.fg; ctx.lineWidth = 1.6; ctx.stroke(); }
+    if (dragging || hover) {
+      ctx.beginPath(); ctx.arc(q.x, q.y, r + 6, 0, Math.PI * 2); ctx.strokeStyle = C.accent; ctx.lineWidth = 1.5; ctx.stroke();
+      ctx.fillStyle = C.fg; ctx.font = '500 11px Inter, system-ui, sans-serif'; ctx.textAlign = 'left';
+      ctx.fillText(`${(h.x / 1000).toFixed(2)}, ${(h.y / 1000).toFixed(2)} m`, q.x + r + 8, q.y - r - 4);
+    }
+  }
+  function drawCross(q, color, r) {
+    ctx.beginPath(); ctx.moveTo(q.x - r, q.y - r); ctx.lineTo(q.x + r, q.y + r); ctx.moveTo(q.x + r, q.y - r); ctx.lineTo(q.x - r, q.y + r);
+    ctx.strokeStyle = cssVar('--bg'); ctx.lineWidth = 5; ctx.stroke();
+    ctx.strokeStyle = color; ctx.lineWidth = 2.4; ctx.stroke();
+  }
+  function drawFlag(f, C) {
+    const q = W2S(f.where);
+    if (f.severity === 'error') drawCross(q, C.danger, 7);
+    else if (f.code !== 'AREA_ZONE') {
+      ctx.fillStyle = C.warn; ctx.font = '700 13px Inter, system-ui, sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText('⚠', q.x + 11, q.y - 8);
+    }
+  }
+  function drawDims(C) {
+    const b = view.box;
+    const A = W2S({ x: b.x0, y: b.y0 }), B = W2S({ x: b.x1, y: b.y0 }), T = W2S({ x: b.x0, y: b.y1 });
+    ctx.strokeStyle = C.muted; ctx.fillStyle = C.muted; ctx.lineWidth = 1;
+    ctx.font = '500 11px Inter, system-ui, sans-serif';
+    const yb = A.y + 18;
+    ctx.beginPath(); ctx.moveTo(A.x, yb); ctx.lineTo(B.x, yb); ctx.moveTo(A.x, yb - 4); ctx.lineTo(A.x, yb + 4); ctx.moveTo(B.x, yb - 4); ctx.lineTo(B.x, yb + 4); ctx.stroke();
+    ctx.textAlign = 'center'; ctx.fillText(`${((b.x1 - b.x0) / 1000).toFixed(2)} m`, (A.x + B.x) / 2, yb - 4);
+    const xl = A.x - 18;
+    ctx.beginPath(); ctx.moveTo(xl, A.y); ctx.lineTo(xl, T.y); ctx.moveTo(xl - 4, A.y); ctx.lineTo(xl + 4, A.y); ctx.moveTo(xl - 4, T.y); ctx.lineTo(xl + 4, T.y); ctx.stroke();
+    ctx.save(); ctx.translate(xl - 4, (A.y + T.y) / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(`${((b.y1 - b.y0) / 1000).toFixed(2)} m`, 0, 0); ctx.restore();
+  }
+  function drawScale(C) {
+    const target = 120 / view.s;
+    const opts = [500, 1000, 2000, 5000, 10000];
+    const len = opts.reduce((a, v) => (Math.abs(v - target) < Math.abs(a - target) ? v : a), opts[0]);
+    const px = len * view.s, x = 12, y = view.h - 12;
+    ctx.fillStyle = C.fg; ctx.strokeStyle = C.fg; ctx.lineWidth = 1;
+    ctx.fillRect(x, y - 5, px / 2, 5); ctx.strokeRect(x + 0.5, y - 5.5, px, 5);
+    ctx.font = '500 11px Inter, system-ui, sans-serif'; ctx.textAlign = 'left';
+    ctx.fillText(`0`, x, y - 9); ctx.textAlign = 'right'; ctx.fillText(`${len / 1000} m`, x + px, y - 9);
+  }
+
+  // ---- drawing your own zone -------------------------------------------------------------------------
+  function startDraw() {
+    S.drawing = { pts: [], cursor: null };
+    $('draw').setAttribute('aria-pressed', 'true'); $('draw').textContent = 'Cancel drawing';
+    refresh(true);
+  }
+  function cancelDraw() {
+    S.drawing = null;
+    $('draw').setAttribute('aria-pressed', 'false'); $('draw').textContent = 'Draw zone';
+    refresh(true);
+  }
+  function finishDraw() {
+    const pts = S.drawing.pts;
+    if (pts.length < 3) return;
+    const hazard = $('hazard').value;
+    const n = samples.filter(s => s.group === 'custom').length + 1;
+    const s = { id: `MY${n}`, name: `My zone ${n}`, group: 'custom', results: null,
+      zones: [{ zoneId: `MY${n}`, hazard, pattern: $('pattern').value, outer: pts.map(p => ({ ...p })) }] };
+    samples.push(s);
+    cancelDraw();
+    select(samples.length - 1);
+  }
+  function drawDraft(C) {
+    const d = S.drawing;
+    const pts = d.cursor ? d.pts.concat([d.cursor]) : d.pts;
+    if (pts.length) {
+      ctx.beginPath(); pts.forEach((p, i) => { const q = W2S(p); if (i) ctx.lineTo(q.x, q.y); else ctx.moveTo(q.x, q.y); });
+      ctx.strokeStyle = C.accent; ctx.lineWidth = 2; ctx.stroke();
+      d.pts.forEach(p => { const q = W2S(p); ctx.fillStyle = C.accent; ctx.fillRect(q.x - 3, q.y - 3, 6, 6); });
+    }
+    if (d.cursor) {
+      const q = W2S(d.cursor);
+      ctx.fillStyle = C.fg; ctx.font = '500 11px Inter, system-ui, sans-serif'; ctx.textAlign = 'left';
+      let t = `${(d.cursor.x / 1000).toFixed(1)}, ${(d.cursor.y / 1000).toFixed(1)} m`;
+      const l = d.pts[d.pts.length - 1];
+      if (l) t += `  ·  segment ${(Math.hypot(d.cursor.x - l.x, d.cursor.y - l.y) / 1000).toFixed(2)} m`;
+      ctx.fillText(t, q.x + 10, q.y - 10);
+    }
+  }
+
+  // ---- pointer interaction ------------------------------------------------------------------------------
+  function hitHead(mx, my) {
+    const s = samples[S.cur]; if (!s.results) return null;
+    let best = null, bd = 14;
+    s.results.forEach((p, zi) => p.res.heads.forEach(h => { const q = W2S(h); const d = Math.hypot(q.x - mx, q.y - my); if (d < bd) { bd = d; best = { h, p, zi }; } }));
+    return best;
+  }
+  const snap = (v, g) => Math.round(v / g) * g;
+  function local(e) { const r = cv.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
+  let rafPending = false;
+  function scheduleRecheck() {
+    if (rafPending) return; rafPending = true;
+    requestAnimationFrame(() => { rafPending = false; recheck(samples[S.cur]); renderReport(); draw(); });
+  }
+  cv.addEventListener('pointerdown', e => {
+    const m = local(e);
+    if (S.drawing) {
+      const w = S2W(m.x, m.y), p = { x: snap(w.x, 100), y: snap(w.y, 100) };
+      const pts = S.drawing.pts;
+      if (pts.length >= 3 && Math.hypot(W2S(pts[0]).x - m.x, W2S(pts[0]).y - m.y) < 10) { finishDraw(); return; }
+      const l = pts[pts.length - 1];
+      if (!l || l.x !== p.x || l.y !== p.y) pts.push(p);
+      draw(); return;
+    }
+    const hit = hitHead(m.x, m.y);
+    if (hit) {
+      S.drag = hit; S.active = hit.zi; cv.setPointerCapture(e.pointerId); syncControls(); renderTabs();
+      return;
+    }
+    // click a zone to make it active (multi-zone samples)
+    const w = S2W(m.x, m.y);
+    const zi = samples[S.cur].zones.findIndex(z => Geometry.pointInRing(w, z.outer));
+    if (zi >= 0 && zi !== S.active) { S.active = zi; syncControls(); renderTabs(); renderReport(); draw(); }
+  });
+  cv.addEventListener('pointermove', e => {
+    const m = local(e);
+    if (S.drawing) { const w = S2W(m.x, m.y); S.drawing.cursor = { x: snap(w.x, 100), y: snap(w.y, 100) }; draw(); return; }
+    if (S.drag) {
+      const w = S2W(m.x, m.y);
+      S.drag.h.x = snap(w.x, 10); S.drag.h.y = snap(w.y, 10);
+      draw(); scheduleRecheck(); return;
+    }
+    const hit = hitHead(m.x, m.y);
+    const h = hit ? hit.h : null;
+    cv.style.cursor = h ? 'grab' : 'default';
+    if (h !== S.hover) { S.hover = h; draw(); }
+  });
+  cv.addEventListener('pointerup', () => {
+    if (!S.drag) return;
+    const { h, p } = S.drag;
+    h.kind = 'locked';
+    p.zone.lockedHeads = p.res.heads.filter(x => x.kind === 'locked').map(x => ({ id: x.id, x: x.x, y: x.y }));
+    samples[S.cur].zones[S.drag.zi].lockedHeads = p.zone.lockedHeads;
+    S.drag = null;
+    recheck(samples[S.cur]); renderReport(); renderList(); draw();
+  });
+  cv.addEventListener('dblclick', e => { if (S.drawing) { e.preventDefault(); finishDraw(); } });
+  window.addEventListener('keydown', e => {
+    if (!S.drawing) return;
+    if (e.key === 'Enter') finishDraw();
+    else if (e.key === 'Escape') cancelDraw();
+    else if (e.key === 'Backspace') { S.drawing.pts.pop(); draw(); }
+  });
+
+  // ---- report ---------------------------------------------------------------------------------------------
+  const m2 = v => (v == null || !isFinite(v) ? '–' : v.toFixed(2));
+  function renderTabs() {
+    const s = samples[S.cur], el = $('zonetabs');
+    el.hidden = s.zones.length < 2 || !!S.drawing;
+    el.textContent = '';
+    if (el.hidden) return;
+    const lab = document.createElement('span'); lab.textContent = 'Zone:'; lab.style.color = 'var(--muted)'; el.appendChild(lab);
+    s.zones.forEach((z, i) => {
+      const b = document.createElement('button'); b.type = 'button';
+      b.textContent = `${z.zoneId} (${z.hazard})`; b.setAttribute('aria-pressed', i === S.active ? 'true' : 'false');
+      b.addEventListener('click', () => { S.active = i; syncControls(); renderTabs(); renderReport(); draw(); });
+      el.appendChild(b);
+    });
+  }
+  function renderReport() {
+    const el = $('report'); el.textContent = '';
+    const s = samples[S.cur];
+    if (S.drawing) {
+      el.innerHTML = `<p class="empty">Click on the plan to add corners (snapped to 100 mm on the 1 m grid). Double-click, press Enter or click the first corner to close the outline. Backspace removes the last corner, Escape cancels. Heads are placed with the hazard and pattern chosen above.</p>`;
+      return;
+    }
+    if (!s.results) { el.innerHTML = '<p class="empty">Placing heads…</p>'; return; }
+    const p = s.results[S.active] || s.results[0];
+    const z = p.zone, r = p.report, res = p.res, f = RS.hazards[z.hazard];
+    const errs = r ? r.flags.filter(x => x.severity === 'error') : [];
+    const warns = r ? r.flags.filter(x => x.severity === 'warning') : [];
+    const v = document.createElement('div');
+    if (!res.ok && res.error && !res.heads.length) {
+      v.className = 'verdict fail';
+      v.innerHTML = `<span class="big">✕</span><span>No layout · ${res.error.code}<small></small></span>`;
+      v.querySelector('small').textContent = res.error.message;
+    } else if (errs.length || !res.ok) {
+      v.className = 'verdict fail';
+      v.innerHTML = `<span class="big">✕</span><span>Checker: ${errs.length} error${errs.length === 1 ? '' : 's'}<small>Hard rules broken; see the ✕ marks on the plan.</small></span>`;
+    } else if (warns.length) {
+      v.className = 'verdict warn';
+      v.innerHTML = `<span class="big">⚠</span><span>Pass with ${warns.length} warning${warns.length === 1 ? '' : 's'}<small>All hard rules met. Area-per-head warnings are advisory.</small></span>`;
+    } else {
+      v.className = 'verdict ok';
+      v.innerHTML = `<span class="big">✓</span><span>Pass<small>Independent checker found no errors or warnings.</small></span>`;
+    }
+    el.appendChild(v);
+
+    const dl = (title, rows) => {
+      const sec = document.createElement('div'); sec.className = 'sec'; sec.textContent = title; el.appendChild(sec);
+      const d = document.createElement('dl');
+      for (const [k, val, cls] of rows) { const dt = document.createElement('dt'); dt.textContent = k; const dd = document.createElement('dd'); dd.textContent = val; if (cls) dd.className = cls; d.append(dt, dd); }
+      el.appendChild(d);
+    };
+    const Rc = 0.5 * Math.sqrt(f.Smax ** 2 + (f.Amax / f.Smax) ** 2);
+    dl(`Rules · ${z.hazard} · ${RS.id} v${RS.version}${RS.verified ? ' (verified)' : ''}`, [
+      ['Max area / head', `${f.Amax} m²`], ['Spacing', `${f.Smin.toFixed(2)} – ${f.Smax.toFixed(2)} m`],
+      ['Wall distance', `${(f.Wmin * 1000).toFixed(0)} mm – ${f.Wmax.toFixed(2)} m`], ['Coverage radius Rc', `${Rc.toFixed(2)} m`],
+    ]);
+    if (r && res.heads.length) {
+      const lb = Math.ceil(r.areaM2 / f.Amax - 1e-9);
+      dl('Layout', [
+        ['Heads', `${r.headCount}  (area bound ${lb})`],
+        ['Zone area', `${m2(r.areaM2)} m²`],
+        ['Area / head', `${m2(r.areaPerHeadM2)} m²`, r.areaPerHeadM2 > f.Amax ? 'near' : ''],
+        ['Largest local cell', `${m2(r.maxLocalAreaM2)} m²`, r.maxLocalAreaM2 > f.Amax ? 'near' : ''],
+        ['Spacing min / max', `${m2(r.minSpacingM)} / ${m2(r.maxNNSpacingM)} m`, (r.minSpacingM != null && r.minSpacingM < f.Smin - 0.001) || (r.maxNNSpacingM > f.Smax + 0.001) ? 'bad' : ''],
+        ['Wall distance worst', isFinite(r.worstWallDistM) ? `${m2(r.worstWallDistM)} m` : 'no head in reach', r.worstWallDistM > f.Wmax + 0.001 ? 'bad' : ''],
+        ['Closest to a wall', `${r.minWallDistM == null ? '–' : (r.minWallDistM * 1000).toFixed(0) + ' mm'}`, r.minWallDistM != null && r.minWallDistM < f.Wmin - 0.001 ? 'bad' : ''],
+        ['Coverage (sampled)', `${(r.coverage * 100).toFixed(1)} %`, r.coverage < 1 ? 'bad' : ''],
+      ]);
+      const n = res.notes || {};
+      const rows = [
+        ['Placement time', `${p.ms.toFixed(0)} ms`], ['Check time', `${(r.checkMs || 0).toFixed(0)} ms`],
+        ['Frame / bays', `${n.frameDeg != null ? n.frameDeg.toFixed(1) + '°' : '–'} · ${n.decomposition || '–'} (${n.bays || 0})`],
+        ['Rows', `${n.rows ?? '–'}`],
+        ['Moved (locked) heads', `${res.heads.filter(h => h.kind === 'locked').length}`],
+        ['Gap-fill heads', `${n.exceptions?.gapFill ?? 0}`, n.exceptions?.gapFill ? 'near' : ''],
+      ];
+      if (n.tileAligned) rows.push(['On tile centres', `${n.tileAligned.onStop} / ${n.tileAligned.total}` + (n.tileAligned.extraHeadsVsUnaligned != null ? ` (+${n.tileAligned.extraHeadsVsUnaligned} vs free)` : '')]);
+      dl('Engine', rows);
+    }
+    const sec = document.createElement('div'); sec.className = 'sec'; sec.textContent = 'Checker findings'; el.appendChild(sec);
+    const all = errs.concat(warns);
+    if (!res.ok && res.error && res.heads.length) all.unshift({ severity: 'error', code: res.error.code, message: res.error.message, where: res.error.where?.[0] });
+    if (!res.heads.length && res.error) all.unshift({ severity: 'error', code: res.error.code, message: res.error.message, where: res.error.where?.[0] });
+    if (!all.length) { const pe = document.createElement('p'); pe.className = 'empty'; pe.textContent = 'None. Drag a head to see the checker react.'; el.appendChild(pe); }
+    else {
+      const ul = document.createElement('ul'); ul.className = 'flags';
+      all.slice(0, 40).forEach(fl => {
+        const li = document.createElement('li'); const b = document.createElement('button'); b.type = 'button';
+        b.className = fl.severity === 'error' ? 'e' : 'w';
+        b.innerHTML = `<span class="ic">${fl.severity === 'error' ? '✕' : '⚠'}</span><span><span class="code"></span><br><span class="msg"></span></span>`;
+        b.querySelector('.code').textContent = `${fl.severity === 'error' ? 'Error' : 'Warning'} · ${fl.code}` + (fl.where ? ` · at ${(fl.where.x / 1000).toFixed(2)}, ${(fl.where.y / 1000).toFixed(2)} m` : '');
+        b.querySelector('.msg').textContent = fl.message;
+        b.addEventListener('click', () => { S.focus = fl.where || null; draw(); });
+        li.appendChild(b); ul.appendChild(li);
+      });
+      if (all.length > 40) { const li = document.createElement('li'); li.className = 'empty'; li.textContent = `…and ${all.length - 40} more`; ul.appendChild(li); }
+      el.appendChild(ul);
+    }
+    const lg = document.createElement('div'); lg.className = 'legend';
+    lg.innerHTML = '<span class="l-row">Head on a branch row</span><span class="l-lock">Moved by you (kept on re-run)</span><span class="l-gap">Gap-fill exception</span>';
+    el.appendChild(lg);
+  }
+
+  function hint() {
+    const h = $('hint');
+    if (S.drawing) h.textContent = 'Drawing: click corners · double-click / Enter to close · Esc to cancel';
+    else h.textContent = 'Drag a head to move it; the checker re-runs live. Moved heads stay put on “Place heads”.';
+  }
+
+  function refresh(refit) {
+    if (refit) fit();
+    syncControls(); renderList(); renderTabs(); renderReport(); hint(); draw();
+  }
+
+  new ResizeObserver(() => { fit(); draw(); }).observe(cv);
+  const mq = window.matchMedia('(prefers-color-scheme: dark)');
+  mq.addEventListener?.('change', () => draw());
+  new MutationObserver(() => draw()).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+  // boot: place the first sample synchronously, then the rest in the background so the list fills in
+  S.cur = samples.findIndex(s => s.id === 'Z2');
+  if (S.cur < 0) S.cur = 0;
+  runSample(samples[S.cur]);
+  refresh(true);
+  let k = 0;
+  (function next() {
+    while (k < samples.length && samples[k].results) k++;
+    if (k >= samples.length) return;
+    runSample(samples[k]); renderList();
+    if (k === S.cur) refresh(false);
+    setTimeout(next, 30);
+  })();
+})();
+
+</script>

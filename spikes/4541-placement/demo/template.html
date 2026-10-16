@@ -1,0 +1,172 @@
+<title>4541 Placement Lab</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: drawing-office workbench. Zone list | to-scale plan canvas | rule report. Panels stack under 980px. */
+:root {
+  --bg: #0e1828;        /* deep blue-slate ground */
+  --panel: #142236;
+  --panel-2: #1a2b44;
+  --line: #2b4062;
+  --grid: #1c2d47;
+  --fg: #dde7f3;
+  --muted: #8ea3bf;
+  --accent: #ff8a3d;    /* brand orange */
+  --accent-ink: #1b0f05;
+  --warn: #f2d24b;
+  --danger: #f04d5e;
+  --ok: #4fc58f;
+  --zone: #18304f;
+  --wall: #e8eef7;
+  --hole: #0a1220;
+  --cov: rgba(80, 160, 255, 0.11);
+  --cov-line: rgba(140, 195, 255, 0.7);
+  --head: #ff8a3d;
+  --shadow: #050a12;
+  --font-ui: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #e9eef5; --panel: #ffffff; --panel-2: #f2f5fa; --line: #c3cfdf; --grid: #dbe3ee;
+    --fg: #13213a; --muted: #55698a; --accent: #d9601a; --accent-ink: #ffffff;
+    --warn: #8a6d00; --danger: #c8283c; --ok: #16804f;
+    --zone: #dbe7f6; --wall: #13213a; --hole: #9fb0c8;
+    --cov: rgba(40, 110, 220, 0.09); --cov-line: rgba(40, 110, 220, 0.6); --head: #d9601a; --shadow: #9fb0c8;
+    color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: #e9eef5; --panel: #ffffff; --panel-2: #f2f5fa; --line: #c3cfdf; --grid: #dbe3ee;
+  --fg: #13213a; --muted: #55698a; --accent: #d9601a; --accent-ink: #ffffff;
+  --warn: #8a6d00; --danger: #c8283c; --ok: #16804f;
+  --zone: #dbe7f6; --wall: #13213a; --hole: #9fb0c8;
+  --cov: rgba(40, 110, 220, 0.09); --cov-line: rgba(40, 110, 220, 0.6); --head: #d9601a; --shadow: #9fb0c8;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 var(--font-ui);
+  font-variant-numeric: tabular-nums;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 14px 20px;
+}
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; margin-bottom: 4px; }
+h1 { font-size: 20px; font-weight: 700; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+h1 .tag { color: var(--accent); }
+.sub { color: var(--muted); font-size: 13px; }
+.note { color: var(--muted); font-size: 12.5px; margin: 0 0 12px; border-left: 3px solid var(--warn); padding-left: 8px; }
+.app { display: grid; grid-template-columns: 250px minmax(0, 1fr) 330px; gap: 12px; align-items: start; }
+@media (max-width: 980px) { .app { grid-template-columns: minmax(0, 1fr); } }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 3px; box-shadow: 3px 3px 0 var(--shadow); min-width: 0; }
+.panel h2 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0; padding: 10px 12px 6px; font-weight: 600; }
+/* zone list */
+.list { list-style: none; margin: 0; padding: 0 6px 8px; max-height: calc(100vh - 140px); overflow: auto; }
+@media (max-width: 980px) { .list { max-height: 260px; } }
+.list button {
+  width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; align-items: center;
+  text-align: left; background: transparent; color: var(--fg); border: 1px solid transparent; border-radius: 3px;
+  padding: 6px 8px; font: inherit; cursor: pointer;
+}
+.list button:hover { background: var(--panel-2); }
+.list button[aria-current="true"] { background: var(--panel-2); border-color: var(--accent); }
+.list .nm { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.list .meta { grid-column: 1; font-size: 11.5px; color: var(--muted); }
+.list .grp { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); padding: 10px 8px 2px; }
+.chip { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 2px; border: 1px solid currentColor; white-space: nowrap; grid-row: 1 / span 2; grid-column: 2; }
+.chip.ok { color: var(--ok); } .chip.warn { color: var(--warn); } .chip.fail { color: var(--danger); } .chip.wait { color: var(--muted); }
+/* stage */
+.stage { display: flex; flex-direction: column; min-width: 0; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: end; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+.field { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.field .row { display: flex; align-items: center; gap: 6px; text-transform: none; letter-spacing: 0; color: var(--fg); font-size: 12.5px; }
+select, input[type="range"] { font: inherit; }
+select { background: var(--panel-2); color: var(--fg); border: 1px solid var(--line); border-radius: 3px; padding: 4px 6px; font-size: 13px; }
+input[type="range"] { width: 110px; accent-color: var(--accent); }
+.btn { font: inherit; font-size: 13px; font-weight: 600; padding: 6px 12px; border-radius: 3px; border: 1px solid var(--line); background: var(--panel-2); color: var(--fg); cursor: pointer; box-shadow: 2px 2px 0 var(--shadow); }
+.btn:hover { border-color: var(--accent); }
+.btn:active { transform: translate(1px, 1px); box-shadow: 1px 1px 0 var(--shadow); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+.canvas-wrap { position: relative; height: min(68vh, 640px); min-height: 340px; }
+canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: default; }
+.hint { position: absolute; left: 10px; top: 8px; font-size: 12px; color: var(--muted); background: color-mix(in srgb, var(--panel) 85%, transparent); padding: 3px 8px; border-radius: 2px; pointer-events: none; max-width: calc(100% - 20px); }
+.busy { position: absolute; right: 10px; top: 8px; font-size: 12px; color: var(--accent); font-weight: 600; }
+.zonetabs { display: flex; gap: 6px; padding: 8px 12px; border-top: 1px solid var(--line); flex-wrap: wrap; font-size: 12.5px; }
+.zonetabs button { font: inherit; background: transparent; color: var(--muted); border: 1px solid var(--line); border-radius: 2px; padding: 3px 8px; cursor: pointer; }
+.zonetabs button[aria-pressed="true"] { color: var(--fg); border-color: var(--accent); }
+/* report */
+.report { padding: 0 12px 12px; display: flex; flex-direction: column; gap: 10px; }
+.verdict { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 3px; border: 1px solid currentColor; font-weight: 600; }
+.verdict .big { font-size: 22px; line-height: 1; }
+.verdict.ok { color: var(--ok); } .verdict.warn { color: var(--warn); } .verdict.fail { color: var(--danger); }
+.verdict small { display: block; font-weight: 400; color: var(--fg); font-size: 12.5px; }
+dl { display: grid; grid-template-columns: auto auto; justify-content: space-between; gap: 3px 12px; margin: 0; font-size: 13px; }
+dt { color: var(--muted); } dd { margin: 0; text-align: right; font-weight: 500; }
+dd.bad { color: var(--danger); } dd.near { color: var(--warn); }
+.sec { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); border-top: 1px solid var(--line); padding-top: 8px; font-weight: 600; }
+.flags { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.flags button { width: 100%; text-align: left; font: inherit; font-size: 12.5px; color: var(--fg); background: var(--panel-2); border: 1px solid var(--line); border-left: 3px solid var(--line); border-radius: 2px; padding: 6px 8px; cursor: pointer; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 8px; }
+.flags .e { border-left-color: var(--danger); } .flags .w { border-left-color: var(--warn); }
+.flags .ic { font-weight: 700; } .flags .e .ic { color: var(--danger); } .flags .w .ic { color: var(--warn); }
+.flags .code { font-size: 11px; color: var(--muted); }
+.empty { color: var(--muted); font-size: 12.5px; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--muted); }
+.legend span::before { content: ""; display: inline-block; width: 9px; height: 9px; margin-right: 5px; vertical-align: -1px; border-radius: 50%; }
+.legend .l-row::before { background: var(--head); }
+.legend .l-lock::before { background: transparent; border: 2px solid var(--fg); }
+.legend .l-gap::before { background: var(--warn); border-radius: 1px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<header>
+  <h1><span class="tag">4541</span> Placement Lab</h1>
+  <span class="sub">NZS 4541 head auto-placement + independent checker · rule set nzs4541 v1</span>
+</header>
+<p class="note">Spike prototype — layouts are advisory; the designer remains responsible for compliance.</p>
+
+<div class="app">
+  <nav class="panel" aria-label="Sample zones">
+    <h2>Sample zones</h2>
+    <ul class="list" id="list"></ul>
+  </nav>
+
+  <section class="panel stage" aria-label="Plan">
+    <div class="toolbar">
+      <label class="field" for="hazard">Hazard
+        <select id="hazard"><option>ELH</option><option>OH1</option><option>OH2</option><option>OH3</option></select>
+      </label>
+      <label class="field" for="pattern">Pattern
+        <select id="pattern"><option value="rectangular">Rectangular</option><option value="staggered">Staggered</option></select>
+      </label>
+      <div class="field">Pref. spacing
+        <span class="row"><input type="checkbox" id="spOn" aria-label="Use preferred spacing"><input type="range" id="sp" min="1800" max="4600" step="50" aria-label="Preferred spacing"><output id="spOut">auto</output></span>
+      </div>
+      <div class="field">Pref. wall dist.
+        <span class="row"><input type="checkbox" id="wdOn" aria-label="Use preferred wall distance"><input type="range" id="wd" min="50" max="2300" step="50" aria-label="Preferred wall distance"><output id="wdOut">auto</output></span>
+      </div>
+      <label class="field" for="cov">Coverage
+        <select id="cov"><option value="circle">Circle (Rc)</option><option value="square">Square</option><option value="off">Off</option></select>
+      </label>
+      <button class="btn primary" id="place" type="button">Place heads</button>
+      <button class="btn" id="reset" type="button">Reset moves</button>
+      <button class="btn" id="draw" type="button" aria-pressed="false">Draw zone</button>
+    </div>
+    <div class="canvas-wrap">
+      <canvas id="cv" aria-label="Zone plan with sprinkler heads, drawn to scale"></canvas>
+      <div class="hint" id="hint"></div>
+      <div class="busy" id="busy" hidden>Placing…</div>
+    </div>
+    <div class="zonetabs" id="zonetabs" hidden></div>
+  </section>
+
+  <aside class="panel" aria-label="Report">
+    <h2>Zone report</h2>
+    <div class="report" id="report"></div>
+  </aside>
+</div>
+
+<!--MODULES-->
