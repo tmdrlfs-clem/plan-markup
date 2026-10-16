@@ -1,6 +1,6 @@
 # Story 1.1: Scaffold the app with the pinned stack
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -25,58 +25,58 @@ so that every later story builds on the same versions, structure and rules.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Scaffold and move to root** (AC: 1)
-  - [ ] From `plan-markup/`, run (non-interactive; flags verified against create-next-app 16.4.2 `--help`):
+- [x] **Task 1: Scaffold and move to root** (AC: 1)
+  - [x] From `plan-markup/`, run (non-interactive; flags verified against create-next-app 16.4.2 `--help`):
         `npx create-next-app@16.4.2 plan-markup-app --ts --tailwind --eslint --app --src-dir --import-alias "@/*" --use-npm --disable-git --no-react-compiler --no-agent-feedback --yes`
         - `--turbopack` from the architecture text **no longer exists** (Turbopack is the default in Next 16). Do not pass it.
         - `--disable-git` is required: the repo root already has `.git`; a nested repo inside `plan-markup-app/` would break the move.
         - If `--no-react-compiler` is rejected as unknown, drop it and answer "No" (or rely on `--yes` defaults), then confirm `next.config.ts` does not enable `reactCompiler`.
-  - [ ] Move every file from `plan-markup-app/` to the root, **including dotfiles** (`.gitignore`). Do not overwrite existing root items. Expected scaffold files: `package.json`, `package-lock.json`, `next.config.ts`, `tsconfig.json`, `eslint.config.mjs`, `postcss.config.mjs`, `next-env.d.ts`, `README.md`, `AGENTS.md` (and `CLAUDE.md` if generated), `public/`, `src/app/`, `node_modules/`.
-  - [ ] **Merge** the scaffold `.gitignore` into the existing root `.gitignore` (keep every existing root line, add any missing scaffold lines such as `/.next/`, `next-env.d.ts`, `*.tsbuildinfo`, `.vercel`). Add `fixtures/private/`.
-  - [ ] Delete the then-empty `plan-markup-app/` folder. Confirm `docs/`, `_bmad/`, `_bmad-output/`, `.claude/`, `spikes/` have no changes (`git status` shows them only as untracked, unchanged content).
-  - [ ] Moving `node_modules` across folders on Windows can fail on long paths or locked files. If it does, delete `plan-markup-app/node_modules` and run `npm ci` at the root instead.
-  - [ ] Replace `README.md` with a short English project README: what the app is, `npm run dev` (port 3020), test commands, and links to `_bmad-output/planning-artifacts/` and `docs/`.
-- [ ] **Task 2: Pin dependencies** (AC: 2)
-  - [ ] Create `.npmrc` with `save-exact=true`.
-  - [ ] Install runtime deps exactly: `npm i -E @supabase/supabase-js@2.118.0 @supabase/ssr@0.12.7 zod@4.6.7 pdfjs-dist@6.4.299 @cantoo/pdf-lib@2.11.1 zustand@5.0.15 flatbush@4.6.2 rbush@4.0.1 idb@8.0.4 @sentry/nextjs@11.8.0 radix-ui@1.8.1 lucide-react@1.58.0`
-  - [ ] Install dev deps exactly: `npm i -D -E vitest@5.0.5 @playwright/test@1.64.1 supabase@2.121.0`
-  - [ ] Rewrite every scaffold range in `package.json` to an exact version (`next 16.4.2`, `react`/`react-dom 19.3.1`, `tailwindcss`/`@tailwindcss/postcss 4.3.3`, `eslint-config-next 16.4.2`, `@types/*`, `eslint`, `typescript`). Run `npm i` to refresh the lockfile.
-  - [ ] **TypeScript decision** (see Dev Notes → TypeScript): pin `typescript@6.0.3` unless you prove 7.0.2 works with `next build`, `eslint-config-next` (typescript-eslint) and Vitest. Write `docs/decisions/0001-typescript-version.md` (context, versions tried, commands run, result, decision, when to revisit).
-  - [ ] **ESLint major**: keep ESLint **9.x** (pin `9.39.5` or whatever exact 9.x the scaffold installed). ESLint 10 breaks peer ranges of `eslint-plugin-react`, `eslint-plugin-import` and `eslint-plugin-jsx-a11y` used by `eslint-config-next`. Never use `--force` or `--legacy-peer-deps` to hide a conflict.
-  - [ ] Add a `"engines": { "node": ">=20.9" }` field.
-  - [ ] Check: `grep -E '"\^|"~' package.json` returns nothing.
-- [ ] **Task 3: Scripts and port** (AC: 1, 6, 7)
-  - [ ] `package.json` scripts: `dev: next dev -p 3020`, `build: next build`, `start: next start -p 3020`, `lint: eslint .`, `typecheck: tsc --noEmit`, `test: vitest run`, `test:watch: vitest`, `e2e: playwright test`. (`next lint` was removed in Next 16; call ESLint directly.)
-  - [ ] Set `metadata.title` in `src/app/layout.tsx` to `"Plan Markup"`. Leave the default page body otherwise as generated (Story 1.4 replaces styling, Story 1.8 the shell).
-  - [ ] Ignore non-app folders everywhere: ESLint `ignores` and `tsconfig.json` `exclude` must cover `spikes/**`, `_bmad/**`, `_bmad-output/**`, `.claude/**`, `fixtures/**`, `playwright-report/**`, `test-results/**`. The spike keeps its own `node test/run.mjs` and must not be type-checked or linted by the app.
-- [ ] **Task 4: Folder skeleton** (AC: 3)
-  - [ ] Create `src/core/`, `src/workers/`, `src/features/`, `src/components/ui/`, `src/lib/`, `supabase/`, `fixtures/pdf/`, `fixtures/btx/`, `fixtures/zones/`, `fixtures/private/`, `e2e/`. Put a `.gitkeep` in each folder that is still empty when the story ends (not in `fixtures/private/`, which is ignored).
-  - [ ] Add `fixtures/README.md`: what each folder is for; `private/` holds the founder's real drawings and `.btx` files and is never committed.
-  - [ ] Do **not** run `supabase init` here. Story 1.3 owns `supabase/config.toml`, custom ports and migrations. The CLI is only installed now.
-- [ ] **Task 5: ESLint boundaries** (AC: 4)
-  - [ ] Extend the generated `eslint.config.mjs` (keep `eslint-config-next` core-web-vitals + typescript presets). Write the rules from Dev Notes → ESLint rules.
-  - [ ] Create `src/lib/logger.ts` (`logger.debug/info/warn/error`, level from `NEXT_PUBLIC_LOG_LEVEL` with default `info` in production and `debug` otherwise). It is the only file allowed to call `console.*`.
-  - [ ] Prove each rule by hand with throwaway files (delete them afterwards). Record the lint output in Debug Log References:
+  - [x] Move every file from `plan-markup-app/` to the root, **including dotfiles** (`.gitignore`). Do not overwrite existing root items. Expected scaffold files: `package.json`, `package-lock.json`, `next.config.ts`, `tsconfig.json`, `eslint.config.mjs`, `postcss.config.mjs`, `next-env.d.ts`, `README.md`, `AGENTS.md` (and `CLAUDE.md` if generated), `public/`, `src/app/`, `node_modules/`.
+  - [x] **Merge** the scaffold `.gitignore` into the existing root `.gitignore` (keep every existing root line, add any missing scaffold lines such as `/.next/`, `next-env.d.ts`, `*.tsbuildinfo`, `.vercel`). Add `fixtures/private/`.
+  - [x] Delete the then-empty `plan-markup-app/` folder. Confirm `docs/`, `_bmad/`, `_bmad-output/`, `.claude/`, `spikes/` have no changes (`git status` shows them only as untracked, unchanged content).
+  - [x] Moving `node_modules` across folders on Windows can fail on long paths or locked files. If it does, delete `plan-markup-app/node_modules` and run `npm ci` at the root instead.
+  - [x] Replace `README.md` with a short English project README: what the app is, `npm run dev` (port 3020), test commands, and links to `_bmad-output/planning-artifacts/` and `docs/`.
+- [x] **Task 2: Pin dependencies** (AC: 2)
+  - [x] Create `.npmrc` with `save-exact=true`.
+  - [x] Install runtime deps exactly: `npm i -E @supabase/supabase-js@2.118.0 @supabase/ssr@0.12.7 zod@4.6.7 pdfjs-dist@6.4.299 @cantoo/pdf-lib@2.11.1 zustand@5.0.15 flatbush@4.6.2 rbush@4.0.1 idb@8.0.4 @sentry/nextjs@11.8.0 radix-ui@1.8.1 lucide-react@1.58.0`
+  - [x] Install dev deps exactly: `npm i -D -E vitest@5.0.5 @playwright/test@1.64.1 supabase@2.121.0`
+  - [x] Rewrite every scaffold range in `package.json` to an exact version (`next 16.4.2`, `react`/`react-dom 19.3.1`, `tailwindcss`/`@tailwindcss/postcss 4.3.3`, `eslint-config-next 16.4.2`, `@types/*`, `eslint`, `typescript`). Run `npm i` to refresh the lockfile.
+  - [x] **TypeScript decision** (see Dev Notes → TypeScript): pin `typescript@6.0.3` unless you prove 7.0.2 works with `next build`, `eslint-config-next` (typescript-eslint) and Vitest. Write `docs/decisions/0001-typescript-version.md` (context, versions tried, commands run, result, decision, when to revisit).
+  - [x] **ESLint major**: keep ESLint **9.x** (pin `9.39.5` or whatever exact 9.x the scaffold installed). ESLint 10 breaks peer ranges of `eslint-plugin-react`, `eslint-plugin-import` and `eslint-plugin-jsx-a11y` used by `eslint-config-next`. Never use `--force` or `--legacy-peer-deps` to hide a conflict.
+  - [x] Add a `"engines": { "node": ">=20.9" }` field.
+  - [x] Check: `grep -E '"\^|"~' package.json` returns nothing.
+- [x] **Task 3: Scripts and port** (AC: 1, 6, 7)
+  - [x] `package.json` scripts: `dev: next dev -p 3020`, `build: next build`, `start: next start -p 3020`, `lint: eslint .`, `typecheck: tsc --noEmit`, `test: vitest run`, `test:watch: vitest`, `e2e: playwright test`. (`next lint` was removed in Next 16; call ESLint directly.)
+  - [x] Set `metadata.title` in `src/app/layout.tsx` to `"Plan Markup"`. Leave the default page body otherwise as generated (Story 1.4 replaces styling, Story 1.8 the shell).
+  - [x] Ignore non-app folders everywhere: ESLint `ignores` and `tsconfig.json` `exclude` must cover `spikes/**`, `_bmad/**`, `_bmad-output/**`, `.claude/**`, `fixtures/**`, `playwright-report/**`, `test-results/**`. The spike keeps its own `node test/run.mjs` and must not be type-checked or linted by the app.
+- [x] **Task 4: Folder skeleton** (AC: 3)
+  - [x] Create `src/core/`, `src/workers/`, `src/features/`, `src/components/ui/`, `src/lib/`, `supabase/`, `fixtures/pdf/`, `fixtures/btx/`, `fixtures/zones/`, `fixtures/private/`, `e2e/`. Put a `.gitkeep` in each folder that is still empty when the story ends (not in `fixtures/private/`, which is ignored).
+  - [x] Add `fixtures/README.md`: what each folder is for; `private/` holds the founder's real drawings and `.btx` files and is never committed.
+  - [x] Do **not** run `supabase init` here. Story 1.3 owns `supabase/config.toml`, custom ports and migrations. The CLI is only installed now.
+- [x] **Task 5: ESLint boundaries** (AC: 4)
+  - [x] Extend the generated `eslint.config.mjs` (keep `eslint-config-next` core-web-vitals + typescript presets). Write the rules from Dev Notes → ESLint rules.
+  - [x] Create `src/lib/logger.ts` (`logger.debug/info/warn/error`, level from `NEXT_PUBLIC_LOG_LEVEL` with default `info` in production and `debug` otherwise). It is the only file allowed to call `console.*`.
+  - [x] Prove each rule by hand with throwaway files (delete them afterwards). Record the lint output in Debug Log References:
         `src/core/_probe.ts` importing `react` → error; using `window` → error;
         `src/core/sprinkler/oracle/_probe.ts` importing `../placer/_x` and `@/core/sprinkler/placer/_x` → error;
         `src/features/_probe.ts` with `console.log` → error.
         (Story 1.2 turns the oracle probe into a permanent CI test. Do not add it here.)
-- [ ] **Task 6: Validated env** (AC: 5)
-  - [ ] Create `src/lib/env.ts` per Dev Notes → Env.
-  - [ ] Create `.env.example` listing every variable with a comment and a safe placeholder. Do not create `.env.local`. If one is needed to run locally, it stays ignored.
-  - [ ] Add `src/lib/env.test.ts`: valid input parses; missing `NEXT_PUBLIC_SUPABASE_URL` fails with a message naming the variable; a non-URL fails.
-- [ ] **Task 7: Vitest** (AC: 6)
-  - [ ] `vitest.config.ts`: `test.include: ['src/**/*.test.ts', 'src/**/*.test.tsx']`, `test.environment: 'node'` (React component tests add jsdom in Story 1.7), alias `@` → `./src` (via `resolve.alias` with `fileURLToPath(new URL('./src', import.meta.url))`).
-  - [ ] Sample core module `src/core/geometry/units.ts` exporting `PT_PER_INCH = 72`, `MM_PER_INCH = 25.4`, `ptToMm(pt)` and `mmToPt(mm)`. It is real (AR8: geometry is stored in PDF points; mm only at display) and later stories build on it.
-  - [ ] `src/core/geometry/units.test.ts`: 72 pt = 25.4 mm; round-trip within 1e-9; 0 → 0; negative values allowed.
-- [ ] **Task 8: Playwright smoke** (AC: 6)
-  - [ ] `playwright.config.ts`: `testDir: 'e2e'`, Chromium project only, `baseURL: 'http://localhost:3020'`, `webServer: { command: 'npm run dev', url: 'http://localhost:3020', reuseExistingServer: !process.env.CI, timeout: 120_000 }`.
-  - [ ] `npx playwright install chromium` (once per machine; Story 1.2 does it in CI).
-  - [ ] `e2e/smoke.spec.ts`: `GET /` returns 200 and the page title is `Plan Markup`.
-- [ ] **Task 9: Final verification** (AC: 1–7)
-  - [ ] Run in order and record results: `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`, `npm run e2e`, and `npm run dev` + open `http://localhost:3020`.
-  - [ ] Re-run `node spikes/4541-placement/test/run.mjs` to prove the spike still works (exit 0).
-  - [ ] `git status` review: no `.env*.local`, no `node_modules`, no `.next`, no `fixtures/private` content staged or shown. **Do not commit**: the founder commits only on request.
+- [x] **Task 6: Validated env** (AC: 5)
+  - [x] Create `src/lib/env.ts` per Dev Notes → Env.
+  - [x] Create `.env.example` listing every variable with a comment and a safe placeholder. Do not create `.env.local`. If one is needed to run locally, it stays ignored.
+  - [x] Add `src/lib/env.test.ts`: valid input parses; missing `NEXT_PUBLIC_SUPABASE_URL` fails with a message naming the variable; a non-URL fails.
+- [x] **Task 7: Vitest** (AC: 6)
+  - [x] `vitest.config.ts`: `test.include: ['src/**/*.test.ts', 'src/**/*.test.tsx']`, `test.environment: 'node'` (React component tests add jsdom in Story 1.7), alias `@` → `./src` (via `resolve.alias` with `fileURLToPath(new URL('./src', import.meta.url))`).
+  - [x] Sample core module `src/core/geometry/units.ts` exporting `PT_PER_INCH = 72`, `MM_PER_INCH = 25.4`, `ptToMm(pt)` and `mmToPt(mm)`. It is real (AR8: geometry is stored in PDF points; mm only at display) and later stories build on it.
+  - [x] `src/core/geometry/units.test.ts`: 72 pt = 25.4 mm; round-trip within 1e-9; 0 → 0; negative values allowed.
+- [x] **Task 8: Playwright smoke** (AC: 6)
+  - [x] `playwright.config.ts`: `testDir: 'e2e'`, Chromium project only, `baseURL: 'http://localhost:3020'`, `webServer: { command: 'npm run dev', url: 'http://localhost:3020', reuseExistingServer: !process.env.CI, timeout: 120_000 }`.
+  - [x] `npx playwright install chromium` (once per machine; Story 1.2 does it in CI).
+  - [x] `e2e/smoke.spec.ts`: `GET /` returns 200 and the page title is `Plan Markup`.
+- [x] **Task 9: Final verification** (AC: 1–7)
+  - [x] Run in order and record results: `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`, `npm run e2e`, and `npm run dev` + open `http://localhost:3020`.
+  - [x] Re-run `node spikes/4541-placement/test/run.mjs` to prove the spike still works (exit 0).
+  - [x] `git status` review: no `.env*.local`, no `node_modules`, no `.next`, no `fixtures/private` content staged or shown. **Do not commit**: the founder commits only on request.
 
 ## Dev Notes
 
@@ -193,12 +193,86 @@ export default [
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Sonnet 5.5 (claude-sonnet-5-5)
+
+### Implementation Plan
+
+- Scaffolded with the exact command in Task 1, removed scaffold `node_modules`/`.next`, moved files to the root, ran `npm i` at the root (no long-path problems).
+- Rewrote `package.json` with exact versions, then installed runtime and dev deps with `-E`.
+- ESLint rules follow the Dev Notes shape; the oracle block repeats the core restrictions because flat config does not merge rule options.
+- `env.ts` has pure `parseEnv` / `parsePublicEnv` plus lazy `getPublicEnv`; `env.server.ts` holds `getServerEnv` behind `server-only`.
 
 ### Debug Log References
 
+- Scaffold: `create-next-app@16.4.2 ... --yes` succeeded. Note the generated scaffold differs from the story text: it uses `@tailwindcss/turbopack` (no `postcss.config.mjs`), `next.config.ts` sets `cacheComponents: true`, `partialPrefetching: true` and a turbopack CSS rule, `react@19.3.0`, `@types/node@^20`, `typescript@^5`. Kept as generated; pinned `@tailwindcss/turbopack@4.3.3`, `react`/`react-dom@19.3.1`.
+- Dependency conflict (not forced): `npm i -D -E vitest@5.0.5` failed ERESOLVE with `@types/node@20.19.43` (vitest peerOptional `@types/node ^22 || >=24`). Fixed by pinning `@types/node@24.19.2` (matches Node v24.15.0). Vitest also requires Node `^22.12 || ^24 || >=26`, so `engines.node` is `>=22.12` instead of `>=20.9`.
+- TypeScript: `npm i -D -E typescript@7.0.2 --dry-run` printed repeated `ERESOLVE overriding peer dependency` (typescript-eslint peer `<6.1.0`). Pinned `6.0.3`. See `docs/decisions/0001-typescript-version.md`.
+- `npm run typecheck` (first try, script `tsc --noEmit`): `src/app/layout.tsx(20,50): error TS2304: Cannot find name 'LayoutProps'` because route types in `.next/types` were deleted. Fixed by script `next typegen && tsc --noEmit`. Re-run: `Generating route types... Types generated successfully`, exit 0, no errors.
+- `npm run lint` (`eslint .`): no output, exit 0.
+- `npm test`: `Test Files 2 passed (2)`, `Tests 9 passed (9)` (vitest 5.0.5). Config renamed to `vitest.config.mts` to avoid the native-config-loader ESM warning.
+- `npm run build`: `Compiled successfully`, `Finished TypeScript`, routes `/` and `/_not-found` static, exit 0.
+- `npm run e2e`: `1 passed (11.5s)` (`[chromium] smoke.spec.ts home page responds 200 with the app title`).
+- `npm run dev` + `curl http://localhost:3020/`: HTTP 200, `<title>Plan Markup</title>`, LISTENING on 3020. Process tree killed afterwards; `netstat -ano | findstr LISTENING | findstr :3020` empty.
+- Lint probes (throwaway files, deleted afterwards), `npx eslint src e2e` output:
+  - `src/core/_probe_react.ts` 'react' import is restricted ... src/core must stay framework-free (no-restricted-imports)
+  - `src/core/_probe_window.ts` Unexpected use of 'window' (no-restricted-globals)
+  - `src/core/sprinkler/oracle/_probe_rel.ts` '../placer/_x' import is restricted ... oracle must stay independent of the placer
+  - `src/core/sprinkler/oracle/_probe_alias.ts` '@/core/sprinkler/placer/_x' import is restricted ... oracle must stay independent of the placer
+  - `src/core/sprinkler/oracle/_probe_react.ts` 'react' import is restricted (proves core restrictions repeated in the oracle block)
+  - `src/features/_probe.ts` and `e2e/_probe.ts` Unexpected console statement (no-console)
+  - `src/lib/logger.ts` lints clean (exit 0). After cleanup `npx eslint .` exit 0.
+- `node spikes/4541-placement/test/run.mjs`: `PASS: all feasible zones have zero oracle errors; infeasible zones return located errors.` exit 0. It prints a Node `MODULE_TYPELESS_PACKAGE_JSON` warning because the new root `package.json` has no `"type"`; harmless, spike untouched.
+- `grep -E '"\^|"~' package.json`: no matches (exit 1).
+- `git status --short` shows only intended files; `node_modules`, `.next`, `next-env.d.ts`, `tsconfig.tsbuildinfo`, `test-results` are ignored. Existing `docs/`, `_bmad/`, `.claude/`, `spikes/` unchanged.
+
 ### Completion Notes List
 
-- Ultimate context engine analysis completed - comprehensive developer guide created.
+- All 9 tasks done; all 7 ACs verified by the commands above.
+- TypeScript decision: pinned 6.0.3 (7.0.2 violates typescript-eslint peer range; recorded in ADR 0001).
+- ESLint pinned at 9.39.5.
+- Deviations: `typecheck` script is `next typegen && tsc --noEmit`; `engines.node` is `>=22.12` (Vitest 5 requirement); `@types/node` 24.19.2; `vitest.config.mts` instead of `.ts`; added exact `server-only@0.0.1` (needed by `env.server.ts`; not resolvable otherwise); scaffold uses `@tailwindcss/turbopack` instead of `@tailwindcss/postcss`; `layout.tsx` description also set to "Plan Markup"; `package.json` name is `plan-markup`. `.gitignore` merge intentionally omits the scaffold's `.env*` line so `.env.example` stays committable (root `.env`, `.env*.local` kept).
+- `.gitignore` shows an LF-to-CRLF git warning; not converted.
+- `npm audit` reports 5 high severity vulnerabilities in the dependency tree; not addressed (out of scope, no `audit fix --force`).
+- Nothing committed.
+
+- Orchestrator re-verification (Opus, 2026-10-17): typecheck, lint, 9 Vitest tests, build, Playwright smoke, oracle lint probe and spike `run.mjs` all re-run and pass.
+- Orchestrator change: removed `cacheComponents` and `partialPrefetching` (scaffold defaults) from `next.config.ts`. Cookie-based Supabase auth in Story 1.5 reads request data in layouts; revisit for the static marketing site (Epic 13).
+- Follow-up for Story 1.2: `npm audit --omit=dev` = 0 vulnerabilities; the 5 high findings are dev-only (`braces` via `eslint-config-next` → `@next/eslint-plugin-next` → `fast-glob`, no non-breaking fix). The CI audit gate should run with `--omit=dev` (and report dev findings without failing) or use a vetted override.
 
 ### File List
+
+- .gitignore (modified, merged)
+- .npmrc
+- .env.example
+- AGENTS.md
+- README.md
+- eslint.config.mjs
+- next.config.ts
+- package.json
+- package-lock.json
+- tsconfig.json
+- playwright.config.ts
+- vitest.config.mts
+- public/ (scaffold assets)
+- docs/decisions/0001-typescript-version.md
+- e2e/.gitkeep
+- e2e/smoke.spec.ts
+- fixtures/README.md
+- fixtures/{pdf,btx,zones}/.gitkeep
+- supabase/.gitkeep
+- src/app/{favicon.ico,globals.css,layout.tsx,page.tsx}
+- src/core/geometry/units.ts
+- src/core/geometry/units.test.ts
+- src/components/ui/.gitkeep
+- src/features/.gitkeep
+- src/workers/.gitkeep
+- src/lib/logger.ts
+- src/lib/env.ts
+- src/lib/env.server.ts
+- src/lib/env.test.ts
+- _bmad-output/implementation-artifacts/sprint-status.yaml (status review)
+- _bmad-output/implementation-artifacts/1-1-scaffold-the-app-with-the-pinned-stack.md
+
+### Change Log
+
+- 2026-10-17: Story 1.1 implemented (scaffold, pinned stack, boundaries, env, Vitest, Playwright). Status set to review.
