@@ -1,6 +1,6 @@
 # Story 1.2: CI quality gates
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -22,34 +22,34 @@ so that broken builds, leaked secrets and vulnerable dependencies never reach ma
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Line endings** (AC: 6)
-  - [ ] Add `.gitattributes`: `* text=auto eol=lf`; mark binaries `*.png *.jpg *.jpeg *.gif *.ico *.pdf *.woff *.woff2 *.zip binary`; add `*.btx binary` (Revu tool sets are zlib/hex payloads).
-  - [ ] `git add --renormalize .` and review the result with `git status`. Some planning docs were written with CRLF by Python, so expect a few normalised files. Content must not change apart from line endings (`git diff --cached --ignore-cr-at-eol --stat` shows nothing for those files).
-- [ ] **Task 2: Pinned-version and env guards** (AC: 2, 3)
-  - [ ] `scripts/check-pinned.mjs` (plain Node ESM, no deps): reads `package.json` and checks `dependencies`, `devDependencies`, `optionalDependencies` and `peerDependencies` if present. Every value must be an exact semver (`/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/`). It lists offenders and exits 1. Add the npm script `check:pinned`.
-  - [ ] `scripts/check-env-files.mjs`: runs `git ls-files`. It fails if any path's basename starts with `.env` and is not exactly `.env.example`. Add the npm script `check:env-files`.
-  - [ ] Unit-test both pure decision functions (export `findUnpinned(pkg)` and `findForbiddenEnvFiles(paths)`, and keep the CLI wrapper thin) in `scripts/*.test.mjs` or `.test.ts`, included by Vitest (see Task 4).
-- [ ] **Task 3: Lint-boundary test** (AC: 4)
-  - [ ] `tools/lint/boundaries.test.ts` uses the ESLint Node API (`import { ESLint } from 'eslint'`; `new ESLint({ cwd: projectRoot })`; `lintText(code, { filePath })`) against virtual file paths. Do not write files to disk.
+- [x] **Task 1: Line endings** (AC: 6)
+  - [x] Add `.gitattributes`: `* text=auto eol=lf`; mark binaries `*.png *.jpg *.jpeg *.gif *.ico *.pdf *.woff *.woff2 *.zip binary`; add `*.btx binary` (Revu tool sets are zlib/hex payloads).
+  - [x] `git add --renormalize .` and review the result with `git status`. Some planning docs were written with CRLF by Python, so expect a few normalised files. Content must not change apart from line endings (`git diff --cached --ignore-cr-at-eol --stat` shows nothing for those files).
+- [x] **Task 2: Pinned-version and env guards** (AC: 2, 3)
+  - [x] `scripts/check-pinned.mjs` (plain Node ESM, no deps): reads `package.json` and checks `dependencies`, `devDependencies`, `optionalDependencies` and `peerDependencies` if present. Every value must be an exact semver (`/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/`). It lists offenders and exits 1. Add the npm script `check:pinned`.
+  - [x] `scripts/check-env-files.mjs`: runs `git ls-files`. It fails if any path's basename starts with `.env` and is not exactly `.env.example`. Add the npm script `check:env-files`.
+  - [x] Unit-test both pure decision functions (export `findUnpinned(pkg)` and `findForbiddenEnvFiles(paths)`, and keep the CLI wrapper thin) in `scripts/*.test.mjs` or `.test.ts`, included by Vitest (see Task 4).
+- [x] **Task 3: Lint-boundary test** (AC: 4)
+  - [x] `tools/lint/boundaries.test.ts` uses the ESLint Node API (`import { ESLint } from 'eslint'`; `new ESLint({ cwd: projectRoot })`; `lintText(code, { filePath })`) against virtual file paths. Do not write files to disk.
     - `src/core/sprinkler/oracle/__probe__.ts` with `import { x } from '../placer/a'`: expect a `no-restricted-imports` error.
     - Same file with `import { x } from '@/core/sprinkler/placer/a'`: expect the same error.
     - Same file with `import { useState } from 'react'`: expect the same error. This proves the oracle block repeats the core ban.
     - `src/core/geometry/__probe__.ts` with `import React from 'react'`: expect the error. The same file using `window` should give `no-restricted-globals`.
     - `src/features/__probe__.ts` with `console.log(1)`: expect `no-console`.
     - `src/core/sprinkler/oracle/__probe__.ts` with a harmless import (`import { ptToMm } from '@/core/geometry/units'`) and use of it: expect zero errors.
-  - [ ] Assert on `ruleId`, not message text. Set the test timeout to about 30 s (the first ESLint load is slow).
-- [ ] **Task 4: Vitest include** (AC: 2, 4)
-  - [ ] Extend `vitest.config.mts` `test.include` with `tools/**/*.test.ts` and `scripts/**/*.test.{ts,mjs}`. Check that `tsconfig.json` and ESLint cover `tools/` and `scripts/` (lint them; they are app code, not ignored).
-- [ ] **Task 5: Workflow** (AC: 1, 2, 3, 5)
-  - [ ] Add `.nvmrc` containing `24`. Create `.github/workflows/ci.yml` following Dev Notes → Workflow shape.
-  - [ ] gitleaks: download the pinned binary **v8.30.1** (`gitleaks_8.30.1_linux_x64.tar.gz`) from the GitHub release. Verify it against the release's `gitleaks_8.30.1_checksums.txt` with `sha256sum --ignore-missing -c`. Then run `gitleaks git --redact --verbose --exit-code 1 .` on full history (checkout `fetch-depth: 0`; the repo is small). Do not use `gitleaks-action`; we keep control of the version and avoid its licence prompt.
-  - [ ] Add a `.gitleaks.toml` only if a real false positive appears, and use a narrow path or regex allowlist. Never disable a whole rule.
-  - [ ] Playwright: `npx playwright install --with-deps chromium`. Upload `playwright-report/` or `test-results/` as an artifact only on failure (`actions/upload-artifact@v7`, retention 7 days). Switch the reporter in CI to `[['list'], ['html', { open: 'never' }]]` so a report exists.
-- [ ] **Task 6: README badge** (AC: 5)
-  - [ ] Add the badge `![CI](https://github.com/tmdrlfs-clem/plan-markup/actions/workflows/ci.yml/badge.svg)` under the README title. On a private repo the badge only renders for signed-in collaborators; that is expected.
-- [ ] **Task 7: Local verification** (AC: 1–4, 6)
-  - [ ] Run locally: `npm run typecheck`, `npm run lint`, `npm test` (now includes boundary and guard tests), `npm run check:pinned`, `npm run check:env-files`, `npm audit --omit=dev --audit-level=high`, `npm run e2e`. Record outputs.
-  - [ ] Negative proofs, done locally and reverted (record outputs):
+  - [x] Assert on `ruleId`, not message text. Set the test timeout to about 30 s (the first ESLint load is slow).
+- [x] **Task 4: Vitest include** (AC: 2, 4)
+  - [x] Extend `vitest.config.mts` `test.include` with `tools/**/*.test.ts` and `scripts/**/*.test.{ts,mjs}`. Check that `tsconfig.json` and ESLint cover `tools/` and `scripts/` (lint them; they are app code, not ignored).
+- [x] **Task 5: Workflow** (AC: 1, 2, 3, 5)
+  - [x] Add `.nvmrc` containing `24`. Create `.github/workflows/ci.yml` following Dev Notes → Workflow shape.
+  - [x] gitleaks: download the pinned binary **v8.30.1** (`gitleaks_8.30.1_linux_x64.tar.gz`) from the GitHub release. Verify it against the release's `gitleaks_8.30.1_checksums.txt` with `sha256sum --ignore-missing -c`. Then run `gitleaks git --redact --verbose --exit-code 1 .` on full history (checkout `fetch-depth: 0`; the repo is small). Do not use `gitleaks-action`; we keep control of the version and avoid its licence prompt.
+  - [x] Add a `.gitleaks.toml` only if a real false positive appears, and use a narrow path or regex allowlist. Never disable a whole rule.
+  - [x] Playwright: `npx playwright install --with-deps chromium`. Upload `playwright-report/` or `test-results/` as an artifact only on failure (`actions/upload-artifact@v7`, retention 7 days). Switch the reporter in CI to `[['list'], ['html', { open: 'never' }]]` so a report exists.
+- [x] **Task 6: README badge** (AC: 5)
+  - [x] Add the badge `![CI](https://github.com/tmdrlfs-clem/plan-markup/actions/workflows/ci.yml/badge.svg)` under the README title. On a private repo the badge only renders for signed-in collaborators; that is expected.
+- [x] **Task 7: Local verification** (AC: 1–4, 6)
+  - [x] Run locally: `npm run typecheck`, `npm run lint`, `npm test` (now includes boundary and guard tests), `npm run check:pinned`, `npm run check:env-files`, `npm audit --omit=dev --audit-level=high`, `npm run e2e`. Record outputs.
+  - [x] Negative proofs, done locally and reverted (record outputs):
     - temporarily change one version in `package.json` to `^x.y.z`, so `check:pinned` exits 1;
     - `git add -f` a dummy `.env.test.local`, so `check:env-files` exits 1; then `git rm --cached` it and delete it;
     - if `gitleaks` is available locally (optional), run it on a temp folder holding a fake AWS key pattern to see it fail. Do not commit the fake key anywhere.
@@ -133,12 +133,48 @@ jobs:
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+claude-sonnet-5-5 (Sonnet 5.5)
 
 ### Debug Log References
 
+- `git add --renormalize .` changed nothing: the index already held LF content. `.gitattributes` is new and untracked (orchestrator stages it). `git ls-files --eol` shows every text file as `i/lf`.
+- `npm run check:pinned` -> "All dependencies are pinned to exact versions." (exit 0)
+- `npm run check:env-files` -> "No forbidden .env files are tracked." (exit 0)
+- `npm run typecheck` -> "Types generated successfully", tsc clean.
+- `npm run lint` -> no output, exit 0 (scripts/ and tools/ are linted).
+- `npm test` -> Test Files 5 passed (5), Tests 31 passed (31). Includes 7 boundary tests, which only pass if the probes really produce the expected ruleIds.
+- `npm audit --omit=dev --audit-level=high` -> "found 0 vulnerabilities", exit 0.
+- `npm run e2e` -> 1 passed (8.5s); `CI=1 npm run e2e` (html reporter branch) -> 1 passed (6.6s). Port 3020 has no listener afterwards.
+- Negative proof 1: `zod` changed to `^4.6.7` -> `Unpinned dependencies (exact versions only):  dependencies: zod@^4.6.7`, exit 1. package.json restored.
+- Negative proof 2: `git add -f .env.test.local` -> `Tracked env files are forbidden ...  .env.test.local`, exit 1. Then `git rm --cached` and file deleted.
+- gitleaks is not installed locally, so the optional local negative proof was skipped.
+- AC7 run URL: pending orchestrator.
+
 ### Completion Notes List
 
-- Ultimate context engine analysis completed - comprehensive developer guide created.
+- Tasks 1-7 done; Task 8 (commit, push, watch the run) belongs to the orchestrator.
+- Task 1: `.gitattributes` added; renormalisation found no files to change, as the committed blobs were already LF.
+- Playwright reporter switched to list + html only when `CI` is set (local output unchanged).
+- `.gitleaks.toml` not added (no false positive known yet). gitleaks job downloads v8.30.1 and verifies it against the release checksums file.
+- Orchestrator must check on the first GitHub run: three jobs named "Typecheck, lint, unit tests, guards", "Playwright smoke" and "Secret scan (gitleaks)" all green. In the first, the report-only step "Audit all dependencies (report only)" prints 5 dev-only high findings but is green. In the secrets job, "Install gitleaks (checksum verified)" must print `gitleaks_8.30.1_linux_x64.tar.gz: OK`, and the scan must find no leaks in the full history (if it flags an old planning doc, add a narrow path allowlist). Check that `npm ci` passes on Node 24 and that Playwright installs Chromium. Check the README badge URL resolves to the workflow and that git no longer warns about LF->CRLF. Record the run URL under AC7.
 
 ### File List
+
+- .gitattributes (new)
+- .nvmrc (new)
+- .github/workflows/ci.yml (new)
+- scripts/check-pinned.mjs (new)
+- scripts/check-env-files.mjs (new)
+- scripts/check-pinned.test.mjs (new)
+- scripts/check-env-files.test.mjs (new)
+- tools/lint/boundaries.test.ts (new)
+- package.json (check:pinned, check:env-files scripts)
+- vitest.config.mts (include tools and scripts tests)
+- playwright.config.ts (CI html reporter)
+- README.md (CI badge)
+- _bmad-output/implementation-artifacts/sprint-status.yaml (story -> review)
+- _bmad-output/implementation-artifacts/1-2-ci-quality-gates.md
+
+### Change Log
+
+- 2026-10-17: Implemented CI quality gates (workflow, guards, boundary tests, line-ending policy, badge).

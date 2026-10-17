@@ -1,5 +1,7 @@
 # Plan Markup
 
+![CI](https://github.com/tmdrlfs-clem/plan-markup/actions/workflows/ci.yml/badge.svg)
+
 Web-based PDF plan markup for fire protection work, with an NZS 4541 sprinkler placement engine. Built with Next.js 16, React 19, Supabase and PDF.js.
 
 ## Commands
