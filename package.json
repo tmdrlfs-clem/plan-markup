@@ -24,7 +24,9 @@
     "db:schema": "supabase db dump --local --schema public,app -f supabase/schema.sql",
     "check:rls": "node scripts/check-rls.mjs",
     "check:schema": "node scripts/check-schema-drift.mjs",
-    "check:types": "node scripts/check-types-drift.mjs"
+    "check:types": "node scripts/check-types-drift.mjs",
+    "env:local": "node scripts/supabase-env.mjs --write .env.local",
+    "admin:create-user": "node --env-file-if-exists=.env.local scripts/admin-create-user.mjs"
   },
   "dependencies": {
     "@cantoo/pdf-lib": "2.11.1",

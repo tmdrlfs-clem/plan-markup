@@ -1,6 +1,6 @@
 # Story 1.5: Sign in and sign out
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -38,18 +38,18 @@ so that only I can reach my workspace.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Supabase auth config** (AC: 8, 10)
-  - [ ] Edit `supabase/config.toml` `[auth]` (Dev Notes → Session and auth config has exact keys and values): `site_url = "http://localhost:3020"`, `additional_redirect_urls = ["http://localhost:3020", "http://127.0.0.1:3020"]`, `jwt_expiry = 600`, keep `enable_refresh_token_rotation = true` and `refresh_token_reuse_interval = 10`, set `minimum_password_length = 12` (NFR14, needed for `admin:create-user`).
-  - [ ] Uncomment `[auth.sessions]` and set `timebox = "720h"` and `inactivity_timeout = "168h"`. Go duration syntax has no `d` unit, so use hours.
-  - [ ] Leave `enable_signup = true` (FR1, open by design: new profiles start `pending`), `[auth.email] enable_confirmations = false` (NFR18 is Epic 10), `[auth.rate_limit]` defaults, and the auth hook commented out. Do **not** add a custom access token hook.
-  - [ ] `tools/config/supabase-auth-config.test.ts`: reads `supabase/config.toml` with a small section-aware line parser (no new dependency). It asserts every value above, including the `[auth.sessions]` keys being uncommented, and that no `[auth.hook.custom_access_token]` section is enabled.
-- [ ] **Task 2: Migration `<ts>_auth_rate_limits_and_active_helper.sql`** (AC: 3, 6)
-  - [ ] Create the file directly as `supabase/migrations/20261018090000_auth_rate_limits_and_active_helper.sql` (any timestamp later than `20261017105639` works). **Do not run `npx supabase migration new`**: it reads stdin and hangs in the agent shell.
-  - [ ] Write it per Dev Notes → Migration design: `app.rate_limits` (RLS on, deny-all policy, no grants), `public.consume_rate_limit(...)` (SECURITY DEFINER, `search_path = ''`, EXECUTE for `service_role` only), and `app.fn_is_active_user()`.
-  - [ ] Seed: add `deactivated@plan-markup.test` (fixed id `00000000-0000-4000-8000-00000000000d`, status `deactivated`) to `supabase/seed.sql` in the same style as the other three accounts, and add it to the README seed table.
-  - [ ] Run `npm run db:reset` → `npm run db:schema` → `npm run db:types` → `npm run db:test`. Commit-ready `supabase/schema.sql` and `src/lib/db/types.gen.ts` must include the new objects.
-- [ ] **Task 3: pgTAP tests** (AC: 3, 6, 11)
-  - [ ] `supabase/tests/rate_limits.test.sql` (self-contained `begin; select plan(n); … finish(); rollback;`). Cases:
+- [x] **Task 1: Supabase auth config** (AC: 8, 10)
+  - [x] Edit `supabase/config.toml` `[auth]` (Dev Notes → Session and auth config has exact keys and values): `site_url = "http://localhost:3020"`, `additional_redirect_urls = ["http://localhost:3020", "http://127.0.0.1:3020"]`, `jwt_expiry = 600`, keep `enable_refresh_token_rotation = true` and `refresh_token_reuse_interval = 10`, set `minimum_password_length = 12` (NFR14, needed for `admin:create-user`).
+  - [x] Uncomment `[auth.sessions]` and set `timebox = "720h"` and `inactivity_timeout = "168h"`. Go duration syntax has no `d` unit, so use hours.
+  - [x] Leave `enable_signup = true` (FR1, open by design: new profiles start `pending`), `[auth.email] enable_confirmations = false` (NFR18 is Epic 10), `[auth.rate_limit]` defaults, and the auth hook commented out. Do **not** add a custom access token hook.
+  - [x] `tools/config/supabase-auth-config.test.ts`: reads `supabase/config.toml` with a small section-aware line parser (no new dependency). It asserts every value above, including the `[auth.sessions]` keys being uncommented, and that no `[auth.hook.custom_access_token]` section is enabled.
+- [x] **Task 2: Migration `<ts>_auth_rate_limits_and_active_helper.sql`** (AC: 3, 6)
+  - [x] Create the file directly as `supabase/migrations/20261018090000_auth_rate_limits_and_active_helper.sql` (any timestamp later than `20261017105639` works). **Do not run `npx supabase migration new`**: it reads stdin and hangs in the agent shell.
+  - [x] Write it per Dev Notes → Migration design: `app.rate_limits` (RLS on, deny-all policy, no grants), `public.consume_rate_limit(...)` (SECURITY DEFINER, `search_path = ''`, EXECUTE for `service_role` only), and `app.fn_is_active_user()`.
+  - [x] Seed: add `deactivated@plan-markup.test` (fixed id `00000000-0000-4000-8000-00000000000d`, status `deactivated`) to `supabase/seed.sql` in the same style as the other three accounts, and add it to the README seed table.
+  - [x] Run `npm run db:reset` → `npm run db:schema` → `npm run db:types` → `npm run db:test`. Commit-ready `supabase/schema.sql` and `src/lib/db/types.gen.ts` must include the new objects.
+- [x] **Task 3: pgTAP tests** (AC: 3, 6, 11)
+  - [x] `supabase/tests/rate_limits.test.sql` (self-contained `begin; select plan(n); … finish(); rollback;`). Cases:
     - calls 1..N with `p_max_hits = N` return `allowed = true` and `retry_after_seconds = 0`, and call N+1 returns `allowed = false` with `0 < retry_after_seconds <= window`;
     - a different `key_hash` or `bucket` is counted separately;
     - after moving `window_started_at` back past the window (as `postgres`), the next call is allowed and `hits` restarts at 1;
@@ -57,69 +57,69 @@ so that only I can reach my workspace.
     - `has_function_privilege` is false for `anon` and `authenticated` and true for `service_role`;
     - `anon` and `authenticated` cannot select from `app.rate_limits` (permission denied, 42501);
     - RLS is enabled on `app.rate_limits`.
-  - [ ] `supabase/tests/active_user_helper.test.sql`: `app.fn_is_active_user()` is true for an active user, false for pending and deactivated users and for a user with no profile, and `anon` has no EXECUTE.
-  - [ ] Existing `rls_coverage.test.sql` and `npm run check:rls` must stay green with the new table (it has a policy).
-- [ ] **Task 4: Supabase clients and the result type** (AC: 1, 4)
-  - [ ] `src/lib/supabase/server.ts`: `createServerSupabase()` uses `createServerClient<Database>` from `@supabase/ssr` with `getPublicEnv()`, `await cookies()` (`getAll`/`setAll`; `setAll` wrapped in try/catch because Server Components cannot set cookies), and `cookieOptions` = `{ httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge: 2592000 }`. It creates a new client per call and never shares one across requests.
-  - [ ] `src/lib/supabase/admin.ts`: `import "server-only"`. `createAdminSupabase()` uses `createClient<Database>` from `@supabase/supabase-js` with `SUPABASE_SERVICE_ROLE_KEY` from `getServerEnv()` and `auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }`. It throws a clear error if the key is missing; the key stays optional in the env schema so `next build` works without it.
-  - [ ] **No browser client** (`src/lib/supabase/client.ts`) in this story: HttpOnly cookies are not readable by browser JS (Dev Notes → HttpOnly and later browser access).
-  - [ ] `src/lib/result.ts`: `type Result<T> = { ok: true; data: T } | { ok: false; code: ResultCode; message: string }`. The codes are `NOT_FOUND | FORBIDDEN | CONFLICT | INVALID_INPUT | RATE_LIMITED | INTERNAL | UNAUTHENTICATED`. `UNAUTHENTICATED` is new, so add it to the AR16 code list in `architecture.md` → Format Patterns in the same change (pattern changes are edited there first).
-  - [ ] `src/lib/db/profiles.ts`: `getOwnProfile(client, userId): Promise<Profile | null>` selects `id, name, email, status, is_platform_admin` and maps them to camelCase `Profile { id, name, email, status, isPlatformAdmin }`. The architecture puts casing conversion only in `src/lib/db/*`. It throws on a query error.
-- [ ] **Task 5: `src/lib/auth`** (AC: 2, 3, 4, 5, 6, 9)
-  - [ ] `src/lib/auth/get-auth-user.ts` (`import "server-only"`):
+  - [x] `supabase/tests/active_user_helper.test.sql`: `app.fn_is_active_user()` is true for an active user, false for pending and deactivated users and for a user with no profile, and `anon` has no EXECUTE.
+  - [x] Existing `rls_coverage.test.sql` and `npm run check:rls` must stay green with the new table (it has a policy).
+- [x] **Task 4: Supabase clients and the result type** (AC: 1, 4)
+  - [x] `src/lib/supabase/server.ts`: `createServerSupabase()` uses `createServerClient<Database>` from `@supabase/ssr` with `getPublicEnv()`, `await cookies()` (`getAll`/`setAll`; `setAll` wrapped in try/catch because Server Components cannot set cookies), and `cookieOptions` = `{ httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge: 2592000 }`. It creates a new client per call and never shares one across requests.
+  - [x] `src/lib/supabase/admin.ts`: `import "server-only"`. `createAdminSupabase()` uses `createClient<Database>` from `@supabase/supabase-js` with `SUPABASE_SERVICE_ROLE_KEY` from `getServerEnv()` and `auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }`. It throws a clear error if the key is missing; the key stays optional in the env schema so `next build` works without it.
+  - [x] **No browser client** (`src/lib/supabase/client.ts`) in this story: HttpOnly cookies are not readable by browser JS (Dev Notes → HttpOnly and later browser access).
+  - [x] `src/lib/result.ts`: `type Result<T> = { ok: true; data: T } | { ok: false; code: ResultCode; message: string }`. The codes are `NOT_FOUND | FORBIDDEN | CONFLICT | INVALID_INPUT | RATE_LIMITED | INTERNAL | UNAUTHENTICATED`. `UNAUTHENTICATED` is new, so add it to the AR16 code list in `architecture.md` → Format Patterns in the same change (pattern changes are edited there first).
+  - [x] `src/lib/db/profiles.ts`: `getOwnProfile(client, userId): Promise<Profile | null>` selects `id, name, email, status, is_platform_admin` and maps them to camelCase `Profile { id, name, email, status, isPlatformAdmin }`. The architecture puts casing conversion only in `src/lib/db/*`. It throws on a query error.
+- [x] **Task 5: `src/lib/auth`** (AC: 2, 3, 4, 5, 6, 9)
+  - [x] `src/lib/auth/get-auth-user.ts` (`import "server-only"`):
     - `readAuthState(): Promise<AuthState>`, uncached, for use right after sign-in;
     - `getAuthState(): Promise<AuthState>` = `cache(readAuthState)` (React `cache`), so the page, layout and actions of one request share it;
     - `getAuthUser(): Promise<AuthUser | null>`, which returns `state.user` only for `kind === "active"`;
     - `requireActiveUser(nextPath?: string): Promise<AuthUser>` for pages: `anonymous` → `redirect("/sign-in?next=…")`, `inactive` → `redirect("/pending-activation")`.
     Types and logic are in Dev Notes → getAuthUser contract.
-  - [ ] `src/lib/auth/redirect.ts`: `sanitizeNextPath(raw: unknown): string`, plus `DEFAULT_AFTER_SIGN_IN = "/workspace"` and `ALLOWED_NEXT_PREFIXES = ["/workspace"]` (Dev Notes → Redirect allowlist). It is a pure module with no `server-only`, so the proxy and tests can import it.
-  - [ ] `src/lib/auth/client-ip.ts`: `getClientIp(headers: Headers): string` (pure): `x-real-ip`, else the first `x-forwarded-for` entry, trimmed, at most 64 chars, else `"unknown"`.
-  - [ ] `src/lib/auth/rate-limit-key.ts`: `rateLimitKeyHash(bucket, value)` = SHA-256 hex of `` `${bucket}:${value}` `` (`node:crypto`). Pure, so the e2e test can import it.
-  - [ ] `src/lib/auth/rate-limit.ts` (`server-only`): `checkSignInRateLimit({ ip, email }, consume = rpcConsume)`. It consumes the `sign_in_ip` and `sign_in_email` buckets, with the limits from `SIGN_IN_LIMITS`, via `createAdminSupabase().rpc("consume_rate_limit", …)`. It returns `{ allowed: true } | { allowed: false, retryAfterSeconds }` (the max of the blocked buckets). On an RPC error it **fails closed**: it throws, and the action maps that to `INTERNAL`. Only hashes reach the database, never the raw email or IP.
-  - [ ] `src/lib/auth/sign-in.ts` (`server-only`): `signInWithPassword(email, password)` and `signOutCurrentSession()` (`supabase.auth.signOut({ scope: "local" })`), using `createServerSupabase()`. They map Supabase errors to `"invalid" | "rate_limited" | "unavailable"` with no detail passed upward.
-  - [ ] `src/lib/auth/proxy-session.ts`: `updateSession(request: NextRequest)` per Dev Notes → Proxy. It returns `{ response, isAuthenticated }`.
-  - [ ] `src/lib/auth/index.ts` re-exports the server API (`getAuthState`, `getAuthUser`, `requireActiveUser`, types). The proxy imports `proxy-session.ts` and `redirect.ts` directly.
-- [ ] **Task 6: Proxy** (AC: 5, 9)
-  - [ ] `src/proxy.ts`: `export async function proxy(request: NextRequest)` plus `export const config = { matcher: [...] }` (Next 16 file convention, Node runtime by default; never `middleware.ts`, never a `runtime` export). Logic in Dev Notes → Proxy. Keep the structure easy to extend, because Story 1.6 adds the nonce CSP here.
-- [ ] **Task 7: Server actions** (AC: 1, 2, 3, 6, 7, 9)
-  - [ ] `src/features/account/actions.ts` (`"use server"`):
+  - [x] `src/lib/auth/redirect.ts`: `sanitizeNextPath(raw: unknown): string`, plus `DEFAULT_AFTER_SIGN_IN = "/workspace"` and `ALLOWED_NEXT_PREFIXES = ["/workspace"]` (Dev Notes → Redirect allowlist). It is a pure module with no `server-only`, so the proxy and tests can import it.
+  - [x] `src/lib/auth/client-ip.ts`: `getClientIp(headers: Headers): string` (pure): `x-real-ip`, else the first `x-forwarded-for` entry, trimmed, at most 64 chars, else `"unknown"`.
+  - [x] `src/lib/auth/rate-limit-key.ts`: `rateLimitKeyHash(bucket, value)` = SHA-256 hex of `` `${bucket}:${value}` `` (`node:crypto`). Pure, so the e2e test can import it.
+  - [x] `src/lib/auth/rate-limit.ts` (`server-only`): `checkSignInRateLimit({ ip, email }, consume = rpcConsume)`. It consumes the `sign_in_ip` and `sign_in_email` buckets, with the limits from `SIGN_IN_LIMITS`, via `createAdminSupabase().rpc("consume_rate_limit", …)`. It returns `{ allowed: true } | { allowed: false, retryAfterSeconds }` (the max of the blocked buckets). On an RPC error it **fails closed**: it throws, and the action maps that to `INTERNAL`. Only hashes reach the database, never the raw email or IP.
+  - [x] `src/lib/auth/sign-in.ts` (`server-only`): `signInWithPassword(email, password)` and `signOutCurrentSession()` (`supabase.auth.signOut({ scope: "local" })`), using `createServerSupabase()`. They map Supabase errors to `"invalid" | "rate_limited" | "unavailable"` with no detail passed upward.
+  - [x] `src/lib/auth/proxy-session.ts`: `updateSession(request: NextRequest)` per Dev Notes → Proxy. It returns `{ response, isAuthenticated }`.
+  - [x] `src/lib/auth/index.ts` re-exports the server API (`getAuthState`, `getAuthUser`, `requireActiveUser`, types). The proxy imports `proxy-session.ts` and `redirect.ts` directly.
+- [x] **Task 6: Proxy** (AC: 5, 9)
+  - [x] `src/proxy.ts`: `export async function proxy(request: NextRequest)` plus `export const config = { matcher: [...] }` (Next 16 file convention, Node runtime by default; never `middleware.ts`, never a `runtime` export). Logic in Dev Notes → Proxy. Keep the structure easy to extend, because Story 1.6 adds the nonce CSP here.
+- [x] **Task 7: Server actions** (AC: 1, 2, 3, 6, 7, 9)
+  - [x] `src/features/account/actions.ts` (`"use server"`):
     - `signIn(prevState, formData)` follows Dev Notes → Sign-in action exactly: Zod parse → rate limit → Supabase sign-in → status check → `redirect`;
     - `signOut()` calls `getAuthState()`, then `signOutCurrentSession()` if signed in, then `redirect("/sign-in")`. It is the one action open to non-active users, which is why it uses `getAuthState()` rather than `getAuthUser()`.
-  - [ ] `src/features/account/sign-in-schema.ts`: `SignInSchema` (Zod v4) and `type SignInInput`.
-- [ ] **Task 8: Routes and UI** (AC: 1, 2, 3, 6, 7)
-  - [ ] `src/app/layout.tsx`: change `metadata.title` to `{ default: "Plan Markup", template: "%s · Plan Markup" }`. The home page title stays "Plan Markup", which the smoke test checks.
-  - [ ] `src/app/(auth)/layout.tsx`: a centred single-column shell inside `<div data-theme="daylight" className="flex flex-1 flex-col bg-surface-0 text-text">` (Dev Notes → UX). No auth logic here.
-  - [ ] `src/app/(auth)/sign-in/page.tsx` (server). It awaits `searchParams` (a Promise in Next 16) and calls `getAuthState()`:
+  - [x] `src/features/account/sign-in-schema.ts`: `SignInSchema` (Zod v4) and `type SignInInput`.
+- [x] **Task 8: Routes and UI** (AC: 1, 2, 3, 6, 7)
+  - [x] `src/app/layout.tsx`: change `metadata.title` to `{ default: "Plan Markup", template: "%s · Plan Markup" }`. The home page title stays "Plan Markup", which the smoke test checks.
+  - [x] `src/app/(auth)/layout.tsx`: a centred single-column shell inside `<div data-theme="daylight" className="flex flex-1 flex-col bg-surface-0 text-text">` (Dev Notes → UX). No auth logic here.
+  - [x] `src/app/(auth)/sign-in/page.tsx` (server). It awaits `searchParams` (a Promise in Next 16) and calls `getAuthState()`:
     - active → `redirect(sanitizeNextPath(next))`;
     - inactive → `redirect("/pending-activation")`;
     - anonymous → renders `<SignInForm next={sanitizeNextPath(next)} />`.
     `metadata.title = "Sign in"`.
-  - [ ] `src/features/account/sign-in-form.tsx` (`"use client"`): `useActionState(signIn, initialState)`. It has Email and Password `TextField`s (password with the existing show/hide toggle), a hidden `next` input and a primary `Button` "Sign in". The form-level error goes in a `role="alert"` box with a `CircleX` icon and text. Field errors show inline. On a failed submit, focus moves to the first invalid field. While pending, the button reads "Signing in…" and ignores repeat submits. Copy is in Dev Notes → UX.
-  - [ ] `src/app/(auth)/pending-activation/page.tsx` (server): `getAuthState()`:
+  - [x] `src/features/account/sign-in-form.tsx` (`"use client"`): `useActionState(signIn, initialState)`. It has Email and Password `TextField`s (password with the existing show/hide toggle), a hidden `next` input and a primary `Button` "Sign in". The form-level error goes in a `role="alert"` box with a `CircleX` icon and text. Field errors show inline. On a failed submit, focus moves to the first invalid field. While pending, the button reads "Signing in…" and ignores repeat submits. Copy is in Dev Notes → UX.
+  - [x] `src/app/(auth)/pending-activation/page.tsx` (server): `getAuthState()`:
     - anonymous → `redirect("/sign-in")`;
     - active → `redirect("/workspace")`;
     - inactive → renders `PendingActivation` with copy for `pending` or `deactivated`, the signed-in email, and a Sign out form (`<form action={signOut}>` + secondary `Button type="submit"`).
     `metadata.title = "Waiting for approval"`.
-  - [ ] `src/features/account/pending-activation.tsx`: the presentational screen (heading, explanation, "What happens next" text, sign-out slot).
-  - [ ] `src/app/(workspace)/layout.tsx`: `await requireActiveUser()` (defence in depth only). Render `children`.
-  - [ ] `src/app/(workspace)/workspace/page.tsx`: `const user = await requireActiveUser("/workspace")` (**the page calls the guard itself**, because layouts do not re-run on client navigation). It shows a placeholder heading "Workspace", one sentence ("Your drawings will appear here."), and `<UserMenu user={user} />`. Story 1.8 replaces the body with the workspace shell.
-  - [ ] `src/features/account/user-menu.tsx`: the minimal user menu, a header strip showing the user's name (or email if the name is empty) and a `<form action={signOut}>` with a secondary `Button type="submit"` "Sign out". No Radix menu: the Menu components come in Story 1.7, and Story 1.8 moves Sign out into the File and account menus.
-  - [ ] `src/app/page.tsx`: keep it public and unchanged, except for a ghost "Sign in" link to `/sign-in` (a styled `next/link`, not a nested `<button>`).
-- [ ] **Task 9: Lint rules** (AC: 4)
-  - [ ] `eslint.config.mjs`: add the two blocks in Dev Notes → Lint rules (`no-restricted-syntax` against raw auth calls outside `src/lib/auth/**`, and `no-restricted-imports` banning `@supabase/*` in `src/app/**`, `src/components/**`, `src/features/**` and `src/proxy.ts`). Do not touch the existing core/oracle blocks.
-  - [ ] `tools/lint/auth-boundaries.test.ts`, in the same style as `tools/lint/boundaries.test.ts` (`ESLint#lintText` with probe file paths, 30 s timeout). Cases:
+  - [x] `src/features/account/pending-activation.tsx`: the presentational screen (heading, explanation, "What happens next" text, sign-out slot).
+  - [x] `src/app/(workspace)/layout.tsx`: `await requireActiveUser()` (defence in depth only). Render `children`.
+  - [x] `src/app/(workspace)/workspace/page.tsx`: `const user = await requireActiveUser("/workspace")` (**the page calls the guard itself**, because layouts do not re-run on client navigation). It shows a placeholder heading "Workspace", one sentence ("Your drawings will appear here."), and `<UserMenu user={user} />`. Story 1.8 replaces the body with the workspace shell.
+  - [x] `src/features/account/user-menu.tsx`: the minimal user menu, a header strip showing the user's name (or email if the name is empty) and a `<form action={signOut}>` with a secondary `Button type="submit"` "Sign out". No Radix menu: the Menu components come in Story 1.7, and Story 1.8 moves Sign out into the File and account menus.
+  - [x] `src/app/page.tsx`: keep it public and unchanged, except for a ghost "Sign in" link to `/sign-in` (a styled `next/link`, not a nested `<button>`).
+- [x] **Task 9: Lint rules** (AC: 4)
+  - [x] `eslint.config.mjs`: add the two blocks in Dev Notes → Lint rules (`no-restricted-syntax` against raw auth calls outside `src/lib/auth/**`, and `no-restricted-imports` banning `@supabase/*` in `src/app/**`, `src/components/**`, `src/features/**` and `src/proxy.ts`). Do not touch the existing core/oracle blocks.
+  - [x] `tools/lint/auth-boundaries.test.ts`, in the same style as `tools/lint/boundaries.test.ts` (`ESLint#lintText` with probe file paths, 30 s timeout). Cases:
     - `supabase.auth.getSession()`, `supabase.auth.getUser()`, `supabase.auth.getClaims()`, `auth?.getUser()` and `auth["getSession"]()` in `src/features/__probe__.ts` are reported as `no-restricted-syntax`;
     - the same `getUser()` call in `src/lib/auth/__probe__.ts` passes;
     - `import { createServerClient } from "@supabase/ssr"` in `src/app/__probe__.tsx` and `src/proxy.ts` is reported as `no-restricted-imports`, and the same import in `src/lib/supabase/__probe__.ts` passes;
     - `supabase.auth.admin.getUserById()` is **not** flagged.
-- [ ] **Task 10: Admin script and env helper** (AC: 10, 11)
-  - [ ] `scripts/admin-create-user.mjs` per Dev Notes → admin:create-user. Add the npm script `"admin:create-user": "node --env-file-if-exists=.env.local scripts/admin-create-user.mjs"`. Export the pure helpers (`parseArgs`, `validateInput`, `isLocalUrl`, `generatePassword`) and test them in `scripts/admin-create-user.test.mjs`.
-  - [ ] `scripts/supabase-env.mjs`: runs `npx supabase status -o json` and maps it to `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` (Dev Notes → CI e2e). Modes:
+- [x] **Task 10: Admin script and env helper** (AC: 10, 11)
+  - [x] `scripts/admin-create-user.mjs` per Dev Notes → admin:create-user. Add the npm script `"admin:create-user": "node --env-file-if-exists=.env.local scripts/admin-create-user.mjs"`. Export the pure helpers (`parseArgs`, `validateInput`, `isLocalUrl`, `generatePassword`) and test them in `scripts/admin-create-user.test.mjs`.
+  - [x] `scripts/supabase-env.mjs`: runs `npx supabase status -o json` and maps it to `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` (Dev Notes → CI e2e). Modes:
     - `--github-env` appends `KEY=value` lines to the file named by `$GITHUB_ENV` and prints only the key names;
     - `--write .env.local` updates those three keys in `.env.local`, keeping every other line.
     Export and test the pure `mapStatusToEnv(json)` and `mergeEnvFile(text, vars)` (`scripts/supabase-env.test.mjs`). Add the npm script `"env:local": "node scripts/supabase-env.mjs --write .env.local"`.
-- [ ] **Task 11: Unit tests (Vitest)** (AC: 2, 3, 4, 5, 11)
-  - [ ] `src/lib/auth/get-auth-user.test.ts` (node env; `vi.mock("server-only", () => ({}))`, mock `@/lib/supabase/server` with a fake client whose `auth.getSession` **throws if called**). Cases:
+- [x] **Task 11: Unit tests (Vitest)** (AC: 2, 3, 4, 5, 11)
+  - [x] `src/lib/auth/get-auth-user.test.ts` (node env; `vi.mock("server-only", () => ({}))`, mock `@/lib/supabase/server` with a fake client whose `auth.getSession` **throws if called**). Cases:
     - no user → anonymous and `getAuthUser()` is null;
     - `getUser()` error → anonymous;
     - active profile → `AuthUser` built from the profile, while `user_metadata = { name: "Evil", is_platform_admin: true }` and `app_metadata.role = "admin"` are ignored;
@@ -128,16 +128,16 @@ so that only I can reach my workspace.
     - no profile row → inactive/pending;
     - profile query error → throws (fail closed);
     - `requireActiveUser` calls the mocked `redirect` with `/sign-in?next=%2Fworkspace` for anonymous and `/pending-activation` for inactive.
-  - [ ] `src/lib/auth/redirect.test.ts`: the full table in Dev Notes → Redirect allowlist (every row is one `it.each` case).
-  - [ ] `src/lib/auth/client-ip.test.ts`: `x-real-ip` wins; first `x-forwarded-for` entry; whitespace trimmed; over-long values truncated; missing → `"unknown"`.
-  - [ ] `src/lib/auth/rate-limit.test.ts` (injected `consume`):
+  - [x] `src/lib/auth/redirect.test.ts`: the full table in Dev Notes → Redirect allowlist (every row is one `it.each` case).
+  - [x] `src/lib/auth/client-ip.test.ts`: `x-real-ip` wins; first `x-forwarded-for` entry; whitespace trimmed; over-long values truncated; missing → `"unknown"`.
+  - [x] `src/lib/auth/rate-limit.test.ts` (injected `consume`):
     - both buckets are called with 64-hex hashes, and neither hash contains the raw email or IP;
     - IP blocked → not allowed;
     - email blocked → not allowed;
     - both blocked → `retryAfterSeconds` is the max;
     - `consume` throws → `checkSignInRateLimit` rejects;
     - `rateLimitKeyHash` is deterministic and bucket-scoped.
-  - [ ] `src/features/account/actions.test.ts` (mock `@/lib/auth`, `@/lib/auth/rate-limit`, `@/lib/auth/sign-in`, `next/navigation`, `next/headers`):
+  - [x] `src/features/account/actions.test.ts` (mock `@/lib/auth`, `@/lib/auth/rate-limit`, `@/lib/auth/sign-in`, `next/navigation`, `next/headers`):
     - an invalid email returns `INVALID_INPUT` with a field error and calls neither the rate limiter nor Supabase;
     - rate-limited returns `RATE_LIMITED` with "Try again in 15 minutes." and Supabase is not called;
     - `invalid` returns `UNAUTHENTICATED` with exactly "Email or password is incorrect.";
@@ -145,24 +145,24 @@ so that only I can reach my workspace.
     - success + active → `redirect` to the sanitised `next`;
     - success + pending → `redirect("/pending-activation")`;
     - a limiter failure → `INTERNAL`, "Sign-in is unavailable right now. Try again shortly.".
-  - [ ] `src/features/account/sign-in-form.test.tsx` (jsdom): labels associated; the alert renders the server message with an icon; submitting an empty form shows inline errors and focuses the email field.
-- [ ] **Task 12: Playwright e2e and CI** (AC: 1, 2, 3, 5, 6, 7, 11)
-  - [ ] `e2e/global-setup.ts`: connect with `pg` to `process.env.SUPABASE_DB_URL ?? "postgresql://postgres:postgres@127.0.0.1:56322/postgres"` and run `delete from app.rate_limits`, so reruns are not throttled. If the connection fails, throw "Local Supabase is not running (npm run db:start)". Register it as `globalSetup` in `playwright.config.ts`.
-  - [ ] `e2e/auth.spec.ts`, using the seed accounts (Dev Notes → E2E cases). Each test uses a fresh browser context (Playwright default).
-  - [ ] `.github/workflows/ci.yml`: turn the `e2e` job into "Playwright e2e (local Supabase)" per Dev Notes → CI e2e. Keep the job name stable apart from the label, and keep the failure artifact upload. `db.yml` stays as it is.
-  - [ ] Update `.env.example` comments (keys come from `npm run env:local`) and the README: a "Sign-in" section with the seed table (including `deactivated@`), `npm run env:local`, `npm run admin:create-user`, the protected routes, and the e2e prerequisite (local stack running).
-- [ ] **Task 13: Verify** (AC: 1–11)
-  - [ ] With Docker running:
+  - [x] `src/features/account/sign-in-form.test.tsx` (jsdom): labels associated; the alert renders the server message with an icon; submitting an empty form shows inline errors and focuses the email field.
+- [x] **Task 12: Playwright e2e and CI** (AC: 1, 2, 3, 5, 6, 7, 11)
+  - [x] `e2e/global-setup.ts`: connect with `pg` to `process.env.SUPABASE_DB_URL ?? "postgresql://postgres:postgres@127.0.0.1:56322/postgres"` and run `delete from app.rate_limits`, so reruns are not throttled. If the connection fails, throw "Local Supabase is not running (npm run db:start)". Register it as `globalSetup` in `playwright.config.ts`.
+  - [x] `e2e/auth.spec.ts`, using the seed accounts (Dev Notes → E2E cases). Each test uses a fresh browser context (Playwright default).
+  - [x] `.github/workflows/ci.yml`: turn the `e2e` job into "Playwright e2e (local Supabase)" per Dev Notes → CI e2e. Keep the job name stable apart from the label, and keep the failure artifact upload. `db.yml` stays as it is.
+  - [x] Update `.env.example` comments (keys come from `npm run env:local`) and the README: a "Sign-in" section with the seed table (including `deactivated@`), `npm run env:local`, `npm run admin:create-user`, the protected routes, and the e2e prerequisite (local stack running).
+- [x] **Task 13: Verify** (AC: 1–11)
+  - [x] With Docker running:
     - `npm run db:start` (or `db:reset`), then `npm run db:test`, `check:rls`, `check:schema`, `check:types`;
     - `npm run env:local`, then `npm run typecheck`, `lint`, `test`, `build`, `e2e`, `check:pinned`, `check:env-files`.
     Record the outputs in the Debug Log.
-  - [ ] Manual proof:
+  - [x] Manual proof:
     - `npm run admin:create-user -- --email pilot@plan-markup.test --name "Pilot One"` → sign in with the printed password at http://localhost:3020/sign-in → land on `/workspace` → Sign out;
     - in DevTools → Application → Cookies, check `HttpOnly` ✓, `Secure` ✓, `SameSite Lax` on `sb-*-auth-token*`;
     - run `npx supabase status` and confirm that the Auth container picked up the session settings (`docker inspect` the `supabase_auth_plan-markup` container env for `GOTRUE_SESSIONS_TIMEBOX=720h` / `GOTRUE_SESSIONS_INACTIVITY_TIMEOUT=168h` / `GOTRUE_JWT_EXP=600`, or the equivalent names). Record what you saw.
-  - [ ] Negative proof, then revert and record: add `supabase.auth.getSession()` to a file in `src/features/` → `npm run lint` fails with the NFR11 message.
-  - [ ] Stop the dev server, free port 3020, and stop the stack (`npm run db:stop`) unless the orchestrator asks otherwise.
-  - [ ] **Do not commit or push.** The orchestrator commits, pushes and watches `ci.yml` and `db.yml`.
+  - [x] Negative proof, then revert and record: add `supabase.auth.getSession()` to a file in `src/features/` → `npm run lint` fails with the NFR11 message.
+  - [x] Stop the dev server, free port 3020, and stop the stack (`npm run db:stop`) unless the orchestrator asks otherwise.
+  - [x] **Do not commit or push.** The orchestrator commits, pushes and watches `ci.yml` and `db.yml`.
 
 ## Dev Notes
 
@@ -567,8 +567,143 @@ All open questions from story authoring were accepted with the recommended defau
 
 ### Agent Model Used
 
+Claude Opus 5.5 (`claude-opus-5-5`), BMAD dev-story workflow, 2026-10-18.
+
+### Implementation Plan
+
+Followed the task order. Config and migration first (verified against the running Auth container and pgTAP), then `src/lib/{supabase,auth,db}`, proxy, actions, UI, lint rules, scripts, unit tests, e2e and CI. Status always comes from `profiles` through `getAuthState()`; the proxy only checks "is there a verified user". The rate limiter runs before Auth and fails closed.
+
 ### Debug Log References
+
+All outputs below are real, from this session (Windows 11, Docker 29.5.2, CLI 2.121.0, Postgres image 17.6.1.155).
+
+- `npm run db:start -- -x studio,imgproxy,mailpit,edge-runtime,logflare,vector,supavisor`: started. `supabase status -o json` keys on CLI 2.121.0: `ANON_KEY, API_URL, DB_URL, GRAPHQL_URL, JWT_SECRET, PUBLISHABLE_KEY, REST_URL, S3_PROTOCOL_ACCESS_KEY_ID, S3_PROTOCOL_ACCESS_KEY_SECRET, S3_PROTOCOL_REGION, SECRET_KEY, SERVICE_ROLE_KEY, STORAGE_S3_URL` (fixture in `scripts/supabase-env.test.mjs`, values redacted).
+- `npm run db:reset`: applied `20261017024840`, `20261017105639`, `20261018090000_auth_rate_limits_and_active_helper.sql`, seeded. `db:schema` and `db:types` regenerated `supabase/schema.sql` (+119 lines) and `src/lib/db/types.gen.ts` (`app.rate_limits`, `app.fn_is_active_user`, `public.consume_rate_limit`).
+- Auth container env (`docker inspect supabase_auth_plan-markup`): `GOTRUE_JWT_EXP=600`, `GOTRUE_SESSIONS_TIMEBOX=720h0m0s`, `GOTRUE_SESSIONS_INACTIVITY_TIMEOUT=168h0m0s`, `GOTRUE_SECURITY_REFRESH_TOKEN_ROTATION_ENABLED=true`, `GOTRUE_SECURITY_REFRESH_TOKEN_REUSE_INTERVAL=10`, `GOTRUE_SITE_URL=http://localhost:3020`, `GOTRUE_URI_ALLOW_LIST=http://localhost:3020,http://127.0.0.1:3020`, `GOTRUE_PASSWORD_MIN_LENGTH=12`.
+- Final run after a fresh `npm run db:reset`:
+  - `npm run db:test`: `Files=5, Tests=57 … Result: PASS` (active_user_helper 6, rate_limits 19, plus the existing 3 files).
+  - `npm run check:rls`: `RLS coverage OK: 2 table(s) in public/app, all with RLS and at least one policy.`
+  - `npm run check:schema`: `supabase/schema.sql matches the local database. No drift.`
+  - `npm run check:types`: `src/lib/db/types.gen.ts matches the local database. No drift.`
+  - `npm run env:local`: `Updated NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY in .env.local.`
+  - `npm run typecheck`: exit 0 (`✓ Types generated successfully`, tsc clean).
+  - `npm run lint`: exit 0, 0 problems.
+  - `npm test`: `Test Files 25 passed (25)`, `Tests 262 passed (262)`.
+  - `npm run check:pinned`: `All dependencies are pinned to exact versions.` (no new dependencies).
+  - `npm run check:env-files`: `No forbidden .env files are tracked.`
+  - `npm run build`: exit 0. Routes: `○ /`, `ƒ /pending-activation`, `ƒ /sign-in`, `ƒ /workspace`, `ƒ Proxy (Middleware)`. `grep` of `.next/static` for `sb_secret_`, `SUPABASE_SERVICE_ROLE_KEY`, `consume_rate_limit`: 0 hits.
+  - `npm run e2e`: `12 passed (14.5s)` (11 in `auth.spec.ts`, 1 smoke).
+- First e2e run: 10/12. Two failures were a locator problem, not the app: Next's `#__next-route-announcer__` is also `role="alert"`, so `getByRole("alert")` hit strict mode. Fixed with a `formAlert()` helper.
+- First jsdom run of `sign-in-form.test.tsx` caught a real bug: `e.currentTarget` read inside a `setState` updater (null by then). Fixed by reading the value before calling the setter.
+- Manual proof (dev server on 3020 against the local stack):
+  - `npm run admin:create-user -- --email pilot@plan-markup.test --name "Pilot One"` → `Created active user pilot@plan-markup.test (e4f3fca2-…)` and `Temporary password: …`. Profile: `status active`, `is_platform_admin false`, `name "Pilot One"`. A rerun → `A user with this email already exists.`; a 101-char name → `--name must be at most 100 characters.`
+  - Signed in as the pilot in Chromium (Playwright script, real browser): sign-in action response `Set-Cookie: sb-127-auth-token=base64-…; Path=/; Expires=…; Max-Age=2592000; Secure; HttpOnly; SameSite=lax`, `Cache-Control: no-store`. Landed on `/workspace`, user menu showed "Pilot One", `document.cookie` was `""`. Sign out → `/sign-in`.
+  - curl with the pending user's session cookie: `GET /workspace` → `307 -> /pending-activation`; `GET /pending-activation` → `200`. Anonymous: `GET /workspace` → `307 -> /sign-in?next=%2Fworkspace`; `POST /workspace` → `307 -> /sign-in`.
+  - Pending user's access token against PostgREST: `GET /rest/v1/profiles` → only their own row (`pending`); `POST /rest/v1/rpc/consume_rate_limit` → `42501 permission denied for function consume_rate_limit` (same for anon). No workspace data tables exist yet; `app.fn_is_active_user()` returns false for pending (pgTAP) and every future data policy must AND it.
+- Negative lint proof: added `supabase.auth.getSession()` to `src/features/account/__negative_probe__.ts`, `npx eslint` on it → `error Use getAuthUser()/getAuthState() from @/lib/auth. Raw Supabase auth calls are banned outside src/lib/auth (NFR11) no-restricted-syntax`, exit 1. File removed.
+- Cleanup: dev server stopped (an orphaned `next start-server.js` child, PID 21140, held 3020 and was stopped by PID), port 3020 free, `npm run db:stop` → `Stopped supabase local development setup.` (with backup, so the `pilot@` user stays in the local DB until the next `db:reset`).
 
 ### Completion Notes List
 
+- AC 1: sign-in at `/sign-in` lands on `/workspace`; cookies are `HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/`, `Max-Age=2592000` (e2e + raw header check).
+- AC 2: one message for wrong password and unknown email (e2e compares the two alert texts).
+- AC 3: Postgres fixed-window limiter (`app.rate_limits`, `public.consume_rate_limit`, service_role only), 30/15 min per IP and 10/15 min per normalised email, consumed before Auth; only SHA-256 hashes stored; fails closed with `INTERNAL`. Auth 429 maps to the same `RATE_LIMITED` message. e2e proves Auth is not called when over the limit.
+- AC 4: `getAuthUser()` / `getAuthState()` / `readAuthState()` / `requireActiveUser()` in `src/lib/auth/get-auth-user.ts`; status and admin flag from `profiles` only, unit test proves `user_metadata`/`app_metadata` are ignored and `getSession` is never called. Lint rule plus `tools/lint/auth-boundaries.test.ts` (10 cases).
+- AC 5: `src/proxy.ts` refreshes on every matched request, default-deny with `PUBLIC_PATHS = ["/", "/sign-in"]`, redirect carries refreshed cookies. `sanitizeNextPath` passes all 33 rows of the Dev Notes table; e2e covers `//evil.com`, `https://evil.com` and `/\evil.com`.
+- AC 6: pending and deactivated users land on `/pending-activation` (Daylight, Story 1.4 tokens); `/workspace` sends them back; `app.fn_is_active_user()` exists with pgTAP coverage.
+- AC 7: Sign out from the workspace user menu and from PendingActivation ends the session server-side (`signOut({ scope: "local" })`). e2e also replays the old cookies after sign-out and is still sent to `/sign-in`.
+- AC 8: `config.toml` values asserted by `tools/config/supabase-auth-config.test.ts` and confirmed in the Auth container env.
+- AC 9: pages call `requireActiveUser()` / `getAuthState()` themselves; layouts only add defence in depth; `signOut` uses `getAuthState()`. `signIn` is the unauthenticated entry point, so it does not start with `getAuthUser()`; it calls `readAuthState()` after Auth succeeds.
+- AC 10: `npm run admin:create-user` works against the local stack (manual proof above); pure helpers unit-tested.
+- AC 11: Vitest 262/262, pgTAP 57/57, Playwright 12/12; CI `e2e` job now starts the local stack.
+- Dev Notes question resolved: `cookies()` inside the server action does see the cookies set earlier by `signInWithPassword`, so `readAuthState()` right after sign-in works. The pending e2e test proves it (a stale read would have returned `INTERNAL` and stayed on `/sign-in`). The fallback (`data.user.id` + `getOwnProfile`) was not needed.
+
+**Deviations and additions (for review):**
+
+1. `@supabase/ssr` 0.12.7 ignores `cookieOptions.maxAge`: it always writes its own 400-day default (`cookies.js`, `setCookieOptions = { ...DEFAULT, ...cookieOptions, maxAge: DEFAULT.maxAge }`). Added `src/lib/supabase/cookie-options.ts` with `AUTH_COOKIE_OPTIONS` (shared by `server.ts` and `proxy-session.ts`) and `withAuthCookieOptions()`, which every `setAll` applies: it forces `httpOnly/secure/sameSite/path` and caps `maxAge` at 2592000 (removals stay `maxAge: 0`). Unit-tested; e2e checks the cookie expiry is at most 30 days.
+2. Sign-in form: the email input is controlled, because React 19 resets uncontrolled fields after a form action and the email would be cleared on every wrong password. The password is still cleared.
+3. `getOwnProfile()` throws on an unknown `status` value instead of passing it through (fail closed).
+4. A password longer than 1024 characters fails the schema with the field error "Email or password is incorrect." (no new copy, and it reveals nothing).
+5. The form unit test mocks `useActionState` (the server action module cannot load in jsdom).
+6. Extra e2e cases beyond the Dev Notes list: pending user signs out from PendingActivation; replayed cookies after sign-out stay rejected; a third open-redirect variant (`/\evil.com`); cookie lifetime cap.
+7. The negative lint proof ran `npx eslint` on the probe file rather than the whole `npm run lint` (same config, faster).
+8. The anonymous `GET /pending-activation` redirect carries `next=/pending-activation`, which `sanitizeNextPath` drops to `/workspace` (by design: it is not allowlisted).
+9. `--password-stdin` was unit-tested only through `validateInput`; the stdin path itself was not run manually (it reads stdin, which hangs the agent shell).
+
+**For the reviewer, security-sensitive spots:**
+
+- `src/lib/auth/redirect.ts` (decode loop, rejects anything still encoded after 3 decodes, re-serialises from `URL`).
+- `src/lib/supabase/cookie-options.ts` and the two `setAll` implementations (the library `maxAge` override above).
+- `supabase/migrations/20261018090000_…sql`: `consume_rate_limit` is SECURITY DEFINER in `public` with EXECUTE for `service_role` only (pgTAP and a live PostgREST call both show 42501 for anon/authenticated).
+- `src/features/account/actions.ts`: order is parse → limiter → Auth → `readAuthState()` → `redirect`; `redirect()` is outside try/catch; no email, password, IP or Supabase message is logged or returned.
+- `src/proxy.ts`: default-deny; any new public page must be added to `PUBLIC_PATHS`.
+- `.github/workflows/ci.yml` `e2e` job: first CI run of the stack inside that job (Chromium `Secure` cookies on `http://localhost` worked locally; if the runner disagrees, stop and report rather than weakening `secure`).
+
 ### File List
+
+New:
+- `src/proxy.ts`
+- `src/lib/auth/index.ts`
+- `src/lib/auth/get-auth-user.ts`
+- `src/lib/auth/get-auth-user.test.ts`
+- `src/lib/auth/redirect.ts`
+- `src/lib/auth/redirect.test.ts`
+- `src/lib/auth/client-ip.ts`
+- `src/lib/auth/client-ip.test.ts`
+- `src/lib/auth/rate-limit.ts`
+- `src/lib/auth/rate-limit.test.ts`
+- `src/lib/auth/rate-limit-key.ts`
+- `src/lib/auth/sign-in.ts`
+- `src/lib/auth/proxy-session.ts`
+- `src/lib/supabase/server.ts`
+- `src/lib/supabase/admin.ts`
+- `src/lib/supabase/cookie-options.ts`
+- `src/lib/supabase/cookie-options.test.ts`
+- `src/lib/db/profiles.ts`
+- `src/lib/result.ts`
+- `src/features/account/actions.ts`
+- `src/features/account/actions.test.ts`
+- `src/features/account/sign-in-schema.ts`
+- `src/features/account/sign-in-form.tsx`
+- `src/features/account/sign-in-form.test.tsx`
+- `src/features/account/pending-activation.tsx`
+- `src/features/account/user-menu.tsx`
+- `src/app/(auth)/layout.tsx`
+- `src/app/(auth)/sign-in/page.tsx`
+- `src/app/(auth)/pending-activation/page.tsx`
+- `src/app/(workspace)/layout.tsx`
+- `src/app/(workspace)/workspace/page.tsx`
+- `supabase/migrations/20261018090000_auth_rate_limits_and_active_helper.sql`
+- `supabase/tests/rate_limits.test.sql`
+- `supabase/tests/active_user_helper.test.sql`
+- `scripts/admin-create-user.mjs`
+- `scripts/admin-create-user.test.mjs`
+- `scripts/supabase-env.mjs`
+- `scripts/supabase-env.test.mjs`
+- `tools/lint/auth-boundaries.test.ts`
+- `tools/config/supabase-auth-config.test.ts`
+- `e2e/global-setup.ts`
+- `e2e/auth.spec.ts`
+
+Modified:
+- `supabase/config.toml`
+- `supabase/seed.sql`
+- `supabase/schema.sql` (generated)
+- `src/lib/db/types.gen.ts` (generated)
+- `eslint.config.mjs`
+- `package.json` (scripts `env:local`, `admin:create-user`)
+- `playwright.config.ts` (`globalSetup`)
+- `.github/workflows/ci.yml` (`e2e` job)
+- `src/app/layout.tsx` (title template)
+- `src/app/page.tsx` (Sign in link)
+- `.env.example`
+- `README.md`
+- `_bmad-output/planning-artifacts/architecture.md` (`UNAUTHENTICATED` code)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `_bmad-output/implementation-artifacts/1-5-sign-in-and-sign-out.md` (this file)
+
+Local only (git-ignored, not committed): `.env.local` (written by `npm run env:local`).
+
+### Change Log
+
+- 2026-10-18: Implemented Story 1.5 (sign in and sign out): Supabase auth config, rate-limit table and RPC, active-user helper, `src/lib/auth`, proxy, server actions, sign-in / PendingActivation / workspace placeholder screens, lint boundaries, admin and env scripts, Vitest, pgTAP and Playwright coverage, CI e2e on a local stack. Status → review.

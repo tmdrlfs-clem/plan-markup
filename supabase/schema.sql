@@ -48,6 +48,22 @@ $$;
 ALTER FUNCTION "app"."fn_handle_new_user"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "app"."fn_is_active_user"() RETURNS boolean
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+  select exists (
+    select 1
+    from public.profiles p
+    where p.id = (select auth.uid())
+      and p.status = 'active'
+  );
+$$;
+
+
+ALTER FUNCTION "app"."fn_is_active_user"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "app"."fn_is_platform_admin"() RETURNS boolean
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO ''
@@ -80,9 +96,90 @@ $$;
 
 ALTER FUNCTION "app"."fn_set_updated_at"() OWNER TO "postgres";
 
+
+CREATE OR REPLACE FUNCTION "public"."consume_rate_limit"("p_bucket" "text", "p_key_hash" "text", "p_max_hits" integer, "p_window_seconds" integer) RETURNS TABLE("allowed" boolean, "retry_after_seconds" integer)
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $_$
+declare
+  v_now timestamptz := pg_catalog.now();
+  v_window interval;
+  v_hits integer;
+  v_started timestamptz;
+begin
+  if p_bucket is null or p_bucket !~ '^[a-z][a-z0-9_]{0,39}$' then
+    raise exception 'invalid bucket' using errcode = '22023';
+  end if;
+  if p_key_hash is null or p_key_hash !~ '^[0-9a-f]{64}$' then
+    raise exception 'invalid key_hash' using errcode = '22023';
+  end if;
+  if p_max_hits is null or p_max_hits not between 1 and 10000 then
+    raise exception 'p_max_hits must be between 1 and 10000' using errcode = '22023';
+  end if;
+  if p_window_seconds is null or p_window_seconds not between 1 and 86400 then
+    raise exception 'p_window_seconds must be between 1 and 86400' using errcode = '22023';
+  end if;
+
+  v_window := pg_catalog.make_interval(secs => p_window_seconds);
+
+  insert into app.rate_limits as r (bucket, key_hash, window_started_at, hits, updated_at)
+  values (p_bucket, p_key_hash, v_now, 1, v_now)
+  on conflict (bucket, key_hash) do update
+    set window_started_at = case
+          when r.window_started_at <= v_now - v_window then v_now
+          else r.window_started_at
+        end,
+        hits = case
+          when r.window_started_at <= v_now - v_window then 1
+          else r.hits + 1
+        end,
+        updated_at = v_now
+  returning r.hits, r.window_started_at into v_hits, v_started;
+
+  -- Housekeeping: drop stale counters now and then.
+  if pg_catalog.random() < 0.01 then
+    delete from app.rate_limits where updated_at < v_now - interval '1 day';
+  end if;
+
+  if v_hits <= p_max_hits then
+    allowed := true;
+    retry_after_seconds := 0;
+  else
+    allowed := false;
+    retry_after_seconds := greatest(
+      1,
+      pg_catalog.ceil(extract(epoch from (v_started + v_window - v_now)))::integer
+    );
+  end if;
+  return next;
+end;
+$_$;
+
+
+ALTER FUNCTION "public"."consume_rate_limit"("p_bucket" "text", "p_key_hash" "text", "p_max_hits" integer, "p_window_seconds" integer) OWNER TO "postgres";
+
 SET default_tablespace = '';
 
 SET default_table_access_method = "heap";
+
+
+CREATE TABLE IF NOT EXISTS "app"."rate_limits" (
+    "bucket" "text" NOT NULL,
+    "key_hash" "text" NOT NULL,
+    "window_started_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "hits" integer DEFAULT 0 NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "rate_limits_bucket_check" CHECK (("bucket" ~ '^[a-z][a-z0-9_]{0,39}$'::"text")),
+    CONSTRAINT "rate_limits_hits_check" CHECK (("hits" >= 0)),
+    CONSTRAINT "rate_limits_key_hash_check" CHECK (("key_hash" ~ '^[0-9a-f]{64}$'::"text"))
+);
+
+
+ALTER TABLE "app"."rate_limits" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "app"."rate_limits" IS 'Fixed-window rate-limit counters. Written only by public.consume_rate_limit (service_role).';
+
 
 
 CREATE TABLE IF NOT EXISTS "public"."profiles" (
@@ -109,6 +206,11 @@ COMMENT ON COLUMN "public"."profiles"."is_platform_admin" IS 'Server-controlled.
 
 
 
+ALTER TABLE ONLY "app"."rate_limits"
+    ADD CONSTRAINT "rate_limits_pkey" PRIMARY KEY ("bucket", "key_hash");
+
+
+
 ALTER TABLE ONLY "public"."profiles"
     ADD CONSTRAINT "profiles_pkey" PRIMARY KEY ("id");
 
@@ -120,6 +222,13 @@ CREATE OR REPLACE TRIGGER "trg_profiles_updated_at" BEFORE UPDATE ON "public"."p
 
 ALTER TABLE ONLY "public"."profiles"
     ADD CONSTRAINT "fk_profiles_user" FOREIGN KEY ("id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE "app"."rate_limits" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "rate_limits_all_none" ON "app"."rate_limits" TO "authenticated", "anon" USING (false) WITH CHECK (false);
 
 
 
@@ -149,12 +258,22 @@ REVOKE ALL ON FUNCTION "app"."fn_handle_new_user"() FROM PUBLIC;
 
 
 
+REVOKE ALL ON FUNCTION "app"."fn_is_active_user"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "app"."fn_is_active_user"() TO "authenticated";
+
+
+
 REVOKE ALL ON FUNCTION "app"."fn_is_platform_admin"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "app"."fn_is_platform_admin"() TO "authenticated";
 
 
 
 REVOKE ALL ON FUNCTION "app"."fn_set_updated_at"() FROM PUBLIC;
+
+
+
+REVOKE ALL ON FUNCTION "public"."consume_rate_limit"("p_bucket" "text", "p_key_hash" "text", "p_max_hits" integer, "p_window_seconds" integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."consume_rate_limit"("p_bucket" "text", "p_key_hash" "text", "p_max_hits" integer, "p_window_seconds" integer) TO "service_role";
 
 
 

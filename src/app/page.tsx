@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { TextField } from "@/components/ui/text-field";
 
@@ -5,7 +6,15 @@ import { TextField } from "@/components/ui/text-field";
 export default function Home() {
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col justify-center gap-6 p-8">
-      <h1 className="text-ad-3xl font-semibold text-text">Plan Markup</h1>
+      <div className="flex items-center justify-between gap-4">
+        <h1 className="text-ad-3xl font-semibold text-text">Plan Markup</h1>
+        <Link
+          href="/sign-in"
+          className="inline-flex h-10 items-center rounded border border-transparent px-4 text-ad-sm font-medium text-text hover:border-border hover:bg-surface-3 focus-ring"
+        >
+          Sign in
+        </Link>
+      </div>
       <p className="text-ad-md text-muted">
         Mark up construction plans and check sprinkler layouts in your browser.
       </p>

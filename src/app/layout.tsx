@@ -9,7 +9,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Plan Markup",
+  title: { default: "Plan Markup", template: "%s · Plan Markup" },
   description: "Plan Markup",
 };
 

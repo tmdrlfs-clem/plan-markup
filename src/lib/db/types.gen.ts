@@ -4,13 +4,30 @@ export type Database = {
 
   "app": {
           Tables: {
-            [_ in never]: never
+            "rate_limits": {
+                  Row: {
+                    "bucket": string,"hits": number,"key_hash": string,"updated_at": string,"window_started_at": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "bucket": string,"hits"?: number,"key_hash": string,"updated_at"?: string,"window_started_at"?: string
+                  }
+                  Update: {
+                    "bucket"?: string,"hits"?: number,"key_hash"?: string,"updated_at"?: string,"window_started_at"?: string
+                  }
+                  Relationships: [
+
+                  ]
+                }
           }
           Views: {
             [_ in never]: never
           }
           Functions: {
-            "fn_is_platform_admin":
+            "fn_is_active_user":
+{ Args: Record<PropertyKey, never>; Returns: boolean
+                           },
+"fn_is_platform_admin":
 { Args: Record<PropertyKey, never>; Returns: boolean
                            }
           }
@@ -42,7 +59,11 @@ export type Database = {
             [_ in never]: never
           }
           Functions: {
-            [_ in never]: never
+            "consume_rate_limit":
+{ Args: { "p_bucket": string,"p_key_hash": string,"p_max_hits": number,"p_window_seconds": number }; Returns: {
+              "allowed": boolean,"retry_after_seconds": number
+            }[]
+                           }
           }
           Enums: {
             [_ in never]: never

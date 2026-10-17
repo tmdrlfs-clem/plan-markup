@@ -275,7 +275,7 @@ Full design: `docs/4541-placement-design.md`.
 - **Ids:** UUID v7 generated client-side for markups/ops (offline-safe); server-generated UUIDs elsewhere.
 - **Coordinates:** stored and computed in PDF user-space points (1/72 in), origin as PDF (bottom-left) in storage; screen transforms only in the viewer. mm/m appear only at display and in rule tables (rule figures in metres, converted via calibration).
 - **Time:** `timestamptz` in DB, ISO-8601 UTC strings in JSON, displayed in the user's locale (NZ default). `datetime-local` inputs converted with `toISOString()` before validation.
-- **Result shape** (server actions, RPC wrappers, worker replies): `{ ok: true, data } | { ok: false, code, message }`; `code` is a stable `SCREAMING_SNAKE` string (`NOT_FOUND`, `FORBIDDEN`, `CONFLICT`, `INVALID_INPUT`, `RATE_LIMITED`, `INTERNAL`).
+- **Result shape** (server actions, RPC wrappers, worker replies): `{ ok: true, data } | { ok: false, code, message }`; `code` is a stable `SCREAMING_SNAKE` string (`NOT_FOUND`, `FORBIDDEN`, `CONFLICT`, `INVALID_INPUT`, `RATE_LIMITED`, `INTERNAL`, `UNAUTHENTICATED`).
 - **Nulls:** absent optional fields are omitted in TS objects, `null` in DB; never empty string as "none".
 
 ### Communication Patterns

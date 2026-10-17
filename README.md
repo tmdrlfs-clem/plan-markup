@@ -54,6 +54,35 @@ Seed accounts (local and CI only, password `password123`):
 | admin@plan-markup.test | active, platform admin |
 | user@plan-markup.test | active |
 | pending@plan-markup.test | pending |
+| deactivated@plan-markup.test | deactivated |
+
+## Sign-in
+
+Email and password sign-in through Supabase Auth, with session cookies that are `HttpOnly`, `Secure` and `SameSite=Lax`.
+
+1. `npm run db:start`, then `npm run env:local`. It writes `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` from `supabase status` into `.env.local` and keeps your other lines. The service key is required: sign-in rate limiting uses it.
+2. `npm run dev` and open http://localhost:3020/sign-in. Sign in with a seed account above. Pending and deactivated accounts see the PendingActivation screen.
+
+Routes:
+
+| Path | Access |
+| --- | --- |
+| `/`, `/sign-in` | public |
+| `/workspace` | active users only (others are redirected) |
+| `/pending-activation` | signed-in users whose account is pending or deactivated |
+| anything else matched by `src/proxy.ts` | signed-in users (default-deny) |
+
+Create a pilot user (confirmed, `active` profile, never a platform admin):
+
+```sh
+npm run admin:create-user -- --email pilot@example.com --name "Pilot One"
+```
+
+It prints a generated temporary password once. Pass `--password-stdin` to pipe in your own (12 to 128 characters). Against a non-local Supabase URL it refuses to run without `--yes`.
+
+Sign-in attempts are rate-limited per client IP (30 per 15 minutes) and per email (10 per 15 minutes) in `app.rate_limits`.
+
+The Playwright suite (`npm run e2e`) needs the local stack running (`npm run db:start` and `npm run env:local`). Its global setup clears the rate-limit counters.
 
 ## Documents
 

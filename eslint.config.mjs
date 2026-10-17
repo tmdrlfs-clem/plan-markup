@@ -94,6 +94,46 @@ const eslintConfig = defineConfig([
       ],
     },
   },
+  {
+    // Raw auth calls only inside src/lib/auth (NFR11).
+    files: ["src/**/*.{ts,tsx}"],
+    ignores: ["src/lib/auth/**"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "CallExpression[callee.type='MemberExpression'][callee.property.name=/^(getSession|getUser|getClaims)$/]",
+          message:
+            "Use getAuthUser()/getAuthState() from @/lib/auth. Raw Supabase auth calls are banned outside src/lib/auth (NFR11).",
+        },
+        {
+          selector:
+            "CallExpression[callee.type='MemberExpression'][callee.property.value=/^(getSession|getUser|getClaims)$/]",
+          message: "Use getAuthUser()/getAuthState() from @/lib/auth (NFR11).",
+        },
+      ],
+    },
+  },
+  {
+    // UI layers and the proxy never import Supabase directly; they go through src/lib.
+    files: [
+      "src/app/**/*.{ts,tsx}",
+      "src/components/**/*.{ts,tsx}",
+      "src/features/**/*.{ts,tsx}",
+      "src/proxy.ts",
+    ],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            { group: ["@supabase/*"], message: "Use src/lib/supabase or src/lib/auth." },
+          ],
+        },
+      ],
+    },
+  },
 ]);
 
 export default eslintConfig;

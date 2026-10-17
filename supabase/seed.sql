@@ -2,9 +2,10 @@
 -- `supabase db reset` and `supabase start` run this file after the migrations.
 --
 -- Accounts (password for all: password123):
---   admin@plan-markup.test    active, platform admin
---   user@plan-markup.test     active
---   pending@plan-markup.test  pending (PendingActivation screen, Story 1.5)
+--   admin@plan-markup.test        active, platform admin
+--   user@plan-markup.test         active
+--   pending@plan-markup.test      pending (PendingActivation screen, Story 1.5)
+--   deactivated@plan-markup.test  deactivated (PendingActivation screen, Story 1.5)
 --
 -- Fixed UUIDs use version nibble 4 and variant 8 so Zod v4 uuid() accepts them.
 
@@ -28,6 +29,11 @@ values
    'authenticated', 'authenticated', 'pending@plan-markup.test',
    extensions.crypt('password123', extensions.gen_salt('bf')), now(),
    '{"provider":"email","providers":["email"]}', '{"name":"Dev Pending"}', now(), now(),
+   '', '', '', ''),
+  ('00000000-0000-0000-0000-000000000000', '00000000-0000-4000-8000-00000000000d',
+   'authenticated', 'authenticated', 'deactivated@plan-markup.test',
+   extensions.crypt('password123', extensions.gen_salt('bf')), now(),
+   '{"provider":"email","providers":["email"]}', '{"name":"Dev Deactivated"}', now(), now(),
    '', '', '', '');
 
 insert into auth.identities (
@@ -41,7 +47,8 @@ from auth.users u
 where u.id in (
   '00000000-0000-4000-8000-00000000000a',
   '00000000-0000-4000-8000-00000000000b',
-  '00000000-0000-4000-8000-00000000000c'
+  '00000000-0000-4000-8000-00000000000c',
+  '00000000-0000-4000-8000-00000000000d'
 );
 
 -- Profiles were created by app.fn_handle_new_user (status pending).
@@ -52,3 +59,7 @@ where id = '00000000-0000-4000-8000-00000000000a';
 update public.profiles
 set status = 'active'
 where id = '00000000-0000-4000-8000-00000000000b';
+
+update public.profiles
+set status = 'deactivated'
+where id = '00000000-0000-4000-8000-00000000000d';

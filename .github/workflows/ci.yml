@@ -40,9 +40,9 @@ jobs:
         run: npm audit --audit-level=high || true
 
   e2e:
-    name: Playwright smoke
+    name: Playwright e2e (local Supabase)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -50,9 +50,19 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      - uses: supabase/setup-cli@v3
+        with:
+          version: 2.121.0
+      - name: Pin the Postgres image
+        run: node scripts/pin-postgres-image.mjs
+      - name: Start Supabase (applies migrations and seed)
+        run: supabase start -x studio,imgproxy,mailpit,edge-runtime,logflare,vector,supavisor
+      # Local keys are generated per run; no repository secrets are involved.
+      - name: Export local Supabase env
+        run: node scripts/supabase-env.mjs --github-env
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
-      - name: Playwright smoke test
+      - name: Playwright e2e
         run: npm run e2e
       - name: Upload Playwright report
         if: failure()
@@ -63,6 +73,9 @@ jobs:
             playwright-report/
             test-results/
           retention-days: 7
+      - name: Stop Supabase
+        if: always()
+        run: supabase stop --no-backup
 
   secrets:
     name: Secret scan (gitleaks)
