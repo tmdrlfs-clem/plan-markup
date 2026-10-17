@@ -4,6 +4,7 @@ import type { ReactElement, ReactNode } from "react";
 import { Popover as PopoverPrimitive } from "radix-ui";
 
 import { cx } from "./cx";
+import { keepOpenOnLocalEscape } from "./dialog-shared";
 
 export interface PopoverProps {
   /** Single focusable element that opens the popover (Enter / Space). */
@@ -38,6 +39,7 @@ export function Popover({
           align={align}
           sideOffset={6}
           aria-label={ariaLabel}
+          onEscapeKeyDown={keepOpenOnLocalEscape}
           className={cx(
             "z-popover rounded-md border border-strong bg-surface-2 p-3 text-ws-md text-text shadow-2",
             className,

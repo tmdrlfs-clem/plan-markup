@@ -69,6 +69,7 @@ export function Panel({
 }: PanelProps) {
   const bodyId = useId();
   const drag = useRef<{ start: number; size: number } | null>(null);
+  const collapseButtonRef = useRef<HTMLButtonElement | null>(null);
   const [dragging, setDragging] = useState(false);
 
   const horizontalResize = side !== "bottom"; // left / right panels resize along x
@@ -98,7 +99,9 @@ export function Panel({
         onSizeChange(maxSize);
         break;
       case "Enter":
-        onCollapsedChange(!collapsed);
+        // The separator unmounts when collapsed; move focus to the expand button first.
+        collapseButtonRef.current?.focus();
+        onCollapsedChange(true);
         break;
       default:
         return;
@@ -151,6 +154,7 @@ export function Panel({
         <h2 className="min-w-0 flex-1 truncate text-ws-sm font-semibold">{title}</h2>
         {actions ? <div className="flex items-center gap-1">{actions}</div> : null}
         <IconButton
+          ref={collapseButtonRef}
           label={`${collapsed ? "Expand" : "Collapse"} ${title}`}
           icon={CollapseIcon}
           aria-controls={bodyId}

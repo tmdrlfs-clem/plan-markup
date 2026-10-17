@@ -61,7 +61,10 @@ export function renderToggleItem(
   ref: Ref<HTMLButtonElement>,
 ) {
   function handleClick(event: MouseEvent<HTMLButtonElement>) {
-    if (disabled) event.preventDefault();
+    if (disabled) {
+      event.preventDefault();
+      return;
+    }
     onClick?.(event);
   }
   return (

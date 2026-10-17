@@ -17,8 +17,8 @@ export interface ToastInput {
 
 export interface ToastItem {
   id: string;
-  /** Merge key: variant|title|description. */
-  key: string;
+  /** Merge key: variant|title|description; null for toasts with an action (never merged). */
+  key: string | null;
   title: string;
   description?: string;
   variant: ToastVariant;
@@ -40,7 +40,9 @@ export const toastStore = createStore<ToastState>(() => ({ visible: [], queue: [
 
 let nextId = 1;
 
-function mergeKey(input: ToastInput): string {
+function mergeKey(input: ToastInput): string | null {
+  // Each action closes over its own change (Undo), so toasts with one are never merged.
+  if (input.action) return null;
   return `${input.variant ?? "neutral"}|${input.title}|${input.description ?? ""}`;
 }
 
@@ -51,12 +53,12 @@ export function toast(input: ToastInput): string {
 
   const bump = (item: ToastItem): ToastItem => ({ ...item, count: item.count + 1, restart: item.restart + 1 });
 
-  const shown = visible.find((t) => t.key === key);
+  const shown = key === null ? undefined : visible.find((t) => t.key === key);
   if (shown) {
     toastStore.setState({ visible: visible.map((t) => (t === shown ? bump(t) : t)) });
     return shown.id;
   }
-  const waiting = queue.find((t) => t.key === key);
+  const waiting = key === null ? undefined : queue.find((t) => t.key === key);
   if (waiting) {
     toastStore.setState({ queue: queue.map((t) => (t === waiting ? bump(t) : t)) });
     return waiting.id;

@@ -12,6 +12,7 @@ import {
 import { MM_PER_INCH } from "@/core/geometry/units";
 
 import { cx } from "./cx";
+import { ESCAPE_LOCAL_ATTR } from "./dialog-shared";
 import { FieldShell, fieldControlClasses, type FieldLayout } from "./field";
 
 interface NumberFieldBaseProps {
@@ -125,16 +126,18 @@ export const NumberField = forwardRef<HTMLInputElement, NumberFieldProps>(functi
     if (next !== value) props.onValueChange(next);
   }
 
-  function commit() {
-    if (draft === null) return;
+  /** Returns false when the draft is invalid (the error is shown and the value kept). */
+  function commit(): boolean {
+    if (draft === null) return true;
     const parsed = parse(draft);
     if (parsed.ok) {
       apply(clamp(parsed.value));
       setDraft(null);
       setParseError(null);
-    } else {
-      setParseError(parsed.message);
+      return true;
     }
+    setParseError(parsed.message);
+    return false;
   }
 
   function stepBy(direction: 1 | -1, multiplier: number) {
@@ -164,7 +167,8 @@ export const NumberField = forwardRef<HTMLInputElement, NumberFieldProps>(functi
         stepBy(event.key === "PageUp" ? 1 : -1, 10);
         break;
       case "Enter":
-        commit();
+        // An invalid draft must not submit the surrounding dialog with the old value.
+        if (!commit()) event.preventDefault();
         break;
       case "Escape":
         if (draft !== null || parseError) {
@@ -213,8 +217,9 @@ export const NumberField = forwardRef<HTMLInputElement, NumberFieldProps>(functi
           aria-invalid={shownError ? true : undefined}
           aria-describedby={shownError ? errorId : undefined}
           data-kind={length ? "length" : "number"}
+          {...{ [ESCAPE_LOCAL_ATTR]: draft !== null || parseError ? "" : undefined }}
           onChange={(event) => setDraft(event.target.value)}
-          onBlur={commit}
+          onBlur={() => commit()}
           onKeyDown={handleKeyDown}
           className={cx(fieldControlClasses(layout, Boolean(shownError)), "num", suffix && "pr-9")}
         />

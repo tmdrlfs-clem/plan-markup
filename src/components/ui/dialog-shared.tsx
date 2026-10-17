@@ -48,9 +48,30 @@ export function handleEnterAsPrimary(event: KeyboardEvent<HTMLElement>, primary:
   if (event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) return;
   if (event.nativeEvent.isComposing) return;
   if ((event.target as HTMLElement).closest(ENTER_IGNORED)) return;
-  if (!primary || primary.disabled || primary.getAttribute("aria-disabled") === "true") return;
+  if (!primary || isInactive(primary)) return;
   event.preventDefault();
-  primary.click();
+  // Deferred so a field that commits on Enter (NumberField) re-renders its parent first;
+  // the primary's onClick then sees the committed value, not the one from before the edit.
+  setTimeout(() => {
+    if (primary.isConnected && !isInactive(primary)) primary.click();
+  }, 0);
+}
+
+function isInactive(button: HTMLButtonElement): boolean {
+  return button.disabled || button.getAttribute("aria-disabled") === "true";
+}
+
+/** Set on a field whose Escape only reverts its own draft. */
+export const ESCAPE_LOCAL_ATTR = "data-escape-local";
+
+/**
+ * `onEscapeKeyDown` for Dialog / AlertDialog / Popover: keep the layer open while the
+ * focused field uses Escape to revert its draft (Radix listens on the document first).
+ */
+export function keepOpenOnLocalEscape(event: globalThis.KeyboardEvent) {
+  if (event.target instanceof Element && event.target.closest(`[${ESCAPE_LOCAL_ATTR}]`)) {
+    event.preventDefault();
+  }
 }
 
 export interface DialogFooterProps {

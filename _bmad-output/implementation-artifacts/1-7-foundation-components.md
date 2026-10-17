@@ -256,3 +256,4 @@ Environment: Windows 11, Node v24.15.0.
 
 - 2026-10-18: Foundation components implemented (Story 1.7).
 - 2026-10-18: CI recorded, story closed.
+- 2026-10-18: Code review (high) fixes: Dialog Enter = primary is deferred one task so a NumberField commit re-renders first, and an invalid draft blocks it; Escape with a field draft keeps Dialog / AlertDialog / Popover open (`data-escape-local`); toasts with an action never merge; disabled ToggleButton / ToggleGroupItem swallow onClick; menu rows inherit text colour so destructive is red; Dialog first-field selector skips disabled/hidden inputs and includes Select / Checkbox; Panel Enter-collapse moves focus to the expand button; `aria-keyshortcuts` uses Meta on macOS; `15'6`, `15'-6"` and `15' 6 1/2` parse; the ContextMenu key swallows the browser's own follow-up `contextmenu`. Tests in `review-1-7.test.tsx`, `shortcut.test.ts`, `length.test.ts`; 708 tests.

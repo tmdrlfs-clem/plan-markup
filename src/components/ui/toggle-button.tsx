@@ -45,7 +45,10 @@ export const ToggleButton = forwardRef<HTMLButtonElement, ToggleButtonProps>(fun
 ) {
   function handleClick(event: MouseEvent<HTMLButtonElement>) {
     // preventDefault stops Radix from toggling while the button is aria-disabled.
-    if (disabled) event.preventDefault();
+    if (disabled) {
+      event.preventDefault();
+      return;
+    }
     onClick?.(event);
   }
 

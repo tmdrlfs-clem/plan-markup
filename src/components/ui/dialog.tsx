@@ -5,14 +5,23 @@ import { X } from "lucide-react";
 import { Dialog as DialogPrimitive } from "radix-ui";
 
 import { cx } from "./cx";
-import { PrimaryRefContext, handleEnterAsPrimary } from "./dialog-shared";
+import { PrimaryRefContext, handleEnterAsPrimary, keepOpenOnLocalEscape } from "./dialog-shared";
 import { IconButton } from "./icon-button";
 
 export { DialogFooter, DialogPrimary } from "./dialog-shared";
 
 const MAX_WIDTH = { sm: "max-w-[400px]", md: "max-w-[560px]", lg: "max-w-[720px]" } as const;
 
-const FOCUSABLE = "input, select, textarea, [tabindex]:not([tabindex='-1'])";
+// First field to focus. Skips disabled and hidden inputs (Radix renders aria-hidden native
+// inputs for Checkbox / Select inside forms) and includes button-based fields.
+const FOCUSABLE = [
+  "input:not([type='hidden']):not([disabled]):not([aria-hidden='true']):not([tabindex='-1'])",
+  "select:not([disabled]):not([aria-hidden='true']):not([tabindex='-1'])",
+  "textarea:not([disabled])",
+  "button[role='combobox']:not([disabled])",
+  "button[role='checkbox']:not([disabled])",
+  "[tabindex]:not([tabindex='-1'])",
+].join(", ");
 
 export interface DialogProps {
   open?: boolean;
@@ -69,6 +78,7 @@ export function Dialog({
               returnFocusRef.current.focus();
             }
           }}
+          onEscapeKeyDown={keepOpenOnLocalEscape}
           onKeyDown={(event) => handleEnterAsPrimary(event, primaryRef.current)}
           className={cx(
             "fixed left-1/2 top-1/2 z-dialog w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-1/2",

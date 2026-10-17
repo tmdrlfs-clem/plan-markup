@@ -3,9 +3,12 @@
 export const MENU_CONTENT =
   "z-popover min-w-[200px] rounded-md border border-strong bg-surface-2 p-1 text-text shadow-2";
 
-/** Row 28 px, highlighted = surface-3 plus an accent bar on the left. */
+/**
+ * Row 28 px, highlighted = surface-3 plus an accent bar on the left. No text colour here:
+ * rows inherit it from MENU_CONTENT so MENU_ITEM_DESTRUCTIVE is not overridden.
+ */
 export const MENU_ITEM =
-  "relative flex h-7 cursor-default select-none items-center gap-2 rounded-sm px-2 text-ws-md text-text outline-none " +
+  "relative flex h-7 cursor-default select-none items-center gap-2 rounded-sm px-2 text-ws-md outline-none " +
   "data-[highlighted]:bg-surface-3 data-[highlighted]:shadow-[inset_2px_0_0_0_var(--accent)] " +
   "data-[disabled]:pointer-events-none data-[disabled]:text-muted data-[disabled]:opacity-60";
 

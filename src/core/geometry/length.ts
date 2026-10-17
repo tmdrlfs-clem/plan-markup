@@ -20,12 +20,23 @@ const IMPERIAL = new RegExp(
   String.raw`^(?:(${NUM})\s*(?:'|ft)\s*)?(?:(?:(${NUM})(?:\s+(\d+)\s*/\s*(\d+))?|(\d+)\s*/\s*(\d+))\s*(?:"|in))?$`,
 );
 
+// Feet part, an optional dash, then whatever follows (the inches).
+const FEET_THEN_REST = new RegExp(String.raw`^(${NUM}\s*(?:'|ft))\s*-?\s*(\S.*)$`);
+
 function normalise(input: string): string {
   return input
     .trim()
     .toLowerCase()
     .replace(/[′’]/g, "'")
     .replace(/[″”]/g, '"');
+}
+
+/** 15'6 -> 15'6", 15'-6" -> 15'6": inches after a feet mark need no mark of their own. */
+function withInchMark(text: string): string {
+  const feet = FEET_THEN_REST.exec(text);
+  if (!feet) return text;
+  const rest = feet[2];
+  return `${feet[1]}${rest}${/(?:"|in)$/.test(rest) ? "" : '"'}`;
 }
 
 function fraction(num: string, den: string): number | null {
@@ -57,7 +68,7 @@ export function parseLength(input: string, defaultUnit: LengthUnit): ParseLength
     if (dash) return { ok: true, mm: Number(dash[1]) * MM_PER_FOOT + Number(dash[2]) * MM_PER_INCH };
   }
 
-  const imp = IMPERIAL.exec(text);
+  const imp = IMPERIAL.exec(withInchMark(text));
   if (imp && (imp[1] !== undefined || imp[2] !== undefined || imp[5] !== undefined)) {
     let inches = 0;
     if (imp[2] !== undefined) {

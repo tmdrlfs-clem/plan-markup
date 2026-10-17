@@ -54,12 +54,19 @@ export function formatShortcut(shortcuts: string, mac: boolean = isMacPlatform()
     .join(" ");
 }
 
-/** Value for `aria-keyshortcuts`: "Ctrl+Shift+M" -> "Control+Shift+M". */
-export function toAriaKeyShortcuts(shortcuts: string): string {
+/**
+ * Value for `aria-keyshortcuts`: "Ctrl+Shift+M" -> "Control+Shift+M", or "Meta+Shift+M"
+ * on macOS, where Ctrl is shown (and pressed) as Command.
+ */
+export function toAriaKeyShortcuts(shortcuts: string, mac: boolean = isMacPlatform()): string {
   return splitShortcuts(shortcuts)
     .map((shortcut) =>
       splitKeys(shortcut)
-        .map((k) => ARIA_KEY_NAMES[k.toLowerCase()] ?? (k.length === 1 ? k.toUpperCase() : k))
+        .map((k) => {
+          const lower = k.toLowerCase();
+          if (mac && (lower === "ctrl" || lower === "control" || lower === "cmd")) return "Meta";
+          return ARIA_KEY_NAMES[lower] ?? (k.length === 1 ? k.toUpperCase() : k);
+        })
         .join("+"),
     )
     .join(" ");

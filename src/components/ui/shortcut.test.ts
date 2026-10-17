@@ -25,6 +25,11 @@ describe("toAriaKeyShortcuts", () => {
     expect(toAriaKeyShortcuts("Esc")).toBe("Escape");
   });
 
+  it("announces Ctrl as Meta on macOS, matching the Command glyph", () => {
+    expect(toAriaKeyShortcuts("Ctrl+Shift+M", true)).toBe("Meta+Shift+M");
+    expect(toAriaKeyShortcuts("Ctrl+Z", false)).toBe("Control+Z");
+  });
+
   it("maps + and - keys", () => {
     expect(toAriaKeyShortcuts("Ctrl++")).toBe("Control+Plus");
     expect(toAriaKeyShortcuts("Ctrl+-")).toBe("Control+Minus");

@@ -10,6 +10,28 @@ const parts = createMenuParts(ContextMenuPrimitive as unknown as MenuPrimitive);
 
 export const ContextMenu = ContextMenuPrimitive.Root;
 
+/** Browsers that fire their own `contextmenu` for the key (e.g. on keyup) would reopen the menu. */
+const NATIVE_FOLLOW_UP_MS = 1000;
+
+/** Our own events are never swallowed, including one from a second key press inside the window. */
+const syntheticEvents = new WeakSet<Event>();
+
+function swallowNativeContextMenu(doc: Document, synthetic: Event) {
+  syntheticEvents.add(synthetic);
+  const block = (event: Event) => {
+    if (syntheticEvents.has(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    stop();
+  };
+  const stop = () => {
+    clearTimeout(timer);
+    doc.removeEventListener("contextmenu", block, true);
+  };
+  const timer = setTimeout(stop, NATIVE_FOLLOW_UP_MS);
+  doc.addEventListener("contextmenu", block, true);
+}
+
 /**
  * Right-click opens the menu (Radix). The trigger is focusable and also opens on
  * Shift+F10 / the ContextMenu key, which jsdom and some browsers do not turn into
@@ -26,14 +48,14 @@ export const ContextMenuTrigger = forwardRef<
     if (!isShiftF10 && event.key !== "ContextMenu") return;
     event.preventDefault();
     const rect = event.currentTarget.getBoundingClientRect();
-    event.currentTarget.dispatchEvent(
-      new MouseEvent("contextmenu", {
-        bubbles: true,
-        cancelable: true,
-        clientX: rect.left + rect.width / 2,
-        clientY: rect.top + rect.height / 2,
-      }),
-    );
+    const synthetic = new MouseEvent("contextmenu", {
+      bubbles: true,
+      cancelable: true,
+      clientX: rect.left + rect.width / 2,
+      clientY: rect.top + rect.height / 2,
+    });
+    swallowNativeContextMenu(event.currentTarget.ownerDocument, synthetic);
+    event.currentTarget.dispatchEvent(synthetic);
   }
 
   return (

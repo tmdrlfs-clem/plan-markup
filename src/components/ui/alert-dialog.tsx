@@ -5,7 +5,7 @@ import { AlertDialog as AlertDialogPrimitive } from "radix-ui";
 
 import { Button } from "./button";
 import { cx } from "./cx";
-import { DialogFooter, DialogPrimary, PrimaryRefContext, handleEnterAsPrimary } from "./dialog-shared";
+import { DialogFooter, DialogPrimary, PrimaryRefContext, handleEnterAsPrimary, keepOpenOnLocalEscape } from "./dialog-shared";
 
 export interface AlertDialogProps {
   open?: boolean;
@@ -45,6 +45,7 @@ export function AlertDialog({
       <AlertDialogPrimitive.Portal>
         <AlertDialogPrimitive.Overlay className="fixed inset-0 z-dialog bg-black/50" />
         <AlertDialogPrimitive.Content
+          onEscapeKeyDown={keepOpenOnLocalEscape}
           onKeyDown={(event) => handleEnterAsPrimary(event, primaryRef.current)}
           className={cx(
             "fixed left-1/2 top-1/2 z-dialog w-[calc(100vw-32px)] max-w-[400px] -translate-x-1/2 -translate-y-1/2",
