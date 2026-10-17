@@ -1,26 +1,226 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/*
+ * Design tokens. Three themes live under [data-theme="..."]; Blueprint is the
+ * default (<html data-theme="blueprint">). Raw variables change per theme, and
+ * `@theme inline` maps them to Tailwind utilities so they follow the active theme.
+ */
+
+[data-theme="blueprint"] {
+  color-scheme: dark;
+  --surface-0: #10151c;
+  --surface-1: #161d26;
+  --surface-2: #1d2631;
+  --surface-3: #25303d;
+  --border: #2c3846;
+  --border-strong: #5e7289;
+  --text: #e6ecf2;
+  --text-muted: #94a3b4;
+  --accent: #ff7a1a;
+  --accent-fg: #1a0e05;
+  --accent-soft: rgba(255, 122, 26, 0.16);
+  --warning: #f2d24b;
+  --warning-text: #f2d24b;
+  --danger: #f04d5e;
+  --success: #3fbf7f;
+  --info: #6ca8ff;
+  --shadow-color: rgba(0, 0, 0, 0.45);
+  /* Canvas tokens (the sheet is always white, so snap/danger use darker values). */
+  --canvas-halo: #ffffff;
+  --canvas-selection-outline: #1a0e05;
+  --canvas-snap: #2563c9;
+  --canvas-danger: #c8243a;
+  --canvas-coverage-fill: rgba(108, 168, 255, 0.18);
+  --canvas-coverage-outline: #6ca8ff;
+  --canvas-zone: #8b7fd1;
+  --canvas-handle-size: 8px;
+}
+
+[data-theme="daylight"] {
+  color-scheme: light;
+  --surface-0: #d9dbdf;
+  --surface-1: #f7f7f8;
+  --surface-2: #ffffff;
+  --surface-3: #efeff1;
+  --border: #d9dade;
+  --border-strong: #8a8d95;
+  --text: #16181b;
+  --text-muted: #5b6068;
+  --accent: #c24e00;
+  --accent-fg: #ffffff;
+  --accent-soft: rgba(194, 78, 0, 0.12);
+  --warning: #a57f00;
+  --warning-text: #8a6a00;
+  --danger: #c8243a;
+  --success: #1a7a4a;
+  --info: #2563c9;
+  --shadow-color: rgba(20, 22, 26, 0.1);
+  --canvas-halo: #ffffff;
+  --canvas-selection-outline: #1a0e05;
+  --canvas-snap: #2563c9;
+  --canvas-danger: #c8243a;
+  --canvas-coverage-fill: rgba(37, 99, 201, 0.18);
+  --canvas-coverage-outline: #2563c9;
+  --canvas-zone: #6a5bc2;
+  --canvas-handle-size: 8px;
+}
+
+[data-theme="contrast"] {
+  color-scheme: dark;
+  --surface-0: #050505;
+  --surface-1: #0b0b0c;
+  --surface-2: #121214;
+  --surface-3: #1a1a1d;
+  --border: #2a2a2e;
+  --border-strong: #78787f;
+  --text: #ffffff;
+  --text-muted: #b5b5bc;
+  --accent: #ff8a2a;
+  --accent-fg: #000000;
+  --accent-soft: rgba(255, 138, 42, 0.18);
+  --warning: #ffe066;
+  --warning-text: #ffe066;
+  --danger: #ff5c70;
+  --success: #4be39a;
+  --info: #7db6ff;
+  --shadow-color: rgba(255, 138, 42, 0.35);
+  --canvas-halo: #ffffff;
+  --canvas-selection-outline: #000000;
+  --canvas-snap: #1d56b0;
+  --canvas-danger: #b3202f;
+  --canvas-coverage-fill: rgba(125, 182, 255, 0.22);
+  --canvas-coverage-outline: #7db6ff;
+  --canvas-zone: #8b7fd1;
+  --canvas-handle-size: 8px;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-surface-0: var(--surface-0);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-border: var(--border);
+  --color-strong: var(--border-strong);
+  --color-text: var(--text);
+  --color-muted: var(--text-muted);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-soft: var(--accent-soft);
+  --color-warning: var(--warning);
+  --color-warning-text: var(--warning-text);
+  --color-danger: var(--danger);
+  --color-success: var(--success);
+  --color-info: var(--info);
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+
+  /* Hard offset shadows: zero blur, colour per theme. */
+  --shadow-*: initial;
+  --shadow-1: 2px 2px 0 var(--shadow-color);
+  --shadow-2: 4px 4px 0 var(--shadow-color);
+  --shadow-3: 8px 8px 0 var(--shadow-color);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@theme {
+  /* 4 px spacing base: p-1 = 4 px, p-2 = 8 px. */
+  --spacing: 4px;
+
+  /* Near-sharp radii. Bare `rounded` is 2 px. */
+  --radius-*: initial;
+  --radius: 2px;
+  --radius-sm: 2px;
+  --radius-md: 3px;
+  --radius-lg: 4px;
+
+  /* Workspace type scale. */
+  --text-ws-xs: 11px;
+  --text-ws-xs--line-height: 1.5;
+  --text-ws-sm: 12px;
+  --text-ws-sm--line-height: 1.5;
+  --text-ws-md: 13px;
+  --text-ws-md--line-height: 1.5;
+  --text-ws-lg: 14px;
+  --text-ws-lg--line-height: 1.5;
+  --text-ws-xl: 16px;
+  --text-ws-xl--line-height: 1.5;
+
+  /* Admin / auth type scale. */
+  --text-ad-sm: 14px;
+  --text-ad-sm--line-height: 1.5;
+  --text-ad-md: 16px;
+  --text-ad-md--line-height: 1.5;
+  --text-ad-lg: 20px;
+  --text-ad-lg--line-height: 1.2;
+  --text-ad-xl: 24px;
+  --text-ad-xl--line-height: 1.2;
+  --text-ad-2xl: 32px;
+  --text-ad-2xl--line-height: 1.2;
+  --text-ad-3xl: 40px;
+  --text-ad-3xl--line-height: 1.2;
+
+  /* Z-layers (used through the z-* utilities below). */
+  --z-canvas: 0;
+  --z-panel: 10;
+  --z-toolbar: 20;
+  --z-popover: 40;
+  --z-dialog: 50;
+  --z-toast: 60;
+  --z-tooltip: 70;
+}
+
+@utility z-canvas {
+  z-index: var(--z-canvas);
+}
+@utility z-panel {
+  z-index: var(--z-panel);
+}
+@utility z-toolbar {
+  z-index: var(--z-toolbar);
+}
+@utility z-popover {
+  z-index: var(--z-popover);
+}
+@utility z-dialog {
+  z-index: var(--z-dialog);
+}
+@utility z-toast {
+  z-index: var(--z-toast);
+}
+@utility z-tooltip {
+  z-index: var(--z-tooltip);
+}
+
+/* Tabular numerals for measurements and counts. */
+@utility num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ring-2 accent focus with a 2 px gap in the surface colour. */
+@utility focus-ring {
+  &:focus-visible {
+    outline: none;
+    box-shadow:
+      0 0 0 2px var(--surface-1),
+      0 0 0 4px var(--accent);
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer base {
+  *,
+  ::before,
+  ::after {
+    border-color: var(--border);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  body {
+    background-color: var(--surface-0);
+    color: var(--text);
+    font-family: var(--font-sans);
+    font-weight: 400;
+  }
 }

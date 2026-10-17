@@ -1,6 +1,6 @@
 # Story 1.4: Design tokens and themes
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -21,57 +21,57 @@ so that every screen looks like one product and is accessible from the first pag
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Token CSS** (AC: 1, 2)
-  - [ ] Rewrite `src/app/globals.css`. Remove the scaffold's `:root` / `prefers-color-scheme` / Geist / Arial rules.
-  - [ ] Define raw variables per theme under `[data-theme="…"]` (Dev Notes → Token values). Map them into Tailwind with `@theme inline { --color-surface-0: var(--surface-0); … }` so utilities like `bg-surface-1`, `text-muted`, `border-strong`, `bg-accent` and `text-danger` follow the active theme.
-  - [ ] **Radii:** reset the namespace with `--radius-*: initial;`, then define `--radius-sm: 2px; --radius-md: 3px; --radius-lg: 4px;`. Make bare `rounded` resolve to 2 px. Keep `rounded-full` only for genuinely round things (radio dots, avatars).
-  - [ ] **Shadows:** reset with `--shadow-*: initial;`, then define hard offsets `--shadow-1: 2px 2px 0 <c>`, `--shadow-2: 4px 4px 0 <c>`, `--shadow-3: 8px 8px 0 <c>`. Take the colour per theme from the mockup (`rgba(0,0,0,.45)` for Blueprint, `rgba(20,22,26,.10)` for Daylight, orange `rgba(255,138,42,.35)` for Contrast). Never use blur.
-  - [ ] **Focus:** a global `:focus-visible` style using a 2 px accent ring with a 2 px offset in the surface colour, plus a `focus-ring` utility for components.
-  - [ ] **Spacing:** `--spacing: 4px` (the Tailwind v4 base), so `p-1` = 4 px, `p-2` = 8 px.
-  - [ ] **Z-layers:** `--z-canvas: 0`, `--z-panel: 10`, `--z-toolbar: 20`, `--z-popover: 40`, `--z-dialog: 50`, `--z-toast: 60`, `--z-tooltip: 70`, exposed as `z-popover` etc.
-  - [ ] **Type scales:** workspace `--text-ws-xs: 11px`, `ws-sm: 12px`, `ws-md: 13px`, `ws-lg: 14px`, `ws-xl: 16px`; admin `--text-ad-sm: 14px`, `ad-md: 16px`, `ad-lg: 20px`, `ad-xl: 24px`, `ad-2xl: 32px`, `ad-3xl: 40px`. Line-height is 1.5 for body sizes and 1.2 for 20 px and above. Weights 400/500/600 only.
-  - [ ] `body` uses `bg-surface-0 text-text font-sans`.
-  - [ ] **Self-test:** `src/components/ui/tokens-css.test.ts` parses `globals.css` and asserts:
+- [x] **Task 1: Token CSS** (AC: 1, 2)
+  - [x] Rewrite `src/app/globals.css`. Remove the scaffold's `:root` / `prefers-color-scheme` / Geist / Arial rules.
+  - [x] Define raw variables per theme under `[data-theme="…"]` (Dev Notes → Token values). Map them into Tailwind with `@theme inline { --color-surface-0: var(--surface-0); … }` so utilities like `bg-surface-1`, `text-muted`, `border-strong`, `bg-accent` and `text-danger` follow the active theme.
+  - [x] **Radii:** reset the namespace with `--radius-*: initial;`, then define `--radius-sm: 2px; --radius-md: 3px; --radius-lg: 4px;`. Make bare `rounded` resolve to 2 px. Keep `rounded-full` only for genuinely round things (radio dots, avatars).
+  - [x] **Shadows:** reset with `--shadow-*: initial;`, then define hard offsets `--shadow-1: 2px 2px 0 <c>`, `--shadow-2: 4px 4px 0 <c>`, `--shadow-3: 8px 8px 0 <c>`. Take the colour per theme from the mockup (`rgba(0,0,0,.45)` for Blueprint, `rgba(20,22,26,.10)` for Daylight, orange `rgba(255,138,42,.35)` for Contrast). Never use blur.
+  - [x] **Focus:** a global `:focus-visible` style using a 2 px accent ring with a 2 px offset in the surface colour, plus a `focus-ring` utility for components.
+  - [x] **Spacing:** `--spacing: 4px` (the Tailwind v4 base), so `p-1` = 4 px, `p-2` = 8 px.
+  - [x] **Z-layers:** `--z-canvas: 0`, `--z-panel: 10`, `--z-toolbar: 20`, `--z-popover: 40`, `--z-dialog: 50`, `--z-toast: 60`, `--z-tooltip: 70`, exposed as `z-popover` etc.
+  - [x] **Type scales:** workspace `--text-ws-xs: 11px`, `ws-sm: 12px`, `ws-md: 13px`, `ws-lg: 14px`, `ws-xl: 16px`; admin `--text-ad-sm: 14px`, `ad-md: 16px`, `ad-lg: 20px`, `ad-xl: 24px`, `ad-2xl: 32px`, `ad-3xl: 40px`. Line-height is 1.5 for body sizes and 1.2 for 20 px and above. Weights 400/500/600 only.
+  - [x] `body` uses `bg-surface-0 text-text font-sans`.
+  - [x] **Self-test:** `src/components/ui/tokens-css.test.ts` parses `globals.css` and asserts:
     - each of the three theme blocks defines every required variable (one shared list in `src/components/ui/token-names.ts`);
     - no shadow value has a non-zero blur.
-- [ ] **Task 2: Font and root layout** (AC: 1, 3)
-  - [ ] `src/app/layout.tsx`: replace Geist with `Inter` from `next/font/google` (`subsets: ['latin']`, `variable: '--font-inter'`, `display: 'swap'`), and set `--font-sans` to it in `@theme`. Set `<html lang="en" data-theme="blueprint" className={inter.variable}>`. Keep `metadata.title = "Plan Markup"` (the e2e smoke test checks it).
-  - [ ] JetBrains Mono is **not** needed yet. Do not add it.
-- [ ] **Task 3: Canvas token bridge** (AC: 4)
-  - [ ] `src/components/ui/tokens.ts` (client-only module):
+- [x] **Task 2: Font and root layout** (AC: 1, 3)
+  - [x] `src/app/layout.tsx`: replace Geist with `Inter` from `next/font/google` (`subsets: ['latin']`, `variable: '--font-inter'`, `display: 'swap'`), and set `--font-sans` to it in `@theme`. Set `<html lang="en" data-theme="blueprint" className={inter.variable}>`. Keep `metadata.title = "Plan Markup"` (the e2e smoke test checks it).
+  - [x] JetBrains Mono is **not** needed yet. Do not add it.
+- [x] **Task 3: Canvas token bridge** (AC: 4)
+  - [x] `src/components/ui/tokens.ts` (client-only module):
     - `type Theme = 'blueprint' | 'daylight' | 'contrast'`, plus `THEMES` and `DEFAULT_THEME = 'blueprint'`;
     - `readCanvasTokens(el = document.documentElement): CanvasTokens` reads the CSS variables for selection (accent plus a dark companion outline, see Dev Notes → Canvas pairs), halo, snap (info), danger, warning, success, coverage fill/outline, zone outline, surround (`surface-0`), handle size (px) and font family;
     - `setTheme(theme)` sets `data-theme` on `<html>`;
     - `subscribeCanvasTokens(cb): () => void` uses one shared `MutationObserver` on the `data-theme` attribute, calls `cb(readCanvasTokens())` after each change, and returns an unsubscribe function.
     Persistence (profile/localStorage) and the Settings → Appearance UI are **not** in this story; they come with `profiles.theme` in Epic 3.
-  - [ ] Tests (jsdom): setting the theme notifies subscribers once per change; unsubscribing stops the calls; `readCanvasTokens` returns the values defined on the element (set the CSS variables inline in the test, because jsdom does not load `globals.css`).
-- [ ] **Task 4: Button and TextField** (AC: 5)
-  - [ ] `src/components/ui/button.tsx`: `Button` with `variant: 'primary'|'secondary'|'ghost'|'destructive'` (default secondary) and `size: 'sm'|'md'`. Heights: `sm` 28 px for the workspace, `md` 40 px for admin/auth forms (minimum hit targets from the UX spec). Use `forwardRef`. `type="button"` is the default. `disabled` keeps the button visible.
+  - [x] Tests (jsdom): setting the theme notifies subscribers once per change; unsubscribing stops the calls; `readCanvasTokens` returns the values defined on the element (set the CSS variables inline in the test, because jsdom does not load `globals.css`).
+- [x] **Task 4: Button and TextField** (AC: 5)
+  - [x] `src/components/ui/button.tsx`: `Button` with `variant: 'primary'|'secondary'|'ghost'|'destructive'` (default secondary) and `size: 'sm'|'md'`. Heights: `sm` 28 px for the workspace, `md` 40 px for admin/auth forms (minimum hit targets from the UX spec). Use `forwardRef`. `type="button"` is the default. `disabled` keeps the button visible.
     - Primary: accent fill with accent-fg text.
     - Secondary: `border-strong` outline.
     - Ghost: no border until hover.
     - Destructive: danger outline (the danger fill is reserved for confirm dialogs and arrives in Story 1.7).
     - All variants use radius 2 px and show the focus ring. Implement variants with a small local `cva`-style map; do not add `class-variance-authority` or `clsx` unless you pin them exactly.
-  - [ ] `src/components/ui/text-field.tsx`: `TextField` with label above (admin/auth style), `id` wiring (`useId`), optional hint, and an `error` string. The error shows inline under the field in danger colour with an icon (`lucide-react` `CircleX` or `XCircle`) plus the text, and sets `aria-invalid` and `aria-describedby`. Types: text / email / password (a show/hide toggle for password is welcome but optional; Story 1.5 needs it). Height 40 px, radius 2 px, `border-strong` border, focus ring.
-  - [ ] Vitest and Testing Library setup:
+  - [x] `src/components/ui/text-field.tsx`: `TextField` with label above (admin/auth style), `id` wiring (`useId`), optional hint, and an `error` string. The error shows inline under the field in danger colour with an icon (`lucide-react` `CircleX` or `XCircle`) plus the text, and sets `aria-invalid` and `aria-describedby`. Types: text / email / password (a show/hide toggle for password is welcome but optional; Story 1.5 needs it). Height 40 px, radius 2 px, `border-strong` border, focus ring.
+  - [x] Vitest and Testing Library setup:
     - add exact dev deps `@testing-library/react`, `@testing-library/dom`, `@testing-library/user-event`, `@testing-library/jest-dom` and `jsdom` (pin the latest versions with `npm view`, `-E`), plus `@vitejs/plugin-react` if it is needed for JSX;
     - use the jsdom environment only for `*.test.tsx` and DOM tests (`environmentMatchGlobs` or a per-file `// @vitest-environment jsdom` comment);
     - keep `src/core` tests on `node`.
-  - [ ] Tests:
+  - [x] Tests:
     - Button renders each variant, fires `onClick`, does not fire when disabled, and is reachable by Tab;
     - TextField's label is associated (`getByLabelText`), and an error sets `aria-invalid` and is announced through `aria-describedby`.
-- [ ] **Task 5: Contrast test** (AC: 6)
-  - [ ] `src/components/ui/contrast.ts`: a pure WCAG 2.1 relative-luminance and contrast-ratio function (sRGB, hex `#RGB`/`#RRGGBB` input, plus alpha compositing over a given background for `rgba`), with unit tests against known values (`#000` on `#fff` = 21, `#777` on `#fff` ≈ 4.48).
-  - [ ] `src/components/ui/contrast-pairs.ts`: the pair list (Dev Notes → Contrast pairs) with the kind (`text` 4.5 / `ui` 3.0) for each pair.
-  - [ ] `src/components/ui/contrast.test.ts`: for each theme block parsed from `globals.css`, assert every pair. The failure message names the theme, the pair, the ratio and the required minimum. **If a draft value fails, adjust the token** (smallest change that passes, same hue) and list every change in the Completion Notes. Never lower a threshold or drop a pair.
-- [ ] **Task 6: Default page** (AC: 1, 5)
-  - [ ] Replace the scaffold's `src/app/page.tsx` with a minimal token-styled placeholder: "Plan Markup" heading (admin scale), one sentence, and a row with the four `Button` variants and one `TextField`. It must stay a server component except for small client parts. Story 1.8 replaces it with the workspace shell. Delete the unused scaffold SVGs in `public/` (`next.svg`, `vercel.svg`, `file.svg`, `globe.svg`, `window.svg`) if nothing references them.
-- [ ] **Task 7: Guard against off-token styles** (AC: 1)
-  - [ ] `tools/lint/near-sharp.test.ts`: scans `src/**/*.{ts,tsx,css}` (except tests) and fails on the off-token classes and values listed in Dev Notes → Near-sharp guard.
-- [ ] **Task 8: Verify** (AC: 1–6)
-  - [ ] Run `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`, `npm run e2e`, `npm run check:pinned`.
-  - [ ] Run the dev server on 3020. Use Playwright (or a quick script) to take screenshots of `/` with `data-theme` set to each of the three themes, and save them to `test-results/` (git-ignored). Report the paths so the orchestrator can look at them.
-  - [ ] **Do not commit or push.** Stop the dev server and free port 3020.
+- [x] **Task 5: Contrast test** (AC: 6)
+  - [x] `src/components/ui/contrast.ts`: a pure WCAG 2.1 relative-luminance and contrast-ratio function (sRGB, hex `#RGB`/`#RRGGBB` input, plus alpha compositing over a given background for `rgba`), with unit tests against known values (`#000` on `#fff` = 21, `#777` on `#fff` ≈ 4.48).
+  - [x] `src/components/ui/contrast-pairs.ts`: the pair list (Dev Notes → Contrast pairs) with the kind (`text` 4.5 / `ui` 3.0) for each pair.
+  - [x] `src/components/ui/contrast.test.ts`: for each theme block parsed from `globals.css`, assert every pair. The failure message names the theme, the pair, the ratio and the required minimum. **If a draft value fails, adjust the token** (smallest change that passes, same hue) and list every change in the Completion Notes. Never lower a threshold or drop a pair.
+- [x] **Task 6: Default page** (AC: 1, 5)
+  - [x] Replace the scaffold's `src/app/page.tsx` with a minimal token-styled placeholder: "Plan Markup" heading (admin scale), one sentence, and a row with the four `Button` variants and one `TextField`. It must stay a server component except for small client parts. Story 1.8 replaces it with the workspace shell. Delete the unused scaffold SVGs in `public/` (`next.svg`, `vercel.svg`, `file.svg`, `globe.svg`, `window.svg`) if nothing references them.
+- [x] **Task 7: Guard against off-token styles** (AC: 1)
+  - [x] `tools/lint/near-sharp.test.ts`: scans `src/**/*.{ts,tsx,css}` (except tests) and fails on the off-token classes and values listed in Dev Notes → Near-sharp guard.
+- [x] **Task 8: Verify** (AC: 1–6)
+  - [x] Run `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`, `npm run e2e`, `npm run check:pinned`.
+  - [x] Run the dev server on 3020. Use Playwright (or a quick script) to take screenshots of `/` with `data-theme` set to each of the three themes, and save them to `test-results/` (git-ignored). Report the paths so the orchestrator can look at them.
+  - [x] **Do not commit or push.** Stop the dev server and free port 3020.
 
 ## Dev Notes
 
@@ -153,12 +153,72 @@ Design preference (founder, standing): radius 2–4 px, hard offset shadows with
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Sonnet 5.5 (claude-sonnet-5-5)
 
 ### Debug Log References
 
+- Red phase: after adding `tokens-css.test.ts` and `contrast.test.ts` against the old scaffold CSS, `npx vitest run` gave `Test Files 2 failed | 8 passed`, `Tests 4 failed`. The remaining failure after the layout change was a parser bug: `\[` in a template literal lost its escapes (`No [data-theme="blueprint"] block`). Fixed with `String.raw`.
+- Initial draft values failed contrast, which was fixed in the tokens (see Completion Notes). After the fix: `Test Files 14 passed (14)`, `Tests 138 passed (138)`.
+- `npm run typecheck`: `Types generated successfully`, tsc exit 0.
+- `npm run lint`: no output, exit 0.
+- `npm run check:pinned`: `All dependencies are pinned to exact versions.`
+- `npm run check:env-files`: `No forbidden .env files are tracked.`
+- `npm run build`: `Compiled successfully`, routes `/` and `/_not-found` static. The built CSS contains `--spacing:4px`, `--radius:2px`, `--radius-sm/md/lg` = 2/3/4px, `--shadow-1:2px 2px 0 var(--shadow-color)`, and Inter.
+- `npx playwright test`: `1 passed (7.2s)` (smoke test, title "Plan Markup").
+- Dev server on 3020: computed styles per theme confirmed, body background `rgb(16, 21, 28)` / `rgb(217, 219, 223)` / `rgb(5, 5, 5)`, font `Inter, "Inter Fallback", ...`, button radius `2px`, height `40px`. Server stopped; port 3020 has no listener.
+- Screenshots: `test-results/theme-blueprint.png`, `test-results/theme-daylight.png`, `test-results/theme-contrast.png`.
+
 ### Completion Notes List
 
-- Ultimate context engine analysis completed - comprehensive developer guide created.
+- Tokens: three `[data-theme]` blocks in `src/app/globals.css`, mapped through `@theme inline`. Utility names: `bg-surface-0..3`, `border-border`, `border-strong`, `text-text`, `text-muted`, `bg-accent`, `text-accent-fg`, `bg-accent-soft`, `text-warning`, `text-warning-text`, `text-danger`, `text-success`, `text-info`, `shadow-1/2/3`, `rounded` / `rounded-sm|md|lg` (2/3/4 px), `z-canvas|panel|toolbar|popover|dialog|toast|tooltip` (via `@utility`), `num` (tabular numerals; `tabular-nums` also works), `focus-ring`, and the type scales `text-ws-xs..xl` and `text-ad-sm..3xl`.
+- Contrast adjustments made to pass the new test (smallest change, same hue; no threshold lowered, no pair dropped):
+  - `--border-strong` failed 3:1 against `surface-1` in all three themes (2.12 / 1.81 / 2.66): Blueprint `#425265` -> `#5E7289`, Daylight `#B8BAC0` -> `#8A8D95` (3.10), Contrast `#55555C` -> `#78787F`.
+  - Daylight `--accent` `#E8620C` -> `#C24E00` (white text 4.79:1; accent on `surface-0` now >= 3).
+  - Daylight `--success` `#1F8A55` -> `#1A7A4A` (text on `surface-1` was 4.07, now 5.00).
+  - Daylight `--warning` fill kept at `#A57F00` (icon 3.48:1); a separate `--warning-text: #8A6A00` carries text use (4.74:1). Blueprint and Contrast `--warning-text` equal `--warning`.
+  - Contrast theme: `--accent-soft` is orange at 18 percent.
+- Canvas tokens: the story asked for the `info` snap glyph and `danger` markers to reach 3:1 on the white sheet, but Blueprint `info` `#6CA8FF` is about 2.3:1 on white. Instead of changing the UI `info` colour, I added `--canvas-snap` and `--canvas-danger` (sheet-safe values; Blueprint/Daylight `#2563C9` / `#C8243A`, Contrast `#1D56B0` / `#B3202F`) and the `--canvas-coverage-outline` token. `readCanvasTokens` reads `snap` and `danger` from these. Selection uses "max(accent, outline) >= 3" as specified.
+- `--shadow-color` is a per-theme variable; `--shadow-1/2/3` reference it. The self-test checks only `--shadow-<n>` values for a zero blur.
+- Z-layers are `@theme` variables plus explicit `@utility z-*` rules because Tailwind v4 has no z-index theme namespace.
+- `tokens.ts`: shared `MutationObserver` created on first subscribe and disconnected on last unsubscribe. Extra exports: `isTheme`, `getTheme`.
+- `Button` has `data-variant` for tests and styling hooks. `TextField` includes the optional password show/hide toggle; it is marked `"use client"`.
+- Vitest: global setup file `vitest.setup.ts` (jest-dom matchers plus RTL cleanup). DOM tests opt into jsdom with a `// @vitest-environment jsdom` comment, and `src/core` stays on `node`. `@vitejs/plugin-react` was added for JSX.
+- `tools/lint/near-sharp.test.ts` also unit-tests its own rules (flags and allows).
+- Deleted unused scaffold SVGs in `public/`; `src/app/favicon.ico` is untouched.
+- `npm install` reports 5 high-severity audit findings in the dependency tree. Not investigated here (outside this story's scope).
+
+### Deviations
+
+- Extra tokens beyond the story table: `--warning-text`, `--shadow-color`, `--canvas-snap`, `--canvas-danger`, `--canvas-coverage-outline` (see notes above).
+- Adjusted token values listed above. The founder-approved mockup values for those tokens are no longer exact.
+- Tailwind colour names: `border-strong` is `--color-strong` and the muted text colour is `text-muted` (`--color-muted`), as named in the story, which means `bg-strong` and `bg-muted` also exist.
 
 ### File List
+
+- `package.json` (modified: 6 exact-pinned dev deps)
+- `package-lock.json` (modified)
+- `vitest.config.mts` (modified)
+- `vitest.setup.ts` (new)
+- `src/app/globals.css` (rewritten)
+- `src/app/layout.tsx` (modified: Inter, `data-theme="blueprint"`)
+- `src/app/page.tsx` (replaced with the token-styled placeholder)
+- `src/components/ui/token-names.ts` (new)
+- `src/components/ui/theme-css.ts` (new, test helper)
+- `src/components/ui/tokens.ts` (new)
+- `src/components/ui/tokens.test.ts` (new)
+- `src/components/ui/tokens-css.test.ts` (new)
+- `src/components/ui/contrast.ts` (new)
+- `src/components/ui/contrast-pairs.ts` (new)
+- `src/components/ui/contrast.test.ts` (new)
+- `src/components/ui/button.tsx` (new)
+- `src/components/ui/button.test.tsx` (new)
+- `src/components/ui/text-field.tsx` (new)
+- `src/components/ui/text-field.test.tsx` (new)
+- `tools/lint/near-sharp.test.ts` (new)
+- `public/next.svg`, `public/vercel.svg`, `public/file.svg`, `public/globe.svg`, `public/window.svg` (deleted)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` (1-4 set to review)
+- `_bmad-output/implementation-artifacts/1-4-design-tokens-and-themes.md` (this file)
+
+## Change Log
+
+- 2026-10-17: Implemented Story 1.4 (design tokens, three themes, Inter, canvas token bridge, Button, TextField, contrast and near-sharp tests). Status set to review.
