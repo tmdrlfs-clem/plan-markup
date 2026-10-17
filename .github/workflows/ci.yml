@@ -16,7 +16,7 @@ jobs:
   checks:
     name: Typecheck, lint, unit tests, guards
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -34,6 +34,15 @@ jobs:
         run: npm run lint
       - name: Unit tests
         run: npm test
+      # Proves next build works without Sentry secrets (no DSN, no auth token,
+      # no source-map upload). The Supabase values are placeholders, not secrets.
+      - name: Build (no Sentry secrets)
+        run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:56321
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-build-placeholder
+      - name: Static route guard
+        run: npm run check:dynamic-routes
       - name: Audit runtime dependencies
         run: npm audit --omit=dev --audit-level=high
       - name: Audit all dependencies (report only)

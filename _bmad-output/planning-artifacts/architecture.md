@@ -219,7 +219,7 @@ Full design: `docs/4541-placement-design.md`.
 - **Hosting:** Vercel (functions region `syd1`) + Supabase cloud (ap-southeast-2).
 - **CI:** GitHub Actions — typecheck, lint, Vitest (core + RLS matrix on local Supabase), Playwright smoke, schema-drift.
 - **Environments:** local (Docker Supabase), preview (Vercel preview + Supabase branch or staging project), production.
-- **Observability:** Sentry (`@sentry/nextjs` 11.8.0) from first deploy, incl. worker errors; `activity_events` table for product metrics.
+- **Observability:** Sentry (`@sentry/nextjs` 11.4.0) from first deploy, incl. worker errors; `activity_events` table for product metrics.
 - **Scaling:** server load is light (rows only); main scaling risk is client memory on huge PDFs → tile cache eviction budget.
 
 ### Founder Decisions (2026-10-16)

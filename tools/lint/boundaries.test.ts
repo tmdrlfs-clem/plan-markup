@@ -93,4 +93,34 @@ describe("lint boundaries are active", () => {
     },
     TIMEOUT,
   );
+
+  it.each(["src/core/__probe__.ts", "src/features/__probe__.ts", "src/app/__probe__.tsx", "src/components/__probe__.tsx", "src/proxy.ts"])(
+    "bans @sentry/* in %s",
+    async (filePath) => {
+      const ids = await ruleIds("import * as Sentry from '@sentry/nextjs';\nexport const y = Sentry;\n", filePath);
+      expect(ids).toContain("no-restricted-imports");
+    },
+    TIMEOUT,
+  );
+
+  it.each(["src/lib/sentry/__probe__.ts", "src/instrumentation.ts", "src/instrumentation-client.ts"])(
+    "allows @sentry/nextjs in %s",
+    async (filePath) => {
+      const ids = await ruleIds("import * as Sentry from '@sentry/nextjs';\nexport const y = Sentry;\n", filePath);
+      expect(ids).toEqual([]);
+    },
+    TIMEOUT,
+  );
+
+  it(
+    "keeps the @supabase/* ban in the UI-layer block",
+    async () => {
+      const ids = await ruleIds(
+        "import { createBrowserClient } from '@supabase/ssr';\nexport const y = createBrowserClient;\n",
+        "src/app/__probe__.tsx",
+      );
+      expect(ids).toContain("no-restricted-imports");
+    },
+    TIMEOUT,
+  );
 });

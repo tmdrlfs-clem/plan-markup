@@ -36,4 +36,34 @@ describe("parseEnv", () => {
       /NEXT_PUBLIC_SUPABASE_URL[\s\S]*NEXT_PUBLIC_SUPABASE_ANON_KEY[\s\S]*NEXT_PUBLIC_LOG_LEVEL/,
     );
   });
+
+  it("leaves the optional Sentry variables undefined when empty", () => {
+    const env = parseEnv({
+      ...valid,
+      NEXT_PUBLIC_SENTRY_ENVIRONMENT: "",
+      SENTRY_ORG: "",
+      SENTRY_PROJECT: "",
+    });
+    expect(env.NEXT_PUBLIC_SENTRY_ENVIRONMENT).toBeUndefined();
+    expect(env.SENTRY_ORG).toBeUndefined();
+    expect(env.SENTRY_PROJECT).toBeUndefined();
+  });
+
+  it("keeps the optional Sentry variables when present", () => {
+    const env = parseEnv({
+      ...valid,
+      NEXT_PUBLIC_SENTRY_ENVIRONMENT: "preview",
+      SENTRY_ORG: "acme",
+      SENTRY_PROJECT: "plan-markup",
+    });
+    expect(env.NEXT_PUBLIC_SENTRY_ENVIRONMENT).toBe("preview");
+    expect(env.SENTRY_ORG).toBe("acme");
+    expect(env.SENTRY_PROJECT).toBe("plan-markup");
+  });
+
+  it("rejects a Sentry environment longer than 64 characters", () => {
+    expect(() =>
+      parseEnv({ ...valid, NEXT_PUBLIC_SENTRY_ENVIRONMENT: "x".repeat(65) }),
+    ).toThrow(/NEXT_PUBLIC_SENTRY_ENVIRONMENT/);
+  });
 });

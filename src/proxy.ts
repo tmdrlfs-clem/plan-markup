@@ -1,5 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { updateSession } from "@/lib/auth/proxy-session";
+import { getPublicEnv } from "@/lib/env";
+import { buildNonceCsp, buildStaticCsp, generateNonce } from "@/lib/security/csp";
+import { applyStaticSecurityHeaders } from "@/lib/security/headers";
+import { cspModeFor } from "@/lib/security/route-policy";
 
 /**
  * Paths reachable without a session (exact match). Everything else the matcher
@@ -26,20 +30,54 @@ function redirectToSignIn(request: NextRequest, refreshed: NextResponse): NextRe
   return redirect;
 }
 
+function cspFor(request: NextRequest): { csp: string; nonce: string | null } {
+  const env = getPublicEnv();
+  const isDev = process.env.NODE_ENV === "development";
+  const common = {
+    supabaseUrl: env.NEXT_PUBLIC_SUPABASE_URL,
+    sentryDsn: env.NEXT_PUBLIC_SENTRY_DSN,
+    isDev,
+  };
+  if (cspModeFor(request.nextUrl.pathname) === "static") {
+    // Fail closed until Story 13.1 supplies the hash manifest: no inline script runs.
+    return { csp: buildStaticCsp({ ...common, scriptHashes: [] }), nonce: null };
+  }
+  const nonce = generateNonce();
+  return { csp: buildNonceCsp({ ...common, nonce, devHost: request.nextUrl.host }), nonce };
+}
+
+function withSecurityHeaders(response: NextResponse, csp: string): NextResponse {
+  response.headers.set("Content-Security-Policy", csp);
+  applyStaticSecurityHeaders(response.headers);
+  return response;
+}
+
 /**
- * Refreshes the session on every matched request and sends anonymous requests
- * on protected paths to /sign-in. Only checks "is there a verified user":
- * pages, actions and route handlers check profiles.status themselves (NFR13).
+ * Sets the per-request CSP (NFR28), refreshes the session on every matched
+ * request and sends anonymous requests on protected paths to /sign-in. Only
+ * checks "is there a verified user": pages, actions and route handlers check
+ * profiles.status themselves (NFR13).
  */
 export async function proxy(request: NextRequest): Promise<NextResponse> {
+  const { csp, nonce } = cspFor(request);
+
+  // Next.js reads the nonce from the *request* CSP header while rendering.
+  // set() (never append) so client-sent values are overwritten; the
+  // report-only header is dropped because Next also reads a nonce from it.
+  request.headers.set("content-security-policy", csp);
+  request.headers.delete("content-security-policy-report-only");
+  if (nonce) request.headers.set("x-nonce", nonce);
+  else request.headers.delete("x-nonce");
+
+  // updateSession builds NextResponse.next({ request }), which forwards the
+  // request headers set above to rendering.
   const { response, isAuthenticated } = await updateSession(request);
 
-  if (!isAuthenticated && !isPublicPath(request.nextUrl.pathname)) {
-    return redirectToSignIn(request, response);
-  }
-
-  // Story 1.6 adds the nonce-based CSP and security headers here.
-  return response;
+  const result =
+    !isAuthenticated && !isPublicPath(request.nextUrl.pathname)
+      ? redirectToSignIn(request, response)
+      : response;
+  return withSecurityHeaders(result, csp);
 }
 
 export const config = {

@@ -1,25 +1,13 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import pg from "pg";
 import { rateLimitKeyHash } from "../src/lib/auth/rate-limit-key";
 import { DB_URL } from "./global-setup";
+import { ACTIVE, formAlert, signIn } from "./helpers";
 
-// Seed accounts (supabase/seed.sql), all with password123.
-const PASSWORD = "password123";
-const ACTIVE = "user@plan-markup.test";
+// More seed accounts (supabase/seed.sql), all with password123.
 const PENDING = "pending@plan-markup.test";
 const DEACTIVATED = "deactivated@plan-markup.test";
 const AUTH_COOKIE = /^sb-.+-auth-token(\.\d+)?$/;
-
-/** The form-level alert (Next's route announcer is also role="alert"). */
-function formAlert(page: Page) {
-  return page.getByRole("alert").and(page.locator(":not(#__next-route-announcer__)"));
-}
-
-async function signIn(page: Page, email: string, password = PASSWORD) {
-  await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password", { exact: true }).fill(password);
-  await page.getByRole("button", { name: "Sign in" }).click();
-}
 
 test("unauthenticated /workspace redirects to sign-in with next", async ({ page }) => {
   await page.goto("/workspace");
@@ -108,12 +96,13 @@ test("sign out ends the session", async ({ page, context }) => {
 });
 
 for (const next of ["%2F%2Fevil.com", "https%3A%2F%2Fevil.com", "%2F%5Cevil.com"]) {
-  test(`open redirect next=${next} falls back to /workspace`, async ({ page }) => {
+  test(`open redirect next=${next} falls back to /workspace`, async ({ page, baseURL }) => {
     await page.goto(`/sign-in?next=${next}`);
     await signIn(page, ACTIVE);
     await expect(page).toHaveURL("/workspace");
     const url = new URL(page.url());
-    expect(url.origin).toBe("http://localhost:3020");
+    // The app's own origin (http://localhost:3020 by default), never evil.com.
+    expect(url.origin).toBe(new URL(baseURL!).origin);
     expect(url.pathname).toBe("/workspace");
   });
 }

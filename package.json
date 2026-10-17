@@ -16,6 +16,7 @@
     "e2e": "playwright test",
     "check:pinned": "node scripts/check-pinned.mjs",
     "check:env-files": "node scripts/check-env-files.mjs",
+    "check:dynamic-routes": "node scripts/check-dynamic-routes.mjs",
     "db:start": "node scripts/pin-postgres-image.mjs && supabase start",
     "db:stop": "supabase stop",
     "db:reset": "node scripts/pin-postgres-image.mjs && supabase db reset",
@@ -30,7 +31,7 @@
   },
   "dependencies": {
     "@cantoo/pdf-lib": "2.11.1",
-    "@sentry/nextjs": "11.8.0",
+    "@sentry/nextjs": "11.4.0",
     "@supabase/ssr": "0.12.7",
     "@supabase/supabase-js": "2.118.0",
     "flatbush": "4.6.2",

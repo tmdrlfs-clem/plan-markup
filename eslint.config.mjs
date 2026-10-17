@@ -16,6 +16,7 @@ const CORE_BANNED = {
         "next",
         "next/*",
         "@supabase/*",
+        "@sentry/*",
         "@/features/*",
         "@/components/*",
         "@/lib/*",
@@ -37,6 +38,39 @@ const PLACER_BAN = {
   ],
   message: "The 4541 oracle must stay independent of the placer.",
 };
+
+// Raw auth calls only inside src/lib/auth (NFR11).
+const AUTH_SYNTAX = [
+  {
+    selector:
+      "CallExpression[callee.type='MemberExpression'][callee.property.name=/^(getSession|getUser|getClaims)$/]",
+    message:
+      "Use getAuthUser()/getAuthState() from @/lib/auth. Raw Supabase auth calls are banned outside src/lib/auth (NFR11).",
+  },
+  {
+    selector:
+      "CallExpression[callee.type='MemberExpression'][callee.property.value=/^(getSession|getUser|getClaims)$/]",
+    message: "Use getAuthUser()/getAuthState() from @/lib/auth (NFR11).",
+  },
+];
+
+// CSRF for route handlers (NFR29): POST/PUT/PATCH/DELETE must be withOriginCheck(...).
+const ROUTE_HANDLER_SYNTAX = [
+  {
+    selector: "ExportNamedDeclaration > FunctionDeclaration[id.name=/^(POST|PUT|PATCH|DELETE)$/]",
+    message:
+      "State-changing route handlers must be `export const POST = withOriginCheck(handler)` from @/lib/http/origin (NFR29).",
+  },
+  {
+    selector:
+      "ExportNamedDeclaration > VariableDeclaration > VariableDeclarator[id.name=/^(POST|PUT|PATCH|DELETE)$/]:not([init.type='CallExpression'][init.callee.name='withOriginCheck'])",
+    message: "Wrap state-changing route handlers with withOriginCheck() (NFR29).",
+  },
+  {
+    selector: "ExportNamedDeclaration > ExportSpecifier[exported.name=/^(POST|PUT|PATCH|DELETE)$/]",
+    message: "Export state-changing route handlers as `export const X = withOriginCheck(handler)` (NFR29).",
+  },
+];
 
 const eslintConfig = defineConfig([
   ...nextVitals,
@@ -99,24 +133,19 @@ const eslintConfig = defineConfig([
     files: ["src/**/*.{ts,tsx}"],
     ignores: ["src/lib/auth/**"],
     rules: {
-      "no-restricted-syntax": [
-        "error",
-        {
-          selector:
-            "CallExpression[callee.type='MemberExpression'][callee.property.name=/^(getSession|getUser|getClaims)$/]",
-          message:
-            "Use getAuthUser()/getAuthState() from @/lib/auth. Raw Supabase auth calls are banned outside src/lib/auth (NFR11).",
-        },
-        {
-          selector:
-            "CallExpression[callee.type='MemberExpression'][callee.property.value=/^(getSession|getUser|getClaims)$/]",
-          message: "Use getAuthUser()/getAuthState() from @/lib/auth (NFR11).",
-        },
-      ],
+      "no-restricted-syntax": ["error", ...AUTH_SYNTAX],
     },
   },
   {
-    // UI layers and the proxy never import Supabase directly; they go through src/lib.
+    // State-changing route handlers go through withOriginCheck (NFR29). Flat config
+    // does not merge rule options, so the auth selectors are repeated here.
+    files: ["src/app/**/route.{ts,tsx}"],
+    rules: {
+      "no-restricted-syntax": ["error", ...AUTH_SYNTAX, ...ROUTE_HANDLER_SYNTAX],
+    },
+  },
+  {
+    // UI layers and the proxy never import Supabase or Sentry directly; they go through src/lib.
     files: [
       "src/app/**/*.{ts,tsx}",
       "src/components/**/*.{ts,tsx}",
@@ -129,6 +158,7 @@ const eslintConfig = defineConfig([
         {
           patterns: [
             { group: ["@supabase/*"], message: "Use src/lib/supabase or src/lib/auth." },
+            { group: ["@sentry/*"], message: "Use @/lib/sentry (scrubbed reporting)." },
           ],
         },
       ],

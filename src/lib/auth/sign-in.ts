@@ -28,7 +28,7 @@ export async function signInWithPassword(
   const reason = classifyAuthError(error);
   if (reason === "unavailable") {
     // Status and code only: never the email, the password or the message.
-    logger.error("Sign-in failed upstream", { status: error.status, code: error.code });
+    logger.error("auth.sign_in_upstream_failed", { status: error.status, code: error.code });
   }
   return { ok: false, reason };
 }
@@ -38,6 +38,6 @@ export async function signOutCurrentSession(): Promise<void> {
   const supabase = await createServerSupabase();
   const { error } = await supabase.auth.signOut({ scope: "local" });
   if (error) {
-    logger.warn("Sign-out returned an error", { status: error.status, code: error.code });
+    logger.warn("auth.sign_out_failed", { status: error.status, code: error.code });
   }
 }

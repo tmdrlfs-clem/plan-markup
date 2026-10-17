@@ -1,6 +1,6 @@
 # Story 1.6: Security headers, error tracking and logging
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -37,13 +37,13 @@ so that attacks are blocked and failures are visible without leaking data.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Pin Sentry and env** (AC: 5)
-  - [ ] `npm i -E @sentry/nextjs@11.4.0` (downgrade from 11.8.0, which is only 3 days old; Dev Notes → Library versions). `npm run check:pinned` must pass, and `npm audit --omit=dev --audit-level=high` must stay clean. Update `architecture.md` → Observability (`@sentry/nextjs` 11.8.0 → 11.4.0) in the same change.
-  - [ ] `src/lib/env.ts`: add optional `NEXT_PUBLIC_SENTRY_ENVIRONMENT` (`z.string().min(1).max(64).optional()`) to the public schema, and optional build-only `SENTRY_ORG` and `SENTRY_PROJECT` to the server schema. Wire them through `getPublicEnv()` / `getServerEnv()` with literal `process.env.X` reads. Extend `env.test.ts` (empty → undefined, present → value).
-  - [ ] `.env.example`: document `NEXT_PUBLIC_SENTRY_DSN` ("leave empty locally and in CI: Sentry stays off"), `NEXT_PUBLIC_SENTRY_ENVIRONMENT`, `SENTRY_AUTH_TOKEN` ("build only; without it no source maps are uploaded"), `SENTRY_ORG`, `SENTRY_PROJECT`. No real values anywhere.
-- [ ] **Task 2: Security headers and CSP modules** (AC: 1, 2, 4)
-  - [ ] `src/lib/security/headers.ts` (pure, **relative imports only**, because `next.config.ts` imports it): `export const STATIC_SECURITY_HEADERS: ReadonlyArray<{ key: string; value: string }>` with the six headers in Dev Notes → Static headers, and `applyStaticSecurityHeaders(headers: Headers): void`.
-  - [ ] `src/lib/security/csp.ts` (pure, no `server-only`, so the proxy and tests import it):
+- [x] **Task 1: Pin Sentry and env** (AC: 5)
+  - [x] `npm i -E @sentry/nextjs@11.4.0` (downgrade from 11.8.0, which is only 3 days old; Dev Notes → Library versions). `npm run check:pinned` must pass, and `npm audit --omit=dev --audit-level=high` must stay clean. Update `architecture.md` → Observability (`@sentry/nextjs` 11.8.0 → 11.4.0) in the same change.
+  - [x] `src/lib/env.ts`: add optional `NEXT_PUBLIC_SENTRY_ENVIRONMENT` (`z.string().min(1).max(64).optional()`) to the public schema, and optional build-only `SENTRY_ORG` and `SENTRY_PROJECT` to the server schema. Wire them through `getPublicEnv()` / `getServerEnv()` with literal `process.env.X` reads. Extend `env.test.ts` (empty → undefined, present → value).
+  - [x] `.env.example`: document `NEXT_PUBLIC_SENTRY_DSN` ("leave empty locally and in CI: Sentry stays off"), `NEXT_PUBLIC_SENTRY_ENVIRONMENT`, `SENTRY_AUTH_TOKEN` ("build only; without it no source maps are uploaded"), `SENTRY_ORG`, `SENTRY_PROJECT`. No real values anywhere.
+- [x] **Task 2: Security headers and CSP modules** (AC: 1, 2, 4)
+  - [x] `src/lib/security/headers.ts` (pure, **relative imports only**, because `next.config.ts` imports it): `export const STATIC_SECURITY_HEADERS: ReadonlyArray<{ key: string; value: string }>` with the six headers in Dev Notes → Static headers, and `applyStaticSecurityHeaders(headers: Headers): void`.
+  - [x] `src/lib/security/csp.ts` (pure, no `server-only`, so the proxy and tests import it):
     - `generateNonce(): string`: 16 random bytes from `crypto.getRandomValues`, base64. It must match Next's `CSP_NONCE_SOURCE_REGEX` (`/^[A-Za-z0-9+/_-]+={0,2}$/`);
     - `buildNonceCsp({ nonce, supabaseUrl, sentryDsn, isDev, devHost }): string`;
     - `buildStaticCsp({ scriptHashes, supabaseUrl, sentryDsn, isDev }): string`;
@@ -51,72 +51,72 @@ so that attacks are blocked and failures are visible without leaking data.
     - `supabaseConnectSources(url): string[]` (`origin` plus `ws(s)://host`);
     - `parseCsp(header): Map<string, string[]>`, for tests and e2e.
     Directive order and exact values are in Dev Notes → CSP policy. Serialise as `directive value value; directive …` with single spaces and no trailing `;`.
-  - [ ] `src/lib/security/inline-script-hashes.ts` (pure): `hashInlineScripts(html: string): Promise<string[]>` returns `'sha256-<base64>'` for every `<script>` without a `src` attribute, in document order and de-duplicated, using `crypto.subtle.digest`. Story 13.1 uses it in a postbuild step.
-  - [ ] `src/lib/security/route-policy.ts` (pure): `export const MARKETING_PATHS: ReadonlySet<string> = new Set()` and `cspModeFor(pathname): "nonce" | "static"`. Document in a comment that a path may only be added here together with its hash manifest (Story 13.1).
-- [ ] **Task 3: Proxy** (AC: 1, 2, 4)
-  - [ ] Update `src/proxy.ts` per Dev Notes → Proxy flow. Preserve the Story 1.5 behaviour exactly: `PUBLIC_PATHS`, default-deny, the `next` param on GET/HEAD only, copying refreshed cookies onto the redirect, and the matcher (a constant literal; leave it unchanged).
-  - [ ] Before `updateSession`, `request.headers.set("content-security-policy", csp)` and `request.headers.set("x-nonce", nonce)` (**set**, never append, so a client-sent CSP or `x-nonce` header is overwritten). `updateSession` builds `NextResponse.next({ request })`, so the overrides are forwarded. If the e2e nonce assertion fails, change `updateSession(request)` to accept explicit request headers, and record which way you went.
-  - [ ] Set `Content-Security-Policy` and the static headers on the final response: pass-through and redirect.
-  - [ ] Marketing branch: `cspModeFor(pathname) === "static"` → `buildStaticCsp({ scriptHashes: [] … })` and no nonce. It is unreachable while `MARKETING_PATHS` is empty, but it fails closed and is unit-tested.
-  - [ ] `src/proxy.test.ts` (node env; mock `@/lib/auth/proxy-session` to return a `NextResponse.next({ request })` with `isAuthenticated` controlled by the test): the cases in Dev Notes → Proxy tests.
-- [ ] **Task 4: Make nonce pages dynamic and guard it** (AC: 1, 8)
-  - [ ] `src/app/layout.tsx`: make `RootLayout` `async` and `await connection()` (from `next/server`) as its first statement, with a comment: the nonce CSP needs per-request rendering (Next CSP guide); the Epic 13 marketing group gets its own root layout without this. Keep `metadata`, fonts and `data-theme="blueprint"` unchanged.
-  - [ ] `scripts/check-dynamic-routes.mjs`: reads `.next/prerender-manifest.json` and fails, naming the route, if any key of `routes` is not in `STATIC_ROUTE_ALLOWLIST`. Export the pure `findUnexpectedStaticRoutes(manifest, allowlist)` and test it in `scripts/check-dynamic-routes.test.mjs` (fixtures: clean, offending `/`, allowlisted entry). Run `npm run build` once, read the real manifest, and set the allowlist to the non-HTML entries you find (expected: `/favicon.ico`, possibly `/_global-error`; never `/`, `/sign-in`, `/workspace`, `/_not-found`). Record the real list in the Debug Log. If `/_not-found` stays static even with the root layout dynamic, add `src/app/not-found.tsx` (server component, `await connection()`, a short "Page not found" screen styled with the tokens and a link to `/workspace`) and re-check.
-  - [ ] `package.json`: `"check:dynamic-routes": "node scripts/check-dynamic-routes.mjs"`.
-- [ ] **Task 5: next.config.ts** (AC: 3, 4, 5)
-  - [ ] Per Dev Notes → next.config: `poweredByHeader: false`; `async headers()` returning `[{ source: "/:path*", headers: [...STATIC_SECURITY_HEADERS] }]`; no CSP here (the proxy owns it); no `serverActions.allowedOrigins`; keep the `turbopack.rules` block and the cacheComponents comment; wrap the export with `withSentryConfig(nextConfig, sentryBuildOptions)`.
-  - [ ] `tools/config/next-config.test.ts`: import the config, call `headers()`, and assert the source and the six headers; assert `poweredByHeader === false`; assert that no `experimental.serverActions.allowedOrigins` is set. If importing the wrapped config in Vitest pulls in Sentry build code that fails in Vitest, export the unwrapped `nextConfig` and the `sentryBuildOptions` as named exports and test those. Also test `sentryBuildOptions` without `SENTRY_AUTH_TOKEN`: `sourcemaps.disable === true`, `telemetry === false`.
-- [ ] **Task 6: Sentry wiring** (AC: 5)
-  - [ ] `src/lib/sentry/scrub.ts` (pure, no Sentry import, types from `@sentry/nextjs` with `import type` only): `scrubText`, `scrubUrl`, `scrubEvent`, `scrubBreadcrumb`, `isSafeDrawingId`, per Dev Notes → Scrubbing rules.
-  - [ ] `src/lib/sentry/options.ts` (pure): `buildSentryOptions({ dsn, environment, runtime }): SentryInitOptions | null`. It returns `null` when `dsn` is missing. Otherwise it returns the options in Dev Notes → Sentry options, with `beforeSend: scrubEvent` and `beforeBreadcrumb: scrubBreadcrumb`.
-  - [ ] `src/lib/sentry/init.ts`: `initSentry(runtime: "browser" | "nodejs")` reads the env (literal `process.env.NEXT_PUBLIC_SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_ENVIRONMENT`), calls `buildSentryOptions`, returns early on `null`, else calls `Sentry.init(options)` and `setErrorReporter(reportLoggedError)` from the logger. It is idempotent (a module-level flag).
-  - [ ] `src/lib/sentry/context.ts`: `setDrawingContext(drawingId: string | null)` sets or clears the `drawing_id` tag (`Sentry.setTag`) only for a valid UUID (permissive regex, not Zod `uuid()`); anything else clears it and logs `logger.warn("sentry.invalid_drawing_id")` with no value. Story 3.x calls it when a drawing opens or closes.
-  - [ ] `src/lib/sentry/report.ts`: `reportError(error: unknown, opts?: { drawingId?: string; worker?: WorkerName; event?: string })` wraps `Sentry.captureException` with allowlisted tags. It is a no-op when Sentry is not initialised (the SDK already no-ops without a client; keep it that way, no extra global state).
-  - [ ] `src/instrumentation.ts`: `export async function register()` that runs `initSentry("nodejs")` only when `process.env.NEXT_RUNTIME === "nodejs"` (nothing runs on edge in this app; leave an edge comment). Add `export const onRequestError = Sentry.captureRequestError;`.
-  - [ ] `src/instrumentation-client.ts`: `initSentry("browser")`, and `export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;`. Keep it light (Next warns above 16 ms).
-  - [ ] Unit tests: `src/lib/sentry/scrub.test.ts` (the full table in Dev Notes → Scrubber test cases), `options.test.ts` (no DSN → `null`; with DSN → `sendDefaultPii === false`, no `tracesSampleRate`, `includeLocalVariables === false`, both hooks set, no Replay or Feedback integration), `context.test.ts` and `report.test.ts` (with `vi.mock("@sentry/nextjs")`), and `init.test.ts` (no DSN → `Sentry.init` is never called and no reporter is registered; with DSN → called once even when called twice).
-  - [ ] Optional SDK round-trip: if `@sentry/nextjs` loads in Vitest, init a client with a dummy DSN (`https://public@o0.ingest.sentry.io/0`) and a capturing `transport`, capture an error built from the dirty fixture, and assert that the serialised envelope contains none of the forbidden strings. If it does not load cleanly, skip it and say so in the Completion Notes.
-- [ ] **Task 7: Worker error pattern** (AC: 5)
-  - [ ] `src/core/worker/error.ts` (framework-free): `type SerializedWorkerError = { name: string; message: string; stack?: string }` and `serializeWorkerError(value: unknown): SerializedWorkerError`, per Dev Notes → Worker errors. It **never** stringifies a non-`Error` value.
-  - [ ] `src/lib/sentry/worker-errors.ts`: `type WorkerName = "render" | "engine" | "export"`; `reportWorkerError(worker, serialized, drawingId?)` rebuilds an `Error` and calls `reportError`; `attachWorkerErrorReporting(worker: Worker, name: WorkerName, getDrawingId?: () => string | null): () => void` listens to `error` (`ErrorEvent`) and `messageerror` and returns a detach function. Protocol `{ type: "error" }` replies are reported by the future RPC helper (`src/workers/rpc.ts`, Story 3.1) calling `reportWorkerError`; document this in a JSDoc. Do **not** create any worker file.
-  - [ ] Tests: `src/core/worker/error.test.ts` and `src/lib/sentry/worker-errors.test.ts` (a fake `EventTarget` as the worker; mocked `@/lib/sentry/report`).
-- [ ] **Task 8: Logger, redaction and safe results** (AC: 6)
-  - [ ] `src/lib/redact.ts` (pure): `scrubText(text, max = 500)` and `redactFields(fields)`, shared by the logger and the Sentry scrubber (move `scrubText` here; `scrub.ts` re-uses it).
-  - [ ] Rewrite `src/lib/logger.ts` per Dev Notes → Logger. Keep it the only file allowed to call `console.*`, and keep the literal `process.env.NEXT_PUBLIC_LOG_LEVEL` read. Add `setErrorReporter(fn | null)`. No Sentry import in the logger.
-  - [ ] Update the four call sites to the new signature: `src/features/account/actions.ts` (`logger.error("auth.rate_limiter_failed", { error })`, `logger.error("auth.session_unreadable_after_sign_in")`) and `src/lib/auth/sign-in.ts` (`"auth.sign_in_upstream_failed"`, `"auth.sign_out_failed"` with `{ status, code }`). Keep `actions.test.ts` green.
-  - [ ] `src/lib/result.ts`: add `SAFE_MESSAGES: Record<ResultCode, string>`, `fail(code, message = SAFE_MESSAGES[code])`, and `internalError(event: string, error: unknown): Result<never>`, which logs `logger.error(event, { error })` and returns `{ ok: false, code: "INTERNAL", message: SAFE_MESSAGES.INTERNAL }`. Do not change the `Result`/`ResultCode` types.
-  - [ ] Tests: `src/lib/logger.test.ts`, `src/lib/redact.test.ts` and `src/lib/result.test.ts` (Dev Notes → Logger tests and Leak tests).
-- [ ] **Task 9: Error boundaries** (AC: 6, 7)
-  - [ ] `src/components/route-error-screen.tsx` (`"use client"`): the presentational `RouteErrorScreen({ digest, onReload })` per Dev Notes → ErrorBoundary UX. It renders the digest only when it matches `/^[A-Za-z0-9_-]{1,64}$/`.
-  - [ ] `src/components/route-error-boundary.tsx` (`"use client"`): `RouteErrorBoundary({ error })` (the shared body of every `error.tsx`). In `useEffect`: `logger.error("route.error_boundary", { error })` and, **only if the error has no `digest`** (a client-side error; server errors were already reported by `onRequestError`), `reportError(error)`. `onReload = () => window.location.reload()`. It never reads `error.message` for display.
-  - [ ] `src/app/error.tsx`, `src/app/(auth)/error.tsx`, `src/app/(workspace)/error.tsx`: `"use client"` defaults exporting `({ error }: { error: unknown; retry: () => void }) => <RouteErrorBoundary error={error} />`. Next 16.4 passes `error: unknown` and `retry` (stable since 16.3); read `node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/error.md` and use the generated prop type if `next typegen` provides one.
-  - [ ] `src/app/global-error.tsx`: `"use client"`, renders its own `<html lang="en" data-theme="blueprint">` + `<body className="min-h-full flex flex-col bg-surface-0 text-text font-sans">` around `RouteErrorBoundary`, and imports `./globals.css` (global-error does not get the root layout's styles). Set the `<title>` to "Plan Markup".
-  - [ ] Tests: `src/components/route-error-screen.test.tsx` (jsdom; Dev Notes → Leak tests) and `src/components/route-error-boundary.test.tsx` (mocked logger and report: reports a digest-less error once; does not report a digest error; Reload calls `window.location.reload`).
-- [ ] **Task 10: Lint rules** (AC: 3, 5)
-  - [ ] `eslint.config.mjs` per Dev Notes → Lint rules:
+  - [x] `src/lib/security/inline-script-hashes.ts` (pure): `hashInlineScripts(html: string): Promise<string[]>` returns `'sha256-<base64>'` for every `<script>` without a `src` attribute, in document order and de-duplicated, using `crypto.subtle.digest`. Story 13.1 uses it in a postbuild step.
+  - [x] `src/lib/security/route-policy.ts` (pure): `export const MARKETING_PATHS: ReadonlySet<string> = new Set()` and `cspModeFor(pathname): "nonce" | "static"`. Document in a comment that a path may only be added here together with its hash manifest (Story 13.1).
+- [x] **Task 3: Proxy** (AC: 1, 2, 4)
+  - [x] Update `src/proxy.ts` per Dev Notes → Proxy flow. Preserve the Story 1.5 behaviour exactly: `PUBLIC_PATHS`, default-deny, the `next` param on GET/HEAD only, copying refreshed cookies onto the redirect, and the matcher (a constant literal; leave it unchanged).
+  - [x] Before `updateSession`, `request.headers.set("content-security-policy", csp)` and `request.headers.set("x-nonce", nonce)` (**set**, never append, so a client-sent CSP or `x-nonce` header is overwritten). `updateSession` builds `NextResponse.next({ request })`, so the overrides are forwarded. If the e2e nonce assertion fails, change `updateSession(request)` to accept explicit request headers, and record which way you went.
+  - [x] Set `Content-Security-Policy` and the static headers on the final response: pass-through and redirect.
+  - [x] Marketing branch: `cspModeFor(pathname) === "static"` → `buildStaticCsp({ scriptHashes: [] … })` and no nonce. It is unreachable while `MARKETING_PATHS` is empty, but it fails closed and is unit-tested.
+  - [x] `src/proxy.test.ts` (node env; mock `@/lib/auth/proxy-session` to return a `NextResponse.next({ request })` with `isAuthenticated` controlled by the test): the cases in Dev Notes → Proxy tests.
+- [x] **Task 4: Make nonce pages dynamic and guard it** (AC: 1, 8)
+  - [x] `src/app/layout.tsx`: make `RootLayout` `async` and `await connection()` (from `next/server`) as its first statement, with a comment: the nonce CSP needs per-request rendering (Next CSP guide); the Epic 13 marketing group gets its own root layout without this. Keep `metadata`, fonts and `data-theme="blueprint"` unchanged.
+  - [x] `scripts/check-dynamic-routes.mjs`: reads `.next/prerender-manifest.json` and fails, naming the route, if any key of `routes` is not in `STATIC_ROUTE_ALLOWLIST`. Export the pure `findUnexpectedStaticRoutes(manifest, allowlist)` and test it in `scripts/check-dynamic-routes.test.mjs` (fixtures: clean, offending `/`, allowlisted entry). Run `npm run build` once, read the real manifest, and set the allowlist to the non-HTML entries you find (expected: `/favicon.ico`, possibly `/_global-error`; never `/`, `/sign-in`, `/workspace`, `/_not-found`). Record the real list in the Debug Log. If `/_not-found` stays static even with the root layout dynamic, add `src/app/not-found.tsx` (server component, `await connection()`, a short "Page not found" screen styled with the tokens and a link to `/workspace`) and re-check.
+  - [x] `package.json`: `"check:dynamic-routes": "node scripts/check-dynamic-routes.mjs"`.
+- [x] **Task 5: next.config.ts** (AC: 3, 4, 5)
+  - [x] Per Dev Notes → next.config: `poweredByHeader: false`; `async headers()` returning `[{ source: "/:path*", headers: [...STATIC_SECURITY_HEADERS] }]`; no CSP here (the proxy owns it); no `serverActions.allowedOrigins`; keep the `turbopack.rules` block and the cacheComponents comment; wrap the export with `withSentryConfig(nextConfig, sentryBuildOptions)`.
+  - [x] `tools/config/next-config.test.ts`: import the config, call `headers()`, and assert the source and the six headers; assert `poweredByHeader === false`; assert that no `experimental.serverActions.allowedOrigins` is set. If importing the wrapped config in Vitest pulls in Sentry build code that fails in Vitest, export the unwrapped `nextConfig` and the `sentryBuildOptions` as named exports and test those. Also test `sentryBuildOptions` without `SENTRY_AUTH_TOKEN`: `sourcemaps.disable === true`, `telemetry === false`.
+- [x] **Task 6: Sentry wiring** (AC: 5)
+  - [x] `src/lib/sentry/scrub.ts` (pure, no Sentry import, types from `@sentry/nextjs` with `import type` only): `scrubText`, `scrubUrl`, `scrubEvent`, `scrubBreadcrumb`, `isSafeDrawingId`, per Dev Notes → Scrubbing rules.
+  - [x] `src/lib/sentry/options.ts` (pure): `buildSentryOptions({ dsn, environment, runtime }): SentryInitOptions | null`. It returns `null` when `dsn` is missing. Otherwise it returns the options in Dev Notes → Sentry options, with `beforeSend: scrubEvent` and `beforeBreadcrumb: scrubBreadcrumb`.
+  - [x] `src/lib/sentry/init.ts`: `initSentry(runtime: "browser" | "nodejs")` reads the env (literal `process.env.NEXT_PUBLIC_SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_ENVIRONMENT`), calls `buildSentryOptions`, returns early on `null`, else calls `Sentry.init(options)` and `setErrorReporter(reportLoggedError)` from the logger. It is idempotent (a module-level flag).
+  - [x] `src/lib/sentry/context.ts`: `setDrawingContext(drawingId: string | null)` sets or clears the `drawing_id` tag (`Sentry.setTag`) only for a valid UUID (permissive regex, not Zod `uuid()`); anything else clears it and logs `logger.warn("sentry.invalid_drawing_id")` with no value. Story 3.x calls it when a drawing opens or closes.
+  - [x] `src/lib/sentry/report.ts`: `reportError(error: unknown, opts?: { drawingId?: string; worker?: WorkerName; event?: string })` wraps `Sentry.captureException` with allowlisted tags. It is a no-op when Sentry is not initialised (the SDK already no-ops without a client; keep it that way, no extra global state).
+  - [x] `src/instrumentation.ts`: `export async function register()` that runs `initSentry("nodejs")` only when `process.env.NEXT_RUNTIME === "nodejs"` (nothing runs on edge in this app; leave an edge comment). Add `export const onRequestError = Sentry.captureRequestError;`.
+  - [x] `src/instrumentation-client.ts`: `initSentry("browser")`, and `export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;`. Keep it light (Next warns above 16 ms).
+  - [x] Unit tests: `src/lib/sentry/scrub.test.ts` (the full table in Dev Notes → Scrubber test cases), `options.test.ts` (no DSN → `null`; with DSN → `sendDefaultPii === false`, no `tracesSampleRate`, `includeLocalVariables === false`, both hooks set, no Replay or Feedback integration), `context.test.ts` and `report.test.ts` (with `vi.mock("@sentry/nextjs")`), and `init.test.ts` (no DSN → `Sentry.init` is never called and no reporter is registered; with DSN → called once even when called twice).
+  - [x] Optional SDK round-trip: if `@sentry/nextjs` loads in Vitest, init a client with a dummy DSN (`https://public@o0.ingest.sentry.io/0`) and a capturing `transport`, capture an error built from the dirty fixture, and assert that the serialised envelope contains none of the forbidden strings. If it does not load cleanly, skip it and say so in the Completion Notes.
+- [x] **Task 7: Worker error pattern** (AC: 5)
+  - [x] `src/core/worker/error.ts` (framework-free): `type SerializedWorkerError = { name: string; message: string; stack?: string }` and `serializeWorkerError(value: unknown): SerializedWorkerError`, per Dev Notes → Worker errors. It **never** stringifies a non-`Error` value.
+  - [x] `src/lib/sentry/worker-errors.ts`: `type WorkerName = "render" | "engine" | "export"`; `reportWorkerError(worker, serialized, drawingId?)` rebuilds an `Error` and calls `reportError`; `attachWorkerErrorReporting(worker: Worker, name: WorkerName, getDrawingId?: () => string | null): () => void` listens to `error` (`ErrorEvent`) and `messageerror` and returns a detach function. Protocol `{ type: "error" }` replies are reported by the future RPC helper (`src/workers/rpc.ts`, Story 3.1) calling `reportWorkerError`; document this in a JSDoc. Do **not** create any worker file.
+  - [x] Tests: `src/core/worker/error.test.ts` and `src/lib/sentry/worker-errors.test.ts` (a fake `EventTarget` as the worker; mocked `@/lib/sentry/report`).
+- [x] **Task 8: Logger, redaction and safe results** (AC: 6)
+  - [x] `src/lib/redact.ts` (pure): `scrubText(text, max = 500)` and `redactFields(fields)`, shared by the logger and the Sentry scrubber (move `scrubText` here; `scrub.ts` re-uses it).
+  - [x] Rewrite `src/lib/logger.ts` per Dev Notes → Logger. Keep it the only file allowed to call `console.*`, and keep the literal `process.env.NEXT_PUBLIC_LOG_LEVEL` read. Add `setErrorReporter(fn | null)`. No Sentry import in the logger.
+  - [x] Update the four call sites to the new signature: `src/features/account/actions.ts` (`logger.error("auth.rate_limiter_failed", { error })`, `logger.error("auth.session_unreadable_after_sign_in")`) and `src/lib/auth/sign-in.ts` (`"auth.sign_in_upstream_failed"`, `"auth.sign_out_failed"` with `{ status, code }`). Keep `actions.test.ts` green.
+  - [x] `src/lib/result.ts`: add `SAFE_MESSAGES: Record<ResultCode, string>`, `fail(code, message = SAFE_MESSAGES[code])`, and `internalError(event: string, error: unknown): Result<never>`, which logs `logger.error(event, { error })` and returns `{ ok: false, code: "INTERNAL", message: SAFE_MESSAGES.INTERNAL }`. Do not change the `Result`/`ResultCode` types.
+  - [x] Tests: `src/lib/logger.test.ts`, `src/lib/redact.test.ts` and `src/lib/result.test.ts` (Dev Notes → Logger tests and Leak tests).
+- [x] **Task 9: Error boundaries** (AC: 6, 7)
+  - [x] `src/components/route-error-screen.tsx` (`"use client"`): the presentational `RouteErrorScreen({ digest, onReload })` per Dev Notes → ErrorBoundary UX. It renders the digest only when it matches `/^[A-Za-z0-9_-]{1,64}$/`.
+  - [x] `src/components/route-error-boundary.tsx` (`"use client"`): `RouteErrorBoundary({ error })` (the shared body of every `error.tsx`). In `useEffect`: `logger.error("route.error_boundary", { error })` and, **only if the error has no `digest`** (a client-side error; server errors were already reported by `onRequestError`), `reportError(error)`. `onReload = () => window.location.reload()`. It never reads `error.message` for display.
+  - [x] `src/app/error.tsx`, `src/app/(auth)/error.tsx`, `src/app/(workspace)/error.tsx`: `"use client"` defaults exporting `({ error }: { error: unknown; retry: () => void }) => <RouteErrorBoundary error={error} />`. Next 16.4 passes `error: unknown` and `retry` (stable since 16.3); read `node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/error.md` and use the generated prop type if `next typegen` provides one.
+  - [x] `src/app/global-error.tsx`: `"use client"`, renders its own `<html lang="en" data-theme="blueprint">` + `<body className="min-h-full flex flex-col bg-surface-0 text-text font-sans">` around `RouteErrorBoundary`, and imports `./globals.css` (global-error does not get the root layout's styles). Set the `<title>` to "Plan Markup".
+  - [x] Tests: `src/components/route-error-screen.test.tsx` (jsdom; Dev Notes → Leak tests) and `src/components/route-error-boundary.test.tsx` (mocked logger and report: reports a digest-less error once; does not report a digest error; Reload calls `window.location.reload`).
+- [x] **Task 10: Lint rules** (AC: 3, 5)
+  - [x] `eslint.config.mjs` per Dev Notes → Lint rules:
     - extract the two Story 1.5 auth selectors into `const AUTH_SYNTAX = [...]` (behaviour unchanged);
     - add a block for `src/app/**/route.{ts,tsx}` with `"no-restricted-syntax": ["error", ...AUTH_SYNTAX, ...ROUTE_HANDLER_SYNTAX]` (flat config does not merge rule options, so the auth selectors must be repeated or route files would lose NFR11);
     - add `@sentry/*` to `CORE_BANNED.patterns` and to the UI-layer `no-restricted-imports` block (the `@supabase/*` block). Error boundaries go through `@/lib/sentry/*`.
-  - [ ] `tools/lint/route-handler-origin.test.ts` and an extension of `tools/lint/boundaries.test.ts` / `auth-boundaries.test.ts` (Dev Notes → Lint tests).
-- [ ] **Task 11: Origin helper** (AC: 3)
-  - [ ] `src/lib/http/origin.ts` (pure, Web `Request`/`Headers` only): `isAllowedOrigin(headers: Headers, extraHosts: readonly string[] = EXTRA_ALLOWED_HOSTS): boolean` and `withOriginCheck(handler)`, per Dev Notes → Origin check.
-  - [ ] `src/lib/http/origin.test.ts`: the table in Dev Notes → Origin check.
-- [ ] **Task 12: Playwright and CI** (AC: 1, 4, 8)
-  - [ ] `e2e/security-headers.spec.ts` per Dev Notes → E2E assertions. Reuse the `signIn` flow from `e2e/auth.spec.ts`: move `signIn`, `PASSWORD`, `ACTIVE` and `formAlert` into `e2e/helpers.ts` and import them from both specs.
-  - [ ] `.github/workflows/ci.yml` `checks` job: after "Unit tests", add "Build (no Sentry secrets)" `npm run build` with a step-level `env` of `NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:56321` and `NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-build-placeholder` (not secrets; no Sentry variables), then "Static route guard" `npm run check:dynamic-routes`. Raise `timeout-minutes` to 20. The `e2e` job is unchanged: it already exports the local Supabase env, which the CSP `connect-src` assertion uses.
-  - [ ] `README.md`: a "Security headers and error tracking" section: where the CSP lives, the dev relaxations, "Sentry is off without `NEXT_PUBLIC_SENTRY_DSN`", what is scrubbed, the `withOriginCheck` rule for route handlers, and `check:dynamic-routes`.
-  - [ ] `docs/decisions/0003-csp-and-error-tracking.md` (same short format as 0001/0002): nonce CSP + dynamic root layout, the deferred static marketing hash CSP, HSTS everywhere, Sentry 11.4.0 and the no-DSN behaviour.
-- [ ] **Task 13: Verify** (AC: 1–8)
-  - [ ] With Docker running: `npm run db:start`, `npm run env:local`, then `npm run typecheck`, `lint`, `test`, `build`, `check:dynamic-routes`, `e2e`, `check:pinned`, `check:env-files`, and `npm audit --omit=dev --audit-level=high`. Record the outputs in the Debug Log, including the route table printed by `next build` (every page must show `ƒ`).
-  - [ ] Production proof: `npm run start` (port 3020) after the build, then `curl -sI` on `/`, `/sign-in`, `/workspace` (anonymous 307) and one `_next/static/...js`. Record:
+  - [x] `tools/lint/route-handler-origin.test.ts` and an extension of `tools/lint/boundaries.test.ts` / `auth-boundaries.test.ts` (Dev Notes → Lint tests).
+- [x] **Task 11: Origin helper** (AC: 3)
+  - [x] `src/lib/http/origin.ts` (pure, Web `Request`/`Headers` only): `isAllowedOrigin(headers: Headers, extraHosts: readonly string[] = EXTRA_ALLOWED_HOSTS): boolean` and `withOriginCheck(handler)`, per Dev Notes → Origin check.
+  - [x] `src/lib/http/origin.test.ts`: the table in Dev Notes → Origin check.
+- [x] **Task 12: Playwright and CI** (AC: 1, 4, 8)
+  - [x] `e2e/security-headers.spec.ts` per Dev Notes → E2E assertions. Reuse the `signIn` flow from `e2e/auth.spec.ts`: move `signIn`, `PASSWORD`, `ACTIVE` and `formAlert` into `e2e/helpers.ts` and import them from both specs.
+  - [x] `.github/workflows/ci.yml` `checks` job: after "Unit tests", add "Build (no Sentry secrets)" `npm run build` with a step-level `env` of `NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:56321` and `NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-build-placeholder` (not secrets; no Sentry variables), then "Static route guard" `npm run check:dynamic-routes`. Raise `timeout-minutes` to 20. The `e2e` job is unchanged: it already exports the local Supabase env, which the CSP `connect-src` assertion uses.
+  - [x] `README.md`: a "Security headers and error tracking" section: where the CSP lives, the dev relaxations, "Sentry is off without `NEXT_PUBLIC_SENTRY_DSN`", what is scrubbed, the `withOriginCheck` rule for route handlers, and `check:dynamic-routes`.
+  - [x] `docs/decisions/0003-csp-and-error-tracking.md` (same short format as 0001/0002): nonce CSP + dynamic root layout, the deferred static marketing hash CSP, HSTS everywhere, Sentry 11.4.0 and the no-DSN behaviour.
+- [x] **Task 13: Verify** (AC: 1–8)
+  - [x] With Docker running: `npm run db:start`, `npm run env:local`, then `npm run typecheck`, `lint`, `test`, `build`, `check:dynamic-routes`, `e2e`, `check:pinned`, `check:env-files`, and `npm audit --omit=dev --audit-level=high`. Record the outputs in the Debug Log, including the route table printed by `next build` (every page must show `ƒ`).
+  - [x] Production proof: `npm run start` (port 3020) after the build, then `curl -sI` on `/`, `/sign-in`, `/workspace` (anonymous 307) and one `_next/static/...js`. Record:
     - CSP without `unsafe-eval`/`unsafe-inline` in `script-src`, with `upgrade-insecure-requests`;
     - HSTS and the other static headers;
     - no `X-Powered-By`.
     Load `/sign-in` in a real browser (Playwright script is fine) against `next start` and confirm zero CSP violations and a working sign-in form (hydrated: the password show/hide toggle works).
-  - [ ] Error screen proof: temporarily `throw new Error("probe select * from profiles")` in `src/app/(workspace)/workspace/page.tsx`, and check `/workspace` against both `next dev` and `next start`: the error screen shows, no "select" text appears, and the Details disclosure shows the digest under `next start`. Revert and record.
-  - [ ] Negative lint proof: add `export async function POST() { return new Response(); }` to a probe `src/app/api/__probe__/route.ts` → `npx eslint` fails with the NFR29 message. Remove it and record.
-  - [ ] Stop the dev and prod servers, free port 3020, and `npm run db:stop` unless the orchestrator asks otherwise.
-  - [ ] **Do not commit or push.** The orchestrator commits, pushes and watches `ci.yml` and `db.yml`.
+  - [x] Error screen proof: temporarily `throw new Error("probe select * from profiles")` in `src/app/(workspace)/workspace/page.tsx`, and check `/workspace` against both `next dev` and `next start`: the error screen shows, no "select" text appears, and the Details disclosure shows the digest under `next start`. Revert and record.
+  - [x] Negative lint proof: add `export async function POST() { return new Response(); }` to a probe `src/app/api/__probe__/route.ts` → `npx eslint` fails with the NFR29 message. Remove it and record.
+  - [x] Stop the dev and prod servers, free port 3020, and `npm run db:stop` unless the orchestrator asks otherwise.
+  - [x] **Do not commit or push.** The orchestrator commits, pushes and watches `ci.yml` and `db.yml`.
 
 ## Dev Notes
 
@@ -642,8 +642,149 @@ Final. They override anything above that disagrees:
 
 ### Agent Model Used
 
+Claude Opus 5.5 (`claude-opus-5-5`), BMAD dev-story workflow, 2026-10-18.
+
 ### Debug Log References
+
+Environment: Windows 11, Node v24.15.0, Docker 29.5.2, local Supabase on 563xx (`npm run db:start` pinned image 17.6.1.155).
+
+**Port 3020 is unusable on this machine today:** `next dev -p 3020` fails with `listen EACCES: permission denied 0.0.0.0:3020`. `netsh interface ipv4 show excludedportrange protocol=tcp` lists `3010–3109` as a Windows excluded port range (Hyper-V/WinNAT reservation; freeing it needs admin). No process held 3020. The repo config stays on 3020; all local Playwright runs used a scratch config (outside the repo) that imports `playwright.config.ts` and only overrides the port (dev `4020`, `next start` `4021`).
+
+1. `npm i -E @sentry/nextjs@11.4.0` → `removed 1 package, changed 15 packages`; `package.json` `"@sentry/nextjs": "11.4.0"`. `npm audit --omit=dev --audit-level=high` → `found 0 vulnerabilities`.
+2. **`withSentryConfig` is not exported from `@sentry/nextjs` in 11.x** (Vitest: `TypeError: withSentryConfig is not a function`; `require('@sentry/nextjs').withSentryConfig` is `undefined` in Node too). The package `exports` has a `./config` entry (`build/types/config/index.d.ts`: `export { withSentryConfig }`, `export type { SentryBuildOptions }`). `next.config.ts` imports from `@sentry/nextjs/config`.
+3. **`sendDefaultPii` no longer exists in Sentry 11** (`tsc`: `'sendDefaultPii' does not exist in type 'SentryInitOptions'`; `grep -r sendDefaultPii` over `@sentry/core|node|browser|nextjs|react` builds: no hits). It was replaced by `dataCollection` (`@sentry/core/build/cjs/utils/data-collection/resolveDataCollectionOptions.js`), whose defaults are `userInfo: true, cookies: true, httpHeaders: {request: true, response: true}, httpBodies: [all four], urlQueryParams: true, stackFrameVariables: true, …`. `buildSentryOptions` sets every category off (`DATA_COLLECTION`), keeps `includeLocalVariables: false` on Node.
+4. Tracing check: `@sentry/core` `hasSpansEnabled()` returns true only with `tracesSampleRate != null || tracesSampler`; neither is set.
+5. SDK round-trip (`src/lib/sentry/roundtrip.test.ts`, real `@sentry/nextjs` Node client, capturing transport): first run **failed** with `AbCtoken123` in the exception value (`… at https://app.example/d/AbCtoken123 …`): `scrubText` stripped the query but kept URL paths in free text. Fixed by running `scrubUrl` (path-segment rule) on every absolute URL inside text; build-asset paths under `/_next/` are kept. Re-run passes; the envelope keeps `drawing_id`, `user.id`, `"type":"Error"`, the fetch breadcrumb `/rest/v1/profiles` and drops tags `file_name`, extra, the `drawing` context, console and `ui.click` breadcrumbs.
+6. Next nonce source (`node_modules/next/dist/server/app-render/get-script-nonce-from-header.js`): `CSP_NONCE_SOURCE_REGEX = /^'nonce-([A-Za-z0-9+/_-]+={0,2})'$/`, read from `content-security-policy` **or** `content-security-policy-report-only` (`parse-request-headers.js:30`). The proxy therefore also deletes an incoming `content-security-policy-report-only` request header.
+7. `NextResponse.next({ request })` forwards request headers via `x-middleware-request-*` + `x-middleware-override-headers` (`server/web/spec-extension/response.js` `handleMiddlewareField`), so mutating `request.headers` before `updateSession` works. The e2e nonce assertion passed with this approach; `updateSession` was **not** changed.
+8. First `npm run build` after making the root layout dynamic — route table: `ƒ /`, `ƒ /_not-found`, `ƒ /pending-activation`, `ƒ /sign-in`, `ƒ /workspace`, `ƒ Proxy (Middleware)` (every page `ƒ`; `/` was `○` in Story 1.5). Real `.next/prerender-manifest.json`: `routes = ["/_global-error", "/favicon.ico"]`, `dynamicRoutes = []`. `check:dynamic-routes` first failed naming `/_global-error`; allowlist set to `["/_global-error", "/favicon.ico"]`. `/_not-found` is dynamic, so no `not-found.tsx` was needed.
+9. Build with `CI=1` (Sentry not silent), no token: `[@sentry/nextjs - After Production Compile] Warning: No auth token provided. Will not create release.` A warning, not an error; build succeeds. `find .next/static -name "*.map" | wc -l` → `0` (no browser source maps without a token). `withSentryConfig` adds `experimental.clientTraceMetadata` (printed under "Experiments"); Tailwind still compiles (`turbopack.rules` kept; e2e pages render styled).
+10. Unit tests that failed first and were fixed: `result.test.ts` (console spy restored by `vi.restoreAllMocks`, moved into `beforeEach`); `next-config.test.ts` (import path, step 2); `boundaries.test.ts` (shell heredoc turned `\n` into real newlines; fixed).
+11. Final runs (after all changes, Supabase running):
+    - `npm run typecheck` → `✓ Types generated successfully`, `tsc --noEmit` clean, EXIT=0
+    - `npm run lint` → `eslint .` no output, EXIT=0
+    - `npm test` → `Test Files 47 passed (47)`, `Tests 485 passed (485)`
+    - `npm run check:pinned` → `All dependencies are pinned to exact versions.`
+    - `npm run check:env-files` → `No forbidden .env files are tracked.`
+    - `npm run build` → route table above, all `ƒ`
+    - `npm run check:dynamic-routes` → `No unexpected static routes (2 prerendered, all allowlisted).`
+    - `npm audit --omit=dev --audit-level=high` → `found 0 vulnerabilities`
+    - `npm run db:test` → `Files=5, Tests=57`, `Result: PASS`
+    - `npm run check:rls` → `RLS coverage OK: 2 table(s) in public/app, all with RLS and at least one policy.`
+    - `npm run check:schema` → `supabase/schema.sql matches the local database. No drift.`
+    - `npm run check:types` → `src/lib/db/types.gen.ts matches the local database. No drift.`
+    - Playwright (next dev, port 4020), full suite: `18 passed` (12 existing + 6 in `security-headers.spec.ts`). One run had `a deactivated user lands on PendingActivation` time out on `toHaveURL` (cold dev compile, no form alert shown); the next two full runs: `18 passed (21.6s)`, `18 passed (23.2s)`. Dev server log shows one `⨯ Error: aborted (ECONNRESET)` per run (a client-aborted request), no CSP or Sentry errors.
+    - Playwright against `next start` (production build, port 4021), full suite: `18 passed (7.3s)` — zero CSP console errors, `/sign-in` hydrates (show/hide toggles `type`), sign-in to `/workspace` works.
+12. Production proof (`next build` then `next start -p 4021`, `curl -s -D -`):
+    - `GET /` → `200`; `GET /sign-in` → `200`; `GET /workspace` (anonymous) → `307`, `location: /sign-in?next=%2Fworkspace`. All three carry:
+      `strict-transport-security: max-age=63072000; includeSubDomains`, `x-content-type-options: nosniff`, `referrer-policy: strict-origin-when-cross-origin`, `permissions-policy: camera=(), microphone=(), geolocation=(), payment=(), usb=(), browsing-topics=(), fullscreen=(self)`, `x-frame-options: DENY`, `cross-origin-opener-policy: same-origin`, and
+      `content-security-policy: default-src 'self'; script-src 'self' 'nonce-+nwHTeIiTRVsGvG+75gMWg==' 'strict-dynamic'; style-src 'self' 'nonce-+nwHTeIiTRVsGvG+75gMWg=='; style-src-attr 'unsafe-inline'; img-src 'self' blob: data:; font-src 'self'; connect-src 'self' http://127.0.0.1:56321 ws://127.0.0.1:56321; worker-src 'self' blob:; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests` (`/sign-in`; `/` had nonce `Gq6hB2yRhyYgDfiVQ+NZuw==`, `/workspace` `opLKMfl5+6fzs4sq6W63Tw==`). No `unsafe-eval`, no `unsafe-inline` in `script-src`, no `X-Powered-By`.
+    - HTML: `/` 14 `<script>` tags, all `nonce="Gq6hB2yRhyYgDfiVQ+NZuw=="` (3 inline); `/sign-in` 15, all `nonce="+nwHTeIiTRVsGvG+75gMWg=="` (3 inline); 0 without nonce; the stylesheet `<link>` and the font preload `Link` header also carry the nonce; no `<style>` tags.
+    - `HEAD /_next/static/chunks/3koyarw6rgz08.js` → `200` with the six static headers (from `next.config.ts`), no CSP.
+13. Error screen proof (temporary `throw new Error("probe select * from profiles")` in `(workspace)/workspace/page.tsx`, reverted afterwards; `git status` shows the page unchanged):
+    - `next dev`: `<main>` text `Something stopped working / Your markups are saved locally. / Reload / Details`, no "select"; Details `Error ID 279686178`. The dev browser console shows React's dev replay of the server error (dev only) and `route.error_boundary {digest: 279686178}`.
+    - `next start`: same screen, no "select", Details `Error ID 2485127892`; browser console only `Minified React error #441` (the message is omitted in production) and `{"level":"error","event":"route.error_boundary","digest":"2485127892"}`; the server log has the full error with `digest: '2485127892'`.
+14. Negative lint proof: `src/app/api/__probe__/route.ts` with `export async function POST() { return new Response(); }` → `npx eslint` EXIT=1: `1:8 error State-changing route handlers must be \`export const POST = withOriginCheck(handler)\` from @/lib/http/origin (NFR29) no-restricted-syntax`. Probe removed.
+15. Cleanup: dev and prod servers stopped (no listener on 3020/4020/4021), `npm run db:stop` → `Stopped supabase local development setup.`
 
 ### Completion Notes List
 
+- **CSP:** `src/lib/security/csp.ts` builds the exact production and dev policies from Dev Notes (unit-tested byte for byte). `src/proxy.ts` generates a 128-bit nonce per request, **sets** `content-security-policy` and `x-nonce` on the request (overwriting client values, and deleting `content-security-policy-report-only`, which Next also reads), then sets the CSP and static headers on the final response, pass-through and redirect. Story 1.5 behaviour (PUBLIC_PATHS, default-deny, `next` on GET/HEAD, refreshed cookies on the redirect, matcher literal) is unchanged; `proxy.test.ts` covers all seven cases plus public paths.
+- **Dynamic rendering:** `RootLayout` awaits `connection()`; all pages are `ƒ`. `check:dynamic-routes` + test; allowlist from the real manifest.
+- **Static marketing CSP:** `buildStaticCsp`, `hashInlineScripts`, `MARKETING_PATHS` (empty) + `cspModeFor`, fail-closed proxy branch tested with a mocked `MARKETING_PATHS`.
+- **Headers:** one frozen constant, sent by `next.config.ts` `headers()` and the proxy; `poweredByHeader: false`; no `serverActions.allowedOrigins`.
+- **CSRF:** `isAllowedOrigin` / `withOriginCheck` (full table + extra cases); ESLint route-handler rule with `AUTH_SYNTAX` repeated; lint tests prove both and the scope.
+- **Sentry:** 11.4.0, never initialised without a DSN (`init.test.ts`), errors only, `dataCollection` all off, Replay/Feedback/BrowserTracing filtered, default-deny `scrubEvent`/`scrubBreadcrumb`, `drawing_id` tag helper, `reportError`, logger reporter, worker error pattern, `onRequestError` + `onRouterTransitionStart`. The optional SDK round-trip **was implemented** (it loads in Vitest) and found a real leak, fixed (Debug Log 5).
+- **Logger / safe results:** `logger.<level>(event, fields?)`, redaction in `src/lib/redact.ts` (shared with the scrubber), production JSON lines, `setErrorReporter`; `SAFE_MESSAGES`, `fail`, `internalError` with leak tests. Four call sites migrated; `actions.test.ts` green.
+- **Error boundaries:** `RouteErrorScreen` (variant `app`/`auth`, `as` `main`/`div`, heading focus, safe digest only in a closed Details) + `RouteErrorBoundary`; four `error.tsx`/`global-error.tsx`. `(auth)` uses `variant="auth"` (no markups line) inside the auth layout's `<main>` (founder decision 5); tests assert the line is present for the app variant and absent for auth, and one `<main>` each.
+- **CI/docs:** `checks` job builds without Sentry secrets and runs the route guard (timeout 20 min); README section; ADR 0003; architecture.md Sentry version.
+
+**Deviations (for review):**
+1. `withSentryConfig`/`SentryBuildOptions` are imported from `@sentry/nextjs/config` (11.x moved them; the story's `@sentry/nextjs` import does not exist). The Sentry import-boundary rule is unaffected (`next.config.ts` is outside the banned blocks).
+2. `sendDefaultPii: false` does not exist in Sentry 11; replaced by an explicit all-off `dataCollection` (`DATA_COLLECTION`, only the `user-agent` request header kept, `frameContextLines: 0`). Tests assert `dataCollection` instead of `sendDefaultPii`.
+3. `scrubText` also rewrites absolute URLs inside text with the path-segment rule (found by the round-trip); `/_next/…` asset paths and stack-frame chunk URLs keep their path (no user data, keeps stacks usable). Relative paths in text only lose their query/fragment (keeps dev stacks such as `/app/src/…/x.ts` readable).
+4. `scrubEvent` is a full allowlist rebuild: besides the listed rules it also drops `threads`, `modules`, `sdkProcessingMetadata`, `logentry.params`, `mechanism.data` and `contexts.trace.data`.
+5. The proxy also deletes an incoming `content-security-policy-report-only` request header (Next reads a nonce from it too).
+6. `STATIC_ROUTE_ALLOWLIST` contains `/_global-error` (Next's built-in prerendered global-error document) besides `/favicon.ico`.
+7. `RouteErrorBoundary` logs a digest error with `{ digest }` only (no `Error` value), because `logger.error` forwards an `Error` to the Sentry reporter and server errors are already reported by `onRequestError`. A digest-less error goes through both the logger reporter and `reportError`; the SDK drops the second capture of the same exception object. Non-`Error` thrown values are wrapped as `Non-Error value thrown (<typeof>)`.
+8. `internalError` reports a non-`Error` value as `new Error("Non-Error value thrown (<typeof>)")` rather than nothing.
+9. `e2e/auth.spec.ts` open-redirect test asserts `url.origin === new URL(baseURL).origin` instead of the literal `http://localhost:3020` (same value under the repo config; lets the suite run on another port). Needed locally because 3010–3109 is a Windows excluded port range (Debug Log).
+10. `buildStaticCsp` with `isDev: true` mirrors the nonce dev relaxations for `script-src`/`style-src` (`'unsafe-eval'`, `style-src 'self' 'unsafe-inline'`); unreachable today.
+
 ### File List
+
+New:
+- `docs/decisions/0003-csp-and-error-tracking.md`
+- `e2e/helpers.ts`
+- `e2e/security-headers.spec.ts`
+- `scripts/check-dynamic-routes.mjs`
+- `scripts/check-dynamic-routes.test.mjs`
+- `src/app/(auth)/error.tsx`
+- `src/app/(workspace)/error.tsx`
+- `src/app/error.tsx`
+- `src/app/global-error.tsx`
+- `src/components/route-error-boundary.tsx`
+- `src/components/route-error-boundary.test.tsx`
+- `src/components/route-error-screen.tsx`
+- `src/components/route-error-screen.test.tsx`
+- `src/core/worker/error.ts`
+- `src/core/worker/error.test.ts`
+- `src/instrumentation.ts`
+- `src/instrumentation-client.ts`
+- `src/lib/http/origin.ts`
+- `src/lib/http/origin.test.ts`
+- `src/lib/logger.test.ts`
+- `src/lib/redact.ts`
+- `src/lib/redact.test.ts`
+- `src/lib/result.test.ts`
+- `src/lib/security/csp.ts`
+- `src/lib/security/csp.test.ts`
+- `src/lib/security/headers.ts`
+- `src/lib/security/headers.test.ts`
+- `src/lib/security/inline-script-hashes.ts`
+- `src/lib/security/inline-script-hashes.test.ts`
+- `src/lib/security/route-policy.ts`
+- `src/lib/security/route-policy.test.ts`
+- `src/lib/sentry/context.ts`
+- `src/lib/sentry/context.test.ts`
+- `src/lib/sentry/init.ts`
+- `src/lib/sentry/init.test.ts`
+- `src/lib/sentry/options.ts`
+- `src/lib/sentry/options.test.ts`
+- `src/lib/sentry/report.ts`
+- `src/lib/sentry/report.test.ts`
+- `src/lib/sentry/roundtrip.test.ts`
+- `src/lib/sentry/scrub.ts`
+- `src/lib/sentry/scrub.test.ts`
+- `src/lib/sentry/worker-errors.ts`
+- `src/lib/sentry/worker-errors.test.ts`
+- `src/proxy.test.ts`
+- `tools/config/next-config.test.ts`
+- `tools/lint/route-handler-origin.test.ts`
+
+Modified:
+- `.env.example`
+- `.github/workflows/ci.yml`
+- `README.md`
+- `_bmad-output/implementation-artifacts/1-6-security-headers-error-tracking-and-logging.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `_bmad-output/planning-artifacts/architecture.md`
+- `e2e/auth.spec.ts`
+- `eslint.config.mjs`
+- `next.config.ts`
+- `package.json`
+- `package-lock.json`
+- `src/app/layout.tsx`
+- `src/features/account/actions.ts`
+- `src/lib/auth/sign-in.ts`
+- `src/lib/env.server.ts`
+- `src/lib/env.test.ts`
+- `src/lib/env.ts`
+- `src/lib/logger.ts`
+- `src/lib/result.ts`
+- `src/proxy.ts`
+- `tools/lint/boundaries.test.ts`
+
+### Change Log
+
+- 2026-10-18: Story 1.6 implemented (nonce CSP + static headers, dynamic root layout + route guard, Origin check + lint rule, Sentry 11.4.0 wiring with scrubbing, logger/redaction/safe results, route error screens, CI build step, docs). Status → review.

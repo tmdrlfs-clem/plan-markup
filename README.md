@@ -84,6 +84,16 @@ Sign-in attempts are rate-limited per client IP (30 per 15 minutes) and per emai
 
 The Playwright suite (`npm run e2e`) needs the local stack running (`npm run db:start` and `npm run env:local`). Its global setup clears the rate-limit counters.
 
+## Security headers and error tracking
+
+- **CSP:** `src/proxy.ts` sends a fresh nonce-based `Content-Security-Policy` on every response it returns (pages and redirects). The policy is built in `src/lib/security/csp.ts`: `script-src 'self' 'nonce-…' 'strict-dynamic'`, no `'unsafe-inline'` in `script-src`, no `'unsafe-eval'` in production. Next.js reads the nonce from the request header and puts it on its scripts, so every nonce page must render per request: the root layout awaits `connection()`. `npm run check:dynamic-routes` (after `npm run build`) fails when a page is prerendered statically outside its allowlist. The hash-based policy for a future static marketing site (`buildStaticCsp`, `MARKETING_PATHS`) is wired in Story 13.1.
+- **Dev relaxations (only in `next dev`):** `'unsafe-eval'` in `script-src` (React dev error stacks), `style-src 'self' 'unsafe-inline'` (HMR styles), `ws://<host>` in `connect-src` (HMR socket), no `upgrade-insecure-requests`.
+- **Static headers** (`src/lib/security/headers.ts`, sent by `next.config.ts` for every path and by the proxy): HSTS `max-age=63072000; includeSubDomains`, `nosniff`, `Referrer-Policy`, `Permissions-Policy`, `X-Frame-Options: DENY`, `Cross-Origin-Opener-Policy: same-origin`; no `X-Powered-By`. HSTS is ignored over plain HTTP, so `http://localhost` is fine. Never run `next dev --experimental-https` here: the browser would pin `localhost` to HTTPS for two years.
+- **CSRF:** state-changing route handlers (`POST`/`PUT`/`PATCH`/`DELETE` in `src/app/**/route.ts`) must be exported as `export const POST = withOriginCheck(handler)` from `src/lib/http/origin.ts` (a lint rule enforces it). A missing or foreign `Origin` gets `403`. Server actions use Next.js's built-in Origin check.
+- **Sentry is off without `NEXT_PUBLIC_SENTRY_DSN`:** it is never initialised (no client, no handlers, no network), locally and in CI. `next build` needs no Sentry secrets and uploads source maps only when `SENTRY_AUTH_TOKEN` is set. Errors only: no tracing, no Replay, no user feedback, SDK data collection off.
+- **What is scrubbed** (`src/lib/sentry/scrub.ts`, `src/lib/redact.ts`, before anything leaves): emails, file names, tokens and keys, query strings and fragments, cookies, auth headers, request bodies, extra data, local variables, console and UI breadcrumbs, and URL path segments that are not UUIDs or short slugs. The only data-bearing tag is `drawing_id` (a UUID). `logger` redacts the same way and is the only place allowed to call `console`.
+- **Error screens:** `error.tsx` files render one `RouteErrorScreen` ("Something stopped working", Reload, the error ID under Details). They never show the error message.
+
 ## Documents
 
 - Planning artifacts (PRD, architecture, UX, epics): `_bmad-output/planning-artifacts/`

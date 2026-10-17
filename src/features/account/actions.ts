@@ -62,7 +62,7 @@ export async function signIn(_prev: SignInState, formData: FormData): Promise<Si
     decision = await checkSignInRateLimit({ ip: getClientIp(await headers()), email });
   } catch (error) {
     // No email, IP or key in the log.
-    logger.error("Sign-in rate limiter failed", error instanceof Error ? error.message : "unknown");
+    logger.error("auth.rate_limiter_failed", { error: error instanceof Error ? error : null });
     return { status: "error", code: "INTERNAL", message: MESSAGES.unavailable };
   }
   if (!decision.allowed) {
@@ -92,7 +92,7 @@ export async function signIn(_prev: SignInState, formData: FormData): Promise<Si
   if (state.kind === "active") redirect(sanitizeNextPath(next));
   if (state.kind === "inactive") redirect("/pending-activation");
   // Signed in but the session did not verify: treat as unavailable.
-  logger.error("Session not readable right after sign-in");
+  logger.error("auth.session_unreadable_after_sign_in");
   return { status: "error", code: "INTERNAL", message: MESSAGES.unavailable };
 }
 
