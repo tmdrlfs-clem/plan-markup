@@ -35,7 +35,11 @@ CREATE OR REPLACE FUNCTION "app"."fn_handle_new_user"() RETURNS "trigger"
     AS $$
 begin
   insert into public.profiles (id, email, name)
-  values (new.id, new.email, coalesce(new.raw_user_meta_data ->> 'name', ''));
+  values (
+    new.id,
+    new.email,
+    left(pg_catalog.btrim(coalesce(new.raw_user_meta_data ->> 'name', '')), 100)
+  );
   return new;
 end;
 $$;
@@ -89,6 +93,7 @@ CREATE TABLE IF NOT EXISTS "public"."profiles" (
     "is_platform_admin" boolean DEFAULT false NOT NULL,
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "profiles_name_length" CHECK (("char_length"("name") <= 100)),
     CONSTRAINT "profiles_status_check" CHECK (("status" = ANY (ARRAY['pending'::"text", 'active'::"text", 'deactivated'::"text"])))
 );
 
