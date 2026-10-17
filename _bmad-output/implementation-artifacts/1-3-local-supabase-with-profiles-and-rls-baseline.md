@@ -1,6 +1,6 @@
 # Story 1.3: Local Supabase with profiles and RLS baseline
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -186,6 +186,7 @@ Claude Opus 5.5 (claude-opus-5-5)
 - RESUMED (2026-10-17, orchestrator): Docker build cache pruned (3.6 GB). `supabase start` then failed with DbSetupError ("no schema has been selected to create in") on postgres 17.11.0.004, also with no migrations and with realtime excluded. Pinned postgres 17.6.1.155 via `supabase/postgres-version` + `scripts/pin-postgres-image.mjs` (ADR 0002); start, migration and seed then succeed.
 - Verified: db:test "Files=2, Tests=29 ... Result: PASS"; check:rls OK (1 table); check:schema and check:types "No drift"; typecheck, lint, vitest 43/43, check:pinned all green.
 - Negative proofs: scratch table without RLS -> check:rls lists public.scratch_no_rls (exit 1) and rls_coverage fails 2/2; schema.sql edited one line -> check:schema exit 1 at line 42; types.gen.ts edited one line -> check:types exit 1 at line 1. Reverted, db reset, all four green again.
+- CI (eb7f6f1): Database run 38999208663 success (2m52s), CI run 38999208662 success.
 - Previously remaining (now done): `npm run db:start`, `db:schema`, `db:types`, `db:test`, `check:rls`, `check:schema`, `check:types`, `typecheck` (with types.gen.ts), the negative proofs, then `db:stop`.
 
 ### File List
