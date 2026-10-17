@@ -1,6 +1,6 @@
 # Story 1.7: Foundation components
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -244,6 +244,7 @@ Environment: Windows 11, Node v24.15.0.
 - No new dependencies (Radix via `radix-ui`, `zustand/vanilla`, `lucide-react` were already installed).
 - No barrel file; features import from `@/components/ui/<name>`.
 - Panel is controlled; persistence is Story 1.8's job.
+- CI run 39072090271 passed on ae534fb (typecheck/lint/unit/guards, gitleaks, Playwright e2e). The Database workflow did not trigger (no DB paths changed).
 
 ### File List
 
@@ -254,3 +255,4 @@ Environment: Windows 11, Node v24.15.0.
 ### Change Log
 
 - 2026-10-18: Foundation components implemented (Story 1.7).
+- 2026-10-18: CI recorded, story closed.
