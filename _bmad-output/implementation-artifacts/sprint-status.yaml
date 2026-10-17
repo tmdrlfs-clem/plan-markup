@@ -48,7 +48,7 @@ development_status:
   epic-1: in-progress
   1-1-scaffold-the-app-with-the-pinned-stack: done
   1-2-ci-quality-gates: done
-  1-3-local-supabase-with-profiles-and-rls-baseline: backlog
+  1-3-local-supabase-with-profiles-and-rls-baseline: ready-for-dev
   1-4-design-tokens-and-themes: backlog
   1-5-sign-in-and-sign-out: backlog
   1-6-security-headers-error-tracking-and-logging: backlog
