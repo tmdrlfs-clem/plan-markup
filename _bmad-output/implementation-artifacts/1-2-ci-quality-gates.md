@@ -1,6 +1,6 @@
 # Story 1.2: CI quality gates
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -53,7 +53,7 @@ so that broken builds, leaked secrets and vulnerable dependencies never reach ma
     - temporarily change one version in `package.json` to `^x.y.z`, so `check:pinned` exits 1;
     - `git add -f` a dummy `.env.test.local`, so `check:env-files` exits 1; then `git rm --cached` it and delete it;
     - if `gitleaks` is available locally (optional), run it on a temp folder holding a fake AWS key pattern to see it fail. Do not commit the fake key anywhere.
-- [ ] **Task 8: Prove on GitHub** (AC: 5, 7)
+- [x] **Task 8: Prove on GitHub** (AC: 5, 7)
   - [ ] **Do not commit or push yourself.** When local checks pass, stop and report back. The orchestrator commits and pushes, then watches the run with `gh run watch`. Write in the Completion Notes exactly what the orchestrator must verify on the first run (job names, expected steps).
 
 ## Dev Notes
@@ -157,6 +157,9 @@ claude-sonnet-5-5 (Sonnet 5.5)
 - Playwright reporter switched to list + html only when `CI` is set (local output unchanged).
 - `.gitleaks.toml` not added (no false positive known yet). gitleaks job downloads v8.30.1 and verifies it against the release checksums file.
 - Orchestrator must check on the first GitHub run: three jobs named "Typecheck, lint, unit tests, guards", "Playwright smoke" and "Secret scan (gitleaks)" all green. In the first, the report-only step "Audit all dependencies (report only)" prints 5 dev-only high findings but is green. In the secrets job, "Install gitleaks (checksum verified)" must print `gitleaks_8.30.1_linux_x64.tar.gz: OK`, and the scan must find no leaks in the full history (if it flags an old planning doc, add a narrow path allowlist). Check that `npm ci` passes on Node 24 and that Playwright installs Chromium. Check the README badge URL resolves to the workflow and that git no longer warns about LF->CRLF. Record the run URL under AC7.
+
+- AC7 verified by the orchestrator (Opus, 2026-10-17): push of `fb8af14` to `main` triggered run https://github.com/tmdrlfs-clem/plan-markup/actions/runs/38996006239, conclusion `success`. Jobs: "Typecheck, lint, unit tests, guards" success (31 tests passed; runtime audit 0 vulnerabilities; report-only audit printed the 5 known dev-only highs and stayed green), "Playwright smoke" success (1 passed), "Secret scan (gitleaks)" success (`gitleaks_8.30.1_linux_x64.tar.gz: OK`, 4 commits scanned, no leaks found).
+- Orchestrator local re-run before push: check:pinned, check:env-files, typecheck, lint, 31 Vitest tests, runtime audit and Playwright smoke all pass.
 
 ### File List
 
