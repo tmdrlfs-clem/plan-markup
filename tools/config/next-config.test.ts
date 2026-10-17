@@ -19,7 +19,8 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-describe("next.config.ts", () => {
+// The first cold import of next.config (Sentry wrapper) can exceed 5 s under full-suite load.
+describe("next.config.ts", { timeout: 30_000 }, () => {
   it("sends the six static security headers on every path", async () => {
     const { nextConfig } = await load();
     const rules = await nextConfig.headers!();

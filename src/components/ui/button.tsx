@@ -1,6 +1,8 @@
 import { forwardRef, type ButtonHTMLAttributes } from "react";
 
-export type ButtonVariant = "primary" | "secondary" | "ghost" | "destructive";
+import { cx } from "./cx";
+
+export type ButtonVariant = "primary" | "secondary" | "ghost" | "destructive" | "danger";
 export type ButtonSize = "sm" | "md";
 
 const BASE =
@@ -17,6 +19,9 @@ const VARIANTS: Record<ButtonVariant, string> = {
     "border-transparent bg-transparent text-text enabled:hover:border-border enabled:hover:bg-surface-3",
   destructive:
     "border-danger bg-transparent text-danger enabled:hover:bg-surface-3",
+  // Danger-filled primary for confirmations of destructive actions (UX-DR32).
+  danger:
+    "border-danger bg-danger text-accent-fg enabled:hover:brightness-110",
 };
 
 // sm = 28 px (workspace), md = 40 px (admin and auth forms).
@@ -34,9 +39,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   { variant = "secondary", size = "md", type = "button", className, ...props },
   ref,
 ) {
-  const classes = [BASE, VARIANTS[variant], SIZES[size], className]
-    .filter(Boolean)
-    .join(" ");
+  const classes = cx(BASE, VARIANTS[variant], SIZES[size], className);
   return (
     <button
       ref={ref}

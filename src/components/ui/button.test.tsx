@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import { Button, type ButtonVariant } from "./button";
 
 describe("Button", () => {
-  it.each<ButtonVariant>(["primary", "secondary", "ghost", "destructive"])(
+  it.each<ButtonVariant>(["primary", "secondary", "ghost", "destructive", "danger"])(
     "renders the %s variant",
     (variant) => {
       render(<Button variant={variant}>Go</Button>);

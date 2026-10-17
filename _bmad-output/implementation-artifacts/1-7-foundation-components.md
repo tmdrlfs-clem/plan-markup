@@ -1,6 +1,6 @@
 # Story 1.7: Foundation components
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -22,57 +22,57 @@ so that the interface is predictable and fully keyboard accessible.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Shared helpers** (AC: 1, 6)
-  - [ ] `src/components/ui/cx.ts`: `cx(...parts: Array<string | false | null | undefined>)` joins truthy class names. Refactor `button.tsx` and `text-field.tsx` to use it (behaviour unchanged, their tests stay green).
-  - [ ] `src/components/ui/shortcut.ts`: `formatShortcut("Ctrl+Shift+M")` → display string `"Ctrl+Shift+M"` (on macOS `⌘⇧M`, detect via `navigator.platform`/`userAgentData` guarded for SSR) and `toAriaKeyShortcuts("Ctrl+Shift+M")` → `"Control+Shift+M"` (maps Ctrl→Control, Del→Delete, Esc→Escape, `+`→`Plus`, `-`→`Minus`; multiple shortcuts joined by space). Unit tests.
-  - [ ] `src/test/radix-jsdom.ts`: jsdom polyfills Radix needs (`hasPointerCapture`, `setPointerCapture`, `releasePointerCapture`, `scrollIntoView`, `ResizeObserver`, `DOMRect`). Import it from each jsdom test that needs it (do **not** add it to `vitest.setup.ts`, which also runs in the node environment), or guard it with `typeof window !== "undefined"` if added to setup.
-- [ ] **Task 2: Tooltip, IconButton, ToggleButton, ToggleGroup, Toolbar** (AC: 1, 2)
-  - [ ] `tooltip.tsx`: `TooltipProvider` (delayDuration 400, skipDelayDuration 300) and `Tooltip({ content, shortcut?, side?, children })`. Content shows the label plus the shortcut in a muted `kbd`. z-index `z-tooltip`, `shadow-1`, surface-3, `text-ws-sm`.
-  - [ ] `icon-button.tsx`: `IconButton({ label, icon, shortcut?, disabledReason?, size?: "sm" | "md", ... })`. Renders a ghost button (28 px sm / 32 px md square), `aria-label={label}`, `aria-keyshortcuts` when `shortcut` is set, wrapped in Tooltip whose text is `label` (+ shortcut). When disabled, use `aria-disabled="true"` instead of the `disabled` attribute so it stays focusable and the tooltip shows `disabledReason` (UX-DR32 "disabled buttons explain why"); clicks are swallowed.
-  - [ ] `toggle-button.tsx`: Radix `Toggle` with the IconButton look; pressed = accent fill (`bg-accent text-accent-fg`) **and** a shape change (inset 2 px bottom bar) so state is not colour-only. Same `label/icon/shortcut/disabledReason` API.
-  - [ ] `toggle-group.tsx`: Radix `ToggleGroup` (`type="single" | "multiple"`), items reuse the ToggleButton styling; roving focus with arrow keys; `aria-label` required.
-  - [ ] `toolbar.tsx`: Radix `Toolbar` root (`orientation`, required `aria-label`), plus `ToolbarButton` (IconButton as `Toolbar.Button asChild`), `ToolbarToggleGroup`, `ToolbarSeparator`. Arrow keys move between items; Tab leaves the toolbar.
-- [ ] **Task 3: Menu, MenuBar, ContextMenu** (AC: 1)
-  - [ ] One shared item style module `menu-styles.ts` (row 28 px, `text-ws-md`, highlighted = `bg-surface-3` + accent left bar, disabled = muted, shortcut right-aligned in muted text, submenu chevron `ChevronRight`).
-  - [ ] `menu.tsx`: DropdownMenu wrapper — `Menu`, `MenuTrigger`, `MenuContent`, `MenuItem({ shortcut?, icon?, destructive? })`, `MenuCheckboxItem`, `MenuRadioGroup`/`MenuRadioItem`, `MenuSeparator`, `MenuLabel`, `MenuSub`/`MenuSubTrigger`/`MenuSubContent`. Items with a shortcut set `aria-keyshortcuts`.
-  - [ ] `menu-bar.tsx`: Radix `Menubar` wrapper with the same item components (re-export the same API names under a `MenuBar*` prefix). Left/Right moves between top-level menus while open.
-  - [ ] `context-menu.tsx`: Radix `ContextMenu` wrapper with the same item API; also opens with Shift+F10 / the ContextMenu key on the focused trigger (Radix handles the `contextmenu` event; add a keydown handler that dispatches it for Shift+F10).
-- [ ] **Task 4: Dialog, AlertDialog, Popover** (AC: 1, 5)
-  - [ ] `dialog.tsx`: `Dialog({ open?, onOpenChange?, trigger?, title, description?, children, footer })` plus `DialogFooter({ secondary, primary })` that renders secondary left / primary right. Overlay `bg-black/50` (no blur), content `surface-1`, `shadow-3`, `rounded-lg`, max width prop (`sm` 400 / `md` 560 / `lg` 720). Close `IconButton` (X) top-right with label "Close".
-  - [ ] **Enter = primary:** a keydown on the dialog content: Enter (no modifiers, not composing) triggers the primary action unless focus is in a `textarea`, a `button` (native Enter already activates it), or an element with `data-enter-ignore`. The primary is identified by a `DialogPrimary` context/ref, not by DOM order.
-  - [ ] Esc closes (Radix default) and focus returns to the trigger (Radix default when using `Dialog.Trigger`; when controlled without a trigger, accept `returnFocusRef` and focus it in `onCloseAutoFocus`).
-  - [ ] `alert-dialog.tsx`: Radix `AlertDialog` with `title`, `description` (the scope sentence, e.g. "Delete 3 pages from L17 RCP?"), `cancelLabel` (default "Cancel"), `actionLabel` (a verb, required), `destructive?` (danger fill on the action). Initial focus on Cancel. Same footer order and Enter rule.
-  - [ ] `popover.tsx`: `Popover({ trigger, children, side?, align? })`, `surface-2`, `shadow-2`, `z-popover`; Esc closes and returns focus.
-- [ ] **Task 5: Tabs, Collapsible, Select, Checkbox** (AC: 1)
-  - [ ] `tabs.tsx`: `Tabs`, `TabsList` (required `aria-label`), `TabsTrigger`, `TabsContent`. Active tab = text colour + 2 px accent bottom border. Arrow keys move, Home/End jump (`activationMode="automatic"`).
-  - [ ] `collapsible.tsx`: `Collapsible({ title, defaultOpen?, open?, onOpenChange?, actions?, children })` with a full-width header button (`ChevronRight` rotates 90° when open, no transition under `prefers-reduced-motion`), `aria-expanded` from Radix.
-  - [ ] `select.tsx`: `Select({ label, value, onValueChange, options: {value,label,disabled?}[], placeholder?, layout?: "workspace" | "admin", error? })`. Workspace = label-left 12 px, 28 px field; admin = label-above 14 px, 40 px field (UX-DR34). Trigger has `ChevronDown`; content `z-popover`. Typeahead and arrow keys from Radix.
-  - [ ] `checkbox.tsx`: Radix `Checkbox` with a `Label`, supports `"indeterminate"` (`Minus` icon), checked = accent fill + `Check` icon. Space toggles; clicking the label toggles.
-- [ ] **Task 6: Length parsing and NumberField** (AC: 4)
-  - [ ] `src/core/geometry/length.ts` (framework-free, obeys the core lint rules): `parseLength(input, defaultUnit) → { ok: true, mm: number } | { ok: false, reason: "empty" | "invalid" | "negative" }` and `formatLength(mm, unit, { decimals? })`. Units: `"mm" | "m" | "ft-in"`. See Dev Notes → Length grammar. Reuse `MM_PER_INCH` from `units.ts`.
-  - [ ] `src/core/geometry/length.test.ts`: every row of the grammar table plus rounding and round-trip cases.
-  - [ ] `src/components/ui/number-field.tsx`: two modes behind one component:
+- [x] **Task 1: Shared helpers** (AC: 1, 6)
+  - [x] `src/components/ui/cx.ts`: `cx(...parts: Array<string | false | null | undefined>)` joins truthy class names. Refactor `button.tsx` and `text-field.tsx` to use it (behaviour unchanged, their tests stay green).
+  - [x] `src/components/ui/shortcut.ts`: `formatShortcut("Ctrl+Shift+M")` → display string `"Ctrl+Shift+M"` (on macOS `⌘⇧M`, detect via `navigator.platform`/`userAgentData` guarded for SSR) and `toAriaKeyShortcuts("Ctrl+Shift+M")` → `"Control+Shift+M"` (maps Ctrl→Control, Del→Delete, Esc→Escape, `+`→`Plus`, `-`→`Minus`; multiple shortcuts joined by space). Unit tests.
+  - [x] `src/test/radix-jsdom.ts`: jsdom polyfills Radix needs (`hasPointerCapture`, `setPointerCapture`, `releasePointerCapture`, `scrollIntoView`, `ResizeObserver`, `DOMRect`). Import it from each jsdom test that needs it (do **not** add it to `vitest.setup.ts`, which also runs in the node environment), or guard it with `typeof window !== "undefined"` if added to setup.
+- [x] **Task 2: Tooltip, IconButton, ToggleButton, ToggleGroup, Toolbar** (AC: 1, 2)
+  - [x] `tooltip.tsx`: `TooltipProvider` (delayDuration 400, skipDelayDuration 300) and `Tooltip({ content, shortcut?, side?, children })`. Content shows the label plus the shortcut in a muted `kbd`. z-index `z-tooltip`, `shadow-1`, surface-3, `text-ws-sm`.
+  - [x] `icon-button.tsx`: `IconButton({ label, icon, shortcut?, disabledReason?, size?: "sm" | "md", ... })`. Renders a ghost button (28 px sm / 32 px md square), `aria-label={label}`, `aria-keyshortcuts` when `shortcut` is set, wrapped in Tooltip whose text is `label` (+ shortcut). When disabled, use `aria-disabled="true"` instead of the `disabled` attribute so it stays focusable and the tooltip shows `disabledReason` (UX-DR32 "disabled buttons explain why"); clicks are swallowed.
+  - [x] `toggle-button.tsx`: Radix `Toggle` with the IconButton look; pressed = accent fill (`bg-accent text-accent-fg`) **and** a shape change (inset 2 px bottom bar) so state is not colour-only. Same `label/icon/shortcut/disabledReason` API.
+  - [x] `toggle-group.tsx`: Radix `ToggleGroup` (`type="single" | "multiple"`), items reuse the ToggleButton styling; roving focus with arrow keys; `aria-label` required.
+  - [x] `toolbar.tsx`: Radix `Toolbar` root (`orientation`, required `aria-label`), plus `ToolbarButton` (IconButton as `Toolbar.Button asChild`), `ToolbarToggleGroup`, `ToolbarSeparator`. Arrow keys move between items; Tab leaves the toolbar.
+- [x] **Task 3: Menu, MenuBar, ContextMenu** (AC: 1)
+  - [x] One shared item style module `menu-styles.ts` (row 28 px, `text-ws-md`, highlighted = `bg-surface-3` + accent left bar, disabled = muted, shortcut right-aligned in muted text, submenu chevron `ChevronRight`).
+  - [x] `menu.tsx`: DropdownMenu wrapper — `Menu`, `MenuTrigger`, `MenuContent`, `MenuItem({ shortcut?, icon?, destructive? })`, `MenuCheckboxItem`, `MenuRadioGroup`/`MenuRadioItem`, `MenuSeparator`, `MenuLabel`, `MenuSub`/`MenuSubTrigger`/`MenuSubContent`. Items with a shortcut set `aria-keyshortcuts`.
+  - [x] `menu-bar.tsx`: Radix `Menubar` wrapper with the same item components (re-export the same API names under a `MenuBar*` prefix). Left/Right moves between top-level menus while open.
+  - [x] `context-menu.tsx`: Radix `ContextMenu` wrapper with the same item API; also opens with Shift+F10 / the ContextMenu key on the focused trigger (Radix handles the `contextmenu` event; add a keydown handler that dispatches it for Shift+F10).
+- [x] **Task 4: Dialog, AlertDialog, Popover** (AC: 1, 5)
+  - [x] `dialog.tsx`: `Dialog({ open?, onOpenChange?, trigger?, title, description?, children, footer })` plus `DialogFooter({ secondary, primary })` that renders secondary left / primary right. Overlay `bg-black/50` (no blur), content `surface-1`, `shadow-3`, `rounded-lg`, max width prop (`sm` 400 / `md` 560 / `lg` 720). Close `IconButton` (X) top-right with label "Close".
+  - [x] **Enter = primary:** a keydown on the dialog content: Enter (no modifiers, not composing) triggers the primary action unless focus is in a `textarea`, a `button` (native Enter already activates it), or an element with `data-enter-ignore`. The primary is identified by a `DialogPrimary` context/ref, not by DOM order.
+  - [x] Esc closes (Radix default) and focus returns to the trigger (Radix default when using `Dialog.Trigger`; when controlled without a trigger, accept `returnFocusRef` and focus it in `onCloseAutoFocus`).
+  - [x] `alert-dialog.tsx`: Radix `AlertDialog` with `title`, `description` (the scope sentence, e.g. "Delete 3 pages from L17 RCP?"), `cancelLabel` (default "Cancel"), `actionLabel` (a verb, required), `destructive?` (danger fill on the action). Initial focus on Cancel. Same footer order and Enter rule.
+  - [x] `popover.tsx`: `Popover({ trigger, children, side?, align? })`, `surface-2`, `shadow-2`, `z-popover`; Esc closes and returns focus.
+- [x] **Task 5: Tabs, Collapsible, Select, Checkbox** (AC: 1)
+  - [x] `tabs.tsx`: `Tabs`, `TabsList` (required `aria-label`), `TabsTrigger`, `TabsContent`. Active tab = text colour + 2 px accent bottom border. Arrow keys move, Home/End jump (`activationMode="automatic"`).
+  - [x] `collapsible.tsx`: `Collapsible({ title, defaultOpen?, open?, onOpenChange?, actions?, children })` with a full-width header button (`ChevronRight` rotates 90° when open, no transition under `prefers-reduced-motion`), `aria-expanded` from Radix.
+  - [x] `select.tsx`: `Select({ label, value, onValueChange, options: {value,label,disabled?}[], placeholder?, layout?: "workspace" | "admin", error? })`. Workspace = label-left 12 px, 28 px field; admin = label-above 14 px, 40 px field (UX-DR34). Trigger has `ChevronDown`; content `z-popover`. Typeahead and arrow keys from Radix.
+  - [x] `checkbox.tsx`: Radix `Checkbox` with a `Label`, supports `"indeterminate"` (`Minus` icon), checked = accent fill + `Check` icon. Space toggles; clicking the label toggles.
+- [x] **Task 6: Length parsing and NumberField** (AC: 4)
+  - [x] `src/core/geometry/length.ts` (framework-free, obeys the core lint rules): `parseLength(input, defaultUnit) → { ok: true, mm: number } | { ok: false, reason: "empty" | "invalid" | "negative" }` and `formatLength(mm, unit, { decimals? })`. Units: `"mm" | "m" | "ft-in"`. See Dev Notes → Length grammar. Reuse `MM_PER_INCH` from `units.ts`.
+  - [x] `src/core/geometry/length.test.ts`: every row of the grammar table plus rounding and round-trip cases.
+  - [x] `src/components/ui/number-field.tsx`: two modes behind one component:
     - `kind="length"`: value in **mm** (`value: number | null`, `onValueChange(mm)`), `unit` = display unit, parses with `parseLength`, suffix shows `mm` / `m` / nothing for ft-in (the formatted text carries `'` and `"`).
     - `kind="number"`: plain numbers with an optional `suffix` (e.g. `%`, `pt`), accepts an optional trailing suffix in the input ("40%" = 40).
     - Shared: `label`, `min`, `max`, `step` (in display units; length mode converts), `layout` (workspace/admin like Select), `error` (external), `disabled`. `role="spinbutton"` input with `aria-valuenow` / `aria-valuemin` / `aria-valuemax` / `aria-valuetext` (formatted with unit). ArrowUp/ArrowDown step, Shift ×10, clamp to min/max, PageUp/PageDown = ×10 too. Typing never reformats; blur (and Enter) commits: valid → `onValueChange` + normalised text; invalid → inline error under the field ("Enter a length like 4.6 m or 15'6\"" / "Enter a number") with `aria-invalid` and the value unchanged. Escape reverts the text to the last committed value.
-  - [ ] `number-field.test.tsx`: the four AC inputs, blur normalisation, arrow + Shift stepping, clamping, invalid → error on blur only, Escape revert, `aria-*` attributes.
-- [ ] **Task 7: Slider + SliderField, ColorSwatch** (AC: 1)
-  - [ ] `slider.tsx`: Radix `Slider` (single thumb), track `surface-3`, range `accent`, thumb 14 px square-ish (`rounded-sm`) with `ring-2` on focus. Not exported for standalone use in features: export `SliderField` that pairs it with a NumberField sharing one value, shows the limits at both ends ("1.8 — 4.6 m" style labels under the track), and one label for both (the slider gets `aria-labelledby` the label, the field gets the same label text). Keyboard: Radix arrows/PageUp/PageDown/Home/End on the thumb.
-  - [ ] `color-swatch.tsx`: `ColorSwatch({ color, label, selected?, onSelect })` a 20 px square button with `aria-label={label}` (colour name, e.g. "Red"), `aria-pressed` when selectable, selected = 2 px text-colour outline + `Check` glyph in a contrasting colour (not colour-only). Plus `ColorSwatchGroup({ colors: {value,label}[], value, onValueChange, aria-label })` as a radio group (`role="radiogroup"`, arrow keys roving focus) for Properties / Popover colour pickers. Swatch colours are data (markup colours), so they are the one place inline `style={{ backgroundColor }}` is allowed.
-- [ ] **Task 8: Panel, StatusBarItem** (AC: 1)
-  - [ ] `panel.tsx`: `Panel({ title, side: "left" | "right" | "bottom", collapsed, onCollapsedChange, size, onSizeChange, minSize, maxSize, actions?, children })` — controlled; persistence is the caller's job (Story 1.8). Header with title + actions + collapse IconButton (`PanelLeftClose`/`PanelLeftOpen` etc., label "Collapse <title>" / "Expand <title>"). Resize handle = `role="separator"`, `aria-orientation`, `aria-valuenow/min/max`, `aria-controls` the panel body, `tabIndex=0`; pointer drag (pointer capture) and keyboard (Arrow ±8 px, Shift ±32 px, Home = min, End = max, Enter toggles collapse). Size clamped to [minSize, maxSize]. Collapsed = body hidden (`hidden` attribute), handle not rendered. Landmark: `<section aria-label={title}>` (the shell decides `complementary`/`navigation` in 1.8 via an `as` / `role` prop).
-  - [ ] `status-bar-item.tsx`: `StatusBarItem({ label, icon?, tone?: "default" | "success" | "warning" | "danger" | "info", onClick?, tooltip? })` — 24 px tall, `text-ws-xs`, tabular numerals. Renders a `button` when `onClick` is set, otherwise a `span`. A non-default tone always shows its icon (CircleCheck / TriangleAlert / CircleX / Info) — colour never alone.
-- [ ] **Task 9: Toast** (AC: 3)
-  - [ ] `src/components/ui/toast-store.ts`: a tiny vanilla store (`zustand/vanilla` is already a dependency) with `toast({ title, description?, variant?: "neutral" | "success" | "warning" | "danger" | "info", action?: { label, onAction } })`, `dismiss(id)`. Merge key = `variant + title + description`; a duplicate while visible bumps `count` and restarts its timer instead of adding. Queue: max 3 visible; extra toasts wait and appear as others close (FIFO). Pure logic is unit-tested without React.
-  - [ ] `toast.tsx`: `Toaster` (Radix `Toast.Provider` with `duration={4000}`, `swipeDirection="right"`, `Toast.Viewport` fixed bottom-right, 16 px inset, `z-toast`, `label="Notifications (F8)"`) reading the store. Each toast: icon + title (+ "×N" count badge when N > 1) + description + optional action (`Toast.Action altText`) + close IconButton. Radix pauses on hover and focus and on window blur. `neutral` has no icon; semantic variants always have icon + text; no variant uses `accent`.
-  - [ ] Tests: 4 s auto-dismiss (fake timers), hover pauses, max 3 + queue, merge with count, action fires and dismisses, F8 focuses the viewport.
-- [ ] **Task 10: Lint and exports** (AC: 2)
-  - [ ] Add to the UI-layers `no-restricted-imports` block in `eslint.config.mjs` (repeat existing patterns; flat config replaces options): ban `react-icons`, `react-icons/*`, `@radix-ui/react-icons`, `@heroicons/*`, `@tabler/*`, `@phosphor-icons/*` with message "Chrome icons come from lucide-react only (UX-DR4)." Also ban the individual `@radix-ui/react-*` packages ("Import primitives from radix-ui").
-  - [ ] Extend the existing lint test (see `eslint` tests from Stories 1.2/1.5/1.6) with a fixture importing `react-icons/fa` in `src/components/` that must error.
-  - [ ] No barrel file: features import from `@/components/ui/<name>` (keeps tree-shaking obvious and matches the existing `button` / `text-field` imports).
-- [ ] **Task 11: Verify** (AC: 7)
-  - [ ] `npm run typecheck && npm run lint && npm test && npm run build`. Record counts in the Debug Log.
-  - [ ] Commit (one implementation commit), push, and record CI run ids.
+  - [x] `number-field.test.tsx`: the four AC inputs, blur normalisation, arrow + Shift stepping, clamping, invalid → error on blur only, Escape revert, `aria-*` attributes.
+- [x] **Task 7: Slider + SliderField, ColorSwatch** (AC: 1)
+  - [x] `slider.tsx`: Radix `Slider` (single thumb), track `surface-3`, range `accent`, thumb 14 px square-ish (`rounded-sm`) with `ring-2` on focus. Not exported for standalone use in features: export `SliderField` that pairs it with a NumberField sharing one value, shows the limits at both ends ("1.8 — 4.6 m" style labels under the track), and one label for both (the slider gets `aria-labelledby` the label, the field gets the same label text). Keyboard: Radix arrows/PageUp/PageDown/Home/End on the thumb.
+  - [x] `color-swatch.tsx`: `ColorSwatch({ color, label, selected?, onSelect })` a 20 px square button with `aria-label={label}` (colour name, e.g. "Red"), `aria-pressed` when selectable, selected = 2 px text-colour outline + `Check` glyph in a contrasting colour (not colour-only). Plus `ColorSwatchGroup({ colors: {value,label}[], value, onValueChange, aria-label })` as a radio group (`role="radiogroup"`, arrow keys roving focus) for Properties / Popover colour pickers. Swatch colours are data (markup colours), so they are the one place inline `style={{ backgroundColor }}` is allowed.
+- [x] **Task 8: Panel, StatusBarItem** (AC: 1)
+  - [x] `panel.tsx`: `Panel({ title, side: "left" | "right" | "bottom", collapsed, onCollapsedChange, size, onSizeChange, minSize, maxSize, actions?, children })` — controlled; persistence is the caller's job (Story 1.8). Header with title + actions + collapse IconButton (`PanelLeftClose`/`PanelLeftOpen` etc., label "Collapse <title>" / "Expand <title>"). Resize handle = `role="separator"`, `aria-orientation`, `aria-valuenow/min/max`, `aria-controls` the panel body, `tabIndex=0`; pointer drag (pointer capture) and keyboard (Arrow ±8 px, Shift ±32 px, Home = min, End = max, Enter toggles collapse). Size clamped to [minSize, maxSize]. Collapsed = body hidden (`hidden` attribute), handle not rendered. Landmark: `<section aria-label={title}>` (the shell decides `complementary`/`navigation` in 1.8 via an `as` / `role` prop).
+  - [x] `status-bar-item.tsx`: `StatusBarItem({ label, icon?, tone?: "default" | "success" | "warning" | "danger" | "info", onClick?, tooltip? })` — 24 px tall, `text-ws-xs`, tabular numerals. Renders a `button` when `onClick` is set, otherwise a `span`. A non-default tone always shows its icon (CircleCheck / TriangleAlert / CircleX / Info) — colour never alone.
+- [x] **Task 9: Toast** (AC: 3)
+  - [x] `src/components/ui/toast-store.ts`: a tiny vanilla store (`zustand/vanilla` is already a dependency) with `toast({ title, description?, variant?: "neutral" | "success" | "warning" | "danger" | "info", action?: { label, onAction } })`, `dismiss(id)`. Merge key = `variant + title + description`; a duplicate while visible bumps `count` and restarts its timer instead of adding. Queue: max 3 visible; extra toasts wait and appear as others close (FIFO). Pure logic is unit-tested without React.
+  - [x] `toast.tsx`: `Toaster` (Radix `Toast.Provider` with `duration={4000}`, `swipeDirection="right"`, `Toast.Viewport` fixed bottom-right, 16 px inset, `z-toast`, `label="Notifications (F8)"`) reading the store. Each toast: icon + title (+ "×N" count badge when N > 1) + description + optional action (`Toast.Action altText`) + close IconButton. Radix pauses on hover and focus and on window blur. `neutral` has no icon; semantic variants always have icon + text; no variant uses `accent`.
+  - [x] Tests: 4 s auto-dismiss (fake timers), hover pauses, max 3 + queue, merge with count, action fires and dismisses, F8 focuses the viewport.
+- [x] **Task 10: Lint and exports** (AC: 2)
+  - [x] Add to the UI-layers `no-restricted-imports` block in `eslint.config.mjs` (repeat existing patterns; flat config replaces options): ban `react-icons`, `react-icons/*`, `@radix-ui/react-icons`, `@heroicons/*`, `@tabler/*`, `@phosphor-icons/*` with message "Chrome icons come from lucide-react only (UX-DR4)." Also ban the individual `@radix-ui/react-*` packages ("Import primitives from radix-ui").
+  - [x] Extend the existing lint test (see `eslint` tests from Stories 1.2/1.5/1.6) with a fixture importing `react-icons/fa` in `src/components/` that must error.
+  - [x] No barrel file: features import from `@/components/ui/<name>` (keeps tree-shaking obvious and matches the existing `button` / `text-field` imports).
+- [x] **Task 11: Verify** (AC: 7)
+  - [x] `npm run typecheck && npm run lint && npm test && npm run build`. Record counts in the Debug Log.
+  - [x] Commit (one implementation commit), push, and record CI run ids.
 
 ## Dev Notes
 
@@ -220,10 +220,37 @@ New files (all under `src/components/ui/` unless noted): `cx.ts`, `shortcut.ts`(
 
 ### Agent Model Used
 
+Claude Sonnet (BMAD dev-story workflow) for Tasks 1–9, 2026-10-18; the session was interrupted before Task 10. Claude Opus 5.5 (`claude-opus-5-5`) finished Tasks 10–11 and the fixes below, 2026-10-18.
+
 ### Debug Log References
+
+Environment: Windows 11, Node v24.15.0.
+
+1. Resumed with Tasks 1–9 in the working tree (uncommitted). `npm run typecheck` clean; `vitest run src/components/ui src/core/geometry` → `1 failed | 295 passed (296)`.
+2. `toast.test.tsx` "F8 focuses the viewport" failed: focus stayed on `<body>`. Radix Toast matches the hotkey on `event.code`; user-event's `{F8}` does not set it. The test now dispatches `keyDown(document, { key: "F8", code: "F8" })` and asserts focus on the `<ol>` list inside the `region` labelled "Notifications (F8)" (Radix focuses the list, not the region wrapper). Component unchanged.
+3. `npm run lint` → 2 errors in `dialog-shared.tsx` (`react-hooks/immutability`: a value from `useContext()` was mutated). Renamed the local to `primaryRef` so the React Compiler treats it as a ref; behaviour unchanged.
+4. `tools/lint/near-sharp.test.ts` flagged `number-field.tsx: blur utility` — a false positive on the word "blur" in a doc comment. Reworded the comment.
+5. Task 10: icon-package and `@radix-ui/react-*` bans added to the UI-layers `no-restricted-imports` block; `tools/lint/ui-imports.test.ts` (6 banned sources error in `src/components/`, `lucide-react` + `radix-ui` allowed). Repo grep: no existing imports of the banned packages.
+6. Full `npm test` then failed once on `tools/config/next-config.test.ts` (5 s timeout on the first cold `next.config` import under load; passes alone in 4.95 s). Raised that describe's timeout to 30 s, matching the lint tests.
+7. Final runs:
+    - `npm run typecheck` → clean
+    - `npm run lint` → no output
+    - `npm test` → `Test Files 71 passed (71)`, `Tests 692 passed (692)`
+    - `npm run check:pinned` → pinned
+    - `npm run build` → `ƒ /`, `ƒ /_not-found`, `ƒ /pending-activation`, `ƒ /sign-in`, `ƒ /workspace`, `ƒ Proxy (Middleware)`
 
 ### Completion Notes List
 
+- No new dependencies (Radix via `radix-ui`, `zustand/vanilla`, `lucide-react` were already installed).
+- No barrel file; features import from `@/components/ui/<name>`.
+- Panel is controlled; persistence is Story 1.8's job.
+
 ### File List
 
+- Modified: `eslint.config.mjs`, `src/components/ui/button.tsx`, `src/components/ui/button.test.tsx`, `src/components/ui/text-field.tsx`, `src/components/ui/contrast-pairs.ts`, `tools/config/next-config.test.ts`
+- Added (`src/components/ui/`): `cx`, `shortcut`, `tooltip`, `icon-button`, `toggle-button`, `toggle-group`, `toolbar`, `menu-styles`, `menu-parts`, `menu`, `menu-bar`, `context-menu`, `dialog-shared`, `dialog`, `alert-dialog`, `popover`, `tabs`, `collapsible`, `select`, `checkbox`, `field`, `number-field`, `slider`, `color-swatch`, `panel`, `status-bar-item`, `toast-store`, `toast` (with tests)
+- Added: `src/core/geometry/length.ts`, `src/core/geometry/length.test.ts`, `src/test/radix-jsdom.ts`, `tools/lint/ui-imports.test.ts`
+
 ### Change Log
+
+- 2026-10-18: Foundation components implemented (Story 1.7).

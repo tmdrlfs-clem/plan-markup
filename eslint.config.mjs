@@ -159,6 +159,18 @@ const eslintConfig = defineConfig([
           patterns: [
             { group: ["@supabase/*"], message: "Use src/lib/supabase or src/lib/auth." },
             { group: ["@sentry/*"], message: "Use @/lib/sentry (scrubbed reporting)." },
+            {
+              group: [
+                "react-icons",
+                "react-icons/*",
+                "@radix-ui/react-icons",
+                "@heroicons/*",
+                "@tabler/*",
+                "@phosphor-icons/*",
+              ],
+              message: "Chrome icons come from lucide-react only (UX-DR4).",
+            },
+            { group: ["@radix-ui/react-*"], message: "Import primitives from radix-ui." },
           ],
         },
       ],

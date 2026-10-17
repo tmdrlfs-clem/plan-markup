@@ -3,6 +3,8 @@
 import { forwardRef, useId, useState, type InputHTMLAttributes } from "react";
 import { CircleX, Eye, EyeOff } from "lucide-react";
 
+import { cx } from "./cx";
+
 export interface TextFieldProps
   extends Omit<InputHTMLAttributes<HTMLInputElement>, "type"> {
   label: string;
@@ -30,15 +32,13 @@ export const TextField = forwardRef<HTMLInputElement, TextFieldProps>(
     const isPassword = type === "password";
     const inputType = isPassword && revealed ? "text" : type;
 
-    const inputClasses = [
+    const inputClasses = cx(
       "h-10 w-full rounded border bg-surface-2 px-3 text-ad-sm text-text",
       "placeholder:text-muted focus-ring disabled:opacity-50",
       error ? "border-danger" : "border-strong",
-      isPassword ? "pr-10" : "",
+      isPassword && "pr-10",
       className,
-    ]
-      .filter(Boolean)
-      .join(" ");
+    );
 
     return (
       <div className="flex flex-col gap-1">
