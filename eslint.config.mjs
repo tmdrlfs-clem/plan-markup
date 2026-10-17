@@ -54,6 +54,7 @@ const eslintConfig = defineConfig([
     "fixtures/**",
     "playwright-report/**",
     "test-results/**",
+    "src/lib/db/types.gen.ts",
   ]),
   {
     files: ["src/**/*.{ts,tsx}", "e2e/**/*.ts"],

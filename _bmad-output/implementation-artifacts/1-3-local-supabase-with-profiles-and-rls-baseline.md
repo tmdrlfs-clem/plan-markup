@@ -1,6 +1,6 @@
 # Story 1.3: Local Supabase with profiles and RLS baseline
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -32,23 +32,23 @@ so that data access is secure from the first migration.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Init and ports** (AC: 1)
-  - [ ] `npx supabase init` (CLI 2.121.0 is already a pinned dev dependency, so use `npx supabase …` everywhere). `project_id = "plan-markup"`.
-  - [ ] Set ports in `supabase/config.toml` (the **563xx** block; Fire Impairment Manager uses 543xx and Online Booking uses 553xx, and all three can run at once): api 56321, db 56322, shadow_port 56320, db pooler 56329, studio 56323, inbucket 56324, analytics 56327, edge-runtime inspector 56383. Change any other port the generated file exposes to a 563xx value too, and list them all in the README.
-  - [ ] Keep the defaults otherwise. Story 1.5 changes the auth settings (JWT expiry 10 min, refresh rotation, sessions), so do not change auth settings here. Do not add the auth hook either.
-  - [ ] Update `.env.example`: `NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:56321`, with a comment that the anon/publishable key comes from `npx supabase status`. Add the npm scripts `db:start`, `db:stop`, `db:reset` (`supabase db reset`), `db:test` (`supabase test db`), `db:types` (generate `src/lib/db/types.gen.ts`), `db:schema` (dump `supabase/schema.sql`), `check:rls`, `check:schema`, `check:types`.
-- [ ] **Task 2: Migration `<ts>_profiles_and_app_helpers.sql`** (AC: 2, 3)
-  - [ ] Name the file `supabase/migrations/YYYYMMDDHHMMSS_profiles_and_app_helpers.sql` (create it with `npx supabase migration new profiles_and_app_helpers`). Write it per Dev Notes → Migration design.
-- [ ] **Task 3: Seed** (AC: 5)
-  - [ ] `supabase/seed.sql` (local only; `supabase db reset` runs it, and production never does):
+- [x] **Task 1: Init and ports** (AC: 1)
+  - [x] `npx supabase init` (CLI 2.121.0 is already a pinned dev dependency, so use `npx supabase …` everywhere). `project_id = "plan-markup"`.
+  - [x] Set ports in `supabase/config.toml` (the **563xx** block; Fire Impairment Manager uses 543xx and Online Booking uses 553xx, and all three can run at once): api 56321, db 56322, shadow_port 56320, db pooler 56329, studio 56323, inbucket 56324, analytics 56327, edge-runtime inspector 56383. Change any other port the generated file exposes to a 563xx value too, and list them all in the README.
+  - [x] Keep the defaults otherwise. Story 1.5 changes the auth settings (JWT expiry 10 min, refresh rotation, sessions), so do not change auth settings here. Do not add the auth hook either.
+  - [x] Update `.env.example`: `NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:56321`, with a comment that the anon/publishable key comes from `npx supabase status`. Add the npm scripts `db:start`, `db:stop`, `db:reset` (`supabase db reset`), `db:test` (`supabase test db`), `db:types` (generate `src/lib/db/types.gen.ts`), `db:schema` (dump `supabase/schema.sql`), `check:rls`, `check:schema`, `check:types`.
+- [x] **Task 2: Migration `<ts>_profiles_and_app_helpers.sql`** (AC: 2, 3)
+  - [x] Name the file `supabase/migrations/YYYYMMDDHHMMSS_profiles_and_app_helpers.sql` (create it with `npx supabase migration new profiles_and_app_helpers`). Write it per Dev Notes → Migration design.
+- [x] **Task 3: Seed** (AC: 5)
+  - [x] `supabase/seed.sql` (local only; `supabase db reset` runs it, and production never does):
     - `admin@plan-markup.test`: active, `is_platform_admin = true`;
     - `user@plan-markup.test`: active;
     - `pending@plan-markup.test`: pending (Story 1.5 needs it for the PendingActivation screen).
     All passwords are `password123`, inserted with `crypt(…, gen_salt('bf'))` into `auth.users` **and** `auth.identities` (provider `email`), so password sign-in works. Use fixed UUIDs with a valid version nibble (e.g. `00000000-0000-4000-8000-00000000000a`). The Zod v4 `uuid()` pitfall rejects version-0 ids.
-  - [ ] Profiles come from the trigger. The seed then updates `status` and `is_platform_admin` as the `postgres` role. Add a header comment saying this file is for local dev and CI only.
-- [ ] **Task 4: RLS tests (pgTAP)** (AC: 4)
-  - [ ] `supabase/tests/profiles_rls.test.sql`, run by `npx supabase test db`. Each file runs `begin; select plan(n); … select * from finish(); rollback;`. Create the test users inside the transaction (insert into `auth.users`; the trigger makes profiles) so the tests do not depend on the seed. Simulate users with `set local role authenticated; set local request.jwt.claims = '{"sub":"<uuid>","role":"authenticated"}';`, and anon with `set local role anon;`.
-  - [ ] Minimum cases:
+  - [x] Profiles come from the trigger. The seed then updates `status` and `is_platform_admin` as the `postgres` role. Add a header comment saying this file is for local dev and CI only.
+- [x] **Task 4: RLS tests (pgTAP)** (AC: 4)
+  - [x] `supabase/tests/profiles_rls.test.sql`, run by `npx supabase test db`. Each file runs `begin; select plan(n); … select * from finish(); rollback;`. Create the test users inside the transaction (insert into `auth.users`; the trigger makes profiles) so the tests do not depend on the seed. Simulate users with `set local role authenticated; set local request.jwt.claims = '{"sub":"<uuid>","role":"authenticated"}';`, and anon with `set local role anon;`.
+  - [x] Minimum cases:
     - user A sees exactly their own row and 0 rows of user B;
     - anon sees 0 rows and cannot insert;
     - user A can update their own `name`;
@@ -58,31 +58,31 @@ so that data access is secure from the first migration.
     - `app.fn_is_platform_admin()` returns true for the admin and false for a normal user;
     - anon has no EXECUTE on `app.fn_is_platform_admin()` (`has_function_privilege`);
     - the new-user trigger creates a `pending` profile with the auth email.
-  - [ ] `supabase/tests/rls_coverage.test.sql`: a pgTAP assertion that every table in schemas `public` and `app` has `relrowsecurity = true` and at least one policy. It must keep working for future tables, so query `pg_class`/`pg_policies` rather than listing tables.
-- [ ] **Task 5: Drift and coverage scripts** (AC: 4)
-  - [ ] `scripts/check-rls.mjs`: runs the same coverage query outside pgTAP and prints offending tables by name (clear CI output). Connect with `pg` at `postgresql://postgres:postgres@127.0.0.1:56322/postgres` (add `pg@8.23.1` and `@types/pg` as exact dev deps), or shell out to `npx supabase db query --local`. Keep the pure "find offenders" function exported and unit-tested.
-  - [ ] `scripts/check-schema-drift.mjs`: dumps `npx supabase db dump --local --schema public,app` to a temp file. It compares that with the committed `supabase/schema.sql` after normalising (drop `SET …`/`set_config` lines and blank lines, trim line ends, normalise CRLF), and fails with the first differing lines. Port it from the Fire Impairment Manager pattern (see References), but in English, without emojis, using `logger`-free `process.stdout`/`stderr` (scripts are not under `src/`).
-  - [ ] `scripts/check-types-drift.mjs`: runs `npx supabase gen types typescript --local --schema public,app`, compares it with `src/lib/db/types.gen.ts` (normalise CRLF and trailing whitespace) and fails on drift. `scripts/generate-types.mjs` (or the `db:types` script) writes the file.
-  - [ ] Commit the generated `supabase/schema.sql` and `src/lib/db/types.gen.ts`. Add `src/lib/db/types.gen.ts` to ESLint ignores. It must still pass `tsc`.
-- [ ] **Task 6: `db.yml` workflow** (AC: 4, 6)
-  - [ ] `.github/workflows/db.yml`, triggered on push to `main` and pull requests, path filter `supabase/**`, `scripts/check-*.mjs`, `src/lib/db/**`, `.github/workflows/db.yml`, `package*.json`. Job "Database: migrations, RLS, drift" with `timeout-minutes: 20`:
+  - [x] `supabase/tests/rls_coverage.test.sql`: a pgTAP assertion that every table in schemas `public` and `app` has `relrowsecurity = true` and at least one policy. It must keep working for future tables, so query `pg_class`/`pg_policies` rather than listing tables.
+- [x] **Task 5: Drift and coverage scripts** (AC: 4)
+  - [x] `scripts/check-rls.mjs`: runs the same coverage query outside pgTAP and prints offending tables by name (clear CI output). Connect with `pg` at `postgresql://postgres:postgres@127.0.0.1:56322/postgres` (add `pg@8.23.1` and `@types/pg` as exact dev deps), or shell out to `npx supabase db query --local`. Keep the pure "find offenders" function exported and unit-tested.
+  - [x] `scripts/check-schema-drift.mjs`: dumps `npx supabase db dump --local --schema public,app` to a temp file. It compares that with the committed `supabase/schema.sql` after normalising (drop `SET …`/`set_config` lines and blank lines, trim line ends, normalise CRLF), and fails with the first differing lines. Port it from the Fire Impairment Manager pattern (see References), but in English, without emojis, using `logger`-free `process.stdout`/`stderr` (scripts are not under `src/`).
+  - [x] `scripts/check-types-drift.mjs`: runs `npx supabase gen types typescript --local --schema public,app`, compares it with `src/lib/db/types.gen.ts` (normalise CRLF and trailing whitespace) and fails on drift. `scripts/generate-types.mjs` (or the `db:types` script) writes the file.
+  - [x] Commit the generated `supabase/schema.sql` and `src/lib/db/types.gen.ts`. Add `src/lib/db/types.gen.ts` to ESLint ignores. It must still pass `tsc`.
+- [x] **Task 6: `db.yml` workflow** (AC: 4, 6)
+  - [x] `.github/workflows/db.yml`, triggered on push to `main` and pull requests, path filter `supabase/**`, `scripts/check-*.mjs`, `src/lib/db/**`, `.github/workflows/db.yml`, `package*.json`. Job "Database: migrations, RLS, drift" with `timeout-minutes: 20`:
     - steps: checkout@v7 → setup-node@v7 (`.nvmrc`, npm cache) → `npm ci` → `supabase/setup-cli@v3` with `version: 2.121.0`;
     - then `supabase start` (exclude unneeded services for speed: `-x studio,imgproxy,inbucket,edge-runtime,logflare,vector,supavisor`; drop any service name this CLI rejects);
     - then `npm run check:rls` → `npm run db:test` → `npm run check:schema` → `npm run check:types`;
     - finally `supabase stop` (`if: always()`).
-  - [ ] `supabase start` applies migrations and seed. Do not call `db reset` again in CI.
-  - [ ] `permissions: contents: read`. No secrets.
-- [ ] **Task 7: README and docs** (AC: 1)
-  - [ ] README "Local database" section: the ports table, `npm run db:start`, how to get keys (`npx supabase status`), `db:reset`, the routine after adding a migration (`db:reset` → `db:schema` → `db:types` → `db:test`), and the seed accounts.
-- [ ] **Task 8: Verify locally** (AC: 1–5)
-  - [ ] With Docker running: `npm run db:start`, then `npm run db:reset`, `npm run db:test`, `npm run check:rls`, `npm run check:schema`, `npm run check:types`, plus the existing `typecheck`, `lint`, `test`, `check:pinned`. Record outputs.
-  - [ ] Negative proofs (revert afterwards, record outputs):
+  - [x] `supabase start` applies migrations and seed. Do not call `db reset` again in CI.
+  - [x] `permissions: contents: read`. No secrets.
+- [x] **Task 7: README and docs** (AC: 1)
+  - [x] README "Local database" section: the ports table, `npm run db:start`, how to get keys (`npx supabase status`), `db:reset`, the routine after adding a migration (`db:reset` → `db:schema` → `db:types` → `db:test`), and the seed accounts.
+- [x] **Task 8: Verify locally** (AC: 1–5)
+  - [x] With Docker running: `npm run db:start`, then `npm run db:reset`, `npm run db:test`, `npm run check:rls`, `npm run check:schema`, `npm run check:types`, plus the existing `typecheck`, `lint`, `test`, `check:pinned`. Record outputs.
+  - [x] Negative proofs (revert afterwards, record outputs):
     - create a throwaway table without RLS in a scratch migration: `check:rls` and `rls_coverage` fail;
     - edit `supabase/schema.sql` by one line: `check:schema` fails;
     - edit one line of `types.gen.ts`: `check:types` fails.
     Delete the scratch migration, run `db:reset`, and confirm everything is green again.
-  - [ ] Stop the stack when finished (`npm run db:stop`) unless the orchestrator asks otherwise.
-  - [ ] **Do not commit or push.** The orchestrator commits, pushes and watches the `db.yml` run.
+  - [x] Stop the stack when finished (`npm run db:stop`) unless the orchestrator asks otherwise.
+  - [x] **Do not commit or push.** The orchestrator commits, pushes and watches the `db.yml` run.
 
 ## Dev Notes
 
@@ -165,12 +165,45 @@ create policy profiles_update_self on public.profiles
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Opus 5.5 (claude-opus-5-5)
 
 ### Debug Log References
+
+- 2026-10-17: `npx supabase --version` -> 2.121.0; `docker info` -> 29.5.2 at start.
+- `npx supabase init --force` -> "Finished supabase init." (project_id plan-markup). Ports rewritten to 563xx; a grep of config.toml for 5xxxx/8083 shows only 56321, 56322, 56320, 56329, 56323, 56324, 56325 (comment), 56326 (comment), 56383, 56327.
+- `npx supabase start` (first run, image pulls) FAILED: the C: drive filled to 100% during the image pulls. Log: "Error response from daemon: Docker Desktop is unable to start", retries on ghcr.io/supabase/postgres:17.11.0.004, storage-api, studio. `df -h /c` -> "C: 238G 238G 117M 100%". One `npm run typecheck` attempt failed with "npm error nospc". No other drive has free space (K:, Q: 0 GB).
+- Checks that do not need Docker, run after the failure: `npx eslint .` exit 0; `npx next typegen && npx tsc --noEmit` exit 0; `npx vitest run` -> "Tests 43 passed (43)" (includes 13 new script tests); `check:pinned` -> "All dependencies are pinned to exact versions."; `check:env-files` -> "No forbidden .env files are tracked."
+- NOT RUN (blocked by disk): db:start, db:reset, db:test, check:rls, check:schema, check:types, negative proofs, generation of supabase/schema.sql and src/lib/db/types.gen.ts.
 
 ### Completion Notes List
 
 - Ultimate context engine analysis completed - comprehensive developer guide created.
+- HALTED (2026-10-17): local verification is blocked because the C: drive is full (about 0.1 GB free) and Docker Desktop stopped. Freeing disk space is the founder's decision; nothing outside this project was deleted.
+- Written but not yet executed against a database: migration, seed, both pgTAP files, and the check-rls / check-schema-drift / check-types-drift / generate-types scripts. Their pure functions are unit-tested and green.
+- Deviation: CLI 2.121.0 renamed the mail container; the `-x` list uses `mailpit` instead of `inbucket`. The config section is still `[local_smtp]` on port 56324.
+- Deviation: anon has no SELECT grant on profiles, so "anon reads nothing" is asserted as permission denied (42501), which is stricter than 0 rows.
+- Note: `auth.site_url` stays at the CLI default (http://127.0.0.1:3000). Story 1.5 owns auth settings and should set it to port 3020.
+- RESUMED (2026-10-17, orchestrator): Docker build cache pruned (3.6 GB). `supabase start` then failed with DbSetupError ("no schema has been selected to create in") on postgres 17.11.0.004, also with no migrations and with realtime excluded. Pinned postgres 17.6.1.155 via `supabase/postgres-version` + `scripts/pin-postgres-image.mjs` (ADR 0002); start, migration and seed then succeed.
+- Verified: db:test "Files=2, Tests=29 ... Result: PASS"; check:rls OK (1 table); check:schema and check:types "No drift"; typecheck, lint, vitest 43/43, check:pinned all green.
+- Negative proofs: scratch table without RLS -> check:rls lists public.scratch_no_rls (exit 1) and rls_coverage fails 2/2; schema.sql edited one line -> check:schema exit 1 at line 42; types.gen.ts edited one line -> check:types exit 1 at line 1. Reverted, db reset, all four green again.
+- Previously remaining (now done): `npm run db:start`, `db:schema`, `db:types`, `db:test`, `check:rls`, `check:schema`, `check:types`, `typecheck` (with types.gen.ts), the negative proofs, then `db:stop`.
 
 ### File List
+
+- .env.example (modified)
+- .github/workflows/db.yml (new)
+- README.md (modified)
+- eslint.config.mjs (modified)
+- package.json, package-lock.json (modified: db/check scripts, pg 8.23.1, @types/pg 8.23.1)
+- scripts/check-rls.mjs, scripts/check-rls.test.mjs (new)
+- scripts/check-schema-drift.mjs, scripts/check-schema-drift.test.mjs (new)
+- scripts/check-types-drift.mjs, scripts/check-types-drift.test.mjs (new)
+- scripts/generate-types.mjs (new)
+- supabase/.gitkeep (deleted)
+- supabase/.gitignore, supabase/config.toml (new, from supabase init)
+- supabase/migrations/20261017024840_profiles_and_app_helpers.sql (new)
+- supabase/seed.sql (new)
+- supabase/tests/profiles_rls.test.sql, supabase/tests/rls_coverage.test.sql (new)
+- supabase/schema.sql, src/lib/db/types.gen.ts (new, generated)
+- supabase/postgres-version, scripts/pin-postgres-image.mjs (new, image pin)
+- docs/decisions/0002-pin-supabase-postgres-image.md (new)
