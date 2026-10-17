@@ -53,7 +53,7 @@ development_status:
   1-5-sign-in-and-sign-out: done
   1-6-security-headers-error-tracking-and-logging: done
   1-7-foundation-components: done
-  1-8-empty-workspace-shell: backlog
+  1-8-empty-workspace-shell: ready-for-dev
   epic-1-retrospective: optional
   # Epic 2: Risk Spikes (A13)
   epic-2: backlog
