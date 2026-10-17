@@ -1,6 +1,6 @@
 # Story 1.6: Security headers, error tracking and logging
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 

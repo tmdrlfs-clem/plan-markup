@@ -51,7 +51,7 @@ development_status:
   1-3-local-supabase-with-profiles-and-rls-baseline: done
   1-4-design-tokens-and-themes: done
   1-5-sign-in-and-sign-out: done
-  1-6-security-headers-error-tracking-and-logging: review
+  1-6-security-headers-error-tracking-and-logging: done
   1-7-foundation-components: backlog
   1-8-empty-workspace-shell: backlog
   epic-1-retrospective: optional
