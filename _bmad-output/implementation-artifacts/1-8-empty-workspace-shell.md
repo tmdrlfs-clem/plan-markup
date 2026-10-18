@@ -1,6 +1,6 @@
 # Story 1.8: Empty workspace shell
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -166,3 +166,4 @@ Environment: Windows 11, Node v24.15.0, Docker Desktop, local Supabase.
 ### Change Log
 
 - 2026-10-18: Empty workspace shell implemented (Story 1.8).
+- 2026-10-18: CI run 39083897201 passed on 6ffbdbc (typecheck/lint/unit/guards, gitleaks, Playwright e2e on CI's repo config); story closed.
