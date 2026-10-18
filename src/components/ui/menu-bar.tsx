@@ -20,7 +20,7 @@ export const MenuBar = forwardRef<ElementRef<typeof MenubarPrimitive.Root>, Menu
     return (
       <MenubarPrimitive.Root
         ref={ref}
-        className={cx("flex h-9 items-center gap-0.5 bg-surface-2 px-2", className)}
+        className={cx("flex h-6 items-center gap-0.5 bg-surface-2 px-1", className)}
         {...props}
       />
     );

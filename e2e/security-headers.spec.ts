@@ -94,7 +94,7 @@ test("/workspace (signed in) has the nonce CSP and static headers", async ({ pag
   await signIn(page, ACTIVE);
   await expect(page).toHaveURL("/workspace");
   await checkPage(await page.goto("/workspace"));
-  await expect(page.getByRole("heading", { name: "Workspace" })).toBeVisible();
+  await expect(page.getByRole("menubar", { name: "Main menu" })).toBeVisible();
   await page.waitForLoadState("networkidle");
   expect(errors).toEqual([]);
 });

@@ -22,7 +22,7 @@ test("sign-in succeeds and sets HttpOnly, Secure, SameSite=Lax session cookies",
   await page.goto("/sign-in");
   await signIn(page, ACTIVE);
   await expect(page).toHaveURL("/workspace");
-  await expect(page.getByRole("heading", { name: "Workspace" })).toBeVisible();
+  await expect(page.getByRole("menubar", { name: "Main menu" })).toBeVisible();
 
   const authCookies = (await context.cookies()).filter((c) => AUTH_COOKIE.test(c.name));
   expect(authCookies.length).toBeGreaterThan(0);
@@ -82,7 +82,8 @@ test("sign out ends the session", async ({ page, context }) => {
   await expect(page).toHaveURL("/workspace");
   const before = (await context.cookies()).filter((c) => AUTH_COOKIE.test(c.name));
 
-  await page.getByRole("button", { name: "Sign out" }).click();
+  await page.getByRole("menuitem", { name: "File" }).click();
+  await page.getByRole("menuitem", { name: "Sign out" }).click();
   await expect(page).toHaveURL("/sign-in");
 
   await page.goto("/workspace");

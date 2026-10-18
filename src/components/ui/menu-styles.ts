@@ -24,5 +24,5 @@ export const MENU_SHORTCUT = "num ml-auto pl-4 text-ws-sm text-muted";
 export const MENU_ICON_SLOT = "flex size-4 shrink-0 items-center justify-center";
 
 export const MENU_TOP_TRIGGER =
-  "inline-flex h-7 select-none items-center rounded-sm px-3 text-ws-md text-text outline-none focus-ring " +
+  "inline-flex h-5 select-none items-center rounded-sm px-2 text-ws-md text-text outline-none focus-ring " +
   "data-[highlighted]:bg-surface-3 data-[state=open]:bg-surface-3";

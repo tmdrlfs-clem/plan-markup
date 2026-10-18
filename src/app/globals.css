@@ -125,6 +125,11 @@
   /* 4 px spacing base: p-1 = 4 px, p-2 = 8 px. */
   --spacing: 4px;
 
+  /* Workspace breakpoints (UX spec, Breakpoint Strategy); sm/md/lg stay Tailwind's. */
+  --breakpoint-ws-min: 1280px;
+  --breakpoint-ws-md: 1440px;
+  --breakpoint-ws-lg: 1920px;
+
   /* Near-sharp radii. Bare `rounded` is 2 px. */
   --radius-*: initial;
   --radius: 2px;
