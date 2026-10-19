@@ -58,4 +58,23 @@ describe("handleWorkspaceShortcut", () => {
     expect(handleWorkspaceShortcut(key({ altKey: true, code: "KeyQ" }), h)).toBe(false);
     expect(handleWorkspaceShortcut(key({ ctrlKey: true, shiftKey: true, code: "KeyO" }), h)).toBe(false);
   });
+
+  it("Ctrl+O follows the letter on other layouts and the key position without Latin letters", () => {
+    const h = handlers();
+    // Dvorak: the O letter sits on the S position; the O position types "r".
+    expect(handleWorkspaceShortcut(key({ ctrlKey: true, code: "KeyS", key: "o" }), h)).toBe(true);
+    expect(handleWorkspaceShortcut(key({ ctrlKey: true, code: "KeyO", key: "r" }), h)).toBe(false);
+    // Russian: "щ" on the O position.
+    expect(handleWorkspaceShortcut(key({ ctrlKey: true, code: "KeyO", key: "щ" }), h)).toBe(true);
+    expect(h.open).toHaveBeenCalledTimes(2);
+  });
+
+  it("a held key is claimed but runs once", () => {
+    const h = handlers();
+    expect(handleWorkspaceShortcut(key({ altKey: true, code: "KeyX", key: "x" }), h)).toBe(true);
+    expect(handleWorkspaceShortcut(key({ altKey: true, code: "KeyX", key: "x", repeat: true }), h)).toBe(true);
+    expect(handleWorkspaceShortcut(key({ ctrlKey: true, code: "KeyO", key: "o", repeat: true }), h)).toBe(true);
+    expect(h.showLeftPanel).toHaveBeenCalledTimes(1);
+    expect(h.open).not.toHaveBeenCalled();
+  });
 });

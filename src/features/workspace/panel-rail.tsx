@@ -27,6 +27,7 @@ export function PanelRail() {
           <ToolbarToggleItem
             key={panel.id}
             value={panel.id}
+            data-panel-id={panel.id}
             label={panel.title}
             icon={panel.icon}
             shortcut={panel.shortcut}

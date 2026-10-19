@@ -32,17 +32,25 @@ export function LayoutProvider({ userId, children }: { userId: string; children:
       .replace(loadLayout(storage, userId, { width: window.innerWidth, height: window.innerHeight }));
 
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const flush = () => saveLayout(storage, userId, layoutOf(store.getState()));
+    const flush = () => {
+      timer = undefined;
+      saveLayout(storage, userId, layoutOf(store.getState()));
+    };
+    const flushPending = () => {
+      if (timer === undefined) return;
+      clearTimeout(timer);
+      flush();
+    };
     const unsubscribe = store.subscribe(() => {
       clearTimeout(timer);
       timer = setTimeout(flush, SAVE_DEBOUNCE_MS);
     });
+    // A reload or closed tab inside the debounce window still saves.
+    window.addEventListener("pagehide", flushPending);
     return () => {
       unsubscribe();
-      if (timer !== undefined) {
-        clearTimeout(timer);
-        flush();
-      }
+      window.removeEventListener("pagehide", flushPending);
+      flushPending();
     };
   }, [store, userId]);
 

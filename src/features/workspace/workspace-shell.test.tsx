@@ -10,7 +10,7 @@ import { storageKey } from "./layout-persistence";
 import { BANNER_DISMISSED_KEY } from "./narrow-banner";
 import { WorkspaceShell } from "./workspace-shell";
 
-const signOut = vi.fn(async () => {});
+const signOut = vi.fn<() => Promise<void>>(async () => {});
 vi.mock("@/features/account/actions", () => ({ signOut: () => signOut() }));
 
 const USER = { id: "user-1", name: "Sam Drafter", email: "sam@example.com" };
@@ -126,6 +126,41 @@ describe("panels", () => {
     expect(screen.getByText("Markups you add appear here.").parentElement).toHaveAttribute("hidden");
   });
 
+  it("Alt+L twice in one frame toggles twice; a held Alt+X toggles once", () => {
+    setup();
+    const body = () => screen.getByText("Markups you add appear here.").parentElement;
+    fireEvent.keyDown(window, { altKey: true, code: "KeyL", key: "l" });
+    fireEvent.keyDown(window, { altKey: true, code: "KeyL", key: "l" });
+    expect(body()).not.toHaveAttribute("hidden");
+    fireEvent.keyDown(window, { altKey: true, code: "KeyX", key: "x" });
+    fireEvent.keyDown(window, { altKey: true, code: "KeyX", key: "x", repeat: true });
+    fireEvent.keyDown(window, { altKey: true, code: "KeyX", key: "x", repeat: true });
+    expect(screen.queryByRole("complementary", { name: "Tool Chest" })).not.toBeInTheDocument();
+  });
+
+  it("saves a change made just before the page is left", () => {
+    setup();
+    fireEvent.keyDown(window, { altKey: true, code: "KeyL", key: "l" });
+    expect(localStorage.getItem(storageKey(USER.id))).toBeNull();
+    window.dispatchEvent(new Event("pagehide"));
+    expect(JSON.parse(localStorage.getItem(storageKey(USER.id)) ?? "null")).toMatchObject({ bottom: { collapsed: true } });
+  });
+
+  it("collapsing a panel that holds the focus moves it to the rail or the Expand button", async () => {
+    const { user } = setup();
+    await user.click(screen.getByRole("button", { name: "Collapse Tool Chest" }));
+    expect(document.activeElement).toBe(screen.getByRole("radio", { name: "Tool Chest" }));
+
+    await user.click(screen.getByRole("radio", { name: "Layers" }));
+    screen.getByRole("button", { name: "Collapse Layers" }).focus();
+    fireEvent.keyDown(document.activeElement as Element, { altKey: true, code: "KeyY", key: "y" });
+    expect(document.activeElement).toBe(screen.getByRole("radio", { name: "Layers" }));
+
+    screen.getByRole("separator", { name: "Resize Markups" }).focus();
+    await user.keyboard("{Shift>}{F4}{/Shift}");
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Expand Markups" }));
+  });
+
   it("Shift+F4 hides all panels and Alt+L brings the Markups list back", async () => {
     const { user } = setup();
     await user.keyboard("{Shift>}{F4}{/Shift}");
@@ -159,6 +194,14 @@ describe("F6 regions", () => {
       "menu-bar",
     ]);
     await user.keyboard("{Shift>}{F6}{/Shift}");
+    expect(regionOf(document.activeElement)).toBe("status-bar");
+  });
+
+  it("skips the collapsed bottom panel", async () => {
+    const { user } = setup();
+    await user.click(screen.getByRole("button", { name: "Collapse Markups" }));
+    screen.getByRole("radio", { name: "Length" }).focus();
+    await user.keyboard("{F6}");
     expect(regionOf(document.activeElement)).toBe("status-bar");
   });
 
@@ -203,6 +246,17 @@ describe("opening files", () => {
     });
   });
 
+  it("a file dropped outside the drop zone does not replace the page", () => {
+    setup();
+    const dataTransfer = { files: [new File(["%PDF"], "a.pdf")], types: ["Files"], dropEffect: "copy" };
+    const toolbar = screen.getByRole("navigation", { name: "Panels" });
+    // fireEvent returns false when the default (open the file in the tab) was prevented.
+    expect(fireEvent.dragOver(toolbar, { dataTransfer })).toBe(false);
+    expect(dataTransfer.dropEffect).toBe("none");
+    expect(fireEvent.drop(toolbar, { dataTransfer })).toBe(false);
+    expect(toastStore.getState().visible).toHaveLength(0);
+  });
+
   it("Open…, File › Open… and Ctrl+O all open the file picker", async () => {
     const { user } = setup();
     const input = screen.getByTestId("open-input") as HTMLInputElement;
@@ -222,6 +276,35 @@ describe("account and sign out", () => {
     expect(await screen.findByText("sam@example.com")).toBeInTheDocument();
     await user.click(screen.getByRole("menuitem", { name: "Sign out" }));
     await waitFor(() => expect(signOut).toHaveBeenCalledTimes(1));
+  });
+
+  it("sends one sign-out while one is running", async () => {
+    let finish = () => {};
+    signOut.mockImplementationOnce(() => new Promise<void>((resolve) => (finish = resolve)));
+    const { user } = setup();
+    for (let i = 0; i < 2; i++) {
+      await user.click(screen.getByRole("menuitem", { name: "File" }));
+      await user.click(await screen.findByRole("menuitem", { name: "Sign out" }));
+    }
+    expect(signOut).toHaveBeenCalledTimes(1);
+    await act(async () => finish());
+  });
+
+  it("a failed sign-out shows a toast and can be retried", async () => {
+    signOut.mockRejectedValueOnce(new Error("network"));
+    const { user } = setup();
+    await user.click(screen.getByRole("menuitem", { name: "File" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Sign out" }));
+    await waitFor(() =>
+      expect(toastStore.getState().visible.at(-1)).toMatchObject({
+        title: "Couldn't sign out. Try again.",
+        variant: "danger",
+      }),
+    );
+    expect(screen.getByRole("menubar", { name: "Main menu" })).toBeInTheDocument();
+    await user.click(screen.getByRole("menuitem", { name: "File" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Sign out" }));
+    await waitFor(() => expect(signOut).toHaveBeenCalledTimes(2));
   });
 
   it("File › Sign out signs out", async () => {

@@ -14,6 +14,11 @@ function subscribe(onChange: () => void) {
   return () => media.removeEventListener("change", onChange);
 }
 
+// sessionStorage has no same-tab change event; the value only changes through dismiss().
+function subscribeNever() {
+  return () => {};
+}
+
 function isNarrow(): boolean {
   return window.matchMedia(QUERY).matches;
 }
@@ -29,11 +34,7 @@ function readDismissed(): boolean {
 /** Below 1280 px: a dismissible notice above the menu bar (UX-DR37). Hidden for the session once dismissed. */
 export function NarrowBanner() {
   const narrow = useSyncExternalStore(subscribe, isNarrow, () => false);
-  const storedDismissed = useSyncExternalStore(
-    () => () => {},
-    readDismissed,
-    () => true,
-  );
+  const storedDismissed = useSyncExternalStore(subscribeNever, readDismissed, () => true);
   const [dismissedNow, setDismissedNow] = useState(false);
 
   if (!narrow || storedDismissed || dismissedNow) return null;
