@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { BtxError } from "./errors";
 import {
   collectRefs,
+  createPdfNodeBudget,
   dictGet,
   getNumbers,
   getText,
@@ -107,6 +108,24 @@ describe("parsePdfObject", () => {
     expect(code(() => parse("<zz>"))).toBe("pdf-malformed");
     expect(code(() => parse("<<1 2>>"))).toBe("pdf-malformed");
     expect(code(() => parse("1 0 R"))).toBe("pdf-malformed");
+    expect(code(() => parse(`[1 ${"9".repeat(400)}]`))).toBe("pdf-malformed"); // not a finite double
     expect(code(() => parse("<</Length 3>>\nstream\nabc"))).toBe("pdf-malformed");
+  });
+});
+
+describe("parsePdfObject resource limits", () => {
+  it("charges every value to the shared node budget", () => {
+    const budget = createPdfNodeBudget(10);
+    parsePdfObject(enc("<</A [1 2] /B (x)>>"), { nodeBudget: budget }); // dict, array, 1, 2, string
+    expect(budget.remaining).toBe(5);
+    expect(code(() => parsePdfObject(enc("[1 2 3 4 5]"), { nodeBudget: budget }))).toBe("pdf-too-many-nodes");
+  });
+
+  it("reads long strings into byte buffers", () => {
+    const long = parse(`(${"a\\\\".repeat(10_000)})`) as PdfString;
+    expect(long.bytes.length).toBe(20_000);
+    expect(long.bytes[1]).toBe(0x5c);
+    const hex = parse(`<${"0aF".repeat(3)}>`) as PdfString;
+    expect([...hex.bytes]).toEqual([0x0a, 0xf0, 0xaf, 0x0a, 0xf0]);
   });
 });

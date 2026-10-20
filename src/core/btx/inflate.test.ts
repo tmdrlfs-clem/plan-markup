@@ -1,9 +1,9 @@
 import { deflateSync } from "node:zlib";
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { BtxError } from "./errors";
-import { createInflateBudget, decodeHexValue, decodeText, hexToBytes, inflateZlib } from "./inflate";
+import { INFLATE_SLICE_BYTES, createInflateBudget, decodeHexValue, decodeText, hexToBytes, inflateZlib } from "./inflate";
 
 async function code(p: Promise<unknown> | (() => unknown)): Promise<string | undefined> {
   try {
@@ -51,6 +51,13 @@ describe("inflateZlib", () => {
     expect(await code(inflateZlib(z(new Uint8Array(100 * 1024)), budget))).toBe("inflate-total-too-large");
   });
 
+  it("inflates input larger than one write slice", async () => {
+    const data = new Uint8Array(5 * INFLATE_SLICE_BYTES);
+    for (let i = 0; i < data.length; i++) data[i] = (i * 7919) % 251; // poorly compressible
+    const out = await inflateZlib(z(data), createInflateBudget());
+    expect(out).toEqual(data);
+  });
+
   it("rejects data that is not zlib", async () => {
     expect(await code(inflateZlib(new Uint8Array([1, 2, 3, 4]), createInflateBudget()))).toBe("inflate-failed");
   });
@@ -58,6 +65,37 @@ describe("inflateZlib", () => {
   it("decodeHexValue chains hex and inflate", async () => {
     const out = await decodeHexValue(hex(z("BBObjPtr")), createInflateBudget());
     expect(decodeText(out)).toBe("BBObjPtr");
+  });
+});
+
+describe("inflateZlib input slicing", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("feeds the input in slices and stops writing once the budget is exceeded", async () => {
+    let written = 0;
+    // A fake inflater that expands every written byte 100x (a zip bomb).
+    class ExpandingStream {
+      readonly writable: WritableStream<Uint8Array>;
+      readonly readable: ReadableStream<Uint8Array>;
+      constructor() {
+        const ts = new TransformStream<Uint8Array, Uint8Array>({
+          transform(chunk, controller) {
+            written += chunk.byteLength;
+            controller.enqueue(new Uint8Array(chunk.byteLength * 100));
+          },
+        });
+        this.writable = ts.writable;
+        this.readable = ts.readable;
+      }
+    }
+    vi.stubGlobal("DecompressionStream", ExpandingStream);
+    const input = new Uint8Array(1024 * 1024);
+    const budget = { maxValueBytes: 2 * 100 * INFLATE_SLICE_BYTES, remainingTotalBytes: 1024 * 1024 * 1024 };
+    expect(await code(inflateZlib(input, budget))).toBe("inflate-value-too-large");
+    // Not the whole megabyte: at most a few slices past the budget were fed.
+    expect(written).toBeLessThanOrEqual(4 * INFLATE_SLICE_BYTES);
   });
 });
 

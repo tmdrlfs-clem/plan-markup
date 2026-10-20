@@ -57,7 +57,7 @@ development_status:
   epic-1-retrospective: optional
   # Epic 2: Risk Spikes (A13)
   epic-2: in-progress
-  2-1-spike-btx-parse-and-render: review
+  2-1-spike-btx-parse-and-render: done
   2-2-spike-close-out-irregular-zone-placement-fable: backlog
   2-3-spike-a0-render-and-500-markup-frame-rate: backlog
   2-4-spike-annotation-export-round-trip-in-revu: backlog

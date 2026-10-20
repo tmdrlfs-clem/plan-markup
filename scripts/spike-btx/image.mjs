@@ -66,10 +66,18 @@ export function trim(img) {
   return box ? cropScale(img, box, box.w, box.h) : null;
 }
 
+/** Allowed ink-box size difference: this share of the reference size or SIZE_TOLERANCE_PX, whichever is larger. */
+export const SIZE_TOLERANCE = 0.05;
+export const SIZE_TOLERANCE_PX = 2;
+
+const sizeOff = (cand, ref) => Math.abs(cand - ref) > Math.max(SIZE_TOLERANCE * ref, SIZE_TOLERANCE_PX);
+
 /**
  * Compares a candidate render with a reference: both trimmed to their ink
- * box, the candidate scaled to the reference size, pixelmatch with
- * PIXELMATCH_THRESHOLD and anti-aliasing ignored.
+ * box. Fails when the ink boxes differ in width or height by more than the
+ * size tolerance (a scale or aspect error), else the candidate is scaled
+ * uniformly (one factor, centred) onto the reference box and pixelmatch runs
+ * with PIXELMATCH_THRESHOLD and anti-aliasing ignored.
  * Returns { diffPercent, pass, reason?, diffImage? }.
  */
 export function compare(candidate, reference) {
@@ -77,8 +85,16 @@ export function compare(candidate, reference) {
   if (!refBox) return { diffPercent: null, pass: false, reason: "reference is blank" };
   const candBox = inkBox(candidate);
   if (!candBox) return { diffPercent: 100, pass: false, reason: "render is blank" };
+  if (sizeOff(candBox.w, refBox.w) || sizeOff(candBox.h, refBox.h)) {
+    return {
+      diffPercent: null,
+      pass: false,
+      reason: `size differs (${candBox.w}x${candBox.h} px vs reference ${refBox.w}x${refBox.h} px)`,
+    };
+  }
   const ref = cropScale(reference, refBox, refBox.w, refBox.h);
-  const cand = cropScale(candidate, candBox, refBox.w, refBox.h);
+  const k = Math.min(refBox.w / candBox.w, refBox.h / candBox.h);
+  const cand = cropFit(candidate, candBox, refBox.w, refBox.h, k);
   const out = new Uint8ClampedArray(ref.data.length);
   const diff = pixelmatch(cand.data, ref.data, out, ref.width, ref.height, {
     threshold: PIXELMATCH_THRESHOLD,
@@ -86,14 +102,20 @@ export function compare(candidate, reference) {
   });
   const refInk = countInk(ref);
   const diffPercent = refInk === 0 ? 100 : (diff / refInk) * 100;
-  const aspectRef = refBox.w / refBox.h;
-  const aspectCand = candBox.w / candBox.h;
   const pass = diffPercent <= PASS_DIFF_PERCENT;
-  let reason;
-  if (!pass) {
-    reason = Math.abs(aspectRef / aspectCand - 1) > 0.05 ? "shape/extent differs (aspect ratio)" : "pixels differ";
-  }
-  return { diffPercent, pass, reason, diffImage: { width: ref.width, height: ref.height, data: out } };
+  return { diffPercent, pass, reason: pass ? undefined : "pixels differ", diffImage: { width: ref.width, height: ref.height, data: out } };
+}
+
+/** Crops to the ink box and draws it scaled by k (both axes), centred on a w×h white canvas. */
+function cropFit(img, box, w, h, k) {
+  const c = createCanvas(w, h);
+  const ctx = c.getContext("2d");
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, w, h);
+  const dw = box.w * k;
+  const dh = box.h * k;
+  ctx.drawImage(toCanvas(img), box.x, box.y, box.w, box.h, (w - dw) / 2, (h - dh) / 2, dw, dh);
+  return { width: w, height: h, data: ctx.getImageData(0, 0, w, h).data };
 }
 
 export async function encodePng(img) {

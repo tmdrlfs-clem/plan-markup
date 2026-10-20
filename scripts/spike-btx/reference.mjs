@@ -4,6 +4,8 @@
 // also for items that had no /AP in the .btx.
 import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFNumber, PDFRef, PDFString } from "@cantoo/pdf-lib";
 
+import { itemBounds } from "@/core/btx/to-pdf";
+
 import { renderPdf } from "./render.mjs";
 
 const N = (s) => PDFName.of(s);
@@ -104,4 +106,25 @@ export function matchUnits(items, units) {
     pairs,
     note: `count mismatch: ${units.length} placed unit(s) vs ${items.length} item(s); matched by subject + type`,
   };
+}
+
+/**
+ * Placements for a self-made reference PDF: items in a row, 20 pt apart.
+ * Items without bounds (no member with a usable /Rect) cannot be placed: they
+ * are returned in `skipped` with the reason. Returns { placements, skipped }.
+ */
+export function layoutPlacements(items, gap = 20) {
+  const placements = [];
+  const skipped = [];
+  let x = 0;
+  items.forEach((item, index) => {
+    const b = itemBounds(item);
+    if (!b) {
+      skipped.push({ index, reason: "no member has a usable /Rect" });
+      return;
+    }
+    placements.push({ item, dx: x - b[0], dy: -b[1] });
+    x += b[2] - b[0] + gap;
+  });
+  return { placements, skipped };
 }

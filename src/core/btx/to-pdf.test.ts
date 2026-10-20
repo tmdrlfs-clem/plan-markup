@@ -4,7 +4,7 @@ import { PDFArray, PDFDict, PDFDocument, PDFName, PDFRawStream, PDFRef } from "@
 import { describe, expect, it } from "vitest";
 
 import { parseBtx, type BtxItem } from "./parse";
-import { parsePdfObject, type PdfDict } from "./pdf-object";
+import { parsePdfObject, type PdfDict, type PdfObject } from "./pdf-object";
 import { buildItemPdf, buildPdf, itemBounds, memberOffset, translateAnnotation } from "./to-pdf";
 
 const SYNTHETIC = new URL("../../../fixtures/btx/synthetic.btx", import.meta.url);
@@ -116,4 +116,39 @@ describe("buildItemPdf", () => {
     expect(annots[0]!.get(PDFName.of("OC"))).toBeUndefined();
     expect(annots[0]!.lookup(PDFName.of("AP"), PDFDict).lookup(PDFName.of("N"))).toBeInstanceOf(PDFRawStream);
   });
+
+  it("converts a long BBObjPtr chain without recursion", async () => {
+    // BBObjPtr ids are 16 capital letters: n in base 26, padded with "A".
+    const id = (n: number) => n.toString(26).toUpperCase().replace(/[0-9A-P]/g, (c) => "ABCDEFGHIJKLMNOPQRSTUVWXYZ"[parseInt(c, 26)]!).padStart(16, "A");
+    const resources = new Map<string, PdfObject>();
+    const length = 20_000;
+    for (let n = 0; n < length; n++) {
+      resources.set(id(n), { kind: "dict", entries: [["Next", { kind: "ref", ref: id(n + 1) }]] });
+    }
+    const item: BtxItem = {
+      name: "x",
+      type: "t",
+      mode: undefined,
+      missingRefs: [id(length)],
+      resources,
+      annotations: [
+        {
+          type: "t",
+          subtype: "Circle",
+          subject: undefined,
+          role: "root",
+          x: 0,
+          y: 0,
+          index: 0,
+          dict: dict(`<</Subtype/Circle/Rect[0 0 5 5]/Chain/BBObjPtr_${id(0)}>>`),
+        },
+      ],
+    };
+    const built = await buildItemPdf(item);
+    expect(built.warnings).toContain("Placement 0: 1 missing resource(s) drawn empty");
+    const { annots } = await annotsOf(built.bytes);
+    let cur = annots[0]!.lookup(PDFName.of("Chain"), PDFDict);
+    for (let n = 1; n < length; n++) cur = cur.lookup(PDFName.of("Next"), PDFDict);
+    expect(cur.lookup(PDFName.of("Next"))).toBeInstanceOf(PDFRawStream); // the empty placeholder form
+  }, 30_000);
 });

@@ -111,6 +111,8 @@ export function itemBounds(item: BtxItem, dx = 0, dy = 0): Box | undefined {
 class Converter {
   private readonly refs = new Map<string, PDFRef>();
   private placeholder: PDFRef | undefined;
+  private readonly pending: Array<[PDFRef, PdfObject]> = [];
+  private draining = false;
   readonly missing = new Set<string>();
 
   private readonly context: PDFContext;
@@ -139,7 +141,19 @@ class Converter {
     }
     const ref = this.context.nextRef();
     this.refs.set(id, ref); // before converting: cycles resolve to the same ref
-    this.context.assign(ref, this.value(obj, true));
+    // Converted from a work list, not by recursion: a long BBObjPtr chain
+    // (A → B → C → …) costs queue entries, never stack frames.
+    this.pending.push([ref, obj]);
+    if (!this.draining) {
+      this.draining = true;
+      try {
+        for (let next = this.pending.pop(); next; next = this.pending.pop()) {
+          this.context.assign(next[0], this.value(next[1], true));
+        }
+      } finally {
+        this.draining = false;
+      }
+    }
     return ref;
   }
 

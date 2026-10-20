@@ -13,6 +13,10 @@ export type BtxErrorCode =
   | "xml-malformed"
   | "pdf-too-deep"
   | "pdf-malformed"
+  | "pdf-too-many-nodes"
+  | "too-many-items"
+  | "too-many-children"
+  | "too-many-resources"
   | "structure-invalid";
 
 export class BtxError extends Error {

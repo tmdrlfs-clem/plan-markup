@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import { parseBtx } from "@/core/btx/parse";
-import { buildItemPdf, buildPdf, itemBounds } from "@/core/btx/to-pdf";
+import { buildItemPdf, buildPdf } from "@/core/btx/to-pdf";
 
 let canvasOk = true;
 try {
@@ -32,15 +32,10 @@ describe.skipIf(!canvasOk)("spike harness on the synthetic set", () => {
   it("reads a placement PDF back as one unit per item (group = one unit) and diffs at 0 %", async () => {
     const { renderPdf } = await import("./render.mjs");
     const { compare } = await import("./image.mjs");
-    const { matchUnits, readReferenceUnits, renderReferenceUnit } = await import("./reference.mjs");
+    const { layoutPlacements, matchUnits, readReferenceUnits, renderReferenceUnit } = await import("./reference.mjs");
     const set = await parseBtx(new Uint8Array(readFileSync(SYNTHETIC)));
-    const placements = [];
-    let x = 0;
-    for (const item of set.items) {
-      const b = itemBounds(item);
-      placements.push({ item, dx: x - b[0], dy: -b[1] });
-      x += b[2] - b[0] + 20;
-    }
+    const { placements, skipped } = layoutPlacements(set.items);
+    expect(skipped).toEqual([]);
     const reference = (await buildPdf(placements, { linkGroups: true, margin: 20 })).bytes;
     const units = await readReferenceUnits(reference);
     expect(units.map((u) => u.members)).toEqual([1, 1, 2, 1, 1]);
@@ -85,5 +80,29 @@ describe.skipIf(!canvasOk)("spike harness on the synthetic set", () => {
     const checker = img((x, y) => ((x + y) % 2 ? [0, 0, 0, 255] : [255, 0, 0, 255]));
     expect(compare(solid, solid).pass).toBe(true);
     expect(compare(checker, solid).pass).toBe(false);
+  });
+
+  it("compare fails a render at the wrong scale or aspect instead of stretching it", async () => {
+    const { compare } = await import("./image.mjs");
+    const rect = (w, h) => {
+      const data = new Uint8ClampedArray(160 * 160 * 4).fill(255);
+      for (let y = 10; y < 10 + h; y++) for (let x = 10; x < 10 + w; x++) data.set([0, 0, 0, 255], (y * 160 + x) * 4);
+      return { width: 160, height: 160, data };
+    };
+    const ref = rect(80, 40);
+    expect(compare(rect(82, 41), ref).pass).toBe(true); // within tolerance, scaled uniformly
+    const wide = compare(rect(100, 40), ref); // aspect error
+    expect(wide.pass).toBe(false);
+    expect(wide.reason).toMatch(/^size differs/);
+    expect(compare(rect(120, 60), ref).pass).toBe(false); // uniform scale error
+  });
+
+  it("layoutPlacements leaves out items without bounds and says why", async () => {
+    const { layoutPlacements } = await import("./reference.mjs");
+    const set = await parseBtx(new Uint8Array(readFileSync(SYNTHETIC)));
+    const noRect = { ...set.items[1], annotations: set.items[1].annotations.map((a) => ({ ...a, dict: { kind: "dict", entries: [] } })) };
+    const { placements, skipped } = layoutPlacements([set.items[0], noRect, set.items[3]]);
+    expect(placements.map((p) => p.item)).toEqual([set.items[0], set.items[3]]);
+    expect(skipped).toEqual([{ index: 1, reason: "no member has a usable /Rect" }]);
   });
 });

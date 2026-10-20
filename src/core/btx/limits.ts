@@ -16,6 +16,18 @@ export type BtxLimits = {
   maxXmlDepth: number;
   /** PDF object nesting (dictionaries and arrays). */
   maxPdfDepth: number;
+  /** PDF values (dictionaries, arrays, names, numbers, …) parsed in one file. */
+  maxPdfNodes: number;
+  /** ToolChestItem elements in one file. */
+  maxItems: number;
+  /** Child elements in one item. */
+  maxChildrenPerItem: number;
+  /** Child elements in one file. */
+  maxChildrenPerFile: number;
+  /** Resources elements in one item. */
+  maxResourcesPerItem: number;
+  /** Resources elements in one file. */
+  maxResourcesPerFile: number;
 };
 
 export const BTX_LIMITS: Readonly<BtxLimits> = Object.freeze({
@@ -25,4 +37,11 @@ export const BTX_LIMITS: Readonly<BtxLimits> = Object.freeze({
   maxInflatedTotalBytes: 128 * MB,
   maxXmlDepth: 16,
   maxPdfDepth: 64,
+  // Counts: >= 10x the founder's largest real values (see the spike report).
+  maxPdfNodes: 1_000_000,
+  maxItems: 1_000,
+  maxChildrenPerItem: 64,
+  maxChildrenPerFile: 1_000,
+  maxResourcesPerItem: 4_096,
+  maxResourcesPerFile: 32_768,
 });

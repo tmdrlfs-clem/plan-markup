@@ -44,17 +44,32 @@ export function hexToBytes(hex: string, maxHexChars: number = BTX_LIMITS.maxHexC
 }
 
 /**
+ * Compressed bytes fed to the inflater per write. Deflate expands at most
+ * ~1032:1, so one write can produce at most ~8.3 MB before the next budget
+ * check (the stream applies backpressure: the next slice is only consumed
+ * after the reader has taken the previous output).
+ */
+export const INFLATE_SLICE_BYTES = 8 * 1024;
+
+/**
  * Inflates a zlib-wrapped stream. Throws BtxError when the value exceeds
  * budget.maxValueBytes or the file's remaining total, checked per chunk.
- * The total budget is decremented by the inflated size.
+ * The input is written in INFLATE_SLICE_BYTES slices interleaved with reads,
+ * so a zip bomb is never expanded far past the budget. The total budget is
+ * decremented by the inflated size.
  */
 export async function inflateZlib(input: Uint8Array, budget: InflateBudget): Promise<Uint8Array> {
   const ds = new DecompressionStream("deflate");
   const writer = ds.writable.getWriter();
-  // Errors surface on the reader side; keep the writer promises quiet.
-  writer.write(new Uint8Array(input)).catch(() => {});
-  writer.close().catch(() => {});
   const reader = ds.readable.getReader();
+  let stopped = false;
+  // Errors surface on the reader side; the pump only stops.
+  const pump = (async () => {
+    for (let at = 0; at < input.byteLength && !stopped; at += INFLATE_SLICE_BYTES) {
+      await writer.write(input.slice(at, at + INFLATE_SLICE_BYTES));
+    }
+    if (!stopped) await writer.close();
+  })().catch(() => {});
   const chunks: Uint8Array[] = [];
   let size = 0;
   try {
@@ -82,9 +97,14 @@ export async function inflateZlib(input: Uint8Array, budget: InflateBudget): Pro
       chunks.push(result.value);
     }
   } catch (e) {
+    stopped = true;
+    // Cancelling the readable errors the writable side: a pending write rejects
+    // and the pump ends without feeding more input.
     reader.cancel().catch(() => {});
+    writer.abort().catch(() => {});
     throw e;
   }
+  await pump;
   budget.remainingTotalBytes -= size;
   const out = new Uint8Array(size);
   let at = 0;

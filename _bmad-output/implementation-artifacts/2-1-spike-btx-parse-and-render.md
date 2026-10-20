@@ -1,6 +1,6 @@
 # Story 2.1: Spike — `.btx` parse and render
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -123,6 +123,7 @@ Claude Opus 5.5 (claude-opus-5-5)
 - Rendering bug found on the real files: sprinkler-tools #5 (CCITT image) rendered blank → pdf.js 6 needs `wasmUrl` for CCITT/JBIG2/JPX; fixed in `render.mjs`.
 - pdf.js warned "Optional content properties malformed" for Revu's string `/OC` → dropped in the render PDF only.
 - Local checks: typecheck, lint, `npm test` (83 files, 825 tests), build, check:pinned all pass.
+- Review fixes (2026-10-20): typecheck, lint, `npm test` (83 files, 847 tests), build pass; `npm run spike:btx` still parses and renders 138/138 items with no skipped item, every per-item PNG and contact sheet byte-identical to before the fixes; `--self-test` 5/5 pass at 0.00 %.
 - GitHub CI run 39357853752 (commit a6b357e): success (checks incl. the synthetic render harness test on Linux, e2e, gitleaks); Database workflow run 39357853791: success.
 
 ### Completion Notes List
@@ -138,6 +139,21 @@ Claude Opus 5.5 (claude-opus-5-5)
 - Harness `scripts/spike-btx/` (`ts-hooks.mjs` lets Node import `src/core` TypeScript via built-in type stripping; `render.mjs`, `image.mjs`, `reference.mjs`, `run.mjs`, `make-synthetic.mjs`). Report `docs/spikes/2-1-btx-report.md`: hand-written method/findings/decision around a harness-generated "Results" block.
 - Findings that differ from the story's notes: count measurements are `/Subtype /Polygon` (not `RL`; `RL` is the `BBMeasure` subtype); 21 items reference missing resources, 2 of them have no appearance at all; 60 members in 39 items need generated appearances (story estimated ~54).
 - Founder action: capture the Revu reference PDFs (report → "Reference capture"), then re-run `npm run spike:btx` for the pass rate.
+
+### Review Follow-ups (AI)
+
+High-effort code review of a6b357e, 10 findings, all fixed (each with a unit test):
+
+- [x] 1. `inflate.ts`: the input is written to `DecompressionStream` in 8 KB slices (`INFLATE_SLICE_BYTES`) interleaved with reads; on a budget overrun the reader is cancelled and the writer aborted, so a bomb is never expanded far past the budget (test with an expanding fake inflater: at most 4 slices fed of 1 MB).
+- [x] 2. `to-pdf.ts`: the `Converter` converts `BBObjPtr` targets from a work list instead of recursing through `ref() → value() → dict() → ref()` (20 000-long chain test; the old code throws `RangeError`).
+- [x] 3. Count limits in `limits.ts` with new codes: PDF values per file 1 000 000 (`pdf-too-many-nodes`), items 1 000 (`too-many-items`), Child per item/file 64/1 000 (`too-many-children`), Resources per item/file 4 096/32 768 (`too-many-resources`); ≥ 10x the real maxima (≈ 55 000 values, 66 items, 2/15 children, 394/1 773 resources). `readLiteralString`/`readHexString` write into a growable `Uint8Array` instead of `number[]`. Limits documented in the report's NFR31 table.
+- [x] 4. `btx.worker.ts`: error replies carry `code` when the error is a `BtxError`; `serializeWorkerError` unchanged.
+- [x] 5. `btx.worker.ts`: every message gets a reply; malformed requests get an error reply with the `reqId` echoed when it is a finite number, else `reqId: null`. `bytes` may be a `Uint8Array` or an `ArrayBuffer`.
+- [x] 6. `image.mjs` `compare()`: fails with "size differs" when the ink boxes differ by more than 5 % or 2 px (whichever is larger) in width or height, then scales the candidate uniformly (one factor, centred).
+- [x] 7. `parse.ts`: per-item failures (bad hex/zlib/PDF token, non-finite number, missing Raw, failed per-item Zod validation) skip that item with a warning naming the item (and child/resource) index and the reason; limits, XML structure, root and Title still fail the file. Non-finite numbers are rejected by the PDF tokenizer.
+- [x] 8. `parse.ts`: a missing `<Type>` on an item or Child is an item-level error ("Item 3 child 1: missing <Type>").
+- [x] 9. `btx.worker.ts`: `btxReplyTransfer(reply)` lists every byte buffer of the tool set (deduplicated; views that do not own their whole buffer are copied first) and the worker posts the result with it.
+- [x] 10. `run.mjs`: the self-reference layout moved to `reference.mjs` `layoutPlacements()`, which leaves out items without bounds and returns the reason; the harness adds it to the item's row.
 
 ### File List
 
@@ -167,6 +183,9 @@ Modified:
 - `_bmad-output/implementation-artifacts/sprint-status.yaml`
 - `_bmad-output/implementation-artifacts/2-1-spike-btx-parse-and-render.md`
 
+Modified by the review fixes: `src/core/btx/errors.ts`, `limits.ts`, `inflate.ts` (+ test), `pdf-object.ts` (+ test), `parse.ts` (+ test), `to-pdf.ts` (+ test), `src/workers/btx.worker.ts` (+ test), `scripts/spike-btx/image.mjs`, `reference.mjs`, `run.mjs`, `harness.test.mjs`, `docs/spikes/2-1-btx-report.md`.
+
 ### Change Log
 
 - 2026-10-20: Story 2.1 implemented: `.btx` parser + worker, generated appearances, one-page PDF builder, pdf.js render harness with reference intake and pixel diff, synthetic fixture, spike report (pass rate pending Revu references). Status → review.
+- 2026-10-20: Code review follow-ups 1–10 fixed (sliced inflate, iterative ref conversion, count limits, BtxError code + replies for malformed requests + transfer list in the worker, size check in the image diff, per-item failures, missing `<Type>`, self-reference layout without bounds). Status → done.

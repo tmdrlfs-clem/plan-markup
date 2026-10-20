@@ -27,7 +27,14 @@ export type PdfObject =
 export const REF_PREFIX = "BBObjPtr_";
 const REF_NAME = /^BBObjPtr_([A-Z]{16})$/;
 
-export type PdfParseOptions = { maxDepth?: number };
+/** Running count of PDF values one file may still parse (shared across values). */
+export type PdfNodeBudget = { remaining: number; max: number };
+
+export function createPdfNodeBudget(max: number = BTX_LIMITS.maxPdfNodes): PdfNodeBudget {
+  return { remaining: max, max };
+}
+
+export type PdfParseOptions = { maxDepth?: number; nodeBudget?: PdfNodeBudget };
 
 // ---------------------------------------------------------------- helpers
 
@@ -146,14 +153,35 @@ function malformed(what: string, pos: number): BtxError {
   return new BtxError("pdf-malformed", `PDF object: ${what} at offset ${pos}`);
 }
 
+/** Growable byte buffer (no number[] per byte). */
+class ByteSink {
+  private buf = new Uint8Array(64);
+  private len = 0;
+
+  push(v: number): void {
+    if (this.len === this.buf.length) {
+      const next = new Uint8Array(this.buf.length * 2);
+      next.set(this.buf);
+      this.buf = next;
+    }
+    this.buf[this.len++] = v;
+  }
+
+  bytes(): Uint8Array {
+    return this.buf.slice(0, this.len);
+  }
+}
+
 class Parser {
   private pos = 0;
   private readonly b: Uint8Array;
   private readonly maxDepth: number;
+  private readonly nodes: PdfNodeBudget;
 
-  constructor(bytes: Uint8Array, maxDepth: number) {
+  constructor(bytes: Uint8Array, maxDepth: number, nodes: PdfNodeBudget) {
     this.b = bytes;
     this.maxDepth = maxDepth;
+    this.nodes = nodes;
   }
 
   get offset(): number {
@@ -198,7 +226,7 @@ class Parser {
     const b = this.b;
     const start = this.pos;
     this.pos++; // '('
-    const out: number[] = [];
+    const out = new ByteSink();
     let depth = 1;
     while (this.pos < b.length) {
       const c = b[this.pos++]!;
@@ -237,7 +265,7 @@ class Parser {
       if (c === 0x28) depth++;
       else if (c === 0x29) {
         depth--;
-        if (depth === 0) return { kind: "string", bytes: Uint8Array.from(out), hex: false };
+        if (depth === 0) return { kind: "string", bytes: out.bytes(), hex: false };
       } else if (c === 0x0d) {
         // EOL inside a literal string reads as LF
         if (b[this.pos] === 0x0a) this.pos++;
@@ -252,14 +280,13 @@ class Parser {
   private readHexString(): PdfString {
     const start = this.pos;
     this.pos++; // '<'
-    const digits: number[] = [];
+    const out = new ByteSink();
+    let high = -1; // pending high nibble
     while (this.pos < this.b.length) {
       const c = this.b[this.pos++]!;
       if (c === 0x3e) {
-        if (digits.length % 2 === 1) digits.push(0);
-        const bytes = new Uint8Array(digits.length / 2);
-        for (let i = 0; i < bytes.length; i++) bytes[i] = (digits[2 * i]! << 4) | digits[2 * i + 1]!;
-        return { kind: "string", bytes, hex: true };
+        if (high >= 0) out.push(high << 4); // odd digit count: last digit is followed by 0
+        return { kind: "string", bytes: out.bytes(), hex: true };
       }
       if (WS.has(c)) continue;
       const n =
@@ -268,7 +295,11 @@ class Parser {
         : c >= 0x61 && c <= 0x66 ? c - 0x57
         : -1;
       if (n < 0) throw malformed("bad hex string", this.pos - 1);
-      digits.push(n);
+      if (high < 0) high = n;
+      else {
+        out.push((high << 4) | n);
+        high = -1;
+      }
     }
     throw malformed("unterminated hex string", start);
   }
@@ -281,6 +312,9 @@ class Parser {
 
   /** One object at the current position. Streams are handled by parseValue. */
   readObject(depth: number): PdfObject {
+    if (--this.nodes.remaining < 0) {
+      throw new BtxError("pdf-too-many-nodes", `More than ${this.nodes.max} PDF values in one file`);
+    }
     this.skipWs();
     const b = this.b;
     if (this.pos >= b.length) throw malformed("unexpected end", this.pos);
@@ -316,7 +350,11 @@ class Parser {
     if (word === "true") return true;
     if (word === "false") return false;
     if (word === "null") return null;
-    if (/^[+-]?(\d+\.?\d*|\.\d+)$/.test(word)) return Number(word);
+    if (/^[+-]?(\d+\.?\d*|\.\d+)$/.test(word)) {
+      const n = Number(word);
+      if (!Number.isFinite(n)) throw malformed("number out of range", start);
+      return n;
+    }
     throw malformed("unknown token", start);
   }
 
@@ -405,10 +443,11 @@ class Parser {
 
 /**
  * Parses one PDF object (or dictionary + stream) from `bytes`. Trailing
- * whitespace is allowed; any other trailing content is an error.
+ * whitespace is allowed; any other trailing content is an error. Every value
+ * parsed is charged to `nodeBudget` (pass one budget for all values of a file).
  */
 export function parsePdfObject(bytes: Uint8Array, options: PdfParseOptions = {}): PdfObject {
-  const p = new Parser(bytes, options.maxDepth ?? BTX_LIMITS.maxPdfDepth);
+  const p = new Parser(bytes, options.maxDepth ?? BTX_LIMITS.maxPdfDepth, options.nodeBudget ?? createPdfNodeBudget());
   const value = p.parseValue();
   if (!p.atEnd()) throw malformed("trailing content", p.offset);
   return value;

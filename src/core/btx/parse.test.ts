@@ -159,19 +159,105 @@ describe("parseBtx structure and limits", () => {
     expect(await code(parseBtx(btx(item(raw))))).toBe("pdf-too-deep");
   });
 
-  it("rejects a non-tool-set root and a Raw that is not a dictionary", async () => {
+  it("rejects a non-tool-set root", async () => {
     expect(await code(parseBtx(enc("<Other/>")))).toBe("structure-invalid");
-    expect(await code(parseBtx(btx(item("[1 2]"))))).toBe("structure-invalid");
   });
 
-  it("never puts file content in error messages", async () => {
+  it("never puts file content in error messages or warnings", async () => {
+    const set = await parseBtx(btx(item("<</Subtype/Circle/Secret(client-name) 1 0 R>>")));
+    expect(set.items).toEqual([]);
+    expect(set.warnings.join(" ")).not.toContain("client-name");
     try {
-      await parseBtx(btx(item("<</Subtype/Circle/Secret(client-name) 1 0 R>>")));
+      await parseBtx(btx(item("<</Subtype/Circle/Secret(client-name)>>")), { limits: { maxPdfNodes: 2 } });
       throw new Error("expected a failure");
     } catch (e) {
       expect(e).toBeInstanceOf(BtxError);
       expect((e as Error).message).not.toContain("client-name");
     }
+  });
+});
+
+describe("parseBtx per-item failures", () => {
+  const good = item("<</Subtype/Circle/Rect[0 0 1 1]>>");
+
+  async function skipped(bad: string): Promise<string[]> {
+    const set = await parseBtx(btx(good + bad + good));
+    expect(set.items).toHaveLength(2);
+    return set.warnings;
+  }
+
+  it("skips an item whose Raw is not a dictionary and names it", async () => {
+    expect(await skipped(item("[1 2]"))).toEqual(["Item 1: Raw is not a dictionary (item skipped)"]);
+  });
+
+  it("skips an item with a bad PDF token", async () => {
+    const [w] = await skipped(item("<</Subtype/Circle/A foo>>"));
+    expect(w).toMatch(/^Item 1: PDF object: unknown token at offset \d+ \(item skipped\)$/);
+  });
+
+  it("skips an item with a non-finite number (rejected by the tokenizer)", async () => {
+    const [w] = await skipped(item(`<</Subtype/Circle/Rect[0 0 ${"9".repeat(400)} 1]>>`));
+    expect(w).toMatch(/^Item 1: PDF object: number out of range/);
+  });
+
+  it("skips an item whose X is not a number", async () => {
+    const bad = good.replace("<X>0</X>", "<X>1e999</X>");
+    expect(await skipped(bad)).toEqual(["Item 1: X is not a number (item skipped)"]);
+  });
+
+  it("skips an item with an undecodable value or a bad resource and names the resource", async () => {
+    const badHex = good.replace(/<Raw>[0-9a-f]+<\/Raw>/, "<Raw>zz</Raw>");
+    expect((await skipped(badHex))[0]).toMatch(/^Item 1: Hex value has a non-hex character/);
+    const badResource = item("<</Subtype/Circle/Rect[0 0 1 1]>>", resource("AAAAAAAAAAAAAAAA", "<</A>>"));
+    expect((await skipped(badResource))[0]).toMatch(/^Item 1 resource 0: PDF object: /);
+  });
+
+  it("skips an item or child without <Type> and names it", async () => {
+    expect(await skipped(good.replace("<Type>T</Type>", ""))).toEqual(["Item 1: missing <Type> (item skipped)"]);
+    const child = `<Child><Raw>${hexZ("<</Subtype/Circle/Rect[0 0 1 1]>>")}</Raw><X>0</X><Y>0</Y></Child>`;
+    const withChild = good.replace("<Mode>", `${child}<Mode>`);
+    expect(await skipped(withChild)).toEqual(["Item 1 child 0: missing <Type> (item skipped)"]);
+  });
+
+  it("still fails the whole file on limits", async () => {
+    const raw = `<</Subtype/Circle/X${"[".repeat(70)}${"]".repeat(70)}>>`;
+    expect(await code(parseBtx(btx(good + item(raw))))).toBe("pdf-too-deep");
+  });
+});
+
+describe("parseBtx count limits", () => {
+  const good = item("<</Subtype/Circle/Rect[0 0 1 1]>>");
+  const child = `<Child><Type>T</Type><Raw>${hexZ("<</Subtype/Circle/Rect[0 0 1 1]>>")}</Raw><X>0</X><Y>0</Y></Child>`;
+  const withChildren = (n: number) => good.replace("<Mode>", `${child.repeat(n)}<Mode>`);
+  const withResources = (n: number) =>
+    item(
+      "<</Subtype/Circle/Rect[0 0 1 1]>>",
+      Array.from({ length: n }, (_, i) => resource(`R${String(i).padStart(15, "A")}`, "<<>>")).join(""),
+    );
+
+  it("rejects more PDF values per file than maxPdfNodes", async () => {
+    // One item = dict + Subtype + Rect array + 4 numbers = 7 values.
+    expect((await parseBtx(btx(good + good), { limits: { maxPdfNodes: 14 } })).items).toHaveLength(2);
+    expect(await code(parseBtx(btx(good + good), { limits: { maxPdfNodes: 13 } }))).toBe("pdf-too-many-nodes");
+  });
+
+  it("rejects more items than maxItems", async () => {
+    expect(await code(parseBtx(btx(good.repeat(3)), { limits: { maxItems: 2 } }))).toBe("too-many-items");
+  });
+
+  it("rejects more Child elements per item and per file than allowed", async () => {
+    expect((await parseBtx(btx(withChildren(2)), { limits: { maxChildrenPerItem: 2 } })).items).toHaveLength(1);
+    expect(await code(parseBtx(btx(withChildren(3)), { limits: { maxChildrenPerItem: 2 } }))).toBe("too-many-children");
+    expect(await code(parseBtx(btx(withChildren(2).repeat(2)), { limits: { maxChildrenPerFile: 3 } }))).toBe(
+      "too-many-children",
+    );
+  });
+
+  it("rejects more Resources per item and per file than allowed", async () => {
+    expect(await code(parseBtx(btx(withResources(3)), { limits: { maxResourcesPerItem: 2 } }))).toBe("too-many-resources");
+    expect(await code(parseBtx(btx(withResources(2).repeat(2)), { limits: { maxResourcesPerFile: 3 } }))).toBe(
+      "too-many-resources",
+    );
   });
 });
 

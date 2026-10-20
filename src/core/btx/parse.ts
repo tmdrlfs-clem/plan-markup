@@ -8,16 +8,18 @@
 
 import { z } from "zod";
 
-import { BtxError } from "./errors";
+import { BtxError, type BtxErrorCode } from "./errors";
 import { createInflateBudget, decodeHexValue, decodeText, type InflateBudget } from "./inflate";
 import { BTX_LIMITS, type BtxLimits } from "./limits";
 import {
   collectRefs,
+  createPdfNodeBudget,
   getName,
   getText,
   isDict,
   parsePdfObject,
   type PdfDict,
+  type PdfNodeBudget,
   type PdfObject,
 } from "./pdf-object";
 import { readXml, type XmlElement } from "./xml";
@@ -124,81 +126,143 @@ function childText(el: XmlElement, name: string): string | undefined {
   return c?.text.trim();
 }
 
-function parseNumber(text: string | undefined, what: string, itemNo: number): number {
+function parseNumber(text: string | undefined, what: string, where: string): number {
   if (text === undefined || text === "") return 0;
   const n = Number(text);
-  if (!Number.isFinite(n)) throw structure(`Item ${itemNo}: ${what} is not a number`);
+  if (!Number.isFinite(n)) throw structure(`${where}: ${what} is not a number`);
   return n;
+}
+
+/**
+ * Errors that only invalidate the item they occur in: the item is skipped with
+ * a warning. Every other code (limits, XML structure, root) fails the file.
+ */
+const ITEM_LEVEL_CODES: ReadonlySet<BtxErrorCode> = new Set<BtxErrorCode>([
+  "hex-invalid",
+  "inflate-failed",
+  "pdf-malformed",
+  "structure-invalid",
+]);
+
+function isItemLevel(e: unknown): e is BtxError {
+  return e instanceof BtxError && ITEM_LEVEL_CODES.has(e.code);
+}
+
+/** An item-level error with its location ("Item 3 child 1: ..."); other values unchanged. */
+function located(e: unknown, where: string): unknown {
+  if (!isItemLevel(e) || e.message.startsWith("Item ")) return e;
+  return new BtxError(e.code, `${where}: ${e.message}`);
 }
 
 type Ctx = {
   budget: InflateBudget;
+  nodes: PdfNodeBudget;
   limits: BtxLimits;
   warnings: string[];
+  childrenLeft: number;
+  resourcesLeft: number;
 };
 
 async function decodeAnnotation(
   el: XmlElement,
   role: "root" | "child",
-  itemNo: number,
+  where: string,
   ctx: Ctx,
 ): Promise<BtxAnnotation> {
-  const rawHex = childText(el, "Raw");
-  if (!rawHex) throw structure(`Item ${itemNo}: annotation without Raw`);
-  const dict = parsePdfObject(await decodeHexValue(rawHex, ctx.budget, ctx.limits.maxHexChars), {
-    maxDepth: ctx.limits.maxPdfDepth,
-  });
-  if (!isDict(dict)) throw structure(`Item ${itemNo}: Raw is not a dictionary`);
-  const indexText = childText(el, "Index");
-  return {
-    type: childText(el, "Type") ?? "",
-    subtype: getName(dict, "Subtype"),
-    subject: getText(dict, "Subj"),
-    dict,
-    x: parseNumber(childText(el, "X"), "X", itemNo),
-    y: parseNumber(childText(el, "Y"), "Y", itemNo),
-    index: indexText ? Math.trunc(parseNumber(indexText, "Index", itemNo)) : undefined,
-    role,
-  };
+  try {
+    const type = childText(el, "Type");
+    if (!type) throw structure(`${where}: missing <Type>`);
+    const rawHex = childText(el, "Raw");
+    if (!rawHex) throw structure(`${where}: annotation without Raw`);
+    const dict = parsePdfObject(await decodeHexValue(rawHex, ctx.budget, ctx.limits.maxHexChars), {
+      maxDepth: ctx.limits.maxPdfDepth,
+      nodeBudget: ctx.nodes,
+    });
+    if (!isDict(dict)) throw structure(`${where}: Raw is not a dictionary`);
+    const indexText = childText(el, "Index");
+    return {
+      type,
+      subtype: getName(dict, "Subtype"),
+      subject: getText(dict, "Subj"),
+      dict,
+      x: parseNumber(childText(el, "X"), "X", where),
+      y: parseNumber(childText(el, "Y"), "Y", where),
+      index: indexText ? Math.trunc(parseNumber(indexText, "Index", where)) : undefined,
+      role,
+    };
+  } catch (e) {
+    throw located(e, where);
+  }
 }
 
 const ITEM_ELEMENTS = new Set(["Resources", "Name", "Type", "Raw", "X", "Y", "Index", "Child", "Mode"]);
 const CHILD_ELEMENTS = new Set(["Type", "Raw", "X", "Y", "Index"]);
 
+/** Count limits for one item; they fail the whole file (checked before decoding). */
+function checkItemCounts(el: XmlElement, itemNo: number, ctx: Ctx): void {
+  const { limits } = ctx;
+  const children = el.children.filter((c) => c.name === "Child").length;
+  const resources = el.children.filter((c) => c.name === "Resources").length;
+  if (children > limits.maxChildrenPerItem) {
+    throw new BtxError("too-many-children", `Item ${itemNo}: more than ${limits.maxChildrenPerItem} Child elements`);
+  }
+  ctx.childrenLeft -= children;
+  if (ctx.childrenLeft < 0) {
+    throw new BtxError("too-many-children", `More than ${limits.maxChildrenPerFile} Child elements in the file`);
+  }
+  if (resources > limits.maxResourcesPerItem) {
+    throw new BtxError("too-many-resources", `Item ${itemNo}: more than ${limits.maxResourcesPerItem} Resources`);
+  }
+  ctx.resourcesLeft -= resources;
+  if (ctx.resourcesLeft < 0) {
+    throw new BtxError("too-many-resources", `More than ${limits.maxResourcesPerFile} Resources in the file`);
+  }
+}
+
 async function decodeItem(el: XmlElement, itemNo: number, ctx: Ctx): Promise<BtxItem> {
+  const where = `Item ${itemNo}`;
   const resources = new Map<string, PdfObject>();
   const annotations: BtxAnnotation[] = [];
+  const warnings: string[] = [];
   for (const c of el.children) {
-    if (!ITEM_ELEMENTS.has(c.name)) {
-      ctx.warnings.push(`Item ${itemNo}: unknown element <${c.name}> ignored`);
-    }
+    if (!ITEM_ELEMENTS.has(c.name)) warnings.push(`${where}: unknown element <${c.name}> ignored`);
   }
+  let resourceNo = 0;
   for (const r of el.children.filter((c) => c.name === "Resources")) {
-    const idHex = childText(r, "ID");
-    const dataHex = childText(r, "Data");
-    if (!idHex || !dataHex) throw structure(`Item ${itemNo}: Resources without ID or Data`);
-    const id = decodeText(await decodeHexValue(idHex, ctx.budget, ctx.limits.maxHexChars)).trim();
-    const data = await decodeHexValue(dataHex, ctx.budget, ctx.limits.maxHexChars);
-    if (resources.has(id)) ctx.warnings.push(`Item ${itemNo}: duplicate resource id`);
-    resources.set(id, parsePdfObject(data, { maxDepth: ctx.limits.maxPdfDepth }));
-  }
-  annotations.push(await decodeAnnotation(el, "root", itemNo, ctx));
-  for (const child of el.children.filter((c) => c.name === "Child")) {
-    for (const cc of child.children) {
-      if (!CHILD_ELEMENTS.has(cc.name)) {
-        ctx.warnings.push(`Item ${itemNo}: unknown element <${cc.name}> in Child ignored`);
-      }
+    const resourceWhere = `${where} resource ${resourceNo++}`;
+    try {
+      const idHex = childText(r, "ID");
+      const dataHex = childText(r, "Data");
+      if (!idHex || !dataHex) throw structure(`${resourceWhere}: Resources without ID or Data`);
+      const id = decodeText(await decodeHexValue(idHex, ctx.budget, ctx.limits.maxHexChars)).trim();
+      const data = await decodeHexValue(dataHex, ctx.budget, ctx.limits.maxHexChars);
+      if (resources.has(id)) warnings.push(`${where}: duplicate resource id`);
+      resources.set(id, parsePdfObject(data, { maxDepth: ctx.limits.maxPdfDepth, nodeBudget: ctx.nodes }));
+    } catch (e) {
+      throw located(e, resourceWhere);
     }
-    annotations.push(await decodeAnnotation(child, "child", itemNo, ctx));
   }
-  return {
+  annotations.push(await decodeAnnotation(el, "root", where, ctx));
+  let childNo = 0;
+  for (const child of el.children.filter((c) => c.name === "Child")) {
+    const childWhere = `${where} child ${childNo++}`;
+    for (const cc of child.children) {
+      if (!CHILD_ELEMENTS.has(cc.name)) warnings.push(`${childWhere}: unknown element <${cc.name}> ignored`);
+    }
+    annotations.push(await decodeAnnotation(child, "child", childWhere, ctx));
+  }
+  const item: BtxItem = {
     name: childText(el, "Name") ?? "",
-    type: childText(el, "Type") ?? "",
+    type: annotations[0]!.type,
     mode: childText(el, "Mode") || undefined,
     annotations,
     resources,
     missingRefs: resolveRefs(annotations, resources),
   };
+  // Validated per item, so a failure names the item instead of failing the file.
+  if (!itemSchema.safeParse(item).success) throw structure(`${where}: failed validation`);
+  ctx.warnings.push(...warnings);
+  return item;
 }
 
 /**
@@ -225,7 +289,11 @@ export function resolveRefs(annotations: Array<{ dict: PdfDict }>, resources: Ma
   return [...missing].sort();
 }
 
-/** Parses a .btx file. Throws BtxError on limit or structure violations. */
+/**
+ * Parses a .btx file. Throws BtxError on file-level problems (limits, XML
+ * structure, root, Title). A malformed item is skipped with a warning naming
+ * its index and the reason; the other items are kept.
+ */
 export async function parseBtx(bytes: Uint8Array, options: ParseBtxOptions = {}): Promise<BtxToolSet> {
   const limits: BtxLimits = { ...BTX_LIMITS, ...options.limits };
   if (bytes.byteLength > limits.maxFileBytes) {
@@ -234,23 +302,40 @@ export async function parseBtx(bytes: Uint8Array, options: ParseBtxOptions = {})
   const text = new TextDecoder("utf-8").decode(bytes);
   const root = readXml(text, { maxDepth: limits.maxXmlDepth });
   if (root.name !== "BluebeamRevuToolSet") throw structure("Not a Revu tool set (unexpected root element)");
-  const ctx: Ctx = { budget: createInflateBudget(limits), limits, warnings: [] };
+  const ctx: Ctx = {
+    budget: createInflateBudget(limits),
+    nodes: createPdfNodeBudget(limits.maxPdfNodes),
+    limits,
+    warnings: [],
+    childrenLeft: limits.maxChildrenPerFile,
+    resourcesLeft: limits.maxResourcesPerFile,
+  };
+  const itemCount = root.children.filter((c) => c.name === "ToolChestItem").length;
+  if (itemCount > limits.maxItems) {
+    throw new BtxError("too-many-items", `More than ${limits.maxItems} items in the file`);
+  }
 
   let title = "";
   const items: BtxItem[] = [];
+  let itemNo = 0;
   for (const el of root.children) {
     if (el.name === "Title") {
       title = decodeText(await decodeHexValue(el.text.trim(), ctx.budget, limits.maxHexChars));
     } else if (el.name === "ToolChestItem") {
-      items.push(await decodeItem(el, items.length, ctx));
+      // Item numbers count every ToolChestItem in the file, skipped ones included.
+      const n = itemNo++;
+      checkItemCounts(el, n, ctx);
+      try {
+        items.push(await decodeItem(el, n, ctx));
+      } catch (e) {
+        if (!isItemLevel(e)) throw e;
+        ctx.warnings.push(`${e.message} (item skipped)`);
+      }
     } else {
       ctx.warnings.push(`Unknown element <${el.name}> ignored`);
     }
   }
-  const result: BtxToolSet = { title, items, warnings: ctx.warnings };
-  const checked = btxToolSetSchema.safeParse(result);
-  if (!checked.success) throw structure("Parsed tool set failed validation");
-  return result;
+  return { title, items, warnings: ctx.warnings };
 }
 
 // ---------------------------------------------------------------- plain conversion
