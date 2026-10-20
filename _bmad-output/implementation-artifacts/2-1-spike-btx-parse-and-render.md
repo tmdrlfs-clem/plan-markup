@@ -127,6 +127,8 @@ Claude Opus 5.5 (claude-opus-5-5)
 
 ### Completion Notes List
 
+- Founder decisions 2026-10-20 (after reviewing the contact sheets): (1) Revu reference capture and the measured pass rate are waived — fidelity accepted by eye, AC 4/6 pass-rate parts closed by founder review; (2) ink width uniform and user-selectable; (3) bundle Carlito for Calibri. Recorded in the report and in Story 7.5.
+
 - Parser (`src/core/btx/`): strict own XML reader, hex + zlib via `DecompressionStream` with per-chunk budgets, PDF object parser (dict/array/name `#xx`/literal + hex strings/UTF-16BE/numbers/streams with `/Length` + `endstream` fallback), `BBObjPtr_*` → `{ kind: "ref", ref }`, iterative ref resolution with missing ids per item, Zod-validated `BtxToolSet`. All NFR31 limits in `limits.ts`, each tripped by a unit test with a typed `BtxError` code.
 - Data model: PDF dictionaries are `{ kind: "dict", entries: [key, value][] }` (ordered, no prototype keys, structured-clone friendly); annotations carry `role`, `x`, `y`, `index`, `subtype`, `subject`.
 - Placement sign convention: every member's `/Rect` origin is at (-X, -Y) (root included), verified on concentric ring + dot groups in the real files; recorded in the report.

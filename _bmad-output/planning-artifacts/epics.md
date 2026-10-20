@@ -1241,6 +1241,7 @@ So that my drawings stay consistent.
 **Then** each item converts to a native tool (stamp, device, markup type) that renders within the pixel-diff threshold of its Revu reference PNG and can be placed (A9)
 **And** ≥95 % of items pass (NFR10); failures appear in the import report with reasons
 **And** synthetic fixtures with unit tests are committed for each supported item kind
+**And** (founder decisions 2026-10-20, `docs/spikes/2-1-btx-report.md`) imported ink drops Revu pressure and draws at a uniform, user-selectable stroke width; FreeText asking for Calibri renders with the bundled Carlito (SIL OFL); without Revu reference PNGs the fidelity check is the founder's review of contact sheets
 
 ### Story 7.6: Export and import tool sets in our format
 
