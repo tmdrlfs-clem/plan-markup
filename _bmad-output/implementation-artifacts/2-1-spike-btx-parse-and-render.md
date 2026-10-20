@@ -1,6 +1,6 @@
 # Story 2.1: Spike — `.btx` parse and render
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -22,32 +22,32 @@ so that the Tool Chest import (FR42) is feasible at ≥95 % fidelity.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: XML reader** (AC: 1, 2)
-  - [ ] `src/core/btx/xml.ts`: a small, strict reader for the `.btx` shape only (no general XML library; `DOMParser` does not exist in Web Workers). Strip a UTF-8 BOM, accept `<?xml ...?>`, reject DOCTYPE/ENTITY/other PIs/CDATA, decode the five predefined entities and numeric character references only. Produce elements `{ name, attrs, children, text }` with the depth limit.
-  - [ ] Expected structure: `BluebeamRevuToolSet[Version]` → `Title` (hex) + `ToolChestItem[Version]*`. Item children: `Resources*` (`ID` hex, `Data` hex), `Name` (plain), `Type` (plain, e.g. `Bluebeam.PDF.Annotations.AnnotationBRXStamp`), `Raw` (hex), `X`, `Y`, `Index` (plain numbers, only on group members), `Child*` (same `Type/Raw/X/Y/Index` shape), `Mode` (plain, e.g. `drawing`). Unknown elements are kept as warnings, not errors.
-- [ ] **Task 2: Hex + zlib** (AC: 1, 2)
-  - [ ] `src/core/btx/inflate.ts`: hex → bytes (reject odd length / non-hex), then zlib inflate with `DecompressionStream("deflate")` (zlib-wrapped; available in Chrome, Node ≥ 18 and workers — no new dependency), reading chunks and aborting as soon as the per-value or per-file budget is exceeded. Text values decode as UTF-8 if valid, else Latin-1. Async API.
-- [ ] **Task 3: PDF object parser** (AC: 1, 2)
-  - [ ] `src/core/btx/pdf-object.ts`: tokenizer + parser for the PDF object syntax used in `Raw` and `Data`: dictionaries, arrays, names (with `#xx`), literal strings (escapes, balanced parens), hex strings (`<feff…>` → UTF-16BE), numbers, booleans, null, and `stream … endstream` after a dictionary (bytes taken by `/Length`, falling back to the `endstream` marker; there is trailing padding before `endstream`). References are names of the form `/BBObjPtr_<16 uppercase letters>`; represent them as `{ ref: "<ID>" }`. Depth limit.
-  - [ ] `src/core/btx/parse.ts`: `parseBtx(bytes: Uint8Array): Promise<BtxToolSet>` → `{ title, items: BtxItem[], warnings }`, `BtxItem = { name, type, mode, annotations: BtxAnnotation[] /* root first, then children with x/y/index */, resources: Map<id, PdfObject> }`. Validate the result with Zod (architecture: Zod at every parser boundary). Detect missing references and report them per item instead of throwing.
-- [ ] **Task 4: Worker entry** (AC: 1)
-  - [ ] `src/workers/btx.worker.ts`: `{ type: "parse", reqId, bytes }` → `{ type: "result", reqId, toolSet }` (structured-clone friendly: plain objects/arrays/`Uint8Array`, no `Map`) or `{ type: "error", reqId, error: serializeWorkerError(e) }` (`src/core/worker/error.ts`). Transfer the input buffer. A unit test calls the message handler function directly (no real Worker in Vitest).
-- [ ] **Task 5: Item → one-page PDF** (AC: 3)
-  - [ ] `src/core/btx/to-pdf.ts`: build a PDF with `@cantoo/pdf-lib` 2.11.1 (`PDFDocument.create`, `context.register`/`context.obj`, raw stream objects): convert every resource into an indirect object (map `BBObjPtr_X` → `PDFRef`), write the annotation dictionaries into the page `/Annots` with their `/AP /N` pointing at the converted XObject. Place the root at its `/Rect`; children at root origin + `(X, Y)` (verify the sign convention against a reference and record it in the report). Page box = union of rects + 4 pt margin. Drop Revu `Temp*`/`BB*` private keys only where they break viewers; keep everything else.
-  - [ ] `src/core/btx/appearance.ts`: generate `/AP /N` form XObjects for annotations without one: Square/Circle (stroke `/C`, fill `/IC`, width `/BS /W`, dash `/BS /D`, inset `/RD`, ellipse with 4 Béziers), Line (`/L`, line endings: none and the ones present in the fixtures), PolyLine (`/Vertices`), Ink (`/InkList`), Square with `/Image` (draw the referenced image XObject into the rect), FreeText (`/DA` font + `/Contents`, default Helvetica). Line join/cap round for Ink. Width 0 = no stroke.
-- [ ] **Task 6: Render + harness** (AC: 3, 4, 6)
-  - [ ] `scripts/spike-btx/render.mjs`: load the PDF with `pdfjs-dist/legacy/build/pdf.mjs` in Node, `isEvalSupported: false`, render with `@napi-rs/canvas` (already in `node_modules`; add it as an explicit devDependency at the installed version, exact pin) at 4 px per pt (≈ 288 dpi) with `annotationMode: AnnotationMode.ENABLE`, white background. Same code path the browser will use (pdf.js on a canvas); only the canvas factory differs.
-  - [ ] `scripts/spike-btx/run.mjs` (`npm run spike:btx`): parse each private `.btx`, render all items to `fixtures/private/btx/out/<set>/<nnn>-<slug>.png` and a contact sheet `<set>-sheet.png` (grid with index labels), then diff against references if present (Task 7) and write the report. Exit 0 even when items fail (it is a measurement), non-zero only on crashes.
-  - [ ] Pixel diff: add `pixelmatch` (latest stable, exact pin, devDependency) and `pngjs` if needed. Before diffing, trim both images to their non-white bounding box and scale the candidate to the reference size. Pass = diff ≤ **2 %** of the reference's non-white pixels with pixelmatch `threshold: 0.1` and anti-aliasing ignored. Keep the threshold in one constant and print the diff % per item so the founder can judge borderline cases; record the chosen value in the report.
-- [ ] **Task 7: Reference intake** (AC: 4)
-  - [ ] Read Revu-saved placement PDFs `fixtures/private/btx/reference/<set>.pdf` (see Dev Notes → Reference capture). Take the page annotations in `/Annots` order, match them to items in tool-chest order (group items = one placed group), and render **each reference annotation alone** (hide the others) with pdf.js at the same scale → reference PNG. Revu writes an appearance stream for every placed markup, so this is Revu's own drawing even for items that had no `/AP` in the `.btx`.
-  - [ ] If a `fixtures/private/btx/reference/<set>/<nnn>.png` exists (direct Revu image export), it wins over the PDF-derived one.
-  - [ ] Report a count mismatch (placed annotations vs items) clearly and match by `/Subj` + type as a fallback.
-- [ ] **Task 8: Synthetic fixture + tests** (AC: 2, 5, 7)
-  - [ ] `scripts/spike-btx/make-synthetic.mjs` writes `fixtures/btx/synthetic.btx` (deterministic; Node `zlib.deflateSync`). Content: a stamp with `/AP` → form XObject that uses a nested form and a TrueType font resource with standard 14 base font, a circle without AP (dashed border, fill), a two-member group (`Child` with X/Y/Index), a polyline, a line with an arrow ending. Names made up ("Synthetic head", "Synthetic sounder").
-  - [ ] Unit tests (node env, co-located): xml reader (structure, BOM, entities, DOCTYPE rejected, depth), inflate (budgets, bad hex), pdf-object (each token kind, stream with padding, `#xx` names, UTF-16 strings, depth), parse of `synthetic.btx` (5 items, types, refs resolved, group children), to-pdf (output loads in pdf-lib, `/Annots` count, refs resolved), appearance (operators for circle/line/ink, width 0 → no stroke). One test renders the synthetic items with pdf.js + `@napi-rs/canvas` and asserts non-empty pixels — skip it automatically if the native canvas cannot load.
-- [ ] **Task 9: Report** (AC: 4, 6)
-  - [ ] `docs/spikes/2-1-btx-report.md`: method, limits chosen, findings about the format (what this story learned beyond `docs/feature-inventory.md`), per-set and overall pass rate, failing items with reasons, decision (go / change), recommended FR42 import design (vector tool vs image-stamp fallback, what metadata to keep: subject, colours, size, group structure), open questions. No client content beyond tool names/subjects.
+- [x] **Task 1: XML reader** (AC: 1, 2)
+  - [x] `src/core/btx/xml.ts`: a small, strict reader for the `.btx` shape only (no general XML library; `DOMParser` does not exist in Web Workers). Strip a UTF-8 BOM, accept `<?xml ...?>`, reject DOCTYPE/ENTITY/other PIs/CDATA, decode the five predefined entities and numeric character references only. Produce elements `{ name, attrs, children, text }` with the depth limit.
+  - [x] Expected structure: `BluebeamRevuToolSet[Version]` → `Title` (hex) + `ToolChestItem[Version]*`. Item children: `Resources*` (`ID` hex, `Data` hex), `Name` (plain), `Type` (plain, e.g. `Bluebeam.PDF.Annotations.AnnotationBRXStamp`), `Raw` (hex), `X`, `Y`, `Index` (plain numbers, only on group members), `Child*` (same `Type/Raw/X/Y/Index` shape), `Mode` (plain, e.g. `drawing`). Unknown elements are kept as warnings, not errors.
+- [x] **Task 2: Hex + zlib** (AC: 1, 2)
+  - [x] `src/core/btx/inflate.ts`: hex → bytes (reject odd length / non-hex), then zlib inflate with `DecompressionStream("deflate")` (zlib-wrapped; available in Chrome, Node ≥ 18 and workers — no new dependency), reading chunks and aborting as soon as the per-value or per-file budget is exceeded. Text values decode as UTF-8 if valid, else Latin-1. Async API.
+- [x] **Task 3: PDF object parser** (AC: 1, 2)
+  - [x] `src/core/btx/pdf-object.ts`: tokenizer + parser for the PDF object syntax used in `Raw` and `Data`: dictionaries, arrays, names (with `#xx`), literal strings (escapes, balanced parens), hex strings (`<feff…>` → UTF-16BE), numbers, booleans, null, and `stream … endstream` after a dictionary (bytes taken by `/Length`, falling back to the `endstream` marker; there is trailing padding before `endstream`). References are names of the form `/BBObjPtr_<16 uppercase letters>`; represent them as `{ ref: "<ID>" }`. Depth limit.
+  - [x] `src/core/btx/parse.ts`: `parseBtx(bytes: Uint8Array): Promise<BtxToolSet>` → `{ title, items: BtxItem[], warnings }`, `BtxItem = { name, type, mode, annotations: BtxAnnotation[] /* root first, then children with x/y/index */, resources: Map<id, PdfObject> }`. Validate the result with Zod (architecture: Zod at every parser boundary). Detect missing references and report them per item instead of throwing.
+- [x] **Task 4: Worker entry** (AC: 1)
+  - [x] `src/workers/btx.worker.ts`: `{ type: "parse", reqId, bytes }` → `{ type: "result", reqId, toolSet }` (structured-clone friendly: plain objects/arrays/`Uint8Array`, no `Map`) or `{ type: "error", reqId, error: serializeWorkerError(e) }` (`src/core/worker/error.ts`). Transfer the input buffer. A unit test calls the message handler function directly (no real Worker in Vitest).
+- [x] **Task 5: Item → one-page PDF** (AC: 3)
+  - [x] `src/core/btx/to-pdf.ts`: build a PDF with `@cantoo/pdf-lib` 2.11.1 (`PDFDocument.create`, `context.register`/`context.obj`, raw stream objects): convert every resource into an indirect object (map `BBObjPtr_X` → `PDFRef`), write the annotation dictionaries into the page `/Annots` with their `/AP /N` pointing at the converted XObject. Place the root at its `/Rect`; children at root origin + `(X, Y)` (verify the sign convention against a reference and record it in the report). Page box = union of rects + 4 pt margin. Drop Revu `Temp*`/`BB*` private keys only where they break viewers; keep everything else.
+  - [x] `src/core/btx/appearance.ts`: generate `/AP /N` form XObjects for annotations without one: Square/Circle (stroke `/C`, fill `/IC`, width `/BS /W`, dash `/BS /D`, inset `/RD`, ellipse with 4 Béziers), Line (`/L`, line endings: none and the ones present in the fixtures), PolyLine (`/Vertices`), Ink (`/InkList`), Square with `/Image` (draw the referenced image XObject into the rect), FreeText (`/DA` font + `/Contents`, default Helvetica). Line join/cap round for Ink. Width 0 = no stroke.
+- [x] **Task 6: Render + harness** (AC: 3, 4, 6)
+  - [x] `scripts/spike-btx/render.mjs`: load the PDF with `pdfjs-dist/legacy/build/pdf.mjs` in Node, `isEvalSupported: false`, render with `@napi-rs/canvas` (already in `node_modules`; add it as an explicit devDependency at the installed version, exact pin) at 4 px per pt (≈ 288 dpi) with `annotationMode: AnnotationMode.ENABLE`, white background. Same code path the browser will use (pdf.js on a canvas); only the canvas factory differs.
+  - [x] `scripts/spike-btx/run.mjs` (`npm run spike:btx`): parse each private `.btx`, render all items to `fixtures/private/btx/out/<set>/<nnn>-<slug>.png` and a contact sheet `<set>-sheet.png` (grid with index labels), then diff against references if present (Task 7) and write the report. Exit 0 even when items fail (it is a measurement), non-zero only on crashes.
+  - [x] Pixel diff: add `pixelmatch` (latest stable, exact pin, devDependency) and `pngjs` if needed. Before diffing, trim both images to their non-white bounding box and scale the candidate to the reference size. Pass = diff ≤ **2 %** of the reference's non-white pixels with pixelmatch `threshold: 0.1` and anti-aliasing ignored. Keep the threshold in one constant and print the diff % per item so the founder can judge borderline cases; record the chosen value in the report.
+- [x] **Task 7: Reference intake** (AC: 4)
+  - [x] Read Revu-saved placement PDFs `fixtures/private/btx/reference/<set>.pdf` (see Dev Notes → Reference capture). Take the page annotations in `/Annots` order, match them to items in tool-chest order (group items = one placed group), and render **each reference annotation alone** (hide the others) with pdf.js at the same scale → reference PNG. Revu writes an appearance stream for every placed markup, so this is Revu's own drawing even for items that had no `/AP` in the `.btx`.
+  - [x] If a `fixtures/private/btx/reference/<set>/<nnn>.png` exists (direct Revu image export), it wins over the PDF-derived one.
+  - [x] Report a count mismatch (placed annotations vs items) clearly and match by `/Subj` + type as a fallback.
+- [x] **Task 8: Synthetic fixture + tests** (AC: 2, 5, 7)
+  - [x] `scripts/spike-btx/make-synthetic.mjs` writes `fixtures/btx/synthetic.btx` (deterministic; Node `zlib.deflateSync`). Content: a stamp with `/AP` → form XObject that uses a nested form and a TrueType font resource with standard 14 base font, a circle without AP (dashed border, fill), a two-member group (`Child` with X/Y/Index), a polyline, a line with an arrow ending. Names made up ("Synthetic head", "Synthetic sounder").
+  - [x] Unit tests (node env, co-located): xml reader (structure, BOM, entities, DOCTYPE rejected, depth), inflate (budgets, bad hex), pdf-object (each token kind, stream with padding, `#xx` names, UTF-16 strings, depth), parse of `synthetic.btx` (5 items, types, refs resolved, group children), to-pdf (output loads in pdf-lib, `/Annots` count, refs resolved), appearance (operators for circle/line/ink, width 0 → no stroke). One test renders the synthetic items with pdf.js + `@napi-rs/canvas` and asserts non-empty pixels — skip it automatically if the native canvas cannot load.
+- [x] **Task 9: Report** (AC: 4, 6)
+  - [x] `docs/spikes/2-1-btx-report.md`: method, limits chosen, findings about the format (what this story learned beyond `docs/feature-inventory.md`), per-set and overall pass rate, failing items with reasons, decision (go / change), recommended FR42 import design (vector tool vs image-stamp fallback, what metadata to keep: subject, colours, size, group structure), open questions. No client content beyond tool names/subjects.
 
 ## Dev Notes
 
@@ -114,10 +114,56 @@ No XML or zlib library: the reader and `DecompressionStream` cover it, and a sma
 
 ### Agent Model Used
 
+Claude Opus 5.5 (claude-opus-5-5)
+
 ### Debug Log References
+
+- `npm run spike:btx` (2026-10-20): 138/138 items parsed and rendered (sprinkler 66, fire-alarm 56, my 16); references missing → report says "references missing".
+- `npm run spike:btx -- --self-test`: synthetic set vs self-generated placement PDF, 5/5 pass at 0.00 %.
+- Rendering bug found on the real files: sprinkler-tools #5 (CCITT image) rendered blank → pdf.js 6 needs `wasmUrl` for CCITT/JBIG2/JPX; fixed in `render.mjs`.
+- pdf.js warned "Optional content properties malformed" for Revu's string `/OC` → dropped in the render PDF only.
+- Local checks: typecheck, lint, `npm test` (83 files, 825 tests), build, check:pinned all pass.
 
 ### Completion Notes List
 
+- Parser (`src/core/btx/`): strict own XML reader, hex + zlib via `DecompressionStream` with per-chunk budgets, PDF object parser (dict/array/name `#xx`/literal + hex strings/UTF-16BE/numbers/streams with `/Length` + `endstream` fallback), `BBObjPtr_*` → `{ kind: "ref", ref }`, iterative ref resolution with missing ids per item, Zod-validated `BtxToolSet`. All NFR31 limits in `limits.ts`, each tripped by a unit test with a typed `BtxError` code.
+- Data model: PDF dictionaries are `{ kind: "dict", entries: [key, value][] }` (ordered, no prototype keys, structured-clone friendly); annotations carry `role`, `x`, `y`, `index`, `subtype`, `subject`.
+- Placement sign convention: every member's `/Rect` origin is at (-X, -Y) (root included), verified on concentric ring + dot groups in the real files; recorded in the report.
+- `appearance.ts` generates `/AP /N` for Square/Circle (incl. `/RD`, dash, FillOpacity/CA), image squares (`/Image`), Line + line endings, PolyLine, Polygon, Ink (round caps/joins), FreeText (Helvetica, `/DA`, `/DS` margin/alignment); width 0 → no stroke.
+- `to-pdf.ts` builds one page per item (or several placements, optionally Revu-style group links for the self-test reference) with pdf-lib's low-level API; missing resources become an empty form XObject; string `/OC` dropped.
+- Worker `src/workers/btx.worker.ts`: exported `handleBtxMessage` + `btxParseRequest` (transfers the input buffer); wired only inside a real `WorkerGlobalScope`.
+- Harness `scripts/spike-btx/` (`ts-hooks.mjs` lets Node import `src/core` TypeScript via built-in type stripping; `render.mjs`, `image.mjs`, `reference.mjs`, `run.mjs`, `make-synthetic.mjs`). Report `docs/spikes/2-1-btx-report.md`: hand-written method/findings/decision around a harness-generated "Results" block.
+- Findings that differ from the story's notes: count measurements are `/Subtype /Polygon` (not `RL`; `RL` is the `BBMeasure` subtype); 21 items reference missing resources, 2 of them have no appearance at all; 60 members in 39 items need generated appearances (story estimated ~54).
+- Founder action: capture the Revu reference PDFs (report → "Reference capture"), then re-run `npm run spike:btx` for the pass rate.
+
 ### File List
 
+New:
+- `src/core/btx/errors.ts`
+- `src/core/btx/limits.ts`
+- `src/core/btx/xml.ts`, `src/core/btx/xml.test.ts`
+- `src/core/btx/inflate.ts`, `src/core/btx/inflate.test.ts`
+- `src/core/btx/pdf-object.ts`, `src/core/btx/pdf-object.test.ts`
+- `src/core/btx/parse.ts`, `src/core/btx/parse.test.ts`
+- `src/core/btx/appearance.ts`, `src/core/btx/appearance.test.ts`
+- `src/core/btx/to-pdf.ts`, `src/core/btx/to-pdf.test.ts`
+- `src/workers/btx.worker.ts`, `src/workers/btx.worker.test.ts`
+- `scripts/spike-btx/ts-hooks.mjs`
+- `scripts/spike-btx/render.mjs`
+- `scripts/spike-btx/image.mjs`
+- `scripts/spike-btx/reference.mjs`
+- `scripts/spike-btx/run.mjs`
+- `scripts/spike-btx/make-synthetic.mjs`
+- `scripts/spike-btx/harness.test.mjs`
+- `fixtures/btx/synthetic.btx`
+- `docs/spikes/2-1-btx-report.md`
+
+Modified:
+- `package.json` (script `spike:btx`; devDependencies `@napi-rs/canvas` 1.0.11, `pixelmatch` 8.0.0, exact pins)
+- `package-lock.json`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `_bmad-output/implementation-artifacts/2-1-spike-btx-parse-and-render.md`
+
 ### Change Log
+
+- 2026-10-20: Story 2.1 implemented: `.btx` parser + worker, generated appearances, one-page PDF builder, pdf.js render harness with reference intake and pixel diff, synthetic fixture, spike report (pass rate pending Revu references). Status → review.

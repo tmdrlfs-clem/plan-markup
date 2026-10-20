@@ -27,7 +27,8 @@
     "check:schema": "node scripts/check-schema-drift.mjs",
     "check:types": "node scripts/check-types-drift.mjs",
     "env:local": "node scripts/supabase-env.mjs --write .env.local",
-    "admin:create-user": "node --env-file-if-exists=.env.local scripts/admin-create-user.mjs"
+    "admin:create-user": "node --env-file-if-exists=.env.local scripts/admin-create-user.mjs",
+    "spike:btx": "node --import ./scripts/spike-btx/ts-hooks.mjs scripts/spike-btx/run.mjs"
   },
   "dependencies": {
     "@cantoo/pdf-lib": "2.11.1",
@@ -48,6 +49,7 @@
     "zustand": "5.0.15"
   },
   "devDependencies": {
+    "@napi-rs/canvas": "1.0.11",
     "@playwright/test": "1.64.1",
     "@tailwindcss/turbopack": "4.3.3",
     "@testing-library/dom": "10.4.2",
@@ -63,6 +65,7 @@
     "eslint-config-next": "16.4.2",
     "jsdom": "30.1.3",
     "pg": "8.23.1",
+    "pixelmatch": "8.0.0",
     "supabase": "2.121.0",
     "tailwindcss": "4.3.3",
     "typescript": "6.0.3",

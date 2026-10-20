@@ -1,0 +1,72 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<BluebeamRevuToolSet Version="1">
+  <Title>78da0baecc2bc9482dc94c5608c9cfcf2906002fc305ed</Title>
+  <ToolChestItem Version="1">
+    <Resources>
+      <ID>78da0b8ef40bf1080e71f40d70f30ff2757404002a3a04d2</ID>
+      <Data>78dab3b1d1f749cd4b2fc950b0b0d40fa92c48d58ff04fca4a4d2ed10f2e4d2a01f1ddf28b72c1044856c150dfc929bf22dad0c040c1c8c040c1d0c440c1c8c82056df37b1a428b322da50c140c140c1504117a440d7c8c020563f28b538bfb42839b5d8c6463fa0283f3938b5245a3fc0c54d3f24b5a22416669d8d8dbe5bae81be93937f52564049517c70a45f88879f6b7088ab8b9b7f90afa39d9dbe5b7e1e5899219a2a377fbf100f579f304747473b3b90bacc9c92d4227db79cc4925497d4e4fc94543b3baee292a2d4c45cae8a39baa7adf91c0204582ffc5bf7689ac9991f2caa0f2f264d7b30d9c365cfb16faa8b2cefee5c28c2b55cee14bb96d0531fbbcb5d5117d7cf10dc1d7c232e836763f0b42d6febebdabd8eb970dd6a4a78f1ca6c89ec0b1ee5b88235c2b25c4820352f05621d009523791c</Data>
+    </Resources>
+    <Resources>
+      <ID>78da0b8ef40bf1f0730d0e717571f30ff275040029dc04cf</ID>
+      <Data>78da4d8bbb0ac2401045fbfd8af98399595fcdb245905482c15808218589638290accc6e40ff5e561b4f71e17039cee141e6218d6077787e3f052fc7ee217dc27ae952f632e8f49dfc0263518457c344608980d704d6528b278961d15ea2735869e86b490d56fbb2f5de7b1393ca753204040c3a185ee57c035b6002157337ffc87cfb051fd4b42c20</Data>
+    </Resources>
+    <Resources>
+      <ID>78da0b8ef40bf170f3f70bf170f509737474040029c504c0</ID>
+      <Data>78dab3b1d10fa92c48d577cbcf2bd10f2e4d2a0171428a4a53c1a24e89c5a960198fd49cb2d492cce4447db7cca2e212e78cc4220563237d9f4428dbd2403f3c33a524a338dac8dc42c1cccc7c24e0587dd7bce4fc94ccbc74fdf0cc3cc7bce24c381f14682ea9c5c945990525f945fa4e4efe4959012545f1c1917e211e6efe7e212eaec1ce8e8e8e767600d44f61a6</Data>
+    </Resources>
+    <Resources>
+      <ID>78da0b8ef40bf170f3f70b71710d767674740400298004b0</ID>
+      <Data>78da258c410ac2301000bfb21f089ba4d84628855629f5e245f1221e4258d2409a842688fe5e5a6f330c4cdbe2fd9b08c718ca99b2595d2a71ddf5aa17c289fc9b8a331a47af6d864aee6d18e2e7c9445d0393f20082730ec74abcf052b477a60fd61370ecb3a150a0110ab7f9c64cf2064f3a4de4ecfc4fb742cb0394eaba1ffa382c7c</Data>
+    </Resources>
+    <Name>Synthetic head</Name>
+    <Type>Bluebeam.PDF.Annotations.AnnotationBRXStamp</Type>
+    <Raw>78da3dccbd0a83301440e157b9633bdd581c83100b52077f30192a22256a40a52621bd0ebe7d2942b78f331cce516d5e8efa6d9e10fddd9e4e5d984cc8edb48c9a5c000abbc15ca124bd7969b5ffcc8e50d49c6389695a0d6b4de125db523da412459d554d21449260e348d3e22c3094fbb05ee4616936b48c301b3d5d7f910e6fce313666a48e018398c18df598418cf72e0206ac4f922f53e03a26</Raw>
+    <X>0</X>
+    <Y>0</Y>
+    <Index>0</Index>
+    <Mode>drawing</Mode>
+  </ToolChestItem>
+  <ToolChestItem Version="1">
+    <Name>Synthetic sounder</Name>
+    <Type>Bluebeam.PDF.Annotations.AnnotationCircle</Type>
+    <Raw>78da558ecd0a824014855fe53e41f7cce8cc140cb318256815a8d0425c948d60188a18e4dbc7949b7687c3777eace553560b1284868bfcab048986abf09cbc1fdf3508245312bae1633f0ce7e9daf6cb4ad8292e5fb787ed42d7012a01cc01d0013029a0f780569b8e7e0248002601740718f56375ba71d2c5ba659d0267fddc0e818bd02e7feb9472bc8a78d597d6f28524979c7315537e9cef61e6bc4e4836ce39f701079a3862</Raw>
+    <X>0</X>
+    <Y>0</Y>
+    <Index>1</Index>
+    <Mode>drawing</Mode>
+  </ToolChestItem>
+  <ToolChestItem Version="1">
+    <Name>Synthetic group</Name>
+    <Type>Bluebeam.PDF.Annotations.AnnotationCircle</Type>
+    <Raw>78da4d8d4b0f82301084ff4a8f7a71c1c7ad69423122976ada1a630807c00dd6c823b524f2ef0dd5039b9dc3cc7e93a514e43e0b573b32530e1a9b9ef3ee93052420eb69735043f95ca8b1750f74a622d6b4f5d283524362bba1f726951ad44de863224f9773e4c71f3c22f0ed4c5b8ba2c11f255391447f4a0da51b7b84d8d8ea8520b172f3ff07b285d807610e5c510a57b201050af4d4e29dbda3658cb12f5d023f93</Raw>
+    <X>1.5</X>
+    <Y>1.5</Y>
+    <Index>2</Index>
+    <Child>
+      <Type>Bluebeam.PDF.Annotations.AnnotationCircle</Type>
+      <Raw>78da458ec10ac23010447f658f7ada081e7a0881a6c5da4b2b4d44447ad074d18a6d4a4cc1febd348ace69d9793bb39c639e9c183058d558a56162c06ad4d40d52da57d84410d5a8c6cb7da1a6dedfc8b7061aeb97812ace1de529aa63a1b75955ee777150f03267c7a1a0a76ffbebcc7da8b4d4f15773aa9f06c2a475e6415891f1ffca0dacf1f79d549ce301182a54a8e71b695d434e0821de345d3ba3</Raw>
+      <X>-4.5</X>
+      <Y>-4.5</Y>
+      <Index>3</Index>
+    </Child>
+    <Mode>drawing</Mode>
+  </ToolChestItem>
+  <ToolChestItem Version="1">
+    <Name>Synthetic pipe</Name>
+    <Type>Bluebeam.PDF.Annotations.AnnotationPolyline</Type>
+    <Raw>78da4dccb10ac2301446e157f9475dbc491a4b8790a182203888111d4a16e30523d2861887bcbd64733df01d63e8cab9c4c09f4943436ac81e4aa347a721074f87dd2420365b084fee7b7fad5c9dcb934b0c4831f1bac55213d36979d7639c99ce1c4a33e80628e5690f4d7f93d11943372872e4e8d2e4b8e407676badfd014a572876</Raw>
+    <X>4</X>
+    <Y>4</Y>
+    <Index>4</Index>
+    <Mode>drawing</Mode>
+  </ToolChestItem>
+  <ToolChestItem Version="1">
+    <Name>Synthetic arrow</Name>
+    <Type>Bluebeam.PDF.Annotations.AnnotationLine</Type>
+    <Raw>78da1dcbb10ac2301405d05f79a32ede9712b710b062a7a06004879041eb83d621292122fd7b89eb81630c5cd0a4983493e208770a38e724b82c920ea5e46f84ff3cdf1bbfa63a499d477a34dd36adeb227073125c65ac8189496bea3862208de31f38a2f7c6e04e6ab78787c7adad3e9797146badfd012f4c26e7</Raw>
+    <X>4</X>
+    <Y>10</Y>
+    <Index>5</Index>
+    <Mode>drawing</Mode>
+  </ToolChestItem>
+</BluebeamRevuToolSet>
