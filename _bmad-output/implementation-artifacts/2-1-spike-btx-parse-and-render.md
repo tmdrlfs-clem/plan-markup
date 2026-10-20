@@ -123,6 +123,7 @@ Claude Opus 5.5 (claude-opus-5-5)
 - Rendering bug found on the real files: sprinkler-tools #5 (CCITT image) rendered blank → pdf.js 6 needs `wasmUrl` for CCITT/JBIG2/JPX; fixed in `render.mjs`.
 - pdf.js warned "Optional content properties malformed" for Revu's string `/OC` → dropped in the render PDF only.
 - Local checks: typecheck, lint, `npm test` (83 files, 825 tests), build, check:pinned all pass.
+- GitHub CI run 39357853752 (commit a6b357e): success (checks incl. the synthetic render harness test on Linux, e2e, gitleaks); Database workflow run 39357853791: success.
 
 ### Completion Notes List
 
