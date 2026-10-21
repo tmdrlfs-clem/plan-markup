@@ -204,6 +204,8 @@ with a wide margin; large multi-column floors need weak-case fix 1 before R1 can
 
 ## Questions for the founder
 
+_Deferred by the founder on 2026-10-22: answer before Epic 9 stories 9.4–9.7 start. Until then the suite keeps Z6 ≤ 18 and the engine treats columns as blocking spray (decision 4)._
+
 1. **Z6 with columns that block spray:** 18 heads (15 without columns). Is it right that coverage
    just above and below each column face must come from a head that can see it, or does 4541
    practice let a small column's shadow be ignored (which would give 15)?

@@ -1,6 +1,6 @@
 # Story 2.2: Spike close-out — irregular-zone placement (Fable)
 
-Status: review
+Status: done
 
 ## Story
 
@@ -58,6 +58,8 @@ Claude Fable 5.1 (claude-fable-5-1)
 - GitHub CI run 39670820703 (commit 938d041): success (typecheck/lint/unit/guards, Playwright e2e, gitleaks).
 
 ### Completion Notes List
+
+- 2026-10-22: founder closed the story without a code review (spike prototype; Epic 9 rewrites it in `src/core/sprinkler`). The four founder questions in the report are deferred to before Epic 9; Z6 stays guarded at ≤ 18.
 
 - Task 1: holes are `{kind: 'column' | 'shaft', ring}` in placer, oracle, fixtures and demo; each module reads the tag independently and keeps the ≤ 1 m extent heuristic only for bare rings. Six column-rule checks added to the suite. **Deviation:** Z6 places 18, not 15 — the hand count assumed columns do not block sight (15 without columns); the test guards ≤ 18 and the report argues 15 is infeasible under decision 4 (founder question 1).
 - Placer improvements (small, safe): column-aware row variants (R1 34 → 29 heads) and exact pruning of row-set variants that already need more heads than the best complete one. Rule figures unchanged; oracle still imports nothing.
