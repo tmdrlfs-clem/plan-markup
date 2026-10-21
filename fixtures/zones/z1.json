@@ -1,0 +1,17 @@
+{
+  "format": "plan-markup.zone-fixture/1",
+  "slug": "z1",
+  "sample": { "id": "Z1", "name": "Z1 Rectangle 10 × 6 m", "group": "NFR9", "index": 0, "zone": 0, "zones": 1 },
+  "units": "mm",
+  "hazards": ["OH1", "ELH"],
+  "zone": {
+    "zoneId": "Z1",
+    "hazard": "OH1",
+    "pattern": "rectangular",
+    "outer": [[0, 0], [10000, 0], [10000, 6000], [0, 6000]]
+  },
+  "expected": {
+    "OH1": { "hand": 6, "lowerBound": 5 },
+    "ELH": { "hand": 6, "lowerBound": 3 }
+  }
+}

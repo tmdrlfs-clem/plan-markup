@@ -1,9 +1,10 @@
 // Inlines the ES modules into one self-contained dist/demo.html (no external scripts).
+// The sample zones come from fixtures/zones/*.json (inlined as data into the Zones block).
 // Each module becomes its own <script> block wrapped in an IIFE that returns its exports, so the
 // placer and the oracle stay visibly separate (the oracle block references no other module).
 // Usage: node build.mjs
 
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -20,6 +21,13 @@ const nsOf = Object.fromEntries(MODULES.map(([f, ns]) => [f, ns]));
 
 function wrap(file, ns, title) {
   let src = readFileSync(path.join(root, 'src', file), 'utf8');
+  if (file === 'zones.js') {
+    const dir = path.join(root, '..', '..', 'fixtures', 'zones');
+    const docs = readdirSync(dir).filter(f => f.endsWith('.json')).sort().map(f => JSON.parse(readFileSync(path.join(dir, f), 'utf8')));
+    src += `
+export const SAMPLES = samplesFromFixtures(${JSON.stringify(docs)});
+`;
+  }
   const exportsList = [];
   src = src.replace(/^import\s*\{([^}]*)\}\s*from\s*'\.\/([\w.]+)';?\s*$/gms, (_, names, from) => {
     if (!nsOf[from]) throw new Error(`${file}: unknown import ${from}`);

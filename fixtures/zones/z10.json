@@ -1,0 +1,21 @@
+{
+  "format": "plan-markup.zone-fixture/1",
+  "slug": "z10",
+  "sample": {
+    "id": "Z10",
+    "name": "Z10 Too narrow (6 m × 90 mm)",
+    "group": "infeasible",
+    "index": 23,
+    "zone": 0,
+    "zones": 1
+  },
+  "units": "mm",
+  "hazards": ["ELH"],
+  "zone": {
+    "zoneId": "Z10",
+    "hazard": "ELH",
+    "pattern": "rectangular",
+    "outer": [[0, 0], [6000, 0], [6000, 90], [0, 90]]
+  },
+  "expected": { "error": "NO_ADMISSIBLE_REGION" }
+}

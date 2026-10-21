@@ -1,0 +1,24 @@
+{
+  "format": "plan-markup.zone-fixture/1",
+  "slug": "z4r",
+  "sample": {
+    "id": "Z4r",
+    "name": "Z4r Diagonal wall, rotated 30°",
+    "group": "NFR9",
+    "index": 4,
+    "zone": 0,
+    "zones": 1
+  },
+  "units": "mm",
+  "hazards": ["ELH", "OH1"],
+  "zone": {
+    "zoneId": "Z4r",
+    "hazard": "ELH",
+    "pattern": "rectangular",
+    "outer": [[0, 0], [10392.305, 6000], [8892.305, 8598.076], [-4500, 7794.229]]
+  },
+  "expected": {
+    "ELH": { "hand": 5, "lowerBound": 4 },
+    "OH1": { "hand": 8, "lowerBound": 7 }
+  }
+}

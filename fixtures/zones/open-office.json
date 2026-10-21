@@ -1,0 +1,26 @@
+{
+  "format": "plan-markup.zone-fixture/1",
+  "slug": "open-office",
+  "sample": {
+    "id": "OPEN",
+    "name": "Open plan: office (ELH) + kitchen (OH1)",
+    "group": "shapes",
+    "index": 18,
+    "zone": 0,
+    "zones": 2
+  },
+  "units": "mm",
+  "hazards": ["ELH"],
+  "zone": {
+    "zoneId": "OFFICE",
+    "hazard": "ELH",
+    "pattern": "rectangular",
+    "outer": [[0, 0], [12000, 0], [12000, 9000], [0, 9000]],
+    "openEdges": [
+      [[12000, 0], [12000, 9000]]
+    ]
+  },
+  "expected": {
+    "ELH": { "hand": null, "lowerBound": 6 }
+  }
+}

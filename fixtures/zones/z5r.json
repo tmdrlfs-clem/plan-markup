@@ -1,0 +1,23 @@
+{
+  "format": "plan-markup.zone-fixture/1",
+  "slug": "z5r",
+  "sample": {
+    "id": "Z5r",
+    "name": "Z5 Corridor rotated 45°",
+    "group": "NFR9",
+    "index": 6,
+    "zone": 0,
+    "zones": 1
+  },
+  "units": "mm",
+  "hazards": ["OH1"],
+  "zone": {
+    "zoneId": "Z5r",
+    "hazard": "OH1",
+    "pattern": "rectangular",
+    "outer": [[0, 0], [14142.136, 14142.136], [13010.765, 15273.506], [-1131.371, 1131.371]]
+  },
+  "expected": {
+    "OH1": { "hand": 5, "lowerBound": 3 }
+  }
+}

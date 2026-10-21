@@ -1,0 +1,41 @@
+{
+  "format": "plan-markup.zone-fixture/1",
+  "slug": "r2",
+  "sample": {
+    "id": "R2",
+    "name": "Meeting room, 45° splay",
+    "group": "shapes",
+    "index": 13,
+    "zone": 0,
+    "zones": 1
+  },
+  "units": "mm",
+  "hazards": ["ELH"],
+  "zone": {
+    "zoneId": "R2",
+    "hazard": "ELH",
+    "pattern": "rectangular",
+    "outer": [[0, 0], [7200, 0], [7200, 3600], [5400, 5400], [0, 5400]],
+    "keepOuts": [
+      {
+        "kind": "downlight",
+        "circle": { "x": 1800, "y": 1800, "r": 300 }
+      },
+      {
+        "kind": "downlight",
+        "circle": { "x": 5400, "y": 1800, "r": 300 }
+      },
+      {
+        "kind": "downlight",
+        "circle": { "x": 1800, "y": 3600, "r": 300 }
+      },
+      {
+        "kind": "downlight",
+        "circle": { "x": 3600, "y": 3600, "r": 300 }
+      }
+    ]
+  },
+  "expected": {
+    "ELH": { "hand": 4, "lowerBound": 2 }
+  }
+}

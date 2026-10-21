@@ -1,0 +1,24 @@
+{
+  "format": "plan-markup.zone-fixture/1",
+  "slug": "z9",
+  "sample": {
+    "id": "Z9",
+    "name": "Z9 Tile room (required)",
+    "group": "named",
+    "index": 21,
+    "zone": 0,
+    "zones": 1
+  },
+  "units": "mm",
+  "hazards": ["OH1"],
+  "zone": {
+    "zoneId": "Z9",
+    "hazard": "OH1",
+    "pattern": "rectangular",
+    "outer": [[0, 0], [7200, 0], [7200, 6000], [0, 6000]],
+    "grid": { "angleDeg": 0, "pitchX": 1200, "pitchY": 600, "originX": 0, "originY": 0, "mode": "required" }
+  },
+  "expected": {
+    "OH1": { "hand": null, "lowerBound": 4 }
+  }
+}

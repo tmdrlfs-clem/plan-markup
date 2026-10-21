@@ -1,0 +1,16 @@
+{
+  "format": "plan-markup.zone-fixture/1",
+  "slug": "z5l",
+  "sample": { "id": "Z5L", "name": "Z5 L-corridor 1.6 m", "group": "NFR9", "index": 7, "zone": 0, "zones": 1 },
+  "units": "mm",
+  "hazards": ["ELH"],
+  "zone": {
+    "zoneId": "Z5L",
+    "hazard": "ELH",
+    "pattern": "rectangular",
+    "outer": [[0, 0], [20000, 0], [20000, 1600], [1600, 1600], [1600, 12000], [0, 12000]]
+  },
+  "expected": {
+    "ELH": { "hand": null, "lowerBound": 3 }
+  }
+}

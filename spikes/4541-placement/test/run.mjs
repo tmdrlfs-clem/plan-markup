@@ -3,12 +3,17 @@
 // Usage: node test/run.mjs   (from spikes/4541-placement)
 
 import { pathToFileURL, fileURLToPath } from 'node:url';
+import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const load = rel => import(pathToFileURL(path.join(here, '..', rel)).href);
 const { NZS4541_V1, validateRuleSet } = await load('src/rules.js');
-const { SAMPLES } = await load('src/zones.js');
+const { samplesFromFixtures } = await load('src/zones.js');
+// Samples come from the zone fixtures (single source of truth), see fixtures/README.md.
+const FIXTURES = path.join(here, '..', '..', '..', 'fixtures', 'zones');
+const SAMPLES = samplesFromFixtures(readdirSync(FIXTURES).filter(f => f.endsWith('.json')).sort()
+  .map(f => JSON.parse(readFileSync(path.join(FIXTURES, f), 'utf8'))));
 const { runSite } = await load('src/site.js');
 const { placeZone } = await load('src/placer.js');
 const { checkZone } = await load('src/oracle.js');
@@ -36,16 +41,18 @@ function runAndReport(sample, hazardOverride) {
     const z = p.zone, r = p.report, res = p.res;
     const label = (sample.zones.length > 1 ? `${sample.id}/${z.zoneId}` : sample.name).slice(0, 30);
     if (sample.infeasible) {
-      const okErr = !res.ok && res.error && res.error.code && res.error.where && res.error.where.length && res.heads.length === 0;
+      const okErr = !res.ok && res.error && res.error.code === sample.expectedError && res.error.where && res.error.where.length && res.heads.length === 0;
       const row = line([label, z.hazard, '-', 0, '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', p.ms.toFixed(1)]);
       console.log(row + `  -> ${res.ok ? 'UNEXPECTED OK' : res.error.code}: ${res.error?.message ?? ''}`);
       tableRows.push(row + `  -> ${res.ok ? 'UNEXPECTED OK' : res.error.code}`);
-      if (!okErr) failNote(`${label}: infeasible zone did not return a located typed error`);
+      if (!okErr) failNote(`${label}: infeasible zone did not return a located ${sample.expectedError} error`);
       continue;
     }
     const lb = Math.ceil(r.areaM2 / (RS.hazards[z.hazard].Amax) - 1e-9);
+    const fixLb = z.expected?.[z.hazard]?.lowerBound;
+    if (fixLb !== lb) failNote(`${label} ${z.hazard}: fixture lower bound ${fixLb} differs from the oracle's ${lb}`);
     const hand = sample.hand?.[z.hazard] ?? '-';
-    const row = line([label, z.hazard, (z.pattern || 'rect').slice(0, 5), r.headCount, hand, lb, f2(r.areaPerHeadM2), f2(r.maxLocalAreaM2),
+    const row = line([label, z.hazard, (z.pattern === 'staggered' ? 'stagg' : 'rect'), r.headCount, hand, lb, f2(r.areaPerHeadM2), f2(r.maxLocalAreaM2),
       f2(r.maxNNSpacingM), f2(r.minSpacingM), f2(r.worstWallDistM), f2(r.minWallDistM), r.errors, r.warnings,
       res.notes ? res.notes.frameDeg.toFixed(1) : '-', res.notes ? res.notes.decomposition.replace('none', '-') : '-', p.ms.toFixed(1)]);
     console.log(row);

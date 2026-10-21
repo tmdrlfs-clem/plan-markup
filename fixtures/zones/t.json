@@ -1,0 +1,19 @@
+{
+  "format": "plan-markup.zone-fixture/1",
+  "slug": "t",
+  "sample": { "id": "T", "name": "T-shape", "group": "shapes", "index": 12, "zone": 0, "zones": 1 },
+  "units": "mm",
+  "hazards": ["OH1"],
+  "zone": {
+    "zoneId": "T",
+    "hazard": "OH1",
+    "pattern": "rectangular",
+    "outer": [
+      [5000, 0], [10000, 0], [10000, 8000], [15000, 8000], [15000, 12000], [0, 12000],
+      [0, 8000], [5000, 8000]
+    ]
+  },
+  "expected": {
+    "OH1": { "hand": null, "lowerBound": 9 }
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "format": "plan-markup.zone-fixture/1",
+  "slug": "z6",
+  "sample": {
+    "id": "Z6",
+    "name": "Z6 Hall with 3 columns",
+    "group": "named",
+    "index": 8,
+    "zone": 0,
+    "zones": 1
+  },
+  "units": "mm",
+  "hazards": ["OH1"],
+  "zone": {
+    "zoneId": "Z6",
+    "hazard": "OH1",
+    "pattern": "rectangular",
+    "outer": [[0, 0], [16800, 0], [16800, 9000], [0, 9000]],
+    "holes": [
+      {
+        "kind": "column",
+        "ring": [[3900, 4200], [4500, 4200], [4500, 4800], [3900, 4800]]
+      },
+      {
+        "kind": "column",
+        "ring": [[8100, 4200], [8700, 4200], [8700, 4800], [8100, 4800]]
+      },
+      {
+        "kind": "column",
+        "ring": [[12300, 4200], [12900, 4200], [12900, 4800], [12300, 4800]]
+      }
+    ]
+  },
+  "expected": {
+    "OH1": { "hand": 15, "lowerBound": 13 }
+  }
+}

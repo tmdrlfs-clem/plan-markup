@@ -1,0 +1,23 @@
+{
+  "format": "plan-markup.zone-fixture/1",
+  "slug": "stag",
+  "sample": {
+    "id": "STAG",
+    "name": "Store room, staggered pattern",
+    "group": "shapes",
+    "index": 19,
+    "zone": 0,
+    "zones": 1
+  },
+  "units": "mm",
+  "hazards": ["OH2"],
+  "zone": {
+    "zoneId": "STAG",
+    "hazard": "OH2",
+    "pattern": "staggered",
+    "outer": [[0, 0], [14000, 0], [14000, 9000], [0, 9000]]
+  },
+  "expected": {
+    "OH2": { "hand": null, "lowerBound": 11 }
+  }
+}

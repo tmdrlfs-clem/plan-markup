@@ -1,0 +1,19 @@
+{
+  "format": "plan-markup.zone-fixture/1",
+  "slug": "u",
+  "sample": { "id": "U", "name": "U-shape", "group": "shapes", "index": 11, "zone": 0, "zones": 1 },
+  "units": "mm",
+  "hazards": ["ELH"],
+  "zone": {
+    "zoneId": "U",
+    "hazard": "ELH",
+    "pattern": "rectangular",
+    "outer": [
+      [0, 0], [14000, 0], [14000, 10000], [10000, 10000], [10000, 4000], [4000, 4000],
+      [4000, 10000], [0, 10000]
+    ]
+  },
+  "expected": {
+    "ELH": { "hand": null, "lowerBound": 5 }
+  }
+}

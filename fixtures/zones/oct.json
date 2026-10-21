@@ -1,0 +1,26 @@
+{
+  "format": "plan-markup.zone-fixture/1",
+  "slug": "oct",
+  "sample": {
+    "id": "OCT",
+    "name": "Irregular 8-sided room",
+    "group": "shapes",
+    "index": 16,
+    "zone": 0,
+    "zones": 1
+  },
+  "units": "mm",
+  "hazards": ["OH1"],
+  "zone": {
+    "zoneId": "OCT",
+    "hazard": "OH1",
+    "pattern": "rectangular",
+    "outer": [
+      [0, 0], [8200, 0], [10400, 2600], [10400, 6200], [7600, 8800], [3000, 8800],
+      [800, 6900], [0, 3500]
+    ]
+  },
+  "expected": {
+    "OH1": { "hand": null, "lowerBound": 7 }
+  }
+}

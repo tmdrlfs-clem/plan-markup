@@ -1,0 +1,24 @@
+{
+  "format": "plan-markup.zone-fixture/1",
+  "slug": "z3",
+  "sample": {
+    "id": "Z3",
+    "name": "Z3 Right triangle 8 × 6 m",
+    "group": "NFR9",
+    "index": 2,
+    "zone": 0,
+    "zones": 1
+  },
+  "units": "mm",
+  "hazards": ["ELH", "OH1"],
+  "zone": {
+    "zoneId": "Z3",
+    "hazard": "ELH",
+    "pattern": "rectangular",
+    "outer": [[0, 0], [8000, 0], [0, 6000]]
+  },
+  "expected": {
+    "ELH": { "hand": 3, "lowerBound": 2 },
+    "OH1": { "hand": 5, "lowerBound": 2 }
+  }
+}

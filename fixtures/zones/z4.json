@@ -1,0 +1,17 @@
+{
+  "format": "plan-markup.zone-fixture/1",
+  "slug": "z4",
+  "sample": { "id": "Z4", "name": "Z4 Diagonal wall", "group": "NFR9", "index": 3, "zone": 0, "zones": 1 },
+  "units": "mm",
+  "hazards": ["ELH", "OH1"],
+  "zone": {
+    "zoneId": "Z4",
+    "hazard": "ELH",
+    "pattern": "rectangular",
+    "outer": [[0, 0], [12000, 0], [12000, 3000], [0, 9000]]
+  },
+  "expected": {
+    "ELH": { "hand": 5, "lowerBound": 4 },
+    "OH1": { "hand": 8, "lowerBound": 6 }
+  }
+}

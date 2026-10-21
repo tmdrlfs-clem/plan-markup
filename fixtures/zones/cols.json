@@ -1,0 +1,49 @@
+{
+  "format": "plan-markup.zone-fixture/1",
+  "slug": "cols",
+  "sample": {
+    "id": "COLS",
+    "name": "Office floor with 6 columns",
+    "group": "shapes",
+    "index": 17,
+    "zone": 0,
+    "zones": 1
+  },
+  "units": "mm",
+  "hazards": ["ELH"],
+  "zone": {
+    "zoneId": "COLS",
+    "hazard": "ELH",
+    "pattern": "rectangular",
+    "outer": [[0, 0], [21600, 0], [21600, 14400], [0, 14400]],
+    "holes": [
+      {
+        "kind": "column",
+        "ring": [[5175, 4575], [5625, 4575], [5625, 5025], [5175, 5025]]
+      },
+      {
+        "kind": "column",
+        "ring": [[5175, 9375], [5625, 9375], [5625, 9825], [5175, 9825]]
+      },
+      {
+        "kind": "column",
+        "ring": [[10575, 4575], [11025, 4575], [11025, 5025], [10575, 5025]]
+      },
+      {
+        "kind": "column",
+        "ring": [[10575, 9375], [11025, 9375], [11025, 9825], [10575, 9825]]
+      },
+      {
+        "kind": "column",
+        "ring": [[15975, 4575], [16425, 4575], [16425, 5025], [15975, 5025]]
+      },
+      {
+        "kind": "column",
+        "ring": [[15975, 9375], [16425, 9375], [16425, 9825], [15975, 9825]]
+      }
+    ]
+  },
+  "expected": {
+    "ELH": { "hand": null, "lowerBound": 15 }
+  }
+}

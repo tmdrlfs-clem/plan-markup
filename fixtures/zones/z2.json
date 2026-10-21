@@ -1,0 +1,17 @@
+{
+  "format": "plan-markup.zone-fixture/1",
+  "slug": "z2",
+  "sample": { "id": "Z2", "name": "Z2 L-shape", "group": "NFR9", "index": 1, "zone": 0, "zones": 1 },
+  "units": "mm",
+  "hazards": ["ELH", "OH1"],
+  "zone": {
+    "zoneId": "Z2",
+    "hazard": "ELH",
+    "pattern": "rectangular",
+    "outer": [[0, 0], [12000, 0], [12000, 4000], [6000, 4000], [6000, 9000], [0, 9000]]
+  },
+  "expected": {
+    "ELH": { "hand": 6, "lowerBound": 4 },
+    "OH1": { "hand": 8, "lowerBound": 7 }
+  }
+}

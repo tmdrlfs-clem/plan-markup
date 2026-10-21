@@ -1,0 +1,23 @@
+{
+  "format": "plan-markup.zone-fixture/1",
+  "slug": "c25",
+  "sample": {
+    "id": "C25",
+    "name": "Corridor 18 × 2.5 m",
+    "group": "shapes",
+    "index": 14,
+    "zone": 0,
+    "zones": 1
+  },
+  "units": "mm",
+  "hazards": ["ELH"],
+  "zone": {
+    "zoneId": "C25",
+    "hazard": "ELH",
+    "pattern": "rectangular",
+    "outer": [[0, 0], [18000, 0], [18000, 2500], [0, 2500]]
+  },
+  "expected": {
+    "ELH": { "hand": null, "lowerBound": 3 }
+  }
+}

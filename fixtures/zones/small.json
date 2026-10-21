@@ -1,0 +1,23 @@
+{
+  "format": "plan-markup.zone-fixture/1",
+  "slug": "small",
+  "sample": {
+    "id": "SMALL",
+    "name": "Small office 3 × 2.8 m (1 head)",
+    "group": "shapes",
+    "index": 15,
+    "zone": 0,
+    "zones": 1
+  },
+  "units": "mm",
+  "hazards": ["ELH"],
+  "zone": {
+    "zoneId": "SMALL",
+    "hazard": "ELH",
+    "pattern": "rectangular",
+    "outer": [[0, 0], [3000, 0], [3000, 2800], [0, 2800]]
+  },
+  "expected": {
+    "ELH": { "hand": 1, "lowerBound": 1 }
+  }
+}

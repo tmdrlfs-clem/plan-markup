@@ -1,0 +1,17 @@
+{
+  "format": "plan-markup.zone-fixture/1",
+  "slug": "z5",
+  "sample": { "id": "Z5", "name": "Z5 Corridor 20 × 1.6 m", "group": "NFR9", "index": 5, "zone": 0, "zones": 1 },
+  "units": "mm",
+  "hazards": ["OH1", "ELH"],
+  "zone": {
+    "zoneId": "Z5",
+    "hazard": "OH1",
+    "pattern": "rectangular",
+    "outer": [[0, 0], [20000, 0], [20000, 1600], [0, 1600]]
+  },
+  "expected": {
+    "OH1": { "hand": 5, "lowerBound": 3 },
+    "ELH": { "hand": 5, "lowerBound": 2 }
+  }
+}

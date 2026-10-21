@@ -1,0 +1,29 @@
+{
+  "format": "plan-markup.zone-fixture/1",
+  "slug": "z7",
+  "sample": {
+    "id": "Z7",
+    "name": "Z7 Room around a 4 m shaft",
+    "group": "named",
+    "index": 9,
+    "zone": 0,
+    "zones": 1
+  },
+  "units": "mm",
+  "hazards": ["OH1"],
+  "zone": {
+    "zoneId": "Z7",
+    "hazard": "OH1",
+    "pattern": "rectangular",
+    "outer": [[0, 0], [12000, 0], [12000, 12000], [0, 12000]],
+    "holes": [
+      {
+        "kind": "shaft",
+        "ring": [[4000, 4000], [8000, 4000], [8000, 8000], [4000, 8000]]
+      }
+    ]
+  },
+  "expected": {
+    "OH1": { "hand": null, "lowerBound": 11 }
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "format": "plan-markup.zone-fixture/1",
+  "slug": "tile",
+  "sample": {
+    "id": "TILE",
+    "name": "Tiled office, 1200 × 600 grid (preferred)",
+    "group": "shapes",
+    "index": 20,
+    "zone": 0,
+    "zones": 1
+  },
+  "units": "mm",
+  "hazards": ["ELH"],
+  "zone": {
+    "zoneId": "TILE",
+    "hazard": "ELH",
+    "pattern": "rectangular",
+    "outer": [[0, 0], [9600, 0], [9600, 7200], [0, 7200]],
+    "grid": { "angleDeg": 0, "pitchX": 1200, "pitchY": 600, "originX": 0, "originY": 0, "mode": "preferred" }
+  },
+  "expected": {
+    "ELH": { "hand": null, "lowerBound": 4 }
+  }
+}
