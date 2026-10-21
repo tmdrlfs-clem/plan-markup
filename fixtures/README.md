@@ -5,6 +5,28 @@
 - `zones/` - zone and sprinkler-layout JSON fixtures for the 4541 engine tests (format below).
 - `private/` - the founder's real drawings and `.btx` files. Git-ignored, never committed.
 
+## Render performance fixtures and reference hardware (A10, Story 2.3)
+
+NFR1 / NFR2 are measured on the reference machine below with these fixtures (all under
+`private/pdf/`, git-ignored). Counts come from `node scripts/spike-render/inspect-fixtures.mjs`
+(pdf.js 6.4.299 operator list of page 1; "path segments" are the moveTo/lineTo/curveTo/closePath
+records inside pdf.js's batched `constructPath` operators).
+
+| Fixture | File | Size | Page | Operator list | Path segments | Images |
+| --- | --- | --- | --- | --- | --- | --- |
+| L17 | `A1721-LEVEL-17-REFLECTED-CEILING-PLAN-Rev.2.pdf` | 2.1 MB | A1, 2384 x 1684 pt | 176,045 | ~398 k | 3 |
+| L21 | `A2121-LEVEL-21-REFLECTED-CEILING-PLAN-Rev.2.pdf` | 2.4 MB | A1, 2384 x 1684 pt | 185,676 | ~430 k | 3 |
+| A0 | `synthetic-a0-50mb.pdf` | 50.1 MB | A0, 3370 x 2384 pt | 159,002 | ~9.66 M | 0 |
+
+- The A0 file is generated, not shipped: `node scripts/spike-render/make-a0.mjs` (deterministic,
+  ~10 s). It is a stress case: 118 Flate content streams (183 MB uncompressed), ~9.6 M path
+  operators (m/l/c/re/h/S) from a jittered ceiling grid in short segments, double-line walls,
+  hatching, Bezier circles, SHX-style exploded text and some Helvetica text.
+- **Reference hardware:** Intel Core i5-1145G7 (4 cores / 8 threads, 2.6 GHz), 15.8 GB RAM,
+  Intel Iris Xe graphics, Windows 11 Pro 10.0.22631. Browser: Playwright 1.64.1 bundled Chromium
+  (build 1248; the exact version string is recorded in `docs/spikes/2-3-render-report.md`).
+- Measure with Docker Desktop and other heavy apps closed; the report notes background load.
+
 ## `zones/*.json` (format `plan-markup.zone-fixture/1`)
 
 One file per zone, named `<slug>.json`. These files are the single source of truth for the

@@ -1,6 +1,6 @@
 # Story 2.3: Spike — A0 render and 500-markup frame rate
 
-Status: ready-for-dev
+Status: in-progress
 
 ## Story
 
