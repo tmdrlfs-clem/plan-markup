@@ -5,6 +5,8 @@
 const P = (...xy) => { const out = []; for (let i = 0; i < xy.length; i += 2) out.push({ x: xy[i], y: xy[i + 1] }); return out; };
 const rect = (x0, y0, x1, y1) => P(x0, y0, x1, y0, x1, y1, x0, y1);
 const sq = (cx, cy, s) => rect(cx - s / 2, cy - s / 2, cx + s / 2, cy + s / 2);
+const col = ring => ({ kind: 'column', ring });
+const shaft = ring => ({ kind: 'shaft', ring });
 const rot = (pts, deg) => { const a = deg * Math.PI / 180, c = Math.cos(a), s = Math.sin(a); return pts.map(p => ({ x: Math.round((p.x * c - p.y * s) * 1000) / 1000, y: Math.round((p.x * s + p.y * c) * 1000) / 1000 })); };
 
 // Raster stair-step trace (dynamic-fill style): every edge of the ring is redrawn as axis-parallel
@@ -62,10 +64,10 @@ export const SAMPLES = [
   { id: 'Z5L', name: 'Z5 L-corridor 1.6 m', group: 'NFR9',
     zones: [{ zoneId: 'Z5L', hazard: 'ELH', outer: P(0, 0, 20000, 0, 20000, 1600, 1600, 1600, 1600, 12000, 0, 12000) }] },
   { id: 'Z6', name: 'Z6 Hall with 3 columns', group: 'named',
-    zones: [{ zoneId: 'Z6', hazard: 'OH1', outer: rect(0, 0, 16800, 9000), holes: [sq(4200, 4500, 600), sq(8400, 4500, 600), sq(12600, 4500, 600)] }],
+    zones: [{ zoneId: 'Z6', hazard: 'OH1', outer: rect(0, 0, 16800, 9000), holes: [sq(4200, 4500, 600), sq(8400, 4500, 600), sq(12600, 4500, 600)].map(col) }],
     hand: { OH1: 15 } },
   { id: 'Z7', name: 'Z7 Room around a 4 m shaft', group: 'named',
-    zones: [{ zoneId: 'Z7', hazard: 'OH1', outer: rect(0, 0, 12000, 12000), holes: [rect(4000, 4000, 8000, 8000)] }] },
+    zones: [{ zoneId: 'Z7', hazard: 'OH1', outer: rect(0, 0, 12000, 12000), holes: [shaft(rect(4000, 4000, 8000, 8000))] }] },
   { id: 'Z8', name: 'Z8 Noisy L (stair-step trace)', group: 'named',
     zones: [{ zoneId: 'Z8', hazard: 'ELH', outer: staircase(rot(Z2, 1)) }],
     hand: { ELH: 6 } },
@@ -84,7 +86,7 @@ export const SAMPLES = [
     zones: [{ zoneId: 'OCT', hazard: 'OH1', outer: P(0, 0, 8200, 0, 10400, 2600, 10400, 6200, 7600, 8800, 3000, 8800, 800, 6900, 0, 3500) }] },
   { id: 'COLS', name: 'Office floor with 6 columns', group: 'shapes',
     zones: [{ zoneId: 'COLS', hazard: 'ELH', outer: rect(0, 0, 21600, 14400),
-      holes: [5400, 10800, 16200].flatMap(x => [4800, 9600].map(y => sq(x, y, 450))) }] },
+      holes: [5400, 10800, 16200].flatMap(x => [4800, 9600].map(y => col(sq(x, y, 450)))) }] },
   { id: 'OPEN', name: 'Open plan: office (ELH) + kitchen (OH1)', group: 'shapes',
     zones: [
       { zoneId: 'OFFICE', hazard: 'ELH', outer: rect(0, 0, 12000, 9000), openEdges: [{ a: { x: 12000, y: 0 }, b: { x: 12000, y: 9000 } }] },
@@ -101,7 +103,7 @@ export const SAMPLES = [
   { id: 'R1', name: 'R1 Perimeter office L (387 m²)', group: 'named',
     zones: [{ zoneId: 'R1', hazard: 'ELH',
       outer: P(0, 0, 30000, 0, 30000, 22000, 21000, 22000, 21000, 9000, 0, 9000),
-      holes: [[4200, 1500], [12600, 1500], [21000, 1500], [28500, 1500], [28500, 9600], [28500, 18000]].map(([x, y]) => sq(x, y, 600)),
+      holes: [[4200, 1500], [12600, 1500], [21000, 1500], [28500, 1500], [28500, 9600], [28500, 18000]].map(([x, y]) => col(sq(x, y, 600))),
       grid: { angleDeg: 0, pitchX: 1200, pitchY: 600, originX: 0, originY: 0, mode: 'preferred' } }] },
   { id: 'Z10', name: 'Z10 Too narrow (6 m × 90 mm)', group: 'infeasible', infeasible: true,
     zones: [{ zoneId: 'Z10', hazard: 'ELH', outer: rect(0, 0, 6000, 90) }] },

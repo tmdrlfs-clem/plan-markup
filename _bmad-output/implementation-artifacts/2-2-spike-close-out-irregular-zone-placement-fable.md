@@ -1,6 +1,6 @@
 # Story 2.2: Spike close-out — irregular-zone placement (Fable)
 
-Status: ready-for-dev
+Status: in-progress
 
 ## Story
 
@@ -18,7 +18,7 @@ so that Epic 9 starts from a proven algorithm and agreed rules.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Confirm the column rule** (AC 1): read `oracle.js` / `placer.js` column handling (already implemented with a ≤ 1 m extent heuristic) against design doc decision 4; replace the heuristic with explicit hole tags (`kind: "column" | "shaft"`) in the zone data, keeping the heuristic only as a fallback for untagged holes. Add/keep tests: Z6 (3 columns) = 15 heads; Z7 (4 m shaft) keeps `Wmax` on shaft faces; a column-face `Wmax` mutation is **not** flagged; a head within `Wmin` of a column **is** flagged.
+- [x] **Task 1: Confirm the column rule** (AC 1): read `oracle.js` / `placer.js` column handling (already implemented with a ≤ 1 m extent heuristic) against design doc decision 4; replace the heuristic with explicit hole tags (`kind: "column" | "shaft"`) in the zone data, keeping the heuristic only as a fallback for untagged holes. Add/keep tests: Z6 (3 columns) = 15 heads; Z7 (4 m shaft) keeps `Wmax` on shaft faces; a column-face `Wmax` mutation is **not** flagged; a head within `Wmin` of a column **is** flagged.
 - [ ] **Task 2: Rerun and measure** (AC 1, 2): run the suite twice (determinism), capture the table, random-zone stats, mutations and timings.
 - [ ] **Task 3: Weak cases** (AC 2): investigate R1 (387 m², 34 heads vs LB 19, ~2.5 s) enough to name the cause and a concrete Epic 9 fix (e.g. bay decomposition around columns, frame search budget); same for staggered +1 and tile-alignment skew. Improve the prototype only if a fix is small and safe; otherwise document.
 - [ ] **Task 4: Kernel decision** (AC 3): evaluate Clipper2 bindings available on npm (e.g. `clipper2-js`, `clipper2-wasm`, `clipper-lib` for Clipper1) — maintenance, licence, size, offset/boolean/point-in-polygon coverage, runs in a Web Worker, deterministic integer coordinates — vs the spike kernel. Write ADR 0004 with the pin.

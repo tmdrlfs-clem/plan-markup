@@ -12,7 +12,7 @@ const STEP = 100, PHASE_X = 37, PHASE_Y = 61, EDGE_STEP = 50;
 // pushed this far into the room, so sub-50 mm tracing artefacts (stair-step pockets) cannot decide
 // visibility. Coverage distance is still measured from the sample itself.
 const TRACE_TOL = 50;
-const COLUMN_MAX_MM = 1000;
+const COLUMN_MAX_MM = 1000;   // only for untagged holes (fallback); tagged holes use their kind
 
 // ---- own minimal kernel (deliberately duplicated, written differently) ------------------------
 
@@ -96,21 +96,24 @@ function buildZone(zone) {
     return (signedArea(pts) > 0) === wantPositive ? pts : pts.reverse();
   };
   const outer = fix(zone.outer, true);
-  const holes = (zone.holes || []).map(h => fix(h, false));
+  // A hole is either a bare ring (untagged) or {kind: 'column' | 'shaft', ring}.
+  const holeIn = (zone.holes || []).map(h => (Array.isArray(h) ? { kind: null, ring: h } : { kind: h.kind, ring: h.ring || [] }));
+  const holes = holeIn.map(h => fix(h.ring, false));
   const open = zone.openEdges || [];
   const isOpen = (a, b) => open.some(o =>
     segPointDistance(a.x, a.y, o.a.x, o.a.y, o.b.x, o.b.y) < 2 && segPointDistance(b.x, b.y, o.a.x, o.a.y, o.b.x, o.b.y) < 2);
   const walls = [];      // barriers: block sight, carry the wall-distance rule
   const allEdges = [];
-  // Column = a hole whose largest extent is at most COLUMN_MAX_MM. Columns block spray and need Wmin
-  // clearance, but carry no Wmax rule (founder decision 2026-10-17, option a). Larger holes (shafts,
-  // voids) are real walls.
-  const isColumn = ring => {
+  // Columns block spray and need Wmin clearance, but carry no Wmax rule (founder decision 4,
+  // 2026-10-17, option a). Shafts and voids are real walls. The tag decides; an untagged hole is a
+  // column when its largest extent is at most COLUMN_MAX_MM.
+  const isColumn = (ring, kind) => {
+    if (kind === 'column' || kind === 'shaft') return kind === 'column';
     const xs = ring.map(p => p.x), ys = ring.map(p => p.y);
     return Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) <= COLUMN_MAX_MM;
   };
-  const addRing = (ring, outerRing) => {
-    const column = !outerRing && isColumn(ring);
+  const addRing = (ring, outerRing, kind) => {
+    const column = !outerRing && isColumn(ring, kind);
     for (let i = 0; i < ring.length; i++) {
       const a = ring[i], b = ring[(i + 1) % ring.length];
       const len = Math.hypot(b.x - a.x, b.y - a.y);
@@ -123,7 +126,7 @@ function buildZone(zone) {
     }
   };
   addRing(outer, true);
-  holes.forEach(h => addRing(h, false));
+  holes.forEach((h, i) => addRing(h, false, holeIn[i].kind));
   let area = Math.abs(signedArea(outer));
   for (const h of holes) area -= Math.abs(signedArea(h));
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
@@ -171,7 +174,7 @@ function figures(ruleset, hazard, reduced) {
 // ---- main check --------------------------------------------------------------------------------
 
 /**
- * @param zone {outer, holes?, openEdges?} in mm (original polygon)
+ * @param zone {outer, holes?: [ring | {kind:'column'|'shaft', ring}], openEdges?} in mm (original polygon)
  * @param heads [{id, x, y}] in mm
  * @param ruleset raw rule set data, hazard 'ELH'|'OH1'|'OH2'|'OH3'
  * @param opts {neighbours?: [{zone, heads}], reducedWallDist?}

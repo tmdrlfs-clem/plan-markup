@@ -157,6 +157,65 @@ console.log(`Head count above area lower bound (random set): mean ${(gaps.reduce
   if (rp.errors) failNote('unmutated base layout has errors');
 }
 
+// ---- column rule (founder decision 4, 2026-10-17) ------------------------------------------------
+// Columns block spray and need Wmin, but Wmax does not apply to their faces; shafts are real walls.
+{
+  const ringOf = h => (Array.isArray(h) ? h : h.ring);
+  const retag = (zone, kind) => ({ ...zone, holes: zone.holes.map(h => (kind ? { kind, ring: ringOf(h) } : ringOf(h))) });
+  const distToRing = (p, ring) => Math.min(...ring.map((a, i) => {
+    const b = ring[(i + 1) % ring.length], vx = b.x - a.x, vy = b.y - a.y;
+    const t = Math.max(0, Math.min(1, ((p.x - a.x) * vx + (p.y - a.y) * vy) / (vx * vx + vy * vy)));
+    return Math.hypot(p.x - a.x - t * vx, p.y - a.y - t * vy);
+  }));
+  const onHole = (zone, f) => f.where && zone.holes.some(h => distToRing(f.where, ringOf(h)) < 60);
+  const wallDistOnHoles = (zone, heads) => checkZone(zone, heads, RS, zone.hazard).flags
+    .filter(f => f.code === 'WALL_DIST' && onHole(zone, f)).length;
+  const report = (name, ok, detail) => {
+    console.log(`column rule ${name.padEnd(48)} -> ${ok ? 'ok' : 'FAILED'}${detail ? ` (${detail})` : ''}`);
+    if (!ok) failNote(`column rule: ${name}${detail ? ` (${detail})` : ''}`);
+  };
+
+  const z6 = SAMPLES.find(s => s.id === 'Z6').zones[0];
+  const z6res = placeZone(z6, RS);
+  const z6rep = checkZone(z6, z6res.heads, RS, z6.hazard);
+  // 15 (design §5 hand count) assumed columns do not block sight; see docs/spikes/2-2-placement-report.md.
+  report('Z6 places ≤ 18 heads with zero oracle errors', z6res.ok && z6res.heads.length <= 18 && z6rep.errors === 0,
+    `${z6res.heads.length} heads, ${z6rep.errors} errors`);
+  // Wmax mutation on column faces: delete every head right of column 1 up to 7 m, so its right face
+  // has no head within Wmax. As columns: no WALL_DIST on the faces. Same layout as shafts: flagged.
+  const thinned = z6res.heads.filter(h => !(h.x > 4400 && h.x < 7000));
+  const asCol = wallDistOnHoles(z6, thinned), asShaft = wallDistOnHoles(retag(z6, 'shaft'), thinned);
+  report('Z6 column-face Wmax mutation is not flagged', asCol === 0 && asShaft > 0,
+    `WALL_DIST on hole faces: as columns ${asCol}, as shafts ${asShaft}`);
+  const untagged = placeZone(retag(z6, null), RS);
+  report('untagged 600 mm holes fall back to columns', untagged.heads.length === z6res.heads.length,
+    `${untagged.heads.length} vs ${z6res.heads.length}`);
+
+  // a head 30 mm from a column face is a clearance error
+  const col = ringOf(z6.holes[0]);
+  const cx1 = Math.max(...col.map(p => p.x)), cy = (Math.min(...col.map(p => p.y)) + Math.max(...col.map(p => p.y))) / 2;
+  const nearCol = z6res.heads.map((h, i) => (i === 0 ? { ...h, x: cx1 + 30, y: cy } : h));
+  const clr = checkZone(z6, nearCol, RS, z6.hazard).flags.some(f => f.code === 'WALL_CLEARANCE' && f.severity === 'error');
+  report('head 30 mm from a column is flagged', clr, 'WALL_CLEARANCE');
+
+  // Z7: the 4 m shaft keeps Wmax. Push every head within 2.5 m of the shaft 600 mm away from it.
+  const z7 = SAMPLES.find(s => s.id === 'Z7').zones[0];
+  const z7res = placeZone(z7, RS);
+  const sh = ringOf(z7.holes[0]);
+  const sx = (Math.min(...sh.map(p => p.x)) + Math.max(...sh.map(p => p.x))) / 2, sy = (Math.min(...sh.map(p => p.y)) + Math.max(...sh.map(p => p.y))) / 2;
+  const pushed = z7res.heads.map(h => {
+    if (distToRing(h, sh) > 2500) return h;
+    const dx = h.x - sx, dy = h.y - sy, L = Math.hypot(dx, dy) || 1;
+    return { ...h, x: h.x + 600 * dx / L, y: h.y + 600 * dy / L };
+  });
+  const z7shaft = wallDistOnHoles(z7, pushed), z7col = wallDistOnHoles(retag(z7, 'column'), pushed);
+  report('Z7 shaft faces keep Wmax', checkZone(z7, z7res.heads, RS, z7.hazard).errors === 0 && z7shaft > 0 && z7col === 0,
+    `pushed layout: WALL_DIST on shaft faces ${z7shaft}, same hole tagged column ${z7col}`);
+  const z7untagged = placeZone(retag(z7, null), RS);
+  report('untagged 4 m hole falls back to shaft', z7untagged.heads.length === z7res.heads.length,
+    `${z7untagged.heads.length} vs ${z7res.heads.length}`);
+}
+
 // ---- NFR6 timing: 200 m² single zone under 1 s -------------------------------------------------
 {
   const cases = [

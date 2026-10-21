@@ -18,7 +18,7 @@ const TOL = 0.5;      // tolerance on exact analytic limits (the oracle allows 1
 const LAT = 100;      // coverage lattice step
 const BND = 50;       // boundary sample step
 const CSTEP = 50;     // DP candidate step along a row
-const SMALL_HOLE = 1000; // holes up to this size do not cut bays (they still are walls)
+const SMALL_HOLE = 1000; // fallback for untagged holes: up to this extent a hole counts as a column
 const NUDGE = 0.5;    // boundary samples are tested for visibility from 0.5 mm inside the wall
 const MAX_GAPFILL = 3;
 const TRACE_TOL = 40;
@@ -31,7 +31,7 @@ let DEBUG = null;
 export function setPlacerDebug(fn) { DEBUG = fn; }
 
 /**
- * @param input {zoneId, outer:[{x,y}], holes?:[[{x,y}]], hazard, pattern?:'rectangular'|'staggered',
+ * @param input {zoneId, outer:[{x,y}], holes?:[[{x,y}] | {kind:'column'|'shaft', ring:[{x,y}]}], hazard, pattern?:'rectangular'|'staggered',
  *               prefs?:{spacing?:mm, wallDist?:mm}, grid?:{angleDeg,pitchX,pitchY,originX,originY,mode},
  *               locked?:[{id,x,y}], openEdges?:[{a:{x,y},b:{x,y}}], neighbourHeads?:[{x,y}],
  *               frameDeg?:number, reducedWallDist?:boolean}     (all coordinates in mm)
@@ -137,7 +137,17 @@ function prepare(input) {
   const bb = bbox(raw), ox = bb.x0, oy = bb.y0;
   const loc = p => ({ x: +p.x - ox, y: +p.y - oy });
   const outer = orientRing(cleanRing(raw.map(loc)), true);
-  const holes = (input.holes || []).map(h => orientRing(cleanRing(h.map(loc)), false)).filter(h => h.length >= 3);
+  // Holes are tagged `column` or `shaft` (founder decision 4). Columns block spray and need Wmin but
+  // carry no Wmax and never cut bays; shafts/voids are real walls. Untagged rings fall back to the
+  // extent heuristic (column if no side of the bbox exceeds SMALL_HOLE).
+  const holes = [], holeColumn = [];
+  for (const h of input.holes || []) {
+    const ring = Array.isArray(h) ? h : (h && h.ring) || [];
+    const r = orientRing(cleanRing(ring.map(loc)), false);
+    if (r.length < 3) continue;
+    holes.push(r);
+    holeColumn.push(isColumnHole(h, r));
+  }
   const world = p => ({ x: p.x + ox, y: p.y + oy });
   const si = outer.length >= 3 ? findSelfIntersection([outer, ...holes]) : null;
   if (si) {
@@ -157,12 +167,18 @@ function prepare(input) {
     return open.some(e => distPointSeg(p, e.a, e.b) < 2 && distPointSeg(q, e.a, e.b) < 2);
   });
   return {
-    ok: true, ox, oy, outer, holes, outerOpen,
+    ok: true, ox, oy, outer, holes, holeColumn, outerOpen,
     outerWorld: raw,
     locked: (input.locked || []).map(h => ({ ...loc(h), id: h.id, wx: h.x, wy: h.y })),
     neighbours: (input.neighbourHeads || []).map(loc),
     gridLocal: input.grid ? { ...input.grid, originX: (input.grid.originX || 0) - ox, originY: (input.grid.originY || 0) - oy } : null,
   };
+}
+
+function isColumnHole(h, ring) {
+  if (!Array.isArray(h) && h && (h.kind === 'column' || h.kind === 'shaft')) return h.kind === 'column';
+  const b = bbox(ring);
+  return Math.max(b.x1 - b.x0, b.y1 - b.y0) <= SMALL_HOLE;
 }
 
 // Trace tolerance (see oracle): sight lines from samples near a wall are tested from a probe
@@ -290,9 +306,9 @@ function buildFrame(prep, theta, R, grid) {
     }
   }
   const bnd = [], wall = [];
-  // columns (holes up to SMALL_HOLE): block sight, need Wmin, but no Wmax rule (founder decision 2026-10-17)
+  // columns: block sight, need Wmin, but no Wmax rule (founder decision 2026-10-17)
   const rings = [{ r: outer, open: prep.outerOpen, column: false },
-    ...holes.map(h => { const b = bbox(h); return { r: h, open: null, column: Math.max(b.x1 - b.x0, b.y1 - b.y0) <= SMALL_HOLE }; })];
+    ...holes.map((h, i) => ({ r: h, open: null, column: prep.holeColumn[i] }))];
   for (const { r, open, column } of rings) {
     for (let i = 0; i < r.length; i++) {
       const a = r[i], b = r[(i + 1) % r.length];
@@ -343,7 +359,7 @@ function buildFrame(prep, theta, R, grid) {
     gridF = { ox: o.x, oy: o.y, px: turned ? grid.pitchY : grid.pitchX, py: turned ? grid.pitchX : grid.pitchY, mode: grid.mode };
   }
   return {
-    theta, outer, holes, segs, idx, bb, lat, bnd, wall, simplified, douter, dholes, grid: gridF,
+    theta, outer, holes, holeColumn: prep.holeColumn, segs, idx, bb, lat, bnd, wall, simplified, douter, dholes, grid: gridF,
     locked: prep.locked.map(h => ({ ...rotP(h), id: h.id, wx: h.wx, wy: h.wy, kind: 'locked', bay: -1 })),
     neighbours: prep.neighbours.map(h => ({ ...rotP(h), bay: -2 })),
     R,
@@ -356,8 +372,8 @@ function buildFrame(prep, theta, R, grid) {
 // this equals cutting with axis-parallel rays from the reflex vertices.
 
 function decompositions(F) {
-  const large = F.dholes.filter(h => { const b = bbox(h); return Math.max(b.x1 - b.x0, b.y1 - b.y0) > SMALL_HOLE; });
-  const small = F.holes.filter(h => { const b = bbox(h); return Math.max(b.x1 - b.x0, b.y1 - b.y0) <= SMALL_HOLE; });
+  const large = F.dholes.filter((h, i) => !F.holeColumn[i]);   // shafts / voids cut bays
+  const small = F.holes.filter((h, i) => F.holeColumn[i]);      // columns never cut bays
   const mkBay = (ring, holes, id) => {
     const bb = bbox(ring);
     const hs = holes.filter(h => { const b = bbox(h); return b.x1 > bb.x0 && b.x0 < bb.x1 && b.y1 > bb.y0 && b.y0 < bb.y1; });
@@ -491,9 +507,15 @@ function layoutBay(F, bay, bi, samples, ctx) {
   const variants = rowVariants(F, bay, ctx);
   const modes = bay.fast ? [false] : [false, true];
   const all = [];
+  // Exact pruning: once a variant resolves every sample with n heads, a variant that needs more than
+  // n heads can never win (cmpBay ranks unresolved first, then heads), so its sweep stops early.
+  let bound = null, lastShadow = true;
   for (const rows of variants) for (const defer of modes) {
-    if (defer && !all[all.length - 1].sawShadow) continue;   // identical to the run without deferral
-    const res = layoutRows(F, bay, bi, samples, rows, { ...ctx, defer });
+    if (defer && !lastShadow) continue;   // identical to the run without deferral
+    const res = layoutRows(F, bay, bi, samples, rows, { ...ctx, defer, bound });
+    lastShadow = res.sawShadow;
+    if (res.pruned) continue;
+    if (!res.unresolved.length && (bound == null || res.heads.length < bound)) bound = res.heads.length;
     if (DEBUG) DEBUG({ frameDeg: Math.round(F.theta * 180 / Math.PI), bay: bi, rows: rows.map(Math.round), defer, heads: res.heads.length, unresolved: res.unresolved.length, unresAt: res.unresolved.slice(0, 3).map(p => [Math.round(p.x), Math.round(p.y), p.t]) });
     all.push(res);
   }
@@ -517,13 +539,29 @@ function rowVariants(F, bay, ctx) {
   const y0 = bay.bb.y0, y1 = bay.bb.y1, H = y1 - y0;
   let m = Math.max(1, Math.ceil(H / R.Smax - 1e-9));
   while (H / (2 * m) > R.Wmax + TOL) m++;
-  const out = [];
+  const out = [], unis = [];
   const push = rows => { if (!out.some(o => o.length === rows.length && o.every((y, i) => Math.abs(y - rows[i]) < 0.5))) out.push(rows); };
   const okD = rows => rows.every((y, i) => i === 0 || (rows[i] - rows[i - 1] >= R.Smin - TOL && rows[i] - rows[i - 1] <= R.Smax + TOL));
+  // each row moved to the nearest tile-stop line (null if two rows collapse onto one line)
+  const snapRows = rows => {
+    const snapped = [];
+    for (const y of rows) {
+      const j = Math.round((y - grid.oy) / grid.py - 0.5);
+      let best = null;
+      for (const jj of [j - 1, j, j + 1]) {
+        const ys = grid.oy + (jj + 0.5) * grid.py;
+        if (ys <= y0 + R.Wmin || ys >= y1 - R.Wmin) continue;
+        if (best == null || Math.abs(ys - y) < Math.abs(best - y)) best = ys;
+      }
+      if (best != null && !snapped.some(v => Math.abs(v - best) < 1)) snapped.push(best);
+    }
+    return snapped.length === rows.length ? snapped : null;
+  };
   for (let k = 0; k < 3; k++) {
     const mm = m + k;
     if (mm > 1 && H / mm < R.Smin - TOL) break;
     const uni = Array.from({ length: mm }, (_, i) => y0 + (i + 0.5) * H / mm);
+    if (k <= 1) unis.push(uni);
     if (!grid || grid.mode !== 'required') push(uni);
     if (mm > 2) {
       // edge rows pulled out to Wmax: interior rows bunch up (helps rows see both faces of columns)
@@ -535,20 +573,54 @@ function rowVariants(F, bay, ctx) {
       if (D >= R.Smin && D <= R.Smax && o <= D / 2 + TOL) push(Array.from({ length: mm }, (_, i) => y0 + o + i * D));
     }
     if (grid) {
-      const snapped = [];
-      for (const y of uni) {
-        const j = Math.round((y - grid.oy) / grid.py - 0.5);
-        let best = null;
-        for (const jj of [j - 1, j, j + 1]) {
-          const ys = grid.oy + (jj + 0.5) * grid.py;
-          if (ys <= y0 + R.Wmin || ys >= y1 - R.Wmin) continue;
-          if (!best || Math.abs(ys - y) < Math.abs(best - y)) best = ys;
-        }
-        if (best != null && !snapped.some(v => Math.abs(v - best) < 1)) snapped.push(best);
-      }
-      if (snapped.length === mm && okD(snapped)) push(snapped);
+      const snapped = snapRows(uni);
+      if (snapped && okD(snapped)) push(snapped);
     }
   }
+  // Column-aware variants: a row through a column band sees neither face of the column well, so
+  // move that row just clear of the band (below or above) and re-spread the other rows evenly
+  // between it and the walls. Only rows of the uniform sets with m and m + 1 rows are moved, one at
+  // a time (m + 2 added runtime on R1 without a better count).
+  const bands = columnBands(F, bay, R);
+  if (bands.length) {
+    for (const rows of unis) {
+      const mm = rows.length;
+      for (let j = 0; j < mm; j++) {
+        const band = bands.find(b => rows[j] > b[0] && rows[j] < b[1]);
+        if (!band) continue;
+        for (const p of COL_GAP.flatMap(g => [band[0] - g, band[1] + g])) {
+          if (p <= y0 + R.Wmin || p >= y1 - R.Wmin) continue;
+          const na = mm - 1 - j, o = R.Wmax - 1;
+          // other rows spread evenly (half a gap at the walls), or with the wall rows at Wmax
+          for (const [Db, Da] of [[j ? (p - y0) / (j + 0.5) : 0, na ? (y1 - p) / (na + 0.5) : 0],
+            [j ? (p - y0 - o) / j : 0, na ? (y1 - o - p) / na : 0]]) {
+            const moved = rows.map((y, i) => (i < j ? p - (j - i) * Db : i > j ? p + (i - j) * Da : p));
+            const edgeOk = r => r[0] - y0 <= R.Wmax + TOL && y1 - r[mm - 1] <= R.Wmax + TOL;
+            if (!grid || grid.mode !== 'required') { if (edgeOk(moved) && okD(moved)) push(moved); }
+            const sn = grid ? snapRows(moved) : null;
+            if (sn && edgeOk(sn) && okD(sn) && !bands.some(b => sn[j] > b[0] && sn[j] < b[1])) push(sn);
+          }
+        }
+      }
+    }
+  }
+  return out;
+}
+
+const COL_GAP = [300, 700];   // distances tried between a moved row and a column band
+
+// y-bands (frame coordinates) of the columns inside a bay, widened by Wmin and merged.
+function columnBands(F, bay, R) {
+  const raw = [];
+  F.holes.forEach((h, i) => {
+    if (!F.holeColumn[i]) return;
+    const b = bbox(h);
+    if (b.x1 <= bay.bb.x0 || b.x0 >= bay.bb.x1 || b.y1 <= bay.bb.y0 || b.y0 >= bay.bb.y1) return;
+    raw.push([b.y0 - R.Wmin, b.y1 + R.Wmin]);
+  });
+  raw.sort((a, b) => a[0] - b[0]);
+  const out = [];
+  for (const r of raw) { const l = out[out.length - 1]; if (l && r[0] <= l[1]) l[1] = Math.max(l[1], r[1]); else out.push(r.slice()); }
   return out;
 }
 
@@ -597,6 +669,7 @@ function layoutRows(F, bay, bi, samples, rows, ctx) {
   const cov = new HeadGrid(ctx.placedCov, R.Rc);
   let carry = [], cost = 0, prevRowXs = null, prevS = 0, row0 = null, row0S = 0, sawShadow = false;
   for (let j = 0; j < m; j++) {
+    if (ctx.bound != null && heads.length > ctx.bound) return { pruned: true, sawShadow: true };
     const I = info[j];
     const spHeads = ctx.placedSp.concat(heads);
     // targets for alignment / stagger

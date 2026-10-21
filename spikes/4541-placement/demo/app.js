@@ -10,6 +10,8 @@
   const samples = Zones.SAMPLES.map(s => ({ ...clone(s), results: null }));
   const S = { cur: 0, active: 0, cov: 'circle', drawing: null, drag: null, hover: null, focus: null };
 
+  const ringOf = h => (Array.isArray(h) ? h : h.ring);   // holes: bare ring or {kind, ring}
+
   function cssVar(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
 
   // ---- placement / checking ---------------------------------------------------------------------
@@ -145,7 +147,7 @@
     if (S.drawing) { drawDraft(C); drawScale(C); return; }
     const s = samples[S.cur];
     s.zones.forEach((z, zi) => {
-      ctx.beginPath(); path(z.outer); (z.holes || []).forEach(h => path(h));
+      ctx.beginPath(); path(z.outer); (z.holes || []).forEach(h => path(ringOf(h)));
       ctx.fillStyle = C.zone; ctx.fill('evenodd');
       if (z.grid) drawTiles(z, C);
     });
@@ -161,7 +163,7 @@
     }
     s.zones.forEach((z, zi) => {
       // holes
-      (z.holes || []).forEach(h => { ctx.beginPath(); path(h); ctx.fillStyle = C.hole; ctx.fill(); ctx.strokeStyle = C.wall; ctx.lineWidth = 1.5; ctx.stroke(); });
+      (z.holes || []).forEach(h => { ctx.beginPath(); path(ringOf(h)); ctx.fillStyle = C.hole; ctx.fill(); ctx.strokeStyle = C.wall; ctx.lineWidth = 1.5; ctx.stroke(); });
       // walls (open edges dashed)
       const r = z.outer;
       for (let i = 0; i < r.length; i++) {
