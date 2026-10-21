@@ -1,0 +1,220 @@
+// Tile math for the PDF viewer (Story 2.3 spike, kept for Epic 3). Framework-free.
+//
+// Spaces:
+// - page space: PDF points with the origin at the page's top-left corner and y
+//   pointing down (pdf.js viewport space at scale 1, rotation applied).
+// - view: CSS pixels. `View.scale` is CSS px per point; (x, y) is the page-space
+//   point shown at the viewport's top-left corner.
+// - tile space: device pixels of the page rendered at a bucket's scale, cut
+//   into square tiles of `tileSize` device px (edge tiles are smaller).
+//
+// Zoom buckets are powers of two relative to the fit scale: bucket k renders at
+// fitScale * 2^k * dpr device px per point. A view between buckets uses the
+// next bucket up (never upscale a tile at rest), clamped to [MIN_BUCKET, MAX_BUCKET].
+
+export type Size = { width: number; height: number };
+export type View = { scale: number; x: number; y: number };
+
+export const MIN_BUCKET = -2; // 1/4 of fit
+export const MAX_BUCKET = 3; // 8x fit
+export const DEFAULT_TILE_SIZE = 512;
+
+/** CSS px per point that fits the whole page into the viewport, leaving `padding` CSS px around it. */
+export function fitScale(page: Size, viewport: Size, padding = 0): number {
+  const w = Math.max(1, viewport.width - 2 * padding);
+  const h = Math.max(1, viewport.height - 2 * padding);
+  if (page.width <= 0 || page.height <= 0) throw new RangeError("page size must be positive");
+  return Math.min(w / page.width, h / page.height);
+}
+
+/** Device px per point at bucket `k`. */
+export function bucketScale(fit: number, bucket: number, dpr: number): number {
+  return fit * 2 ** bucket * dpr;
+}
+
+/**
+ * The bucket for a view scale: the smallest k with fit * 2^k >= viewScale (a
+ * 1e-6 tolerance keeps exact powers on their own bucket), clamped.
+ */
+export function bucketForScale(viewScale: number, fit: number): number {
+  if (!(viewScale > 0) || !(fit > 0)) throw new RangeError("scales must be positive");
+  const k = Math.ceil(Math.log2(viewScale / fit) - 1e-6);
+  // "+ 0" turns -0 (ceil of a tiny negative) into 0.
+  return Math.min(MAX_BUCKET, Math.max(MIN_BUCKET, k)) + 0;
+}
+
+/** All buckets from MIN_BUCKET to MAX_BUCKET (inclusive). */
+export function allBuckets(): number[] {
+  const out: number[] = [];
+  for (let k = MIN_BUCKET; k <= MAX_BUCKET; k++) out.push(k);
+  return out;
+}
+
+export type TileGrid = {
+  /** Device px per point. */
+  scale: number;
+  tileSize: number;
+  /** The page in device px at this scale (rounded up). */
+  width: number;
+  height: number;
+  cols: number;
+  rows: number;
+};
+
+export function tileGrid(page: Size, scale: number, tileSize = DEFAULT_TILE_SIZE): TileGrid {
+  if (!(scale > 0)) throw new RangeError("scale must be positive");
+  if (!Number.isInteger(tileSize) || tileSize <= 0) throw new RangeError("tileSize must be a positive integer");
+  const width = Math.max(1, Math.ceil(page.width * scale));
+  const height = Math.max(1, Math.ceil(page.height * scale));
+  return { scale, tileSize, width, height, cols: Math.ceil(width / tileSize), rows: Math.ceil(height / tileSize) };
+}
+
+/** Device-pixel rectangle of tile (col, row); edge tiles are clipped to the page. */
+export function tileRect(grid: TileGrid, col: number, row: number): { x: number; y: number; width: number; height: number } {
+  const x = col * grid.tileSize;
+  const y = row * grid.tileSize;
+  return { x, y, width: Math.min(grid.tileSize, grid.width - x), height: Math.min(grid.tileSize, grid.height - y) };
+}
+
+export type TileRef = {
+  col: number;
+  row: number;
+  /** True when the tile intersects the viewport (false for margin tiles). */
+  inView: boolean;
+  /** Distance of the tile centre from the viewport centre, in tiles. */
+  distance: number;
+};
+
+/**
+ * Tiles needed for `view` at `grid`: those intersecting the viewport plus a
+ * `margin`-tile ring (pre-fetch for panning), clamped to the page. Ordered by
+ * priority: in-view tiles first, then by distance from the viewport centre
+ * (centre first); ties break by row, then column, so the order is stable.
+ */
+export function visibleTiles(view: View, viewport: Size, grid: TileGrid, margin = 1): TileRef[] {
+  if (!(view.scale > 0)) throw new RangeError("view.scale must be positive");
+  // Viewport in page points, then in device px of this grid.
+  const x0 = view.x * grid.scale;
+  const y0 = view.y * grid.scale;
+  const x1 = (view.x + viewport.width / view.scale) * grid.scale;
+  const y1 = (view.y + viewport.height / view.scale) * grid.scale;
+  const t = grid.tileSize;
+  const c0 = Math.floor(x0 / t);
+  const r0 = Math.floor(y0 / t);
+  const c1 = Math.ceil(x1 / t) - 1;
+  const r1 = Math.ceil(y1 / t) - 1;
+  const cx = (x0 + x1) / 2 / t;
+  const cy = (y0 + y1) / 2 / t;
+  const out: TileRef[] = [];
+  for (let row = Math.max(0, r0 - margin); row <= Math.min(grid.rows - 1, r1 + margin); row++) {
+    for (let col = Math.max(0, c0 - margin); col <= Math.min(grid.cols - 1, c1 + margin); col++) {
+      const inView = col >= c0 && col <= c1 && row >= r0 && row <= r1;
+      const distance = Math.hypot(col + 0.5 - cx, row + 0.5 - cy);
+      out.push({ col, row, inView, distance });
+    }
+  }
+  out.sort((a, b) => Number(b.inView) - Number(a.inView) || a.distance - b.distance || a.row - b.row || a.col - b.col);
+  return out;
+}
+
+/** Cache key of a tile: page (1-based), bucket, column, row. */
+export function tileKey(page: number, bucket: number, col: number, row: number): string {
+  return `${page}:${bucket}:${col}:${row}`;
+}
+
+/** Bytes of an RGBA bitmap. */
+export function bitmapBytes(width: number, height: number): number {
+  return width * height * 4;
+}
+
+/**
+ * Least-recently-used cache with a byte budget. `get` refreshes an entry;
+ * `set` inserts or replaces it and evicts the oldest entries until the total is
+ * within budget. An entry larger than the whole budget is not kept (it is
+ * evicted at once and the other entries stay).
+ * `onEvict` runs for every value that leaves the cache (eviction, replacement,
+ * delete, clear), so the owner can release it (ImageBitmap.close()).
+ */
+export class LruByteCache<V> {
+  readonly budget: number;
+  private readonly map = new Map<string, { value: V; bytes: number }>();
+  private total = 0;
+  private readonly onEvict?: (key: string, value: V) => void;
+
+  constructor(budgetBytes: number, onEvict?: (key: string, value: V) => void) {
+    if (!(budgetBytes >= 0)) throw new RangeError("budget must be >= 0");
+    this.budget = budgetBytes;
+    this.onEvict = onEvict;
+  }
+
+  get bytes(): number {
+    return this.total;
+  }
+
+  get size(): number {
+    return this.map.size;
+  }
+
+  has(key: string): boolean {
+    return this.map.has(key);
+  }
+
+  /** Returns the value and marks it most recently used. */
+  get(key: string): V | undefined {
+    const entry = this.map.get(key);
+    if (!entry) return undefined;
+    this.map.delete(key);
+    this.map.set(key, entry);
+    return entry.value;
+  }
+
+  /** Returns the value without changing its recency. */
+  peek(key: string): V | undefined {
+    return this.map.get(key)?.value;
+  }
+
+  /** Inserts (most recently used) and evicts; returns the evicted keys in eviction order. */
+  set(key: string, value: V, bytes: number): string[] {
+    if (!(bytes >= 0)) throw new RangeError("bytes must be >= 0");
+    const old = this.map.get(key);
+    if (old) {
+      this.map.delete(key);
+      this.total -= old.bytes;
+      if (old.value !== value) this.onEvict?.(key, old.value);
+    }
+    if (bytes > this.budget) {
+      this.onEvict?.(key, value);
+      return [key];
+    }
+    this.map.set(key, { value, bytes });
+    this.total += bytes;
+    const evicted: string[] = [];
+    for (const [k, entry] of this.map) {
+      if (this.total <= this.budget) break;
+      this.map.delete(k);
+      this.total -= entry.bytes;
+      evicted.push(k);
+      this.onEvict?.(k, entry.value);
+    }
+    return evicted;
+  }
+
+  delete(key: string): boolean {
+    const entry = this.map.get(key);
+    if (!entry) return false;
+    this.map.delete(key);
+    this.total -= entry.bytes;
+    this.onEvict?.(key, entry.value);
+    return true;
+  }
+
+  clear(): void {
+    for (const [k, entry] of this.map) this.onEvict?.(k, entry.value);
+    this.map.clear();
+    this.total = 0;
+  }
+
+  keys(): string[] {
+    return [...this.map.keys()];
+  }
+}
