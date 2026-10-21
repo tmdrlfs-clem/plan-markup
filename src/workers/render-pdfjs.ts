@@ -22,8 +22,8 @@ import type { PageInfo, RendererOptions, TileJob, TileRenderer } from "./render.
 type CanvasAndContext = { canvas: OffscreenCanvas | null; context: OffscreenCanvasRenderingContext2D | null };
 
 /** pdf.js CanvasFactory backed by OffscreenCanvas (pdf.js's default needs `document`). */
+// pdf.js constructs it with { ownerDocument, enableHWA }; neither is needed here.
 class OffscreenCanvasFactory {
-  constructor(_options: { enableHWA?: boolean }) {}
   create(width: number, height: number): CanvasAndContext {
     if (width <= 0 || height <= 0) throw new Error("Invalid canvas size");
     const canvas = new OffscreenCanvas(width, height);
@@ -45,7 +45,6 @@ class OffscreenCanvasFactory {
 
 /** pdf.js FilterFactory without SVG filters (pdf.js's base behaviour; the DOM one needs `document`). */
 class NoFilterFactory {
-  constructor(_options: unknown) {}
   addFilter(): string { return "none"; }
   addHCMFilter(): string { return "none"; }
   addAlphaFilter(): string { return "none"; }
@@ -59,6 +58,10 @@ class NoFilterFactory {
 }
 
 type FontScope = { fonts?: unknown };
+
+/** Progressive preview snapshots: first after this long, then at this interval (ms). */
+const PARTIAL_FIRST_MS = 300;
+const PARTIAL_EVERY_MS = 500;
 
 let setupMode: "inline" | "nested" | null = null;
 
@@ -117,11 +120,14 @@ export class PdfjsTileRenderer implements TileRenderer<ImageBitmap> {
     return out;
   }
 
-  async render(job: TileJob, signal: AbortSignal): Promise<ImageBitmap> {
+  async render(job: TileJob, signal: AbortSignal, onPartial?: (bitmap: ImageBitmap) => void): Promise<ImageBitmap> {
     const page = this.pages.get(job.page);
     if (!page) throw new RangeError("page not loaded");
     const canvas = new OffscreenCanvas(job.width, job.height);
-    const ctx = canvas.getContext("2d", { alpha: false });
+    // willReadFrequently forces a CPU (software) canvas. A GPU-backed worker canvas
+    // sends every pdf.js path to the GPU process, which then starves the page's
+    // compositor (measured: 1 fps during A0 tile renders). See the spike report.
+    const ctx = canvas.getContext("2d", { alpha: false, willReadFrequently: true });
     if (!ctx) throw new Error("No 2D context");
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, job.width, job.height);
@@ -134,6 +140,19 @@ export class PdfjsTileRenderer implements TileRenderer<ImageBitmap> {
       annotationMode: AnnotationMode.ENABLE,
       background: "#ffffff",
     });
+    if (onPartial) {
+      // pdf.js calls onContinue between execution slices: snapshot the canvas
+      // now and then so a slow page shows up progressively.
+      let next = performance.now() + PARTIAL_FIRST_MS;
+      task.onContinue = (cont: () => void) => {
+        const now = performance.now();
+        if (now >= next) {
+          next = now + PARTIAL_EVERY_MS;
+          void createImageBitmap(canvas).then(onPartial, () => undefined);
+        }
+        cont();
+      };
+    }
     const onAbort = () => task.cancel();
     signal.addEventListener("abort", onAbort, { once: true });
     try {

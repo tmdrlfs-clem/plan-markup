@@ -80,7 +80,7 @@ const tile = (reqId: number, col = 0, row = 0, extra: Record<string, unknown> = 
 describe("RenderWorkerHost", () => {
   it("opens, then answers with a whole-page preview tile first", async () => {
     const { host, replies, renderer, transfers } = setup();
-    host.handle({ type: "open", reqId: 1, bytes: bytes(), preview: { page: 1, bucket: 0, scale: 0.5 } });
+    host.handle({ type: "open", reqId: 1, bytes: bytes(), preview: { page: 1, bucket: 0, maxWidth: 500, maxHeight: 400 } });
     host.handle(tile(2, 1, 0));
     await host.idle();
     expect(replies.map((r) => r.type)).toEqual(["opened", "tile", "tile"]);
@@ -92,9 +92,41 @@ describe("RenderWorkerHost", () => {
     expect(transfers[2]).toHaveLength(1);
   });
 
+  it("posts progressive preview snapshots before the finished preview", async () => {
+    const { host, replies, renderer } = setup();
+    renderer.render = async (job, _signal, onPartial) => {
+      onPartial?.({ job, closed: false });
+      onPartial?.({ job, closed: false });
+      return { job, closed: false };
+    };
+    host.handle({ type: "open", reqId: 1, bytes: bytes(), preview: { page: 1, bucket: 0, maxWidth: 100, maxHeight: 100, progressive: true } });
+    host.handle(tile(2));
+    await host.idle();
+    expect(replies.map((r) => (r.type === "tile" ? `${r.reqId}:${r.partial ? "partial" : "final"}` : r.type))).toEqual([
+      "opened",
+      "1:partial",
+      "1:partial",
+      "1:final",
+      "2:final",
+    ]);
+  });
+
+  it("does not offer snapshots for normal tiles or non-progressive previews", async () => {
+    const { host, renderer } = setup();
+    const seen: boolean[] = [];
+    renderer.render = async (job, _signal, onPartial) => {
+      seen.push(Boolean(onPartial));
+      return { job, closed: false };
+    };
+    host.handle({ type: "open", reqId: 1, bytes: bytes(), preview: { page: 1, bucket: 0, maxWidth: 100, maxHeight: 100 } });
+    host.handle(tile(2));
+    await host.idle();
+    expect(seen).toEqual([false, false]);
+  });
+
   it("passes renderer options through and ignores unknown ones", async () => {
     const { host, renderer } = setup();
-    const open = vi.spyOn(renderer, "open");
+    const open = vi.spyOn(renderer, "open") as unknown as { mock: { calls: unknown[][] } };
     host.handle({ type: "open", reqId: 1, bytes: bytes().buffer, options: { pdfjsWorker: "nested", evil: 1 } });
     await host.idle();
     expect(open.mock.calls[0][1]).toEqual({ pdfjsWorker: "nested" });
@@ -172,6 +204,13 @@ describe("RenderWorkerHost", () => {
     expect(renderer.closed).toBe(1);
   });
 
+  it("reports a preview for a missing page as an error after opened", async () => {
+    const { host, replies } = setup();
+    host.handle({ type: "open", reqId: 1, bytes: bytes(), preview: { page: 3, bucket: 0, maxWidth: 10, maxHeight: 10 } });
+    await host.idle();
+    expect(replies.map((r) => r.type)).toEqual(["opened", "error"]);
+  });
+
   it("reports open failures and out-of-range tiles as errors", async () => {
     const { host, replies, renderer } = setup();
     renderer.failOpen = true;
@@ -193,7 +232,8 @@ describe("RenderWorkerHost", () => {
     [null, null],
     [{ type: "open" }, null],
     [{ type: "open", reqId: 1, bytes: "x" }, 1],
-    [{ type: "open", reqId: 1, bytes: new Uint8Array(1), preview: { page: 1, bucket: 0, scale: 0 } }, 1],
+    [{ type: "open", reqId: 1, bytes: new Uint8Array(1), preview: { page: 1, bucket: 0, maxWidth: 0, maxHeight: 10 } }, 1],
+    [{ type: "open", reqId: 1, bytes: new Uint8Array(1), preview: { page: 0, bucket: 0, maxWidth: 10, maxHeight: 10 } }, 1],
     [{ type: "renderTile", reqId: 2, page: 0, bucket: 0, scale: 1, col: 0, row: 0, tileSize: 512 }, 2],
     [{ type: "renderTile", reqId: 2, page: 1, bucket: 0.5, scale: 1, col: 0, row: 0, tileSize: 512 }, 2],
     [{ type: "renderTile", reqId: 2, page: 1, bucket: 0, scale: 1, col: -1, row: 0, tileSize: 512 }, 2],
@@ -218,8 +258,9 @@ describe("RenderWorkerHost", () => {
 describe("renderOpenRequest", () => {
   it("transfers the byte buffer", () => {
     const b = new Uint8Array(8);
-    const [msg, transfer] = renderOpenRequest(5, b, { page: 1, bucket: 0, scale: 0.4 }, { pdfjsWorker: "inline" });
-    expect(msg).toEqual({ type: "open", reqId: 5, bytes: b, preview: { page: 1, bucket: 0, scale: 0.4 }, options: { pdfjsWorker: "inline" } });
+    const preview = { page: 1, bucket: 0, maxWidth: 800, maxHeight: 600 };
+    const [msg, transfer] = renderOpenRequest(5, b, preview, { pdfjsWorker: "inline" });
+    expect(msg).toEqual({ type: "open", reqId: 5, bytes: b, preview, options: { pdfjsWorker: "inline" } });
     expect(transfer).toEqual([b.buffer]);
   });
 });

@@ -1,12 +1,15 @@
 // PDF tile render worker (Story 2.3 spike; protocol kept for Epic 3).
 //
 // Requests (main -> worker):
-//   { type: "open", reqId, bytes, preview?: { page, bucket, scale }, options? }
+//   { type: "open", reqId, bytes, preview?: { page, bucket, maxWidth, maxHeight }, options? }
 //       The PDF bytes are transferred once (post with `renderOpenRequest`).
 //       `options` go to the renderer (pdf.js: which worker setup to use).
 //       Replies { type: "opened", reqId, pages, ms } and then, when `preview` is
 //       set, one low-resolution whole-page tile ({ type: "tile", preview: true })
-//       so the viewer can show something before any real tile is ready.
+//       scaled to fit maxWidth x maxHeight device px (the viewer's fit bucket),
+//       so the viewer can show something before any real tile is ready. With
+//       `preview.progressive`, snapshots of the preview are also posted while it
+//       renders ({ type: "tile", preview: true, partial: true }, ~every 500 ms).
 //   { type: "renderTile", reqId, page, bucket, scale, col, row, tileSize }
 //       `scale` is device px per point (the bucket's scale). Replies
 //       { type: "tile", reqId, ..., bitmap } with the ImageBitmap transferred.
@@ -33,8 +36,11 @@ export type RendererOptions = { pdfjsWorker?: "inline" | "nested" };
 
 export interface TileRenderer<B> {
   open(bytes: Uint8Array, options: RendererOptions): Promise<PageInfo[]>;
-  /** Must reject (any error) once `signal` aborts. */
-  render(job: TileJob, signal: AbortSignal): Promise<B>;
+  /**
+   * Must reject (any error) once `signal` aborts. `onPartial`, when given, may
+   * be called with snapshots of the unfinished render (owned by the callee).
+   */
+  render(job: TileJob, signal: AbortSignal, onPartial?: (bitmap: B) => void): Promise<B>;
   /** Releases a bitmap that will not be posted (rendered after a cancel). */
   release(bitmap: B): void;
   close(): Promise<void>;
@@ -44,7 +50,7 @@ export type OpenRequest = {
   type: "open";
   reqId: number;
   bytes: ArrayBuffer | Uint8Array;
-  preview?: { page: number; bucket: number; scale: number };
+  preview?: { page: number; bucket: number; maxWidth: number; maxHeight: number; progressive?: boolean };
   options?: RendererOptions;
 };
 export type RenderTileRequest = {
@@ -65,6 +71,8 @@ export type TileReply<B> = {
   type: "tile";
   reqId: number;
   preview: boolean;
+  /** A snapshot of an unfinished preview; the finished tile follows. */
+  partial: boolean;
   page: number;
   bucket: number;
   col: number;
@@ -103,7 +111,7 @@ export function renderOpenRequest(
 
 type Job =
   | { kind: "open"; reqId: number; bytes: Uint8Array; preview?: OpenRequest["preview"]; options: RendererOptions; queuedAt: number }
-  | { kind: "tile"; req: RenderTileRequest; preview: boolean; queuedAt: number }
+  | { kind: "tile"; req: RenderTileRequest; preview: boolean; progressive?: boolean; queuedAt: number }
   | { kind: "close"; reqId: number; queuedAt: number };
 
 const isFiniteNumber = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
@@ -142,7 +150,10 @@ export class RenderWorkerHost<B> {
           msg.bytes instanceof Uint8Array ? msg.bytes : msg.bytes instanceof ArrayBuffer ? new Uint8Array(msg.bytes) : null;
         if (!bytes) return this.error(reqId, new TypeError("bytes must be a Uint8Array or an ArrayBuffer"));
         const preview = msg.preview as OpenRequest["preview"] | undefined;
-        if (preview !== undefined && !(isIndex(preview?.page) && isFiniteNumber(preview?.bucket) && (preview?.scale ?? 0) > 0)) {
+        const okPreview =
+          isIndex(preview?.page) && preview.page >= 1 && Number.isInteger(preview.bucket) &&
+          isFiniteNumber(preview.maxWidth) && preview.maxWidth >= 1 && isFiniteNumber(preview.maxHeight) && preview.maxHeight >= 1;
+        if (preview !== undefined && !okPreview) {
           return this.error(reqId, new TypeError("invalid preview"));
         }
         const raw = (typeof msg.options === "object" && msg.options !== null ? msg.options : {}) as Record<string, unknown>;
@@ -229,12 +240,15 @@ export class RenderWorkerHost<B> {
       if (p) {
         // One whole-page tile at the preview scale, ahead of anything queued.
         const page = this.pages[p.page - 1];
-        const size = page ? Math.ceil(Math.max(page.width, page.height) * p.scale) : 1;
+        if (!page) return this.error(job.reqId, new RangeError("preview page out of range"));
+        const scale = Math.min(p.maxWidth / page.width, p.maxHeight / page.height);
+        const size = Math.ceil(Math.max(page.width, page.height) * scale);
         this.queue.unshift({
           kind: "tile",
           preview: true,
+          progressive: p.progressive === true,
           queuedAt: this.now(),
-          req: { type: "renderTile", reqId: job.reqId, page: p.page, bucket: p.bucket, scale: p.scale, col: 0, row: 0, tileSize: size },
+          req: { type: "renderTile", reqId: job.reqId, page: p.page, bucket: p.bucket, scale, col: 0, row: 0, tileSize: size },
         });
       }
       return;
@@ -259,8 +273,16 @@ export class RenderWorkerHost<B> {
     const abort = new AbortController();
     this.running = { reqId: req.reqId, abort };
     const t0 = this.now();
+    const base = { type: "tile", reqId: req.reqId, preview: job.preview, page: req.page, bucket: req.bucket, col: req.col, row: req.row, scale: req.scale, ...rect } as const;
+    const onPartial = job.progressive
+      ? (bitmap: B) => {
+          if (abort.signal.aborted) return this.renderer.release(bitmap);
+          const now = this.now();
+          this.post({ ...base, partial: true, bitmap, renderMs: now - t0, waitMs: t0 - job.queuedAt }, this.transferOf(bitmap));
+        }
+      : undefined;
     try {
-      const bitmap = await this.renderer.render({ page: req.page, scale: req.scale, ...rect }, abort.signal);
+      const bitmap = await this.renderer.render({ page: req.page, scale: req.scale, ...rect }, abort.signal, onPartial);
       if (abort.signal.aborted) {
         // Finished after a cancel: drop it.
         this.renderer.release(bitmap);
@@ -270,15 +292,8 @@ export class RenderWorkerHost<B> {
       const t1 = this.now();
       this.post(
         {
-          type: "tile",
-          reqId: req.reqId,
-          preview: job.preview,
-          page: req.page,
-          bucket: req.bucket,
-          col: req.col,
-          row: req.row,
-          scale: req.scale,
-          ...rect,
+          ...base,
+          partial: false,
           bitmap,
           renderMs: t1 - t0,
           waitMs: t0 - job.queuedAt,
