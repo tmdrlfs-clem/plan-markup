@@ -1,6 +1,6 @@
 # Story 2.2: Spike close-out — irregular-zone placement (Fable)
 
-Status: in-progress
+Status: review
 
 ## Story
 
@@ -19,11 +19,11 @@ so that Epic 9 starts from a proven algorithm and agreed rules.
 ## Tasks / Subtasks
 
 - [x] **Task 1: Confirm the column rule** (AC 1): read `oracle.js` / `placer.js` column handling (already implemented with a ≤ 1 m extent heuristic) against design doc decision 4; replace the heuristic with explicit hole tags (`kind: "column" | "shaft"`) in the zone data, keeping the heuristic only as a fallback for untagged holes. Add/keep tests: Z6 (3 columns) = 15 heads; Z7 (4 m shaft) keeps `Wmax` on shaft faces; a column-face `Wmax` mutation is **not** flagged; a head within `Wmin` of a column **is** flagged.
-- [ ] **Task 2: Rerun and measure** (AC 1, 2): run the suite twice (determinism), capture the table, random-zone stats, mutations and timings.
-- [ ] **Task 3: Weak cases** (AC 2): investigate R1 (387 m², 34 heads vs LB 19, ~2.5 s) enough to name the cause and a concrete Epic 9 fix (e.g. bay decomposition around columns, frame search budget); same for staggered +1 and tile-alignment skew. Improve the prototype only if a fix is small and safe; otherwise document.
+- [x] **Task 2: Rerun and measure** (AC 1, 2): run the suite twice (determinism), capture the table, random-zone stats, mutations and timings.
+- [x] **Task 3: Weak cases** (AC 2): investigate R1 (387 m², 34 heads vs LB 19, ~2.5 s) enough to name the cause and a concrete Epic 9 fix (e.g. bay decomposition around columns, frame search budget); same for staggered +1 and tile-alignment skew. Improve the prototype only if a fix is small and safe; otherwise document.
 - [x] **Task 4: Kernel decision** (AC 3): evaluate Clipper2 bindings available on npm (e.g. `clipper2-js`, `clipper2-wasm`, `clipper-lib` for Clipper1) — maintenance, licence, size, offset/boolean/point-in-polygon coverage, runs in a Web Worker, deterministic integer coordinates — vs the spike kernel. Write ADR 0004 with the pin.
 - [x] **Task 5: Fixtures** (AC 4): `spikes/4541-placement/export-zones.mjs` writes `fixtures/zones/<slug>.json`; switch `zones.js` / `test/run.mjs` to load them; document the format.
-- [ ] **Task 6: Report + README** (AC 2): write the report, update the spike README results, rebuild `dist/demo.html`.
+- [x] **Task 6: Report + README** (AC 2): write the report, update the spike README results, rebuild `dist/demo.html`.
 
 ## Dev Notes
 
@@ -45,10 +45,46 @@ so that Epic 9 starts from a proven algorithm and agreed rules.
 
 ### Agent Model Used
 
+Claude Fable 5.1 (claude-fable-5-1)
+
 ### Debug Log References
+
+- Suite: `node spikes/4541-placement/test/run.mjs` exit 0 twice (2026-10-22); head lists of all 26 zones byte-equal across two processes.
+- 200 m² NFR6 cases: 41–49 / 229–247 / 63–69 ms. R1: 29 heads, 3.4–4.1 s. Random set: 54 run, 0 failing, max 0.9–1.2 s.
+- R1 CPU profile: `visibleRun` (sight-line shadows per sample and row) ≈ 40 % of placement time.
+- Experiments reverted: column gaps 100–1000 mm and m + 2 rows (no better count, ≈ 2× time); column-pocket gap-fill (R1 27 heads, 8 s, 0 tile stops).
+- Kernel evaluation in a scratch folder (not the repo), inside a Node worker thread: clipper2-ts 2.0.1-18, clipper2-wasm 0.4.0, clipper2-js 1.2.4, clipper-lib 6.4.2.
+- `npm run typecheck`, `npm run lint`, `npm test` (83 files / 847 tests), `npm run build`, `npm run check:pinned`: pass.
 
 ### Completion Notes List
 
+- Task 1: holes are `{kind: 'column' | 'shaft', ring}` in placer, oracle, fixtures and demo; each module reads the tag independently and keeps the ≤ 1 m extent heuristic only for bare rings. Six column-rule checks added to the suite. **Deviation:** Z6 places 18, not 15 — the hand count assumed columns do not block sight (15 without columns); the test guards ≤ 18 and the report argues 15 is infeasible under decision 4 (founder question 1).
+- Placer improvements (small, safe): column-aware row variants (R1 34 → 29 heads) and exact pruning of row-set variants that already need more heads than the best complete one. Rule figures unchanged; oracle still imports nothing.
+- Task 3: R1 cause = perimeter columns 1.2 m off the walls create shadowed pockets that need an extra full-length row (20 heads without columns); staggered +1 is inherent at these figures ((n − 1.5) S ≥ L − 2 Wmax needs S ≥ Smax); tile skew = fixed per-stop cost dominating the evenness term. Epic 9 fixes in the report.
+- Task 4: ADR 0004 pins `clipper2-ts` 2.0.1-18 (not installed; Epic 9 installs it).
+- Task 5: `export-zones.mjs` writes 26 fixtures (`--check` for drift); suite and demo read only the fixtures; the suite also checks fixture lower bounds and expected error codes.
+- Task 6: report `docs/spikes/2-2-placement-report.md` (decision: go, with Epic 9 changes), spike README results updated, `dist/demo.html` rebuilt.
+- Added `spikes/4541-placement/package.json` (`"type": "module"`); root package.json unchanged.
+
 ### File List
 
+- `docs/decisions/0004-geometry-kernel.md` (new)
+- `docs/spikes/2-2-placement-report.md` (new)
+- `fixtures/README.md`
+- `fixtures/zones/*.json` (26 new files) and `fixtures/zones/.gitkeep` (deleted)
+- `spikes/4541-placement/package.json` (new)
+- `spikes/4541-placement/export-zones.mjs` (new)
+- `spikes/4541-placement/src/placer.js`
+- `spikes/4541-placement/src/oracle.js`
+- `spikes/4541-placement/src/zones.js`
+- `spikes/4541-placement/test/run.mjs`
+- `spikes/4541-placement/build.mjs`
+- `spikes/4541-placement/demo/app.js`
+- `spikes/4541-placement/dist/demo.html`
+- `spikes/4541-placement/README.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `_bmad-output/implementation-artifacts/2-2-spike-close-out-irregular-zone-placement-fable.md`
+
 ### Change Log
+
+- 2026-10-22: Story 2.2 implemented — tagged holes and column-rule tests, column-aware rows and pruning in the placer, zone fixtures as single source of truth, ADR 0004 (clipper2-ts 2.0.1-18), close-out report; status → review.
