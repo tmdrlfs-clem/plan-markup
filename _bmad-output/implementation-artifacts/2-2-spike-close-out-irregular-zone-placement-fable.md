@@ -55,6 +55,7 @@ Claude Fable 5.1 (claude-fable-5-1)
 - Experiments reverted: column gaps 100–1000 mm and m + 2 rows (no better count, ≈ 2× time); column-pocket gap-fill (R1 27 heads, 8 s, 0 tile stops).
 - Kernel evaluation in a scratch folder (not the repo), inside a Node worker thread: clipper2-ts 2.0.1-18, clipper2-wasm 0.4.0, clipper2-js 1.2.4, clipper-lib 6.4.2.
 - `npm run typecheck`, `npm run lint`, `npm test` (83 files / 847 tests), `npm run build`, `npm run check:pinned`: pass.
+- GitHub CI run 39670820703 (commit 938d041): success (typecheck/lint/unit/guards, Playwright e2e, gitleaks).
 
 ### Completion Notes List
 
