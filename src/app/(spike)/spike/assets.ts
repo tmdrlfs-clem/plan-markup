@@ -53,7 +53,8 @@ export async function fileResponse(absolute: string, contentType: string): Promi
   }
 }
 
-// Built from process.cwd() at request time on purpose: nothing here is traced
-// into the build output.
+// Resolved from process.cwd() at request time. The file tracer still sees
+// these joins, so next.config.ts excludes fixtures/private (every route) and
+// pdfjs-dist (spike routes) from the server traces.
 export const fixturePath = (file: string): string => path.join(process.cwd(), "fixtures", "private", "pdf", file);
 export const pdfjsPath = (rel: string): string => path.join(process.cwd(), "node_modules", "pdfjs-dist", ...rel.split("/"));

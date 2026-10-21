@@ -94,7 +94,7 @@ describe("RenderWorkerHost", () => {
 
   it("posts progressive preview snapshots before the finished preview", async () => {
     const { host, replies, renderer } = setup();
-    renderer.render = async (job, _signal, onPartial) => {
+    renderer.render = async (job: TileJob, _signal: AbortSignal, onPartial?: (b: Bitmap) => void) => {
       onPartial?.({ job, closed: false });
       onPartial?.({ job, closed: false });
       return { job, closed: false };
@@ -114,7 +114,7 @@ describe("RenderWorkerHost", () => {
   it("does not offer snapshots for normal tiles or non-progressive previews", async () => {
     const { host, renderer } = setup();
     const seen: boolean[] = [];
-    renderer.render = async (job, _signal, onPartial) => {
+    renderer.render = async (job: TileJob, _signal: AbortSignal, onPartial?: (b: Bitmap) => void) => {
       seen.push(Boolean(onPartial));
       return { job, closed: false };
     };
