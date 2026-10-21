@@ -37,7 +37,7 @@
 # - Model guide: Fable for 2.2 and 9.4-9.7; Opus for security/core (1.3, 1.5, 1.6, 2.1, 2.3, 2.4, 3.1, 4.5, 4.9, 6.2, 6.3, 7.4, 7.5, 8.1, 12.5) and reviews; Sonnet for other UI/CRUD stories
 
 generated: "2026-10-17 05:22"
-last_updated: 2026-10-20
+last_updated: 2026-10-22
 project: plan-markup
 project_key: NOKEY
 tracking_system: file-system
@@ -58,7 +58,7 @@ development_status:
   # Epic 2: Risk Spikes (A13)
   epic-2: in-progress
   2-1-spike-btx-parse-and-render: done
-  2-2-spike-close-out-irregular-zone-placement-fable: backlog
+  2-2-spike-close-out-irregular-zone-placement-fable: ready-for-dev
   2-3-spike-a0-render-and-500-markup-frame-rate: backlog
   2-4-spike-annotation-export-round-trip-in-revu: backlog
   epic-2-retrospective: optional
