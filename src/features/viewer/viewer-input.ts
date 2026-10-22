@@ -3,7 +3,9 @@
 // unit-tested; ViewerInput wires them to the canvas and the engine.
 //
 // Focus rule (AC 3): single keys (+ - = Z V Shift+V Space) act only while the
-// canvas has focus. Ctrl+9 / Ctrl+0 act when the canvas has focus or the
+// canvas has focus. So do the page keys (Story 3.3 AC 7): PageDown / PageUp,
+// Home / End and Ctrl+→ / Ctrl+← (text fields keep word navigation); repeats
+// are allowed, the engine cancels the stale renders. Ctrl+9 / Ctrl+0 act when the canvas has focus or the
 // pointer is over it, and then preventDefault so the browser's own zoom reset
 // does not run; elsewhere the browser keeps its defaults. Ctrl+wheel is only
 // listened to on the canvas. The browser's zoom is suppressed whenever a
@@ -51,7 +53,8 @@ export type ViewerKeyAction =
   | { type: "fit-page" }
   | { type: "fit-width" }
   | { type: "tool"; tool: ViewerTool }
-  | { type: "temp-pan" };
+  | { type: "temp-pan" }
+  | { type: "page"; to: "next" | "previous" | "first" | "last" };
 
 type KeyLike = Pick<KeyboardEvent, "key" | "code" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey" | "isComposing">;
 
@@ -76,7 +79,17 @@ export function resolveViewerKey(
     if (isDigit(event, "9")) return { type: "fit-page" };
     if (isDigit(event, "0")) return { type: "fit-width" };
   }
+  if (ctrl && !event.altKey && !event.shiftKey && context.canvasFocused) {
+    if (event.key === "ArrowRight") return { type: "page", to: "next" };
+    if (event.key === "ArrowLeft") return { type: "page", to: "previous" };
+  }
   if (ctrl || event.altKey || !context.canvasFocused) return null;
+  if (!event.shiftKey) {
+    if (event.key === "PageDown") return { type: "page", to: "next" };
+    if (event.key === "PageUp") return { type: "page", to: "previous" };
+    if (event.key === "Home") return { type: "page", to: "first" };
+    if (event.key === "End") return { type: "page", to: "last" };
+  }
   if (event.key === "+" || event.key === "=") return { type: "zoom-in" };
   if (event.key === "-") return { type: "zoom-out" };
   if (event.code === "Space" && !event.shiftKey) return { type: "temp-pan" };
@@ -102,6 +115,9 @@ export interface ViewerInputTarget {
   setZoomRect(rect: Rect | null): void;
   fitPage(): void;
   fitWidth(): void;
+  goToPage(index: number): void;
+  readonly currentPage: number;
+  readonly pageCount: number;
 }
 
 type Drag =
@@ -297,6 +313,14 @@ export class ViewerInput {
       case "temp-pan":
         setTempPan(true);
         return;
+      case "page": {
+        const { currentPage, pageCount } = this.target;
+        const index =
+          action.to === "first" ? 0 : action.to === "last" ? pageCount - 1 : currentPage + (action.to === "next" ? 1 : -1);
+        // At the ends the keys do nothing (AC 4); the engine ignores out-of-range pages.
+        if (index >= 0 && index < pageCount && index !== currentPage) this.target.goToPage(index);
+        return;
+      }
     }
   }
 

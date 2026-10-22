@@ -382,6 +382,17 @@ describe("view navigation (Story 3.2)", () => {
     expect(screen.getByRole("contentinfo")).toHaveTextContent(/^a\.pdf.*\/ \d+.*64%/);
   });
 
+  it("announces the page in the status bar's polite live region (with the sheet label)", () => {
+    setup();
+    openDrawing();
+    const live = screen.getByRole("status");
+    expect(live).toHaveAttribute("aria-live", "polite");
+    expect(live).toHaveTextContent("Page 1 of 1");
+    act(() => viewerStore.setState({ pageCount: 12, pageIndex: 2, pageLabels: null, sheetLabels: { 2: "A1721" } }));
+    expect(live).toHaveTextContent(/^Page 3 of 12, A1721$/);
+    expect(screen.getByRole("group", { name: "Pages" })).toBeInTheDocument();
+  });
+
   it("the memory warning shows in the HintBar once the viewer reports pressure", async () => {
     setup();
     openDrawing();

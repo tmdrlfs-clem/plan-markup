@@ -101,8 +101,8 @@ describe("viewer store tool transitions", () => {
   });
 });
 
-function target(): ViewerInputTarget & Record<string, ReturnType<typeof vi.fn>> {
-  return {
+function target() {
+  const fns: Omit<ViewerInputTarget, "currentPage" | "pageCount"> & Record<string, ReturnType<typeof vi.fn>> = {
     zoomBy: vi.fn(),
     zoomStep: vi.fn(),
     panBy: vi.fn(),
@@ -111,7 +111,9 @@ function target(): ViewerInputTarget & Record<string, ReturnType<typeof vi.fn>> 
     setZoomRect: vi.fn(),
     fitPage: vi.fn(),
     fitWidth: vi.fn(),
+    goToPage: vi.fn(),
   };
+  return Object.assign(fns, { currentPage: 0, pageCount: 1 });
 }
 
 function pointer(type: string, init: { x: number; y: number; button?: number; altKey?: boolean; pointerId?: number }) {
@@ -290,6 +292,50 @@ describe("ViewerInput", () => {
     expect(t.fitWidth).toHaveBeenCalledTimes(1);
     expect(press({ key: "9", code: "Digit9", ctrlKey: true }).defaultPrevented).toBe(true);
     expect(t.fitPage).toHaveBeenCalledTimes(1);
+  });
+
+  it("page keys act with canvas focus: PageDown/PageUp, Ctrl+→/←, Home/End; nothing at the ends", () => {
+    const press = (init: KeyboardEventInit) => {
+      const e = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init });
+      window.dispatchEvent(e);
+      return e;
+    };
+    Object.assign(t, { currentPage: 0, pageCount: 4 });
+    canvas.focus();
+    expect(press({ key: "PageUp" }).defaultPrevented).toBe(true); // ours, but already on page 1
+    expect(t.goToPage).not.toHaveBeenCalled();
+    press({ key: "PageDown" });
+    expect(t.goToPage).toHaveBeenLastCalledWith(1);
+    Object.assign(t, { currentPage: 2 });
+    press({ key: "ArrowLeft", ctrlKey: true });
+    expect(t.goToPage).toHaveBeenLastCalledWith(1);
+    press({ key: "ArrowRight", ctrlKey: true, repeat: true });
+    expect(t.goToPage).toHaveBeenLastCalledWith(3);
+    press({ key: "Home" });
+    expect(t.goToPage).toHaveBeenLastCalledWith(0);
+    press({ key: "End" });
+    expect(t.goToPage).toHaveBeenLastCalledWith(3);
+    Object.assign(t, { currentPage: 3 });
+    vi.mocked(t.goToPage).mockClear();
+    press({ key: "PageDown" });
+    press({ key: "End" });
+    press({ key: "ArrowRight", ctrlKey: true });
+    expect(t.goToPage).not.toHaveBeenCalled();
+  });
+
+  it("page keys do nothing without canvas focus (text fields keep Ctrl+arrows and Home/End)", () => {
+    Object.assign(t, { currentPage: 1, pageCount: 4 });
+    const field = document.createElement("input");
+    document.body.append(field);
+    field.focus();
+    canvas.dispatchEvent(pointer("pointermove", { x: 5, y: 5 })); // pointer over the canvas is not enough
+    for (const init of [{ key: "PageDown" }, { key: "Home" }, { key: "ArrowRight", ctrlKey: true }]) {
+      const e = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init });
+      window.dispatchEvent(e);
+      expect(e.defaultPrevented).toBe(false);
+    }
+    expect(t.goToPage).not.toHaveBeenCalled();
+    field.remove();
   });
 
   it("outside the canvas the browser keeps Ctrl+0 and single keys", () => {
