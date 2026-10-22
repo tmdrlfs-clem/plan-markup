@@ -105,6 +105,7 @@ Claude Opus 5.5 (claude-opus-5-5)
   - View: L17 at 4x fit (bucket 2 exactly: four Ctrl+wheel notches of √2), zoom 172 %.
   - Reviewed: the tiles are sharp (hairlines, dimension text and hatching are crisp). No seams, gaps or blank tiles at the 512 px tile edges.
 
+- Review follow-ups: CI run **39833043253** (typecheck/lint/unit/guards, Playwright e2e on the production build, gitleaks): success, commit e16dc43. Run 39826327983 (commit 9982f15) had failed on the `data-view` zoom precision, fixed in the next commit.
 - **Review follow-up re-check (2026-10-23)**, same setup: production build, headless Chromium, 1920 x 1080, DPR 1, L17, the same 5 s script.
   - 299 frames: p50 **16.7 ms**, p95 **16.7 ms**, slowest 33.4 ms; **no long task**.
   - Screenshot `fixtures/private/traces/3-2-l17-zoom.png`, taken at zoom exactly 2.000000000 (2 device px per point: bucket 1, so tiles are drawn 1:1). Hairlines, dimension text and hatching are crisp, with no seams. The script now steers Ctrl+wheel to an exact bucket scale, since 4x fit is no longer a bucket.
