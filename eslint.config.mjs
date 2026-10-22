@@ -86,6 +86,8 @@ const eslintConfig = defineConfig([
     "_bmad-output/**",
     ".claude/**",
     "fixtures/**",
+    // Copied from pdfjs-dist by scripts/copy-pdfjs-assets.mjs.
+    "public/pdfjs/**",
     "playwright-report/**",
     "test-results/**",
     "src/lib/db/types.gen.ts",
