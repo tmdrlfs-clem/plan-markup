@@ -78,6 +78,7 @@ Claude Opus 5.5 (claude-opus-5-5)
 
 ### Debug Log References
 
+- Review follow-ups: CI run **39759993996** (typecheck/lint/unit/guards, Playwright e2e on the production build, gitleaks): success. Commit 2e55e4c. Local: typecheck, lint, 1035 unit tests in 99 files, and `next build` all pass.
 - CI run **39756497361** (CI: typecheck/lint/unit/guards, Playwright e2e on the production build, gitleaks): success. Database run 39756497363: success. Commit 319ec59.
 - Local, production build (`next build` + `next start`, E2E_PROD=1, workers 1): full e2e 32/32 passed. `viewer-open.spec.ts` also passed against `next dev`.
 - L17 RCP (`fixtures/private/pdf/A1721-…-Rev.2.pdf`) opened once in the signed-in workspace. Setup: production build, Chromium 156 headless, 1920 x 1080, DPR 1, Docker + local Supabase running.
