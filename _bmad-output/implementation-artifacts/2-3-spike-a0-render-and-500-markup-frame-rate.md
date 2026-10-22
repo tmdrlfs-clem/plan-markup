@@ -18,14 +18,14 @@ so that NFR1 and NFR2 are achievable with the chosen render architecture.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Fixtures** (AC 1): `scripts/spike-render/make-a0.mjs` generates `fixtures/private/pdf/synthetic-a0-50mb.pdf` (A0 landscape 3370 × 2384 pt, ~50 MB, deterministic): mostly vector content like a real RCP — a dense ceiling grid, many short line segments, hatching, arcs/circles (Béziers), and some text; Flate-compressed content streams; ≥ 2 M path operators in total. Record the three fixtures (size, page size, operator counts if measurable) and the reference hardware in `fixtures/README.md`.
-- [ ] **Task 2: Tile math (keep)**: `src/core/render/tiles.ts` (framework-free, unit-tested): zoom buckets (powers of 2 relative to fit, e.g. ¼ … 8 × device pixel ratio), tile grid for a viewport at a bucket, visible-tile set with a 1-tile margin, priority order (centre first), LRU tile cache keyed by `page + bucket + col + row` with a byte budget (w × h × 4) and eviction.
-- [ ] **Task 3: Render worker (keep, prototype quality)**: `src/workers/render.worker.ts`: load the PDF bytes once (transferred), pdf.js with `isEvalSupported: false` and the worker-friendly canvas path (`OffscreenCanvas`); messages `open`, `renderTile {page, bucket, col, row}`, `cancel`, `close`; replies with `ImageBitmap` (transferred). First answer is one low-resolution whole-page tile (fit bucket) so something shows fast; then tiles at the current bucket. Cancel stale requests on zoom/pan. Errors via `serializeWorkerError`. Note: pdf.js itself also uses its own worker; decide whether to run pdf.js in our worker with `disableWorker`-style in-thread parsing or to keep pdf.js's worker and render to `OffscreenCanvas` — measure both if cheap and record the choice.
-- [ ] **Task 4: Viewer prototype page**: a dev-only route `src/app/(spike)/spike/render/page.tsx` that calls `notFound()` when `process.env.NODE_ENV === "production"` (and is excluded from the proxy auth requirement only in development if needed — do not weaken production auth). It loads a fixture via `<input type="file">` and, in development only, via `?fixture=<name>` from a dev-only route handler that streams files from `fixtures/private/pdf/` (whitelisted names, 404 in production). Canvas stack per architecture: (1) tile canvas (draws `ImageBitmap`s), (2) static markups canvas, (3) active canvas (hover highlight), all sized to the viewport × DPR. Pan with drag/wheel, zoom with Ctrl+wheel around the cursor; during a gesture scale the existing tiles (no re-render) and request new tiles when the gesture settles (~150 ms).
-- [ ] **Task 5: 500 markups**: generate 500 seeded synthetic markups in PDF user space (mix: rectangles, clouds-like polylines with arcs, lines with arrowheads, text labels, 66-style sprinkler symbols as small circles+crosses). Draw them in one pass per frame on the static canvas with viewport culling via `rbush` 4.0.1 (pin exact, already in the architecture) and redraw only on view change; hover hit-test via the same index. No React state per markup.
-- [ ] **Task 6: Measurement harness**: `scripts/spike-render/measure.mjs` (Playwright, headed Chromium, viewport 1920×1080, DPR 1 and 1.5 if feasible): for each fixture — open and time first low-res tile painted (page sets `performance.mark`s), then a scripted pan sequence (5 s) and zoom sequence (in 4 buckets and out) with 500 markups, collecting frame times via `requestAnimationFrame` deltas in the page and long tasks via `PerformanceObserver('longtask')`, plus a CDP trace saved to `fixtures/private/traces/<fixture>.json`. Run each fixture 3 times; report median. Exit 0 always (it is a measurement).
+- [x] **Task 1: Fixtures** (AC 1): `scripts/spike-render/make-a0.mjs` generates `fixtures/private/pdf/synthetic-a0-50mb.pdf` (A0 landscape 3370 × 2384 pt, ~50 MB, deterministic): mostly vector content like a real RCP — a dense ceiling grid, many short line segments, hatching, arcs/circles (Béziers), and some text; Flate-compressed content streams; ≥ 2 M path operators in total. Record the three fixtures (size, page size, operator counts if measurable) and the reference hardware in `fixtures/README.md`.
+- [x] **Task 2: Tile math (keep)**: `src/core/render/tiles.ts` (framework-free, unit-tested): zoom buckets (powers of 2 relative to fit, e.g. ¼ … 8 × device pixel ratio), tile grid for a viewport at a bucket, visible-tile set with a 1-tile margin, priority order (centre first), LRU tile cache keyed by `page + bucket + col + row` with a byte budget (w × h × 4) and eviction.
+- [x] **Task 3: Render worker (keep, prototype quality)**: `src/workers/render.worker.ts`: load the PDF bytes once (transferred), pdf.js with `isEvalSupported: false` and the worker-friendly canvas path (`OffscreenCanvas`); messages `open`, `renderTile {page, bucket, col, row}`, `cancel`, `close`; replies with `ImageBitmap` (transferred). First answer is one low-resolution whole-page tile (fit bucket) so something shows fast; then tiles at the current bucket. Cancel stale requests on zoom/pan. Errors via `serializeWorkerError`. Note: pdf.js itself also uses its own worker; decide whether to run pdf.js in our worker with `disableWorker`-style in-thread parsing or to keep pdf.js's worker and render to `OffscreenCanvas` — measure both if cheap and record the choice.
+- [x] **Task 4: Viewer prototype page**: a dev-only route `src/app/(spike)/spike/render/page.tsx` that calls `notFound()` when `process.env.NODE_ENV === "production"` (and is excluded from the proxy auth requirement only in development if needed — do not weaken production auth). It loads a fixture via `<input type="file">` and, in development only, via `?fixture=<name>` from a dev-only route handler that streams files from `fixtures/private/pdf/` (whitelisted names, 404 in production). Canvas stack per architecture: (1) tile canvas (draws `ImageBitmap`s), (2) static markups canvas, (3) active canvas (hover highlight), all sized to the viewport × DPR. Pan with drag/wheel, zoom with Ctrl+wheel around the cursor; during a gesture scale the existing tiles (no re-render) and request new tiles when the gesture settles (~150 ms).
+- [x] **Task 5: 500 markups**: generate 500 seeded synthetic markups in PDF user space (mix: rectangles, clouds-like polylines with arcs, lines with arrowheads, text labels, 66-style sprinkler symbols as small circles+crosses). Draw them in one pass per frame on the static canvas with viewport culling via `rbush` 4.0.1 (pin exact, already in the architecture) and redraw only on view change; hover hit-test via the same index. No React state per markup.
+- [x] **Task 6: Measurement harness**: `scripts/spike-render/measure.mjs` (Playwright, headed Chromium, viewport 1920×1080, DPR 1 and 1.5 if feasible): for each fixture — open and time first low-res tile painted (page sets `performance.mark`s), then a scripted pan sequence (5 s) and zoom sequence (in 4 buckets and out) with 500 markups, collecting frame times via `requestAnimationFrame` deltas in the page and long tasks via `PerformanceObserver('longtask')`, plus a CDP trace saved to `fixtures/private/traces/<fixture>.json`. Run each fixture 3 times; report median. Exit 0 always (it is a measurement).
 - [ ] **Task 7: Report** (AC 4): numbers per fixture (first frame, fps p50/p5 for pan and zoom, longest main-thread task, worker tile render times per bucket, peak JS heap / tile cache bytes), recommended tile size (compare 256 / 512 / 1024 if time allows), zoom buckets, eviction budget, which pdf.js worker setup to use, risks and the decision.
-- [ ] **Task 8: Tests**: unit tests for `tiles.ts` (buckets, visible set, priority, LRU eviction by bytes) and the worker message handler (with a stubbed renderer). No e2e in CI for the spike page (private fixtures); add one Playwright check only that `/spike/render` is 404 in a production build if that is cheap, otherwise a unit test of the guard.
+- [x] **Task 8: Tests**: unit tests for `tiles.ts` (buckets, visible set, priority, LRU eviction by bytes) and the worker message handler (with a stubbed renderer). No e2e in CI for the spike page (private fixtures); add one Playwright check only that `/spike/render` is 404 in a production build if that is cheap, otherwise a unit test of the guard.
 
 ## Dev Notes
 
@@ -47,10 +47,44 @@ so that NFR1 and NFR2 are achievable with the chosen render architecture.
 
 ### Agent Model Used
 
+Claude Opus 5.5 (claude-opus-5-5)
+
 ### Debug Log References
+
+- CI run 39685419347 (commit 33ac670): success (checks, e2e, gitleaks).
+- Measurement interrupted 2026-10-22: Claude Code reaped the background `next start` and
+  `measure.mjs` because the machine was critically low on memory (~3 GB free; Revu, Outlook,
+  Chrome open). Only `prod-nested` L17 DPR 1 x 3 runs completed: first tile 1671 / 1781 / 1258 ms
+  (progressive partial 470 / 498 / 458 ms), pan and zoom p50 ~60 fps. Not restarted without the
+  founder's go-ahead.
+- Exploratory single runs (dev server, DPR 1): A0 nested first tile ~4.9-5.5 s (partial ~0.6 s),
+  A0 inline ~7.0 s; pan/zoom p50 ~60 fps; main-thread longest task 20-34 ms (traces).
+- Found and fixed: a GPU-backed worker OffscreenCanvas flooded the GPU process during A0 tiles and
+  dropped the page to ~1 fps; `willReadFrequently: true` (CPU canvas) fixed it. Windows window
+  occlusion also throttles rAF to 1 Hz; the harness disables it and retries throttled runs.
+- Found and fixed: the file tracer copied fixtures/private/*.pdf into the spike routes' server
+  traces; next.config.ts `outputFileTracingExcludes` now excludes them for every route.
 
 ### Completion Notes List
 
+- Tasks 1-6 and 8 done. Task 7 (report) waits on the full measurement run (see Debug Log).
+- Deviation: the spike page/routes also open in a local production build with
+  PLAN_MARKUP_LOCAL_SPIKE=1 on a loopback host (for minified-React timing); default production 404s
+  (and the proxy still requires a session). CSP unchanged; no `wasm-unsafe-eval` added.
+
 ### File List
 
+- fixtures/README.md
+- next.config.ts
+- scripts/spike-render/make-a0.mjs, inspect-fixtures.mjs, measure.mjs
+- src/core/render/tiles.ts, tiles.test.ts
+- src/workers/render.worker.ts, render.worker.test.ts, render-pdfjs.ts
+- src/types/vendor.d.ts
+- src/lib/spike/guard.ts, guard.test.ts
+- src/proxy.ts, src/proxy.test.ts
+- src/app/(spike)/spike/assets.ts, spike-routes.test.ts, fixture/[name]/route.ts, pdfjs/[...path]/route.ts
+- src/app/(spike)/spike/render/page.tsx, viewer.tsx, engine.ts, markups.ts, scripted.ts
+
 ### Change Log
+
+- 2026-10-22: Tasks 1-6, 8 implemented (069b79b..33ac670); measurement and report pending.
