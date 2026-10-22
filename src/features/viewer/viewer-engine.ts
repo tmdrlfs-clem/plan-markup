@@ -1,28 +1,55 @@
 // Viewer engine (Story 3.1; from the Story 2.3 spike engine). A plain class,
 // no React state per tile: it owns the canvas stack (1 tiles, 2 static
-// markups, 3 active), the view transform, the in-memory tile LRU and the
-// render worker client, and redraws only on demand (one rAF per change).
+// markups, 3 active), the view, the in-memory tile LRU and the render worker
+// client, and redraws only on demand (one rAF per change).
 //
 // Open: file bytes -> render.open (bytes transferred) -> render.preview
 // (whole page at the fit size, progressive snapshots) -> tiles of the current
-// zoom bucket where the preview is not already sharp enough. The view is
-// "fit page" on open and on resize; Story 3.2 adds input that calls setView().
+// zoom bucket where the preview is not already sharp enough.
+//
+// View (Story 3.2, src/core/render/view.ts): zoom, centre and a view rotation.
+// During a gesture every change only redraws the bitmaps already held, with
+// the live transform; once the view has been still for SETTLE_MS the tiles of
+// the new bucket are requested (visible first, centre first) and stale
+// requests cancelled. Tiles of other buckets stay drawn underneath until the
+// new ones cover them. Zoom buckets are relative to the rotation-0 fit, so a
+// view rotation never re-renders anything.
 
 import {
   DEFAULT_TILE_SIZE,
   LruByteCache,
+  MAX_BUCKET,
+  MIN_BUCKET,
   bitmapBytes,
   bucketForScale,
   bucketScale,
-  fitScale,
   quantizeScale,
   scaleStep,
   tileGrid,
   tileKey,
+  tileRect,
   visibleTiles,
   type Size,
-  type View,
+  type TileRef,
 } from "@/core/render/tiles";
+import {
+  clampView,
+  fitPageView,
+  fitWidthView,
+  panBy,
+  pageToScreenMatrix,
+  rotateView,
+  rotatedSize,
+  stepZoom,
+  visibleBounds,
+  zoomAt,
+  zoomPercent,
+  zoomToRect,
+  type Matrix,
+  type Point,
+  type Rect,
+  type ViewState,
+} from "@/core/render/view";
 import type { PageInfo, TilePayload } from "@/workers/render-protocol";
 import { WorkerRequestError, type RenderClient } from "@/workers/rpc";
 
@@ -31,9 +58,12 @@ import type { ViewerErrorCode, ViewerState } from "./viewer-store";
 /** CSS px kept free around the page at fit. */
 export const FIT_PADDING = 16;
 /** Delay before tiles are requested after the view changed (a gesture settling). */
-const SETTLE_MS = 150;
+export const SETTLE_MS = 150;
+/** Requests stop once the visible tiles would fill this share of the memory budget. */
+const REQUEST_BUDGET_SHARE = 0.9;
 const BACKDROP = "#e5e7eb";
 const PAGE = "#ffffff";
+const ZOOM_RECT = "#e8620c";
 
 export type ViewerCanvases = { tiles: HTMLCanvasElement; markups: HTMLCanvasElement; active: HTMLCanvasElement };
 
@@ -46,9 +76,11 @@ export type ViewerEngineOptions = {
   cancelFrame?: (id: number) => void;
 };
 
+/** "page" / "width" keep the view fitted on resize until the user zooms or pans. */
+export type FitMode = "page" | "width" | null;
+
 type Tile = { bitmap: ImageBitmap; x: number; y: number; width: number; height: number; scale: number };
 
-/** The bitmap fields the engine needs (ImageBitmap in the app, plain objects in tests). */
 const closeBitmap = (b: ImageBitmap) => {
   try {
     b.close();
@@ -62,6 +94,14 @@ function viewerErrorOf(e: unknown): ViewerErrorCode {
   return "render-failed";
 }
 
+/** The view of each document opened in this session, by sha256 (kept in memory only, AC 6). */
+const documentViews = new Map<string, { view: ViewState; fitMode: FitMode }>();
+
+/** Forgets the remembered views (tests). */
+export function clearDocumentViews(): void {
+  documentViews.clear();
+}
+
 export class ViewerEngine {
   private readonly tileSize: number;
   private readonly cache: LruByteCache<Tile>;
@@ -72,10 +112,11 @@ export class ViewerEngine {
   private viewport: Size = { width: 1, height: 1 };
   private dpr = 1;
   private page: PageInfo | null = null;
+  private sha256: string | null = null;
+  /** Fit-page zoom at rotation 0: the base of the zoom buckets. */
   private fit = 1;
-  /** The view; `fitMode` keeps it fitted on resize until 3.2's input changes it. */
-  view: View = { scale: 1, x: 0, y: 0 };
-  private fitMode = true;
+  view: ViewState = { zoom: 1, centerX: 0, centerY: 0, rotation: 0 };
+  private fitMode: FitMode = "page";
 
   private preview: Tile | null = null;
   private previewFinal = false;
@@ -85,11 +126,16 @@ export class ViewerEngine {
   private previewReq: number | null = null;
   private readonly inflight = new Map<string, number>(); // tile key -> reqId
   private readonly failed = new Set<string>();
-  private settledBucket: number | null = null;
+  /** Keys of the tiles the current view needs (the memory warning watches their eviction). */
+  private needed = new Set<string>();
+  private memoryWarned = false;
   private settleTimer: ReturnType<typeof setTimeout> | null = null;
   private frame: number | null = null;
   private openedAt = 0;
   private destroyed = false;
+  private zoomRect: Rect | null = null;
+  private shownZoom: number | null = null;
+  private shownView = "";
 
   constructor(
     private readonly canvases: ViewerCanvases,
@@ -107,6 +153,7 @@ export class ViewerEngine {
   // ---- lifecycle ----------------------------------------------------------
 
   destroy(): void {
+    this.rememberView();
     this.destroyed = true;
     if (this.frame !== null) this.cancelFrame(this.frame);
     if (this.settleTimer) clearTimeout(this.settleTimer);
@@ -114,7 +161,7 @@ export class ViewerEngine {
     this.client.terminate();
   }
 
-  /** Sizes the canvases to the viewport (CSS px) x DPR; keeps "fit page" while in fit mode. */
+  /** Sizes the canvases to the viewport (CSS px) x DPR; keeps a fit mode fitted, clamps otherwise. */
   setViewport(width: number, height: number, dpr: number): void {
     this.viewport = { width: Math.max(1, width), height: Math.max(1, height) };
     const before = { fit: this.fit, dpr: this.dpr };
@@ -124,18 +171,23 @@ export class ViewerEngine {
       c.height = Math.max(1, Math.round(this.viewport.height * this.dpr));
     }
     if (this.page) {
-      this.fit = fitScale(this.page, this.viewport, FIT_PADDING);
+      this.fit = this.baseFit(this.page);
       if (this.fit !== before.fit || this.dpr !== before.dpr) this.dropScaledWork();
-      if (this.fitMode) this.view = this.fitView();
+      this.view = this.fitMode ? this.fittedView(this.fitMode) : clampView(this.view, this.page, this.viewport);
       this.scheduleSettle(SETTLE_MS);
     }
     this.invalidate();
+  }
+
+  get devicePixelRatio(): number {
+    return this.dpr;
   }
 
   // ---- open ---------------------------------------------------------------
 
   /** Opens a file: reads it locally and hands the bytes to the render worker. */
   async open(file: File): Promise<void> {
+    this.rememberView();
     this.resetDocument();
     const generation = ++this.generation;
     this.openedAt = this.now();
@@ -163,15 +215,23 @@ export class ViewerEngine {
     }
     if (generation !== this.generation) return;
     this.page = opened.pages[0];
-    this.fit = fitScale(this.page, this.viewport, FIT_PADDING);
-    this.fitMode = true;
-    this.view = this.fitView();
+    this.sha256 = opened.sha256;
+    this.fit = this.baseFit(this.page);
+    // A document seen before in this session comes back where it was left.
+    const saved = documentViews.get(opened.sha256);
+    this.fitMode = saved ? saved.fitMode : "page";
+    this.view = saved
+      ? saved.fitMode
+        ? this.fittedView(saved.fitMode, saved.view.rotation)
+        : clampView(saved.view, this.page, this.viewport)
+      : this.fittedView("page", 0);
     this.update({ pageCount: opened.pageCount, pageIndex: 0 });
     this.invalidate();
     await this.loadPreview(generation);
   }
 
   private async loadPreview(generation: number): Promise<void> {
+    // The rotation-0 fit box: the preview is the bucket-0 raster whatever the view rotation.
     const box = {
       maxWidth: Math.max(1, (this.viewport.width - 2 * FIT_PADDING) * this.dpr),
       maxHeight: Math.max(1, (this.viewport.height - 2 * FIT_PADDING) * this.dpr),
@@ -225,6 +285,8 @@ export class ViewerEngine {
     this.client.cancel(ids);
     this.inflight.clear();
     this.failed.clear();
+    this.needed = new Set();
+    this.memoryWarned = false;
     this.cache.clear();
     if (this.preview) closeBitmap(this.preview.bitmap);
     this.preview = null;
@@ -233,44 +295,101 @@ export class ViewerEngine {
     this.pendingPartial = false;
     this.timingsPartial = null;
     this.page = null;
-    this.settledBucket = null;
+    this.sha256 = null;
     this.openReq = null;
     this.previewReq = null;
+    this.zoomRect = null;
+    this.shownZoom = null;
     if (this.settleTimer) clearTimeout(this.settleTimer);
     this.settleTimer = null;
     this.invalidate();
   }
 
+  private rememberView(): void {
+    if (this.sha256 && this.page) documentViews.set(this.sha256, { view: this.view, fitMode: this.fitMode });
+  }
+
   // ---- view ---------------------------------------------------------------
 
-  fitView(): View {
-    if (!this.page) return { scale: 1, x: 0, y: 0 };
-    const scale = this.fit;
-    return {
-      scale,
-      x: -(this.viewport.width / scale - this.page.width) / 2,
-      y: -(this.viewport.height / scale - this.page.height) / 2,
-    };
+  private baseFit(page: PageInfo): number {
+    return fitPageView(page, this.viewport, 0, FIT_PADDING).zoom;
   }
 
-  /** Sets the view (Story 3.2's zoom and pan) and leaves fit mode. */
-  setView(view: View): void {
+  private fittedView(mode: "page" | "width", rotation = this.view.rotation): ViewState {
+    if (!this.page) return this.view;
+    return mode === "page"
+      ? fitPageView(this.page, this.viewport, rotation, FIT_PADDING)
+      : fitWidthView(this.page, this.viewport, rotation, FIT_PADDING);
+  }
+
+  /** Sets the view (clamped) and leaves fit mode. */
+  setView(view: ViewState): void {
+    if (!this.page) return;
+    this.applyView(clampView(view, this.page, this.viewport), null);
+  }
+
+  private applyView(view: ViewState, fitMode: FitMode): void {
     this.view = view;
-    this.fitMode = false;
+    this.fitMode = fitMode;
     this.invalidate();
     this.scheduleSettle(SETTLE_MS);
   }
 
-  /** Back to "fit page" (Story 3.2's Fit page command). */
+  /** Fit page (Ctrl+9): stays fitted on resize until the next zoom or pan. */
   fitPage(): void {
-    this.fitMode = true;
-    this.view = this.fitView();
+    if (this.page) this.applyView(this.fittedView("page"), "page");
+  }
+
+  /** Fit width (Ctrl+0). */
+  fitWidth(): void {
+    if (this.page) this.applyView(this.fittedView("width"), "width");
+  }
+
+  /** Zooms by `factor` about a viewport point (CSS px), the centre by default. */
+  zoomBy(factor: number, at?: Point): void {
+    const point = at ?? { x: this.viewport.width / 2, y: this.viewport.height / 2 };
+    this.setView(zoomAt(this.view, this.viewport, point, factor));
+  }
+
+  /** One √2 step in (1) or out (-1). */
+  zoomStep(direction: 1 | -1, at?: Point): void {
+    this.zoomBy(stepZoom(this.view.zoom, direction) / this.view.zoom, at);
+  }
+
+  /** Moves the content by (dx, dy) CSS px. */
+  panBy(dx: number, dy: number): void {
+    this.setView(panBy(this.view, dx, dy));
+  }
+
+  /** Zoom tool drag: the viewport-relative rectangle fills the view. */
+  zoomToRect(rect: Rect): void {
+    this.setView(zoomToRect(this.view, this.viewport, rect));
+  }
+
+  /** Rotates the view 90° clockwise (90) or counter-clockwise (-90); the PDF is unchanged. */
+  rotate(delta: 90 | -90): void {
+    if (!this.page) return;
+    const rotated = rotateView(this.view, delta);
+    if (this.fitMode) this.applyView(this.fittedView(this.fitMode, rotated.rotation), this.fitMode);
+    else this.setView(rotated);
+  }
+
+  /** The Zoom tool's rubber band on the active canvas (viewport CSS px), or null. */
+  setZoomRect(rect: Rect | null): void {
+    this.zoomRect = rect;
     this.invalidate();
-    this.scheduleSettle(SETTLE_MS);
   }
 
   get fitScale(): number {
     return this.fit;
+  }
+
+  get currentFitMode(): FitMode {
+    return this.fitMode;
+  }
+
+  get viewportSize(): Size {
+    return this.viewport;
   }
 
   // ---- tiles --------------------------------------------------------------
@@ -298,10 +417,20 @@ export class ViewerEngine {
     }
   }
 
+  /** Tiles of `bucket` intersecting the viewport (plus a `margin` ring), priority-ordered. */
+  private tilesInView(bucket: number, margin: number): TileRef[] {
+    if (!this.page) return [];
+    const grid = tileGrid(this.page, this.tileScale(bucket), this.tileSize);
+    // visibleTiles works on axis-aligned page boxes: pass the viewport's page-space bounds.
+    const b = visibleBounds(this.view, this.viewport);
+    return visibleTiles({ scale: this.view.zoom, x: b.x, y: b.y }, rotatedSize(this.viewport, this.view.rotation), grid, margin);
+  }
+
   private scheduleSettle(ms: number): void {
     if (this.settleTimer) clearTimeout(this.settleTimer);
     this.settleTimer = setTimeout(() => {
       this.settleTimer = null;
+      this.rememberView();
       this.requestTiles();
     }, ms);
   }
@@ -309,16 +438,30 @@ export class ViewerEngine {
   /** Requests the visible tiles of the current bucket that the preview does not already cover. */
   requestTiles(): void {
     if (!this.page || !this.previewFinal || this.destroyed) return;
-    const bucket = bucketForScale(this.view.scale, this.fit);
+    const bucket = bucketForScale(this.view.zoom, this.fit);
     const scale = this.tileScale(bucket);
-    const grid = tileGrid(this.page, scale, this.tileSize);
-    // The preview already holds this resolution (fit page): tiles would add nothing.
+    // The preview already holds this resolution (fit page or less): tiles would add nothing.
     const covered = this.preview !== null && this.preview.scale >= scale * 0.999;
-    const needed = covered ? [] : visibleTiles(this.view, this.viewport, grid, 1);
-    const neededKeys = new Set(needed.map((t) => this.memKey(bucket, t.col, t.row)));
+    const grid = tileGrid(this.page, scale, this.tileSize);
+    const needed: TileRef[] = [];
+    let bytes = 0;
+    if (!covered) {
+      // Visible first, centre first; stop at the budget (the rest would only evict the first).
+      for (const t of this.tilesInView(bucket, 1)) {
+        const r = tileRect(grid, t.col, t.row);
+        const size = bitmapBytes(r.width, r.height);
+        if (bytes + size > this.cache.budget * REQUEST_BUDGET_SHARE) {
+          if (t.inView) this.warnMemory();
+          break;
+        }
+        bytes += size;
+        needed.push(t);
+      }
+    }
+    this.needed = new Set(needed.map((t) => this.memKey(bucket, t.col, t.row)));
     const stale: number[] = [];
     for (const [key, reqId] of this.inflight) {
-      if (!neededKeys.has(key)) {
+      if (!this.needed.has(key)) {
         stale.push(reqId);
         this.inflight.delete(key);
       }
@@ -333,8 +476,14 @@ export class ViewerEngine {
       if (this.inflight.has(key) || this.failed.has(key)) continue;
       this.requestTile(key, { page: 1, bucket, scale, col: t.col, row: t.row, tileSize: this.tileSize });
     }
-    this.settledBucket = bucket;
     this.invalidate();
+  }
+
+  /** The memory warning (AC 5): once per document, only when the budget really ran out. */
+  private warnMemory(): void {
+    if (this.memoryWarned) return;
+    this.memoryWarned = true;
+    this.update({ memoryPressure: true });
   }
 
   private requestTile(key: string, payload: { page: number; bucket: number; scale: number; col: number; row: number; tileSize: number }): void {
@@ -345,7 +494,13 @@ export class ViewerEngine {
       ({ tile }) => {
         if (generation !== this.generation || this.inflight.get(key) !== call.reqId) return closeBitmap(tile.bitmap);
         this.inflight.delete(key);
-        this.cache.set(key, { bitmap: tile.bitmap, x: tile.x, y: tile.y, width: tile.width, height: tile.height, scale: tile.scale }, bitmapBytes(tile.width, tile.height));
+        const evicted = this.cache.set(
+          key,
+          { bitmap: tile.bitmap, x: tile.x, y: tile.y, width: tile.width, height: tile.height, scale: tile.scale },
+          bitmapBytes(tile.width, tile.height),
+        );
+        // Eviction had to drop a tile this view needs: the budget cannot hold the view.
+        if (evicted.some((k) => this.needed.has(k))) this.warnMemory();
         this.invalidate();
       },
       (e: unknown) => {
@@ -386,27 +541,59 @@ export class ViewerEngine {
     });
   }
 
-  /** Page rect (device px at tile.scale) -> canvas device px, edges rounded so tiles do not seam. */
-  private placeTile(ctx: CanvasRenderingContext2D, t: Tile): void {
-    const k = this.view.scale * this.dpr;
-    const x0 = Math.round((t.x / t.scale - this.view.x) * k);
-    const y0 = Math.round((t.y / t.scale - this.view.y) * k);
-    const x1 = Math.round(((t.x + t.width) / t.scale - this.view.x) * k);
-    const y1 = Math.round(((t.y + t.height) / t.scale - this.view.y) * k);
-    if (x1 <= 0 || y1 <= 0 || x0 >= this.canvases.tiles.width || y0 >= this.canvases.tiles.height) return;
-    ctx.drawImage(t.bitmap, x0, y0, x1 - x0, y1 - y0);
+  /** Page space -> canvas device px. */
+  private deviceMatrix(): Matrix {
+    const m = pageToScreenMatrix(this.view, this.viewport);
+    const k = this.dpr;
+    return [m[0] * k, m[1] * k, m[2] * k, m[3] * k, m[4] * k, m[5] * k];
+  }
+
+  /** A page-space rectangle on the canvas: device px, edges rounded so neighbours never seam. */
+  private deviceRect(m: Matrix, x0: number, y0: number, x1: number, y1: number): { l: number; t: number; r: number; b: number } {
+    const ax = m[0] * x0 + m[2] * y0 + m[4];
+    const ay = m[1] * x0 + m[3] * y0 + m[5];
+    const bx = m[0] * x1 + m[2] * y1 + m[4];
+    const by = m[1] * x1 + m[3] * y1 + m[5];
+    return {
+      l: Math.round(Math.min(ax, bx)),
+      t: Math.round(Math.min(ay, by)),
+      r: Math.round(Math.max(ax, bx)),
+      b: Math.round(Math.max(ay, by)),
+    };
+  }
+
+  /**
+   * Draws a raster at its page rectangle. At the raster's own scale the
+   * destination is the bitmap's exact size at integer device px: a 1:1 copy.
+   */
+  private placeTile(ctx: CanvasRenderingContext2D, m: Matrix, t: Tile): void {
+    const d = this.deviceRect(m, t.x / t.scale, t.y / t.scale, (t.x + t.width) / t.scale, (t.y + t.height) / t.scale);
+    const w = d.r - d.l;
+    const h = d.b - d.t;
+    if (w <= 0 || h <= 0 || d.r <= 0 || d.b <= 0 || d.l >= this.canvases.tiles.width || d.t >= this.canvases.tiles.height) return;
+    const rotation = this.view.rotation;
+    if (rotation === 0) {
+      ctx.drawImage(t.bitmap, d.l, d.t, w, h);
+      return;
+    }
+    // Quarter turns: rotate about the destination centre; the box stays pixel-aligned.
+    const sideways = rotation === 90 || rotation === 270;
+    const bw = sideways ? h : w;
+    const bh = sideways ? w : h;
+    const cos = rotation === 180 ? -1 : 0;
+    const sin = rotation === 90 ? 1 : rotation === 270 ? -1 : 0;
+    ctx.setTransform(cos, sin, -sin, cos, (d.l + d.r) / 2, (d.t + d.b) / 2);
+    ctx.drawImage(t.bitmap, -bw / 2, -bh / 2, bw, bh);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
   }
 
   /** Grey hatched box for a failed tile (its Retry lives in the DOM overlay). */
-  private drawFailed(ctx: CanvasRenderingContext2D, bucket: number, col: number, row: number): void {
+  private drawFailed(ctx: CanvasRenderingContext2D, m: Matrix, bucket: number, col: number, row: number): void {
     if (!this.page) return;
     const scale = this.tileScale(bucket);
-    const grid = tileGrid(this.page, scale, this.tileSize);
-    const k = (this.view.scale * this.dpr) / scale;
-    const x = (col * grid.tileSize - this.view.x * scale) * k;
-    const y = (row * grid.tileSize - this.view.y * scale) * k;
-    const w = Math.min(grid.tileSize, grid.width - col * grid.tileSize) * k;
-    const h = Math.min(grid.tileSize, grid.height - row * grid.tileSize) * k;
+    const r = tileRect(tileGrid(this.page, scale, this.tileSize), col, row);
+    const d = this.deviceRect(m, r.x / scale, r.y / scale, (r.x + r.width) / scale, (r.y + r.height) / scale);
+    const [x, y, w, h] = [d.l, d.t, d.r - d.l, d.b - d.t];
     ctx.save();
     ctx.fillStyle = "#f3f4f6";
     ctx.fillRect(x, y, w, h);
@@ -422,6 +609,15 @@ export class ViewerEngine {
     ctx.restore();
   }
 
+  /** Buckets to draw, the target last (on top): others stay underneath until it covers them. */
+  private drawOrder(target: number): number[] {
+    const order: number[] = [];
+    for (let k = MIN_BUCKET; k <= MAX_BUCKET; k++) if (k !== target) order.push(k);
+    order.sort((a, b) => Math.abs(b - target) - Math.abs(a - target));
+    order.push(target);
+    return order;
+  }
+
   private draw(): void {
     const ctx = this.canvases.tiles.getContext("2d");
     if (ctx) {
@@ -429,32 +625,34 @@ export class ViewerEngine {
       ctx.fillStyle = BACKDROP;
       ctx.fillRect(0, 0, this.canvases.tiles.width, this.canvases.tiles.height);
       if (this.page) {
-        const k = this.view.scale * this.dpr;
+        const m = this.deviceMatrix();
+        const paper = this.deviceRect(m, 0, 0, this.page.width, this.page.height);
         ctx.fillStyle = PAGE;
-        ctx.fillRect(-this.view.x * k, -this.view.y * k, this.page.width * k, this.page.height * k);
+        ctx.fillRect(paper.l, paper.t, paper.r - paper.l, paper.b - paper.t);
         ctx.imageSmoothingEnabled = true;
-        if (this.preview) this.placeTile(ctx, this.preview);
-        // Settled bucket first (scaled during a gesture), then the target bucket on top.
-        const target = bucketForScale(this.view.scale, this.fit);
-        const buckets = this.settledBucket !== null && this.settledBucket !== target ? [this.settledBucket, target] : [target];
-        for (const bucket of buckets) {
-          const grid = tileGrid(this.page, this.tileScale(bucket), this.tileSize);
-          for (const ref of visibleTiles(this.view, this.viewport, grid, 0)) {
-            const key = this.memKey(bucket, ref.col, ref.row);
-            const t = this.cache.peek(key);
-            if (t) this.placeTile(ctx, t);
-            else if (this.failed.has(key)) this.drawFailed(ctx, bucket, ref.col, ref.row);
+        if (this.preview) this.placeTile(ctx, m, this.preview);
+        const target = bucketForScale(this.view.zoom, this.fit);
+        if (this.cache.size > 0 || this.failed.size > 0) {
+          for (const bucket of this.drawOrder(target)) {
+            for (const ref of this.tilesInView(bucket, 0)) {
+              const key = this.memKey(bucket, ref.col, ref.row);
+              const t = this.cache.peek(key);
+              if (t) this.placeTile(ctx, m, t);
+              else if (bucket === target && this.failed.has(key)) this.drawFailed(ctx, m, bucket, ref.col, ref.row);
+            }
           }
         }
       }
     }
-    // Layers 2 and 3 stay empty until markups arrive (Epic 5); cleared so a reopen never shows stale pixels.
+    // Layer 2 stays empty until markups arrive (Epic 5); layer 3 holds the Zoom tool's rubber band.
     for (const layer of [this.canvases.markups, this.canvases.active]) {
       const c = layer.getContext("2d");
       if (!c) continue;
       c.setTransform(1, 0, 0, 1, 0, 0);
       c.clearRect(0, 0, layer.width, layer.height);
     }
+    if (this.zoomRect) this.drawZoomRect(this.zoomRect);
+    this.publishView();
     if (this.pendingPartial) {
       this.pendingPartial = false;
       this.update({ timings: { firstPartialMs: this.timingsPartial, firstFrameMs: null } });
@@ -468,6 +666,34 @@ export class ViewerEngine {
         // performance.mark is unavailable in some test environments.
       }
       this.update({ status: "ready", timings: { firstPartialMs: this.timingsPartial, firstFrameMs } });
+    }
+  }
+
+  private drawZoomRect(r: Rect): void {
+    const c = this.canvases.active.getContext("2d");
+    if (!c) return;
+    const k = this.dpr;
+    c.save();
+    c.strokeStyle = ZOOM_RECT;
+    c.lineWidth = Math.max(1, Math.round(k));
+    c.setLineDash([4 * k, 3 * k]);
+    c.strokeRect(Math.round(r.x * k) + 0.5, Math.round(r.y * k) + 0.5, Math.round(r.width * k), Math.round(r.height * k));
+    c.restore();
+  }
+
+  /** Zoom % to the store (only when it changes) and the view to `data-view` (e2e, diagnostics). */
+  private publishView(): void {
+    if (!this.page) return;
+    const zoom = zoomPercent(this.view.zoom);
+    if (zoom !== this.shownZoom) {
+      this.shownZoom = zoom;
+      this.update({ zoom });
+    }
+    const v = this.view;
+    const text = `${v.zoom.toFixed(6)} ${v.centerX.toFixed(3)} ${v.centerY.toFixed(3)} ${v.rotation}`;
+    if (text !== this.shownView && this.canvases.active.dataset) {
+      this.shownView = text;
+      this.canvases.active.dataset.view = text;
     }
   }
 }

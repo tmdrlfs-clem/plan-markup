@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { RenderClient } from "@/workers/rpc";
 
 import { ViewerEngine } from "./viewer-engine";
+import { ViewerInput } from "./viewer-input";
 import { VIEWER_ERROR_TEXT, canvasStateOf, openDocument, viewerStore, type ViewerState } from "./viewer-store";
 
 export interface CanvasViewportProps {
@@ -69,6 +70,20 @@ export function CanvasViewport({ onOpen, onOpenFiles, createWorker = defaultWork
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
     observer?.observe(host);
     window.addEventListener("resize", measure);
+    // A DPR change (the window moved to another monitor, AC 4) does not always resize: watch
+    // a resolution query for the current DPR and re-arm it after every change.
+    let dprQuery: MediaQueryList | null = null;
+    const watchDpr = () => {
+      dprQuery?.removeEventListener("change", onDprChange);
+      dprQuery = typeof window.matchMedia === "function" ? window.matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`) : null;
+      dprQuery?.addEventListener("change", onDprChange);
+    };
+    const onDprChange = () => {
+      measure();
+      watchDpr();
+    };
+    watchDpr();
+    const input = new ViewerInput(active, next);
 
     // Open the current file now, and every later one (openSeq bumps on each open).
     const openCurrent = (s: ViewerState) => {
@@ -81,8 +96,10 @@ export function CanvasViewport({ onOpen, onOpenFiles, createWorker = defaultWork
     engineRef.current = next;
     return () => {
       unsubscribe();
+      input.detach();
       observer?.disconnect();
       window.removeEventListener("resize", measure);
+      dprQuery?.removeEventListener("change", onDprChange);
       next.destroy();
       engineRef.current = null;
     };

@@ -14,7 +14,7 @@
 //   tiles:   `<sha256>:<page>:s<step>:<tileSize>:<col>:<row>`
 //   preview: `<sha256>:<page>:preview:s<step>`
 // <page> is 1-based; <step> is the quantised device scale step
-// (src/core/render/tiles.ts scaleStep: 2^(step/16) device px per point). The
+// (src/core/render/tiles.ts scaleStep: 2^(step/1024) device px per point). The
 // stored pixels therefore always match the key's geometry, and windows whose
 // fit lands on the same step share entries. Documents are keyed by sha256.
 //

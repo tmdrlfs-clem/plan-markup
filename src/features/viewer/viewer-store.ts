@@ -14,6 +14,9 @@ export const VIEWER_ERROR_TEXT: Record<ViewerErrorCode, string> = {
   "render-failed": "This drawing could not be displayed.",
 };
 
+/** Navigation tools of the viewer (Story 3.2); markup tools arrive with the editor. */
+export type ViewerTool = "select" | "pan" | "zoom";
+
 export type ViewerTimings = {
   /** From choosing the file to the first progressive snapshot painted (ms), if any. */
   firstPartialMs: number | null;
@@ -40,6 +43,14 @@ export interface ViewerState {
   /** Tiles that failed to render and can be retried (render error state). */
   failedTiles: number;
   timings: ViewerTimings;
+  /** Zoom in percent of actual size (72 dpi = 100 %), once a page is shown. */
+  zoom: number | null;
+  /** The in-memory tile budget could not hold the visible tiles (memory warning, AC 5). */
+  memoryPressure: boolean;
+  /** The active tool (kept across documents). */
+  tool: ViewerTool;
+  /** Space or the middle button is held: pan without leaving `tool`. */
+  tempPan: boolean;
 }
 
 const INITIAL: ViewerState = {
@@ -53,6 +64,10 @@ const INITIAL: ViewerState = {
   error: null,
   failedTiles: 0,
   timings: { firstPartialMs: null, firstFrameMs: null },
+  zoom: null,
+  memoryPressure: false,
+  tool: "select",
+  tempPan: false,
 };
 
 export const viewerStore = createStore<ViewerState>(() => INITIAL);
@@ -65,12 +80,28 @@ export function openDocument(file: File): void {
     file,
     fileName: file.name,
     openSeq: s.openSeq + 1,
+    tool: s.tool,
   }));
 }
 
 /** Back to the empty workspace (tests, and closing the last tab later). */
 export function resetViewer(): void {
   viewerStore.setState((s) => ({ ...INITIAL, openSeq: s.openSeq + 1 }));
+}
+
+/** Selects a tool (V, Shift+V, Z, the ToolRail). */
+export function setTool(tool: ViewerTool): void {
+  viewerStore.setState({ tool });
+}
+
+/** Space / middle button: temporary pan on or off. */
+export function setTempPan(tempPan: boolean): void {
+  if (viewerStore.getState().tempPan !== tempPan) viewerStore.setState({ tempPan });
+}
+
+/** True while a drawing is shown (navigation commands are enabled). */
+export function hasDocument(s: Pick<ViewerState, "status" | "pageCount">): boolean {
+  return s.pageCount > 0 && s.status !== "error";
 }
 
 /** The canvas state of UX-DR12 for the current document. */

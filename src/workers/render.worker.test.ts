@@ -363,18 +363,18 @@ describe("RenderWorkerHost: raster cache", () => {
     const cache = cached();
     const first = setup(cache);
     first.host.handle(open(1));
-    first.host.handle(tile(2, 0, 0, { scale: 0.97 }));
+    first.host.handle(tile(2, 0, 0, { scale: 0.9999 }));
     await first.host.idle();
     await new Promise((r) => setTimeout(r, 0));
-    expect(first.renderer.jobs[0].scale).toBe(1); // 0.97 rounds up to step 0 (scale 1)
+    expect(first.renderer.jobs[0].scale).toBe(1); // 0.9999 rounds up to step 0 (scale 1)
     expect(resultOf(first.replies, 2)).toMatchObject({ tile: { scale: 1, fromCache: false } });
 
     const second = setup(cache);
     second.host.handle(open(1));
-    second.host.handle(tile(2, 0, 0, { scale: 0.99, bucket: 1 }));
+    second.host.handle(tile(2, 0, 0, { scale: 0.99995, bucket: 1 }));
     await second.host.idle();
     expect(resultOf(second.replies, 2)).toMatchObject({ tile: { scale: 1, fromCache: true } });
-    expect(tileCacheKey(SHA, { page: 1, bucket: 0, scale: 0.97, col: 0, row: 0, tileSize: 512 })).toBe(`${SHA}:1:s0:512:0:0`);
+    expect(tileCacheKey(SHA, { page: 1, bucket: 0, scale: 0.9999, col: 0, row: 0, tileSize: 512 })).toBe(`${SHA}:1:s0:512:0:0`);
   });
 
   it("a cancel or close while the cache looks the document up installs nothing and answers cancelled", async () => {

@@ -36,23 +36,25 @@ describe("fitScale", () => {
 });
 
 describe("scale quantisation", () => {
-  it("rounds up to steps of 2^(1/16), keeping exact steps (and float noise) on their step", () => {
+  it("rounds up to steps of 2^(1/1024), keeping exact steps (and float noise) on their step", () => {
     expect(scaleStep(1)).toBe(0);
-    expect(scaleStep(2)).toBe(16);
-    expect(scaleStep(0.5)).toBe(-16);
-    expect(scaleStep(2 * (1 + 1e-9))).toBe(16);
-    expect(scaleStep(1.01)).toBe(1);
-    expect(stepScale(16)).toBe(2);
+    expect(scaleStep(2)).toBe(1024);
+    expect(scaleStep(0.5)).toBe(-1024);
+    expect(scaleStep(2 * (1 + 1e-9))).toBe(1024);
+    expect(scaleStep(1.0005)).toBe(1);
+    expect(stepScale(1024)).toBe(2);
     for (const s of [0.137, 0.5, 0.9, 1.3, 7.77]) {
       const q = quantizeScale(s);
       expect(q).toBeGreaterThanOrEqual(s);
-      expect(q / s).toBeLessThan(2 ** (1 / 16) + 1e-9);
+      expect(q / s).toBeLessThan(2 ** (1 / 1024) + 1e-9);
+      // A 512 px tile at the quantised scale is still 512 px at the exact one (drawn 1:1).
+      expect(Math.round((512 * s) / q)).toBe(512);
       expect(quantizeScale(q)).toBe(q);
     }
   });
 
   it("maps nearby scales (slightly different windows) to the same step", () => {
-    expect(scaleStep(0.641)).toBe(scaleStep(0.645));
+    expect(scaleStep(0.64101)).toBe(scaleStep(0.64102));
     expect(() => scaleStep(0)).toThrow(RangeError);
   });
 });

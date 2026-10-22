@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RenderPayloadMap, RenderVerb } from "@/workers/render-protocol";
 import { WorkerRequestError, type RenderClient } from "@/workers/rpc";
 
-import { FIT_PADDING, ViewerEngine, type ViewerCanvases } from "./viewer-engine";
+import { ViewerEngine, clearDocumentViews, type ViewerCanvases } from "./viewer-engine";
 import { canvasStateOf, type ViewerState } from "./viewer-store";
 
 type Call = {
@@ -83,6 +83,7 @@ const paint = () => frames.splice(0).forEach((f) => f());
 const file = (name = "a.pdf") => new File([new Uint8Array([37, 80, 68, 70])], name, { type: "application/pdf" });
 
 beforeEach(() => {
+  clearDocumentViews();
   state = { status: "loading", failedTiles: 0, content: null, error: null };
   vi.useFakeTimers();
 });
@@ -111,7 +112,7 @@ describe("ViewerEngine", () => {
     expect(open.transfer).toEqual([(open.payload as { bytes: ArrayBuffer }).bytes]);
     expect(state.pageCount).toBe(3);
     expect(engine.fitScale).toBe(1); // (1032 - 32) / 1000
-    expect(engine.view).toEqual({ scale: 1, x: -FIT_PADDING, y: -FIT_PADDING });
+    expect(engine.view).toEqual({ zoom: 1, centerX: 500, centerY: 250, rotation: 0 }); // (1032 - 2 x FIT_PADDING) / 1000
     expect(client.last("render.preview").payload).toEqual({ page: 1, maxWidth: 1000, maxHeight: 500, progressive: true });
   });
 
@@ -146,7 +147,7 @@ describe("ViewerEngine", () => {
     await openToPreview(client, engine);
     client.last("render.preview").resolve({ tile: tilePayload(1), content: null });
     await flush();
-    engine.setView({ scale: 2, x: 0, y: 0 }); // bucket 1: 2 device px per point
+    engine.zoomBy(2); // bucket 1: 2 device px per point
     vi.runAllTimers();
     const tiles = client.all("render.tile");
     expect(tiles.length).toBeGreaterThan(0);
@@ -167,7 +168,7 @@ describe("ViewerEngine", () => {
     await openToPreview(client, engine);
     client.last("render.preview").resolve({ tile: tilePayload(1), content: null });
     await flush();
-    engine.setView({ scale: 2, x: 0, y: 0 });
+    engine.zoomBy(2);
     vi.runAllTimers();
     const first = client.all("render.tile");
     first[0].reject(new WorkerRequestError("render-failed", { name: "Error", message: "x" }));
@@ -193,7 +194,7 @@ describe("ViewerEngine", () => {
     await openToPreview(client, engine);
     client.last("render.preview").resolve({ tile: tilePayload(1), content: null });
     await flush();
-    engine.setView({ scale: 2, x: 0, y: 0 });
+    engine.zoomBy(2);
     vi.runAllTimers();
     client.all("render.tile")[0].reject(new WorkerRequestError("worker-failed", { name: "WorkerError", message: "x" }));
     await flush();

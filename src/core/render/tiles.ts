@@ -32,18 +32,23 @@ export function bucketScale(fit: number, bucket: number, dpr: number): number {
   return fit * 2 ** bucket * dpr;
 }
 
-/** Raster scales are quantised to steps of 2^(1/SCALE_STEPS_PER_OCTAVE) (≈ 4.4 %). */
-export const SCALE_STEPS_PER_OCTAVE = 16;
+/**
+ * Raster scales are quantised to steps of 2^(1/SCALE_STEPS_PER_OCTAVE) (≈ 0.07 %):
+ * fine enough that a 512 px tile rendered at the quantised scale still lands
+ * on exactly 512 device px at the exact bucket scale (drawn 1:1, no
+ * resampling: hairlines stay one device pixel, Story 3.2 AC 4).
+ */
+export const SCALE_STEPS_PER_OCTAVE = 1024;
 
 /**
  * The quantisation step of a device scale: the smallest integer n with
- * 2^(n / SCALE_STEPS_PER_OCTAVE) >= scale (a 1e-6 tolerance keeps exact steps on
+ * 2^(n / SCALE_STEPS_PER_OCTAVE) >= scale (a 1e-4 step tolerance keeps exact steps on
  * their own step). Rasters are rendered at `stepScale(scaleStep(s))`, never below
  * `s`, so windows whose fit scales differ slightly still share cached rasters.
  */
 export function scaleStep(scale: number): number {
   if (!(scale > 0)) throw new RangeError("scale must be positive");
-  return Math.ceil(Math.log2(scale) * SCALE_STEPS_PER_OCTAVE - 1e-6) + 0;
+  return Math.ceil(Math.log2(scale) * SCALE_STEPS_PER_OCTAVE - 1e-4) + 0;
 }
 
 /** The device scale of quantisation step `step`. */
