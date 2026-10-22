@@ -10,7 +10,7 @@ import { Toaster } from "@/components/ui/toast";
 import { toast } from "@/components/ui/toast-store";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { signOut } from "@/features/account/actions";
-import { DocumentViewer, PagePager, usePageAnnouncement, viewerStore } from "@/features/viewer";
+import { DocumentViewer, PagePager, ThumbnailsPanel, usePageAnnouncement, viewerStore } from "@/features/viewer";
 
 import { AccountMenu, type WorkspaceUser } from "./account-menu";
 import { EmptyWorkspace } from "./empty-workspace";
@@ -47,6 +47,7 @@ export function WorkspaceShell({ user }: { user: WorkspaceUser }) {
 
 function LeftPanelBody() {
   const panel = useLayout((s) => leftPanel(s.left.active));
+  if (panel.id === "thumbnails") return <ThumbnailsPanel emptyText={panel.empty} />;
   return (
     <div className="flex flex-col gap-1 p-3 text-ws-md">
       <p>{panel.empty}</p>

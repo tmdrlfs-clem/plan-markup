@@ -161,6 +161,29 @@ describe("panels", () => {
     expect(screen.queryByRole("complementary", { name: "Tool Chest" })).not.toBeInTheDocument();
   });
 
+  it("Alt+T shows the Thumbnails panel: its empty text without a drawing, the page list with one", () => {
+    setup();
+    fireEvent.keyDown(window, { altKey: true, code: "KeyT", key: "t" });
+    const panel = screen.getByRole("complementary", { name: "Thumbnails" });
+    expect(within(panel).getByText("No drawing open")).toBeInTheDocument();
+    expect(within(panel).queryByRole("listbox")).not.toBeInTheDocument();
+    act(() => {
+      openDocument(new File(["%PDF"], "a.pdf", { type: "application/pdf" }));
+      viewerStore.setState({
+        status: "ready",
+        pageCount: 2,
+        pages: [
+          { width: 1191, height: 842, rotate: 0 },
+          { width: 595, height: 842, rotate: 0 },
+        ],
+        documentId: "doc",
+        pageLabels: ["A1721 - LEVEL 17", "A2121 - LEVEL 21"],
+      });
+    });
+    const list = within(panel).getByRole("listbox", { name: "Page thumbnails" });
+    expect(within(list).getAllByRole("option").map((o) => o.getAttribute("aria-label"))).toEqual(["Page 1, A1721", "Page 2, A2121"]);
+  });
+
   it("saves a change made just before the page is left", () => {
     setup();
     fireEvent.keyDown(window, { altKey: true, code: "KeyL", key: "l" });
