@@ -20,8 +20,10 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { Fragment } from "react";
+import { useStore } from "zustand";
 
 import { Toolbar, ToolbarSeparator, ToolbarToggleGroup, ToolbarToggleItem } from "@/components/ui/toolbar";
+import { hasDocument, setTool, viewerStore, type ViewerTool } from "@/features/viewer";
 
 import { NO_DRAWING } from "./workspace-toolbar";
 
@@ -32,7 +34,11 @@ interface Tool {
   shortcut: string;
 }
 
-/** UX-DR6 groups. Shortcuts are shown only; tools and their keys arrive with the editor. */
+/** Tools that work today (Story 3.2); the others arrive with the editor. */
+const LIVE_TOOLS: ReadonlySet<string> = new Set<ViewerTool>(["select", "pan"]);
+export const EDITOR_LATER = "Arrives with the markup editor";
+
+/** UX-DR6 groups. Select and Pan work with a drawing open; the rest arrive with the editor. */
 const GROUPS: { label: string; tools: Tool[] }[] = [
   {
     label: "Select and pan",
@@ -75,12 +81,23 @@ const GROUPS: { label: string; tools: Tool[] }[] = [
 
 /** Right 44 px tool rail; every tool needs an open drawing. */
 export function ToolRail() {
+  const open = useStore(viewerStore, hasDocument);
+  const active = useStore(viewerStore, (s) => s.tool);
   return (
     <Toolbar aria-label="Drawing tools" orientation="vertical" className="h-full overflow-y-auto">
       {GROUPS.map((group, index) => (
         <Fragment key={group.label}>
           {index > 0 ? <ToolbarSeparator className="my-1" /> : null}
-          <ToolbarToggleGroup type="single" aria-label={group.label} className="flex-col">
+          <ToolbarToggleGroup
+            type="single"
+            aria-label={group.label}
+            className="flex-col"
+            value={open && LIVE_TOOLS.has(active) ? active : ""}
+            onValueChange={(value: string) => {
+              // Clicking the active tool again keeps it: a tool is always active.
+              if (LIVE_TOOLS.has(value)) setTool(value as ViewerTool);
+            }}
+          >
             {group.tools.map((tool) => (
               <ToolbarToggleItem
                 key={tool.id}
@@ -89,8 +106,8 @@ export function ToolRail() {
                 icon={tool.icon}
                 shortcut={tool.shortcut}
                 size="md"
-                disabled
-                disabledReason={NO_DRAWING}
+                disabled={!(open && LIVE_TOOLS.has(tool.id))}
+                disabledReason={open ? EDITOR_LATER : NO_DRAWING}
               />
             ))}
           </ToolbarToggleGroup>

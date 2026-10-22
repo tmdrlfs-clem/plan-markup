@@ -7,6 +7,7 @@ import { useStore } from "zustand";
 import { Button } from "@/components/ui/button";
 import { RenderClient } from "@/workers/rpc";
 
+import { registerViewerEngine } from "./viewer-commands";
 import { ViewerEngine } from "./viewer-engine";
 import { ViewerInput } from "./viewer-input";
 import { VIEWER_ERROR_TEXT, canvasStateOf, openDocument, viewerStore, type ViewerState } from "./viewer-store";
@@ -84,6 +85,7 @@ export function CanvasViewport({ onOpen, onOpenFiles, createWorker = defaultWork
     };
     watchDpr();
     const input = new ViewerInput(active, next);
+    const unregister = registerViewerEngine(next);
 
     // Open the current file now, and every later one (openSeq bumps on each open).
     const openCurrent = (s: ViewerState) => {
@@ -97,6 +99,7 @@ export function CanvasViewport({ onOpen, onOpenFiles, createWorker = defaultWork
     return () => {
       unsubscribe();
       input.detach();
+      unregister();
       observer?.disconnect();
       window.removeEventListener("resize", measure);
       dprQuery?.removeEventListener("change", onDprChange);

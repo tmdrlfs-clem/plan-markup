@@ -1,6 +1,7 @@
 "use client";
 
 import { FolderOpen, LogOut } from "lucide-react";
+import { useStore } from "zustand";
 
 import {
   MenuBar,
@@ -11,6 +12,7 @@ import {
   MenuBarSeparator,
   MenuBarTrigger,
 } from "@/components/ui/menu-bar";
+import { hasDocument, viewerCommands, viewerStore, type ViewerCommand } from "@/features/viewer";
 
 import { useLayout } from "./layout-context";
 import { LEFT_PANELS, MARKUPS_LIST } from "./panel-registry";
@@ -24,6 +26,16 @@ export interface WorkspaceMenuBarProps {
 function Disabled({ label, shortcut }: { label: string; shortcut?: string }) {
   return (
     <MenuBarItem disabled shortcut={shortcut}>
+      {label}
+    </MenuBarItem>
+  );
+}
+
+/** A view command: enabled while a drawing is shown. */
+function ViewItem({ label, shortcut, command }: { label: string; shortcut?: string; command: ViewerCommand }) {
+  const open = useStore(viewerStore, hasDocument);
+  return (
+    <MenuBarItem disabled={!open} shortcut={shortcut} onSelect={() => viewerCommands[command]()}>
       {label}
     </MenuBarItem>
   );
@@ -102,10 +114,13 @@ export function WorkspaceMenuBar({ onOpen, onSignOut }: WorkspaceMenuBarProps) {
       <MenuBarMenu>
         <MenuBarTrigger>View</MenuBarTrigger>
         <MenuBarContent>
-          <Disabled label="Zoom in" shortcut="+" />
-          <Disabled label="Zoom out" shortcut="-" />
-          <Disabled label="Fit page" shortcut="Ctrl+9" />
-          <Disabled label="Fit width" shortcut="Ctrl+0" />
+          <ViewItem label="Zoom in" shortcut="+" command="zoomIn" />
+          <ViewItem label="Zoom out" shortcut="-" command="zoomOut" />
+          <ViewItem label="Fit page" shortcut="Ctrl+9" command="fitPage" />
+          <ViewItem label="Fit width" shortcut="Ctrl+0" command="fitWidth" />
+          <MenuBarSeparator />
+          <ViewItem label="Rotate view clockwise" command="rotateClockwise" />
+          <ViewItem label="Rotate view counter-clockwise" command="rotateCounterClockwise" />
           <MenuBarSeparator />
           <PanelItems />
         </MenuBarContent>

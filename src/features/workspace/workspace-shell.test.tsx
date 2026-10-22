@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { hintStore } from "@/components/ui/hint-store";
 import { resetToasts, toastStore } from "@/components/ui/toast-store";
-import { resetViewer, viewerStore } from "@/features/viewer";
+import { openDocument, resetViewer, viewerCommands, viewerStore } from "@/features/viewer";
 
 import { storageKey } from "./layout-persistence";
 import { BANNER_DISMISSED_KEY } from "./narrow-banner";
@@ -325,6 +325,69 @@ describe("opening files", () => {
     await user.click(screen.getByRole("menuitem", { name: "File" }));
     await user.click(await screen.findByRole("menuitem", { name: /Open…/ }));
     expect(click).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe("view navigation (Story 3.2)", () => {
+  function openDrawing() {
+    act(() => {
+      openDocument(new File(["%PDF"], "a.pdf", { type: "application/pdf" }));
+      viewerStore.setState({ status: "ready", pageCount: 1, zoom: 64 });
+    });
+  }
+
+  it("view commands are disabled without a drawing and run with one", async () => {
+    const { user } = setup();
+    const doc = screen.getByRole("toolbar", { name: "Document" });
+    for (const name of ["Zoom in", "Zoom out", "Fit page", "Fit width", "Rotate view clockwise", "Rotate view counter-clockwise"]) {
+      expect(within(doc).getByRole("button", { name })).toHaveAttribute("aria-disabled", "true");
+    }
+    openDrawing();
+    const zoomIn = vi.spyOn(viewerCommands, "zoomIn");
+    const rotate = vi.spyOn(viewerCommands, "rotateClockwise");
+    const fitWidth = vi.spyOn(viewerCommands, "fitWidth");
+    for (const name of ["Zoom in", "Zoom out", "Fit page", "Fit width", "Rotate view clockwise", "Rotate view counter-clockwise"]) {
+      expect(within(doc).getByRole("button", { name })).not.toHaveAttribute("aria-disabled");
+    }
+    await user.click(within(doc).getByRole("button", { name: "Zoom in" }));
+    expect(zoomIn).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole("menuitem", { name: "View" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Rotate view clockwise" }));
+    expect(rotate).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole("menuitem", { name: "View" }));
+    await user.click(await screen.findByRole("menuitem", { name: /Fit width/ }));
+    expect(fitWidth).toHaveBeenCalledTimes(1);
+  });
+
+  it("the ToolRail enables Select and Pan, shows the active tool and switches it", async () => {
+    const { user } = setup();
+    openDrawing();
+    const rail = screen.getByRole("toolbar", { name: "Drawing tools" });
+    const select = within(rail).getByRole("radio", { name: "Select" });
+    const pan = within(rail).getByRole("radio", { name: "Pan" });
+    expect(select).not.toHaveAttribute("aria-disabled");
+    expect(select).toHaveAttribute("aria-checked", "true");
+    await user.click(pan);
+    expect(viewerStore.getState().tool).toBe("pan");
+    expect(pan).toHaveAttribute("aria-checked", "true");
+    await user.click(pan); // clicking the active tool keeps it
+    expect(viewerStore.getState().tool).toBe("pan");
+    expect(within(rail).getByRole("radio", { name: "Line" })).toHaveAttribute("aria-disabled", "true");
+  });
+
+  it("the status bar shows the zoom after the file name", () => {
+    setup();
+    openDrawing();
+    expect(screen.getByRole("contentinfo")).toHaveTextContent("a.pdf64%");
+  });
+
+  it("the memory warning shows in the HintBar once the viewer reports pressure", async () => {
+    setup();
+    openDrawing();
+    act(() => viewerStore.setState({ memoryPressure: true }));
+    expect(await screen.findByTestId("hint-bar")).toHaveTextContent(
+      "This drawing is using a lot of memory — some areas may redraw as you move",
+    );
   });
 });
 

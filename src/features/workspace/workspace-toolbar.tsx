@@ -6,6 +6,8 @@ import {
   MoveHorizontal,
   Printer,
   Redo2,
+  RotateCcw,
+  RotateCw,
   Save,
   Undo2,
   ZoomIn,
@@ -13,12 +15,22 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
+import { useStore } from "zustand";
+
 import { Toolbar, ToolbarButton, ToolbarSeparator } from "@/components/ui/toolbar";
+import { hasDocument, viewerCommands, viewerStore, type ViewerCommand } from "@/features/viewer";
 
 export const NO_DRAWING = "Open a drawing first";
 
 function Needs({ label, icon, shortcut }: { label: string; icon: LucideIcon; shortcut?: string }) {
   return <ToolbarButton label={label} icon={icon} shortcut={shortcut} disabled disabledReason={NO_DRAWING} />;
+}
+
+/** A view command: enabled while a drawing is shown. */
+function ViewButton({ label, icon, shortcut, command }: { label: string; icon: LucideIcon; shortcut?: string; command: ViewerCommand }) {
+  const open = useStore(viewerStore, hasDocument);
+  if (!open) return <Needs label={label} icon={icon} shortcut={shortcut} />;
+  return <ToolbarButton label={label} icon={icon} shortcut={shortcut} onClick={() => viewerCommands[command]()} />;
 }
 
 /** Row 1: document and view commands. Row 2: options of the active tool. */
@@ -33,10 +45,12 @@ export function WorkspaceToolbar({ onOpen }: { onOpen: () => void }) {
         <Needs label="Undo" icon={Undo2} shortcut="Ctrl+Z" />
         <Needs label="Redo" icon={Redo2} shortcut="Ctrl+Y" />
         <ToolbarSeparator />
-        <Needs label="Zoom out" icon={ZoomOut} shortcut="-" />
-        <Needs label="Zoom in" icon={ZoomIn} shortcut="+" />
-        <Needs label="Fit page" icon={Maximize} shortcut="Ctrl+9" />
-        <Needs label="Fit width" icon={MoveHorizontal} shortcut="Ctrl+0" />
+        <ViewButton label="Zoom out" icon={ZoomOut} shortcut="-" command="zoomOut" />
+        <ViewButton label="Zoom in" icon={ZoomIn} shortcut="+" command="zoomIn" />
+        <ViewButton label="Fit page" icon={Maximize} shortcut="Ctrl+9" command="fitPage" />
+        <ViewButton label="Fit width" icon={MoveHorizontal} shortcut="Ctrl+0" command="fitWidth" />
+        <ViewButton label="Rotate view counter-clockwise" icon={RotateCcw} command="rotateCounterClockwise" />
+        <ViewButton label="Rotate view clockwise" icon={RotateCw} command="rotateClockwise" />
       </Toolbar>
       <div
         data-testid="tool-options"

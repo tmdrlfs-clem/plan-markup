@@ -68,6 +68,7 @@ function ShellBody({ user }: { user: WorkspaceUser }) {
 
   const viewerStatus = useStore(viewerStore, (s) => s.status);
   const fileName = useStore(viewerStore, (s) => s.fileName);
+  const zoom = useStore(viewerStore, (s) => s.zoom);
 
   const fileInput = useRef<HTMLInputElement>(null);
   const open = useCallback(() => fileInput.current?.click(), []);
@@ -182,7 +183,7 @@ function ShellBody({ user }: { user: WorkspaceUser }) {
         tabIndex={-1}
         className="shrink-0 border-t border-border bg-surface-2 focus-ring"
       >
-        <WorkspaceStatusBar fileName={viewerStatus === "error" ? null : fileName} />
+        <WorkspaceStatusBar fileName={viewerStatus === "error" ? null : fileName} zoom={zoom} />
       </footer>
 
       <input
