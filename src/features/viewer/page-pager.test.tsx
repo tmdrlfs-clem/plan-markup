@@ -16,7 +16,8 @@ function fakeEngine(pageCount: number) {
     fitPage: vi.fn(),
     fitWidth: vi.fn(),
     rotate: vi.fn(),
-    focusCanvas: vi.fn(),
+    // Like the real canvas: focus leaves the field (its blur must not commit the reverted draft).
+    focusCanvas: vi.fn(() => (document.activeElement as HTMLElement | null)?.blur()),
     currentPage: 0,
     pageCount,
     goToPage: vi.fn((index: number) => {

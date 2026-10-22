@@ -4,6 +4,10 @@
 //   image-only.pdf   one A4 page with a single raster image and nothing else (a "scan")
 //   corrupt.pdf      a %PDF header followed by bytes that are not a PDF
 //   password.pdf     one page encrypted with a user password (AES-256)
+//   multi-page.pdf   4 pages of mixed sizes / orientations (Story 3.3): page 1 has a
+//                    title block with the sheet number S-101 and no page label, pages
+//                    2 and 3 carry page labels (FP-201, "FP-202 - SPRINKLER LAYOUT";
+//                    page 3 also has /Rotate 90), page 4 is plain
 // The wasm-decoder fixture (JPX + CCITT images) comes from make-wasm-images.py.
 //
 //   node scripts/fixtures/make-viewer-fixtures.mjs
@@ -14,7 +18,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { createCanvas } from "@napi-rs/canvas";
-import { PDFDocument, StandardFonts } from "@cantoo/pdf-lib";
+import { PDFDocument, PDFName, PDFString, StandardFonts, degrees, rgb } from "@cantoo/pdf-lib";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const OUT = path.join(ROOT, "fixtures", "pdf");
@@ -59,6 +63,63 @@ async function imageOnly() {
   return doc.save({ useObjectStreams: false });
 }
 
+async function multiPage() {
+  const doc = await PDFDocument.create({ updateMetadata: false });
+  doc.setProducer("plan-markup scripts/fixtures/make-viewer-fixtures.mjs");
+  doc.setCreationDate(DATE);
+  doc.setModificationDate(DATE);
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const bold = await doc.embedFont(StandardFonts.HelveticaBold);
+  const grid = (page, cols, rows) => {
+    const { width, height } = page.getSize();
+    for (let i = 1; i < cols; i++) page.drawLine({ start: { x: (width * i) / cols, y: 40 }, end: { x: (width * i) / cols, y: height - 40 }, thickness: 0.5 });
+    for (let j = 1; j < rows; j++) page.drawLine({ start: { x: 40, y: (height * j) / rows }, end: { x: width - 40, y: (height * j) / rows }, thickness: 0.5 });
+  };
+  const notes = (page, title) => {
+    const { height } = page.getSize();
+    page.drawText(title, { x: 60, y: height - 70, size: 18, font: bold });
+    for (let i = 0; i < 12; i++) page.drawText(`ROOM ${i + 1}  GRID ${String.fromCharCode(65 + i)}`, { x: 60, y: height - 110 - i * 14, size: 8, font });
+  };
+  // 1: A3 landscape with a title block (caption + sheet number bottom right), no page label.
+  const p1 = doc.addPage([1191, 842]);
+  grid(p1, 8, 6);
+  notes(p1, "GROUND FLOOR PLAN");
+  p1.drawRectangle({ x: 931, y: 30, width: 230, height: 110, borderWidth: 1.5, borderColor: rgb(0, 0, 0) });
+  p1.drawText("PROJECT 205 QUEEN STREET", { x: 941, y: 120, size: 8, font });
+  p1.drawText("DRAWING NO.", { x: 941, y: 80, size: 7, font });
+  p1.drawText("S-101", { x: 941, y: 50, size: 22, font: bold });
+  p1.drawText("REV A", { x: 1100, y: 50, size: 10, font });
+  // 2: A4 portrait, page label FP-201.
+  const p2 = doc.addPage([595, 842]);
+  grid(p2, 4, 6);
+  notes(p2, "SPRINKLER DETAILS");
+  // 3: A3 portrait with /Rotate 90 (shown landscape), page label "FP-202 - SPRINKLER LAYOUT".
+  const p3 = doc.addPage([842, 1191]);
+  p3.setRotation(degrees(90));
+  grid(p3, 6, 8);
+  notes(p3, "SPRINKLER LAYOUT");
+  // 4: A4 landscape, label "4" (just the page number), no title block.
+  const p4 = doc.addPage([842, 595]);
+  grid(p4, 6, 4);
+  notes(p4, "SCHEDULE");
+  doc.catalog.set(
+    PDFName.of("PageLabels"),
+    doc.context.obj({
+      Nums: [
+        0,
+        { S: "D" },
+        1,
+        { P: PDFString.of("FP-201") },
+        2,
+        { P: PDFString.of("FP-202 - SPRINKLER LAYOUT") },
+        3,
+        { S: "D", St: 4 },
+      ],
+    }),
+  );
+  return doc.save({ useObjectStreams: false });
+}
+
 function corrupt() {
   // Looks like a PDF to a file picker, but nothing after the header parses.
   const lines = ["%PDF-1.7", "%âãÏÓ"];
@@ -81,7 +142,8 @@ async function password() {
 copyFileSync(path.join(OUT, "export-sample.pdf"), path.join(OUT, "vector-a3.pdf"));
 writeFileSync(path.join(OUT, "image-only.pdf"), await imageOnly());
 writeFileSync(path.join(OUT, "corrupt.pdf"), corrupt());
+writeFileSync(path.join(OUT, "multi-page.pdf"), await multiPage());
 const pw = path.join(OUT, "password.pdf");
 const writePassword = force || !existsSync(pw);
 if (writePassword) writeFileSync(pw, await password());
-console.log(`fixtures/pdf: vector-a3, image-only, corrupt${writePassword ? ", password" : ""}`);
+console.log(`fixtures/pdf: vector-a3, image-only, corrupt, multi-page${writePassword ? ", password" : ""}`);

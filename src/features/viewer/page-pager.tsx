@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
-import { useId, useState, type KeyboardEvent } from "react";
+import { useId, useRef, useState, type KeyboardEvent } from "react";
 import { useStore } from "zustand";
 
 import { ESCAPE_LOCAL_ATTR } from "@/components/ui/dialog-shared";
@@ -52,8 +52,14 @@ export function PagePager() {
   const pageLabels = useStore(viewerStore, (s) => s.pageLabels);
   const sheetLabels = useStore(viewerStore, (s) => s.sheetLabels);
   const inputId = useId();
-  // The text being typed; null shows the current page number.
-  const [draft, setDraft] = useState<string | null>(null);
+  // The text being typed; null shows the current page number. The ref is read on blur, which
+  // can fire in the same tick as an Escape (focus moves to the canvas) before React re-renders.
+  const [draft, setDraftState] = useState<string | null>(null);
+  const draftRef = useRef<string | null>(null);
+  const setDraft = (value: string | null) => {
+    draftRef.current = value;
+    setDraftState(value);
+  };
   if (!shown) return null;
 
   const label = sheetLabelOf(pageIndex + 1, pageLabels?.[pageIndex], sheetLabels[pageIndex]);
@@ -62,8 +68,9 @@ export function PagePager() {
   const single = pageCount <= 1 ? "This drawing has one page" : undefined;
 
   function commit() {
-    if (draft === null) return;
-    const target = resolvePageEntry(draft, pageCount, pageLabels, sheetLabels);
+    const text = draftRef.current;
+    if (text === null) return;
+    const target = resolvePageEntry(text, pageCount, pageLabels, sheetLabels);
     setDraft(null); // anything else reverts silently
     if (target !== null) viewerCommands.goToPage(target);
   }

@@ -5,7 +5,7 @@
 - `zones/` - zone and sprinkler-layout JSON fixtures for the 4541 engine tests (format below).
 - `private/` - the founder's real drawings and `.btx` files. Git-ignored, never committed.
 
-## Viewer fixtures (Story 3.1, committed in `pdf/`)
+## Viewer fixtures (Stories 3.1 and 3.3, committed in `pdf/`)
 
 All synthetic. Regenerate with `node scripts/fixtures/make-viewer-fixtures.mjs` (needs the dev
 dependencies) and `python scripts/fixtures/make-wasm-images.py` (Pillow with OpenJPEG and libtiff).
@@ -17,6 +17,7 @@ dependencies) and `python scripts/fixtures/make-wasm-images.py` (Pillow with Ope
 | `corrupt.pdf` | `%PDF-1.7` header followed by text that is not PDF syntax | "not a valid PDF" error |
 | `password.pdf` | One page, AES-256, user password `plan-markup-test` | "password-protected" error |
 | `wasm-images.pdf` | A JPX (JPXDecode) and a CCITT G4 image | wasm decoders under the worker CSP (ADR 0005) |
+| `multi-page.pdf` | 4 pages: A3 landscape with a title block (sheet number `S-101`, no page label); A4 portrait labelled `FP-201`; A3 portrait with /Rotate 90 labelled `FP-202 - SPRINKLER LAYOUT`; A4 landscape labelled `4` | pager, page keys, sheet labels (Story 3.3) |
 
 `password.pdf` is not deterministic (random salts), so the script rewrites it only when it is
 missing or with `--force`.
