@@ -63,8 +63,8 @@ development_status:
   2-4-spike-annotation-export-round-trip-in-revu: done
   epic-2-retrospective: optional
   # Epic 3: Open and Navigate Drawings
-  epic-3: backlog
-  3-1-open-a-local-pdf-and-see-the-first-page-fast: backlog
+  epic-3: in-progress
+  3-1-open-a-local-pdf-and-see-the-first-page-fast: ready-for-dev
   3-2-zoom-pan-fit-and-rotate-the-view: backlog
   3-3-page-pager-and-page-keys: backlog
   3-4-thumbnails-panel: backlog
