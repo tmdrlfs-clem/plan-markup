@@ -6,7 +6,9 @@
     "node": ">=22.12"
   },
   "scripts": {
+    "predev": "node scripts/copy-pdfjs-assets.mjs",
     "dev": "next dev -p 3020",
+    "prebuild": "node scripts/copy-pdfjs-assets.mjs",
     "build": "next build",
     "start": "next start -p 3020",
     "lint": "eslint .",
@@ -30,7 +32,8 @@
     "admin:create-user": "node --env-file-if-exists=.env.local scripts/admin-create-user.mjs",
     "spike:btx": "node --import ./scripts/spike-btx/ts-hooks.mjs scripts/spike-btx/run.mjs",
     "spike:export": "node --import ./scripts/spike-btx/ts-hooks.mjs scripts/spike-export/run.mjs",
-    "spike:export:sample": "node --import ./scripts/spike-btx/ts-hooks.mjs scripts/spike-export/make-sample.mjs"
+    "spike:export:sample": "node --import ./scripts/spike-btx/ts-hooks.mjs scripts/spike-export/make-sample.mjs",
+    "postinstall": "node scripts/copy-pdfjs-assets.mjs"
   },
   "dependencies": {
     "@cantoo/pdf-lib": "2.11.1",

@@ -215,3 +215,25 @@ describe("proxy: /spike perf-spike routes (Story 2.3)", () => {
     expect(res.status).toBe(307);
   });
 });
+
+describe("proxy matcher (Story 3.1)", () => {
+  // Next anchors each matcher source at the start and end of the pathname.
+  async function matches(pathname: string): Promise<boolean> {
+    vi.resetModules();
+    const { config } = await import("./proxy");
+    return config.matcher.some((source) => new RegExp(`^${source}$`).test(pathname));
+  }
+
+  it("skips the static pdf.js assets (they carry their own worker CSP)", async () => {
+    expect(await matches("/pdfjs/6.4.299/build/pdf.worker.min.mjs")).toBe(false);
+    expect(await matches("/pdfjs/6.4.299/wasm/openjpeg.wasm")).toBe(false);
+    expect(await matches("/pdfjs/6.4.299/cmaps/Adobe-Japan1-UCS2.bcmap")).toBe(false);
+  });
+
+  it("still covers app routes and look-alike paths", async () => {
+    expect(await matches("/workspace")).toBe(true);
+    expect(await matches("/pdfjs")).toBe(true);
+    expect(await matches("/pdfjsx/a.mjs")).toBe(true);
+    expect(await matches("/spike/render")).toBe(true);
+  });
+});

@@ -1,6 +1,6 @@
 # Story 3.1: Open a local PDF and see the first page fast
 
-Status: ready-for-dev
+Status: in-progress
 
 ## Story
 

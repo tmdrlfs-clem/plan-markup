@@ -35,3 +35,22 @@ describe("applyStaticSecurityHeaders", () => {
     for (const [key, value] of Object.entries(EXPECTED)) expect(headers.get(key)).toBe(value);
   });
 });
+
+describe("PDFJS_ASSET_HEADERS (Story 3.1, ADR 0005)", () => {
+  it("gives the pdf.js parser worker a narrow CSP with wasm but no JS eval", async () => {
+    const { PDFJS_ASSET_HEADERS, PDFJS_WORKER_CSP } = await import("./headers");
+    const { parseCsp } = await import("./csp");
+    const csp = parseCsp(PDFJS_WORKER_CSP);
+    expect(csp.get("default-src")).toEqual(["'none'"]);
+    expect(csp.get("script-src")).toEqual(["'self'", "'wasm-unsafe-eval'"]);
+    expect(csp.get("connect-src")).toEqual(["'self'"]);
+    expect(csp.get("worker-src")).toEqual(["'none'"]);
+    expect(PDFJS_WORKER_CSP).not.toContain("'unsafe-eval'");
+    expect(PDFJS_WORKER_CSP).not.toContain("'unsafe-inline'");
+    expect(Object.fromEntries(PDFJS_ASSET_HEADERS.map((h) => [h.key, h.value]))).toEqual({
+      "Content-Security-Policy": PDFJS_WORKER_CSP,
+      "Cache-Control": "public, max-age=31536000, immutable",
+    });
+    expect(Object.isFrozen(PDFJS_ASSET_HEADERS)).toBe(true);
+  });
+});

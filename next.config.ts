@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 // @sentry/nextjs 11 exports the build wrapper from the /config entry only.
 import { withSentryConfig, type SentryBuildOptions } from "@sentry/nextjs/config";
 // Relative import: next.config.ts cannot rely on the @/ alias.
-import { STATIC_SECURITY_HEADERS } from "./src/lib/security/headers";
+import { PDFJS_ASSET_HEADERS, PDFJS_ASSET_PATH, STATIC_SECURITY_HEADERS } from "./src/lib/security/headers";
 
 export const nextConfig: NextConfig = {
   poweredByHeader: false,
@@ -19,8 +19,13 @@ export const nextConfig: NextConfig = {
   },
   // Static security headers for every path, including _next/static and anything
   // outside the proxy matcher. The CSP is per request and lives in src/proxy.ts.
+  // The pdf.js assets (public/pdfjs/<version>/, outside the proxy matcher) add the
+  // narrow parser-worker CSP and a long cache; see PDFJS_WORKER_CSP and ADR 0005.
   async headers() {
-    return [{ source: "/:path*", headers: [...STATIC_SECURITY_HEADERS] }];
+    return [
+      { source: "/:path*", headers: [...STATIC_SECURITY_HEADERS] },
+      { source: `${PDFJS_ASSET_PATH}/:path*`, headers: [...PDFJS_ASSET_HEADERS] },
+    ];
   },
   // Never trace the founder's private drawings into a server bundle (the Story 2.3
   // spike's fixture route reads them at runtime, locally only), nor pdfjs-dist
