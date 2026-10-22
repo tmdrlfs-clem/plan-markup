@@ -1,6 +1,6 @@
 # Story 3.4: Thumbnails panel
 
-Status: in-progress
+Status: review
 
 ## Story
 
@@ -21,11 +21,11 @@ so that I can jump to a sheet visually.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Worker** — `render.thumbnail { page, widthPx }` → `ImageBitmap` (transferred) via the existing `render.<verb>` protocol (`result | progress | error`, `serializeWorkerError` + `code`); priority queue so tile requests always run first; `render.cancel` for thumbnails that left the window. Unit tests with the stubbed renderer.
-- [ ] **Task 2: Engine/store** — engine API `requestThumbnail(page, widthPx)` / `cancelThumbnail(page)`, IndexedDB cache reuse (`src/lib/idb/tile-cache.ts`, same budget and eviction), page sizes and labels exposed from the viewer store for the panel. Bitmaps owned by the panel are closed on unmount/eviction.
-- [ ] **Task 3: Virtual list** — `src/features/viewer/thumbnails-panel.tsx` (+ a small fixed-row-height windowing helper, framework-free math in `src/core/render/` or co-located; no new dependency unless clearly justified — if one is added, pin it exactly and note why). Draw bitmaps into per-row `<canvas>` elements. Story 1.7 components and near-sharp tokens only; English copy.
-- [ ] **Task 4: Wire into the left panel** — replace the Thumbnails placeholder body in `workspace-shell.tsx` / registry with the panel; empty state when no document; current-page highlight and scroll-into-view; click/Enter navigation.
-- [ ] **Task 5: Tests** — unit: windowing math, cancel-on-scroll, cache size steps, accessible names, keyboard roving focus (jsdom opt-in + `@/test/radix-jsdom`); e2e `e2e/viewer-thumbnails.spec.ts` on `fixtures/pdf/multi-page.pdf`. Local check on L17/L21 (private, never commit): thumbnails render, labels "A1721"/"A2121", no long tasks; save one screenshot to `fixtures/private/traces/`.
+- [x] **Task 1: Worker** — `render.thumbnail { page, widthPx }` → `ImageBitmap` (transferred) via the existing `render.<verb>` protocol (`result | progress | error`, `serializeWorkerError` + `code`); priority queue so tile requests always run first; `render.cancel` for thumbnails that left the window. Unit tests with the stubbed renderer.
+- [x] **Task 2: Engine/store** — engine API `requestThumbnail(page, widthPx)` / `cancelThumbnail(page)`, IndexedDB cache reuse (`src/lib/idb/tile-cache.ts`, same budget and eviction), page sizes and labels exposed from the viewer store for the panel. Bitmaps owned by the panel are closed on unmount/eviction.
+- [x] **Task 3: Virtual list** — `src/features/viewer/thumbnails-panel.tsx` (+ a small fixed-row-height windowing helper, framework-free math in `src/core/render/` or co-located; no new dependency unless clearly justified — if one is added, pin it exactly and note why). Draw bitmaps into per-row `<canvas>` elements. Story 1.7 components and near-sharp tokens only; English copy.
+- [x] **Task 4: Wire into the left panel** — replace the Thumbnails placeholder body in `workspace-shell.tsx` / registry with the panel; empty state when no document; current-page highlight and scroll-into-view; click/Enter navigation.
+- [x] **Task 5: Tests** — unit: windowing math, cancel-on-scroll, cache size steps, accessible names, keyboard roving focus (jsdom opt-in + `@/test/radix-jsdom`); e2e `e2e/viewer-thumbnails.spec.ts` on `fixtures/pdf/multi-page.pdf`. Local check on L17/L21 (private, never commit): thumbnails render, labels "A1721"/"A2121", no long tasks; save one screenshot to `fixtures/private/traces/`.
 
 ## Dev Notes
 
@@ -44,10 +44,63 @@ so that I can jump to a sheet visually.
 
 ### Agent Model Used
 
+Claude Opus 5.5 (claude-opus-5-5)
+
 ### Debug Log References
+
+- CI run **39866168246** (typecheck/lint/unit/guards, Playwright e2e on the production build including `viewer-thumbnails.spec.ts`, gitleaks): success.
+- Local checks: `npm run typecheck`, `npm run lint` and `npm run build` are clean. `npm test`: 1190 unit tests in 107 files.
+- Local e2e on the production build (`E2E_PROD=1`, workers 1, Docker + local Supabase): 39 passed, 2 skipped (the opt-in L17 checks). `viewer-thumbnails.spec.ts` passed on its first run. Three `auth.spec.ts` tests failed once right after Supabase restarted cold, then passed (11/11) on a rerun; no auth code changed.
+- **Founder drawings** (`PERF_L17=1 E2E_PROD=1 npx playwright test perf-thumbnails`, private, nothing committed): the L17 thumbnail is named "Page 1, A1721" and the L21 thumbnail "Page 1, A2121". All four thumbnails of `multi-page.pdf` render. The longest main-thread task from opening the panel until the last thumbnail was drawn: **0 ms** on L17, L21 and multi-page (the Long Tasks API reported no task ≥ 50 ms). Screenshot: `fixtures/private/traces/3-4-thumbnails.png` (workspace on L17 with the panel open), reviewed and not committed.
 
 ### Completion Notes List
 
+- **Task 1: worker.** New verb `render.thumbnail { page, widthPx, heightPx }`, Zod-validated (16…2048 integer px). The worker fits the whole page, with /Rotate applied, into the box at an exact scale, so the raster never overflows the box. The raster is cached in IndexedDB under `<sha>:<page>:thumb:<w>x<h>`.
+  - Scheduling: open, preview and tile jobs run first, then sheet labels, then thumbnails. A running thumbnail yields when a preview or tile arrives: it is aborted and re-queued, not failed. A cancel always wins over a yield.
+  - On a cached reopen, a stored thumbnail answers before pdf.js has parsed. A thumbnail that misses the cache waits for the parse without holding the head of the queue.
+- **Task 2: engine and store.** `ViewerEngine.thumbnail(index, box, listener)` returns a cancel function.
+  - Rasters live in their own LRU (48 MB). The engine owns the bitmaps and closes them on eviction or when a new document opens. The panel only draws them.
+  - When a page's finished preview (shown, or kept from 3.3) is at least as large as the thumbnail, the engine resizes it with `createImageBitmap` and does not ask the worker.
+  - Listeners share one request. The last listener to leave cancels it. A new document cancels everything and drops late replies; a page change does not.
+  - The store now carries `pages` (sizes with /Rotate) and `documentId`. `viewerThumbnails` routes the panel's requests to the mounted engine.
+  - `requestSheetLabel` is public, so visible rows can look up the sheet numbers of pages without a page label.
+- **Task 3: virtual list** (`thumbnails-panel.tsx`, geometry and keys in `thumbnail-layout.ts`, no new dependency).
+  - Rows have a fixed height: one box shape per document (the tallest page's aspect, clamped 0.5…1.42). Each page is fitted into the box, and a pending row keeps the page's size.
+  - The list mounts the visible rows plus one screen above and below, and always the current and the focused rows. Rows that leave the window cancel their requests.
+  - Rasters come in width steps (160/240/320/400 CSS px × DPR). A panel resize within a step only redraws.
+  - The current page has an accent border (drawn as a ring, so nothing shifts) plus `aria-current="page"` and `aria-selected`, and it is scrolled into view when the page changes.
+  - A failed thumbnail shows a quiet `ImageOff` glyph, and its row still navigates.
+- **Task 4:** the left panel's Thumbnails body is the `ThumbnailsPanel`. Without a drawing it shows the registry's "No drawing open", with no spinner.
+- **Task 5:** unit tests cover the worker (render, cache, priority, yield, cancel, cached reopen, boundary validation), the engine (shared and cancelled requests, preview reuse, failure, document change), commands, the layout math, the panel (names, virtualisation and cancel on scroll, keys, click, failed glyph, empty state, reveal) and the shell (Alt+T). E2E: `viewer-thumbnails.spec.ts` (CI) and `perf-thumbnails.spec.ts` (opt-in, local).
+
+**Decisions and deviations (for review):**
+
+1. **The listbox uses `aria-activedescendant`, not a moving `tabindex`.** It is one tab stop, and focus stays on the list. With virtualisation, a roving tabindex would lose focus whenever the focused row unmounts. The focused and current rows are always mounted.
+2. **Payload and cache key name a box.** The payload is `{ page, widthPx, heightPx }` and the key is `<sha>:<page>:thumb:<w>x<h>`, instead of `{ page, widthPx }` and `thumb:<px>`. Thumbnails fit a box shared by the whole document, so the height is part of the key.
+3. **Orientation.** "/Rotate plus the view rotation is NOT applied" is read as: /Rotate is applied (the page as the PDF displays it, the same as the canvas and the PageInfo sizes), and the view rotation is not.
+4. **The engine owns the thumbnail bitmaps**, not the panel. They are closed on LRU eviction or on a new document, and the panel only draws them into its canvases. This lets rows that scroll back in redraw at once.
+5. **Thumbnails made from a preview are not written to IndexedDB.** Only rasters rendered by the worker are stored. On a reopen, those pages come from the preview again, or from the worker.
+6. **The visible rows trigger the sheet-number lookup**, so the thumbnails of unvisited pages without a page label also get their detected number. These jobs run at sheet-label priority, before thumbnails and after tiles.
+7. **Keys inside the list.** With the list focused, PageUp, PageDown, Home and End move the list's focus. The Story 3.3 page keys still act only with canvas focus.
+
+**Questions for the founder:**
+
+- Should a click on a thumbnail also move the keyboard focus to the canvas (as Revu does)? Focus stays in the list for now, so keyboard browsing can continue.
+
 ### File List
 
+- `_bmad-output/implementation-artifacts/3-4-thumbnails-panel.md`, `sprint-status.yaml` (modified)
+- `src/workers/render-protocol.ts`, `render.worker.ts`, `render.worker.test.ts` (modified)
+- `src/features/viewer/viewer-engine.ts`, `viewer-engine.test.ts`, `viewer-store.ts`, `viewer-commands.ts`, `viewer-commands.test.ts`, `index.ts` (modified)
+- `src/features/viewer/thumbnail-layout.ts`, `thumbnail-layout.test.ts`, `thumbnails-panel.tsx`, `thumbnails-panel.test.tsx` (new)
+- `src/features/workspace/workspace-shell.tsx`, `workspace-shell.test.tsx` (modified)
+- `e2e/viewer-thumbnails.spec.ts`, `e2e/perf-thumbnails.spec.ts` (new)
+
 ### Change Log
+
+- 2026-10-23: Story 3.4 implemented (Claude Opus 5.5). Status → review.
+  - Worker `render.thumbnail` at the lowest priority, yielding to the canvas and cached in IndexedDB.
+  - Engine thumbnails with preview reuse and their own LRU.
+  - The virtualised Thumbnails panel in the left panel.
+  - Unit tests and e2e.
+  - Commits 3cf79d6, 3455fae, 153eaed, e63ff05, 0ab0497.
