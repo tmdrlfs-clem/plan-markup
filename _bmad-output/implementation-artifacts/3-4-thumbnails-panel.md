@@ -1,6 +1,6 @@
 # Story 3.4: Thumbnails panel
 
-Status: ready-for-dev
+Status: in-progress
 
 ## Story
 

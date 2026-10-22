@@ -24,6 +24,7 @@ import {
   type RenderErrorCode,
   type RenderReply,
   type SheetLabelPayload,
+  type ThumbnailPayload,
   type TilePayload,
   type TileRequestPayload,
 } from "./render-protocol";
@@ -98,6 +99,11 @@ export function tileCacheKey(sha256: string, req: TileRequestPayload): string {
   return `${sha256}:${req.page}:s${scaleStep(req.scale)}:${req.tileSize}:${req.col}:${req.row}`;
 }
 
+/** IndexedDB key of a page's thumbnail fitted into a widthPx x heightPx box. */
+export function thumbnailCacheKey(sha256: string, req: ThumbnailPayload): string {
+  return `${sha256}:${req.page}:thumb:${req.widthPx}x${req.heightPx}`;
+}
+
 export async function sha256Hex(bytes: Uint8Array): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", bytes as Uint8Array<ArrayBuffer>);
   return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
@@ -107,7 +113,9 @@ type Job =
   | { kind: "open"; reqId: number; bytes: Uint8Array; queuedAt: number }
   | { kind: "preview"; reqId: number; payload: PreviewPayload; queuedAt: number }
   | { kind: "tile"; reqId: number; payload: TileRequestPayload; queuedAt: number }
-  | { kind: "sheetLabel"; reqId: number; payload: SheetLabelPayload; queuedAt: number };
+  | { kind: "sheetLabel"; reqId: number; payload: SheetLabelPayload; queuedAt: number }
+  // `missed`: the raster cache had no copy and pdf.js is still parsing (it waits off the queue's head).
+  | { kind: "thumbnail"; reqId: number; payload: ThumbnailPayload; queuedAt: number; missed?: boolean };
 
 type Doc = {
   sha256: string;
@@ -134,7 +142,8 @@ const CANCELLED = () => new RenderError("cancelled", "Request cancelled");
  */
 export class RenderWorkerHost<B> {
   private readonly queue: Job[] = [];
-  private running: { reqId: number; abort: AbortController } | null = null;
+  /** `yielded`: a thumbnail aborted for urgent work (re-queued, not failed); `cancelled` wins over it. */
+  private running: { reqId: number; abort: AbortController; job: Job; yielded: boolean; cancelled: boolean } | null = null;
   private pumping = false;
   private doc: Doc | null = null;
   /** Bumped by every open and close: work for an older document is dropped. */
@@ -185,12 +194,17 @@ export class RenderWorkerHost<B> {
       }
       case "render.preview":
         this.queue.push({ kind: "preview", reqId: msg.reqId, payload: msg.payload, queuedAt });
+        this.yieldThumbnail();
         break;
       case "render.tile":
         this.queue.push({ kind: "tile", reqId: msg.reqId, payload: msg.payload, queuedAt });
+        this.yieldThumbnail();
         break;
       case "render.sheetLabel":
         this.queue.push({ kind: "sheetLabel", reqId: msg.reqId, payload: msg.payload, queuedAt });
+        break;
+      case "render.thumbnail":
+        this.queue.push({ kind: "thumbnail", reqId: msg.reqId, payload: msg.payload, queuedAt });
         break;
     }
     void this.pump();
@@ -211,7 +225,18 @@ export class RenderWorkerHost<B> {
         this.error(job.reqId, CANCELLED());
       }
     }
-    if (this.running && (ids === null || ids.has(this.running.reqId))) this.running.abort.abort();
+    if (this.running && (ids === null || ids.has(this.running.reqId))) {
+      this.running.cancelled = true;
+      this.running.abort.abort();
+    }
+  }
+
+  /** The canvas never waits behind a thumbnail: a running one stops and goes back in the queue. */
+  private yieldThumbnail(): void {
+    const running = this.running;
+    if (running?.job.kind !== "thumbnail" || running.cancelled) return;
+    running.yielded = true;
+    running.abort.abort();
   }
 
   private result(reqId: number, payload: unknown, transfer: Transferable[] = []): void {
@@ -251,11 +276,13 @@ export class RenderWorkerHost<B> {
     try {
       for (let job = this.nextJob(); job; job = this.nextJob()) {
         const abort = new AbortController();
-        this.running = { reqId: job.reqId, abort };
+        const running = { reqId: job.reqId, abort, job, yielded: false, cancelled: false };
+        this.running = running;
         try {
           await this.run(job, abort.signal);
         } catch (e) {
-          this.error(job.reqId, abort.signal.aborted ? CANCELLED() : e);
+          if (running.yielded && !running.cancelled) this.queue.push(job);
+          else this.error(job.reqId, abort.signal.aborted ? CANCELLED() : e);
         } finally {
           this.running = null;
         }
@@ -266,20 +293,28 @@ export class RenderWorkerHost<B> {
   }
 
   /**
-   * The next job to run: the queue in order, except that sheet-label jobs (text
-   * extraction, never urgent) wait until no open / preview / tile job is queued
-   * and pdf.js has parsed the document, unless their answer is already cached.
-   * They would otherwise hold the queue while pdf.js parses, in front of tiles
-   * the raster cache could answer at once.
+   * The next job to run: open / preview / tile jobs in queue order first, then
+   * sheet labels, then thumbnails. Sheet-label jobs (text extraction, never
+   * urgent) also wait until pdf.js has parsed the document, unless their answer
+   * is cached; a thumbnail the raster cache missed waits for the parse the same
+   * way. Neither holds the queue while pdf.js parses, in front of tiles the
+   * raster cache could answer at once.
    */
   private nextJob(): Job | undefined {
     let label = -1;
+    let thumb = -1;
     for (let i = 0; i < this.queue.length; i++) {
       const job = this.queue[i];
-      if (job.kind !== "sheetLabel") return this.queue.splice(i, 1)[0];
-      if (label < 0 && this.sheetLabelRunnable(job)) label = i;
+      if (job.kind === "sheetLabel") {
+        if (label < 0 && this.sheetLabelRunnable(job)) label = i;
+      } else if (job.kind === "thumbnail") {
+        if (thumb < 0 && (!job.missed || !this.doc || this.doc.parsed)) thumb = i;
+      } else {
+        return this.queue.splice(i, 1)[0];
+      }
     }
-    return label < 0 ? undefined : this.queue.splice(label, 1)[0];
+    const pick = label >= 0 ? label : thumb;
+    return pick < 0 ? undefined : this.queue.splice(pick, 1)[0];
   }
 
   private sheetLabelRunnable(job: Extract<Job, { kind: "sheetLabel" }>): boolean {
@@ -295,6 +330,7 @@ export class RenderWorkerHost<B> {
     if (!page) throw new RenderError("out-of-range", "Page out of range");
     if (job.kind === "preview") return this.preview(job, doc, page, signal);
     if (job.kind === "sheetLabel") return this.sheetLabel(job, doc, page, signal);
+    if (job.kind === "thumbnail") return this.thumbnail(job, doc, page, signal);
     return this.tile(job, doc, page, signal);
   }
 
@@ -426,6 +462,58 @@ export class RenderWorkerHost<B> {
     doc.sheetLabels[key] = label;
     this.result(job.reqId, { label });
     if (this.doc === doc) this.persist(doc);
+  }
+
+  /** The page fitted into the requested box: from the raster cache, else rendered and stored. */
+  private async thumbnail(job: Extract<Job, { kind: "thumbnail" }>, doc: Doc, page: PageInfo, signal: AbortSignal): Promise<void> {
+    const p = job.payload;
+    // Exact (not quantised) fit: the key names the box, and the raster must not overflow it.
+    const scale = Math.min(p.widthPx / page.width, p.heightPx / page.height);
+    const key = thumbnailCacheKey(doc.sha256, p);
+    const t0 = this.now();
+    const waitMs = t0 - job.queuedAt;
+    if (!job.missed) {
+      const hit = await this.cache?.getTile(key).catch(() => null);
+      if (hit && signal.aborted) this.renderer.release(hit);
+      if (signal.aborted) throw CANCELLED();
+      if (hit) {
+        const tile = this.payloadFromCache(hit, p.page, scale, page, waitMs, t0);
+        return this.result(job.reqId, { tile }, this.transferOf(hit));
+      }
+      if (!doc.parsed) {
+        // Wait for pdf.js off the queue's head (nextJob skips it until the parse settles).
+        job.missed = true;
+        this.queue.push(job);
+        return;
+      }
+    }
+    await doc.ready;
+    if (signal.aborted) throw CANCELLED();
+    const rect = {
+      x: 0,
+      y: 0,
+      width: Math.max(1, Math.min(p.widthPx, Math.round(page.width * scale))),
+      height: Math.max(1, Math.min(p.heightPx, Math.round(page.height * scale))),
+    };
+    const out = await this.renderer.render({ page: p.page, scale, ...rect, encode: this.cache !== null, content: false }, signal);
+    if (signal.aborted) {
+      this.renderer.release(out.bitmap);
+      throw CANCELLED();
+    }
+    const tile: TilePayload<B> = {
+      page: p.page,
+      bucket: null,
+      col: 0,
+      row: 0,
+      scale,
+      ...rect,
+      bitmap: out.bitmap,
+      fromCache: false,
+      waitMs,
+      renderMs: this.now() - t0,
+    };
+    this.result(job.reqId, { tile }, this.transferOf(out.bitmap));
+    this.store(key, out.encoded);
   }
 
   private async tile(job: Extract<Job, { kind: "tile" }>, doc: Doc, page: PageInfo, signal: AbortSignal): Promise<void> {

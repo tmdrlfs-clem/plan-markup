@@ -13,6 +13,11 @@
 //                   -> result PreviewResult (with the page's content flags).
 //   render.tile     { page, bucket, scale, col, row, tileSize }  `scale` is device px
 //                   per point. -> result TileResult.
+//   render.thumbnail { page, widthPx, heightPx }  The whole page fitted into a
+//                   widthPx x heightPx device-px box (/Rotate applied), cached in
+//                   IndexedDB under <sha>:<page>:thumb:<w>x<h>. Runs after every
+//                   queued open / preview / tile, and a running thumbnail yields
+//                   (is re-queued) when one arrives. -> result ThumbnailResult.
 //   render.sheetLabel { page }  The page's sheet number detected from its text near
 //                   the title block (src/core/pdf/sheet-label.ts), cached per document.
 //                   -> result { label: string | null }.
@@ -110,6 +115,7 @@ export type TilePayload<B> = {
 export type PreviewResult<B> = { tile: TilePayload<B>; content: ContentFlags | null };
 export type PreviewProgress<B> = { tile: TilePayload<B> };
 export type TileResult<B> = { tile: TilePayload<B> };
+export type ThumbnailResult<B> = { tile: TilePayload<B> };
 
 const reqId = z.number().finite();
 const pageNumber = z.number().int().min(1);
@@ -134,6 +140,9 @@ export const tilePayloadSchema = z.object({
   tileSize: z.number().int().min(16).max(4096),
 });
 export const sheetLabelPayloadSchema = z.object({ page: pageNumber });
+/** Thumbnail box in device px (panel width steps x DPR). */
+const thumbPx = z.number().int().min(16).max(2048);
+export const thumbnailPayloadSchema = z.object({ page: pageNumber, widthPx: thumbPx, heightPx: thumbPx });
 export const cancelPayloadSchema = z.object({
   reqIds: z.array(reqId).max(10_000).optional(),
   all: z.boolean().optional(),
@@ -145,6 +154,7 @@ export const renderRequestSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("render.preview"), reqId, payload: previewPayloadSchema }),
   z.object({ type: z.literal("render.tile"), reqId, payload: tilePayloadSchema }),
   z.object({ type: z.literal("render.sheetLabel"), reqId, payload: sheetLabelPayloadSchema }),
+  z.object({ type: z.literal("render.thumbnail"), reqId, payload: thumbnailPayloadSchema }),
   z.object({ type: z.literal("render.cancel"), reqId, payload: cancelPayloadSchema }),
   z.object({ type: z.literal("render.close"), reqId, payload: closePayloadSchema }),
 ]);
@@ -157,6 +167,7 @@ export type TileRequestPayload = z.infer<typeof tilePayloadSchema>;
 export type CancelPayload = z.infer<typeof cancelPayloadSchema>;
 export type SheetLabelPayload = z.infer<typeof sheetLabelPayloadSchema>;
 export type SheetLabelResult = { label: string | null };
+export type ThumbnailPayload = z.infer<typeof thumbnailPayloadSchema>;
 
 /** Result payload per verb. */
 export type RenderResultMap<B> = {
@@ -164,6 +175,7 @@ export type RenderResultMap<B> = {
   "render.preview": PreviewResult<B>;
   "render.tile": TileResult<B>;
   "render.sheetLabel": SheetLabelResult;
+  "render.thumbnail": ThumbnailResult<B>;
   "render.cancel": Record<string, never>;
   "render.close": Record<string, never>;
 };
@@ -173,6 +185,7 @@ export type RenderPayloadMap = {
   "render.preview": PreviewPayload;
   "render.tile": TileRequestPayload;
   "render.sheetLabel": SheetLabelPayload;
+  "render.thumbnail": ThumbnailPayload;
   "render.cancel": CancelPayload;
   "render.close": Record<string, never>;
 };

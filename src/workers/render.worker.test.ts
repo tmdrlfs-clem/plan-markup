@@ -8,6 +8,7 @@ import {
   RenderWorkerHost,
   deferredRasterCache,
   previewCacheKey,
+  thumbnailCacheKey,
   tileCacheKey,
   type RasterCache,
   type RenderedTile,
@@ -572,5 +573,132 @@ describe("RenderWorkerHost: render.sheetLabel", () => {
     await host.idle();
     expect(resultOf(replies, 2)).toEqual({ label: null });
     expect(codeOf(replies, 3)).toBe("out-of-range");
+  });
+});
+
+describe("RenderWorkerHost: render.thumbnail (Story 3.4)", () => {
+  const thumb = (reqId: number, page = 1, widthPx = 200, heightPx = 150) => ({
+    type: "render.thumbnail",
+    reqId,
+    payload: { page, widthPx, heightPx },
+  });
+
+  function cachedStore() {
+    const backend = memoryTileBackend();
+    const decode = async (blob: Blob): Promise<Bitmap> => {
+      const [w, h] = (await blob.text()).split("x").map(Number);
+      return { width: w, height: h, closed: false };
+    };
+    return rasterCache(new TileCache(backend), decode);
+  }
+
+  it("renders the whole page fitted into the box and stores it; the next request comes from the cache", async () => {
+    const cache = cachedStore();
+    const { host, replies, renderer } = setup(cache);
+    renderer.pages = [PAGE_A]; // 1000 x 600 into 200 x 150: width-bound, scale 0.2
+    host.handle(open(1));
+    host.handle(thumb(2));
+    await host.idle();
+    const first = resultOf(replies, 2).tile as { width: number; height: number; scale: number; fromCache: boolean };
+    expect(first).toMatchObject({ width: 200, height: 120, fromCache: false });
+    expect(first.scale).toBeCloseTo(0.2, 3);
+    expect(renderer.jobs.at(-1)).toMatchObject({ page: 1, x: 0, y: 0, content: false, encode: true });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(await cache.getTile(thumbnailCacheKey(SHA, { page: 1, widthPx: 200, heightPx: 150 }))).toMatchObject({ width: 200 });
+    host.handle(thumb(3));
+    await host.idle();
+    expect(resultOf(replies, 3).tile).toMatchObject({ fromCache: true, width: 200, height: 120 });
+    expect(renderer.jobs).toHaveLength(1);
+  });
+
+  it("runs after every queued preview and tile (and after sheet labels)", async () => {
+    const { host, replies } = setup();
+    host.handle(open(1));
+    host.handle(thumb(2));
+    host.handle(sheetLabel(3));
+    host.handle(tile(4));
+    host.handle(preview(5));
+    await host.idle();
+    const order = replies.filter((r) => r.type === "result").map((r) => r.reqId);
+    expect(order).toEqual([1, 4, 5, 3, 2]);
+  });
+
+  it("a running thumbnail yields to a tile: it is re-queued, not failed, and finishes after the tile", async () => {
+    const { host, replies, renderer } = setup();
+    host.handle(open(1));
+    await host.idle();
+    let release!: () => void;
+    renderer.gate = new Promise((r) => (release = r));
+    host.handle(thumb(2));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(renderer.jobs).toHaveLength(1); // the thumbnail is rendering
+    renderer.gate = null;
+    host.handle(tile(3));
+    await host.idle();
+    release();
+    const order = replies.filter((r) => r.type === "result").map((r) => r.reqId);
+    expect(order).toEqual([1, 3, 2]);
+    expect(codeOf(replies, 2)).toBeNull();
+    expect(renderer.jobs.map((j) => j.content)).toEqual([false, false, false]); // thumb, tile, thumb again
+  });
+
+  it("a cancelled thumbnail fails with 'cancelled' and is not re-queued", async () => {
+    const { host, replies, renderer } = setup();
+    host.handle(open(1));
+    await host.idle();
+    renderer.gate = new Promise(() => undefined);
+    host.handle(thumb(2));
+    await new Promise((r) => setTimeout(r, 0));
+    host.handle({ type: "render.cancel", reqId: 3, payload: { reqIds: [2] } });
+    renderer.gate = null;
+    host.handle(tile(4));
+    await host.idle();
+    expect(codeOf(replies, 2)).toBe("cancelled");
+    expect(byReq(replies, 2)).toHaveLength(1);
+  });
+
+  it("on a cached reopen a stored thumbnail answers before pdf.js; a missing one waits without holding up tiles", async () => {
+    const cache = cachedStore();
+    const first = setup(cache);
+    first.renderer.pages = [PAGE_A, PAGE_A];
+    first.host.handle(open(1));
+    first.host.handle(thumb(2, 1));
+    first.host.handle(tile(3));
+    await first.host.idle();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const second = setup(cache);
+    second.renderer.pages = [PAGE_A, PAGE_A];
+    let ready!: () => void;
+    second.renderer.openGate = new Promise((r) => (ready = r));
+    second.host.handle(open(1));
+    second.host.handle(thumb(2, 2)); // not stored: needs pdf.js
+    second.host.handle(thumb(3, 1)); // stored
+    second.host.handle(tile(4)); // stored
+    await new Promise((r) => setTimeout(r, 20));
+    expect(resultOf(second.replies, 3).tile).toMatchObject({ fromCache: true });
+    expect(resultOf(second.replies, 4).tile).toMatchObject({ fromCache: true });
+    expect(byReq(second.replies, 2)).toHaveLength(0);
+    ready();
+    await second.host.idle();
+    expect(resultOf(second.replies, 2).tile).toMatchObject({ fromCache: false, page: 2 });
+  });
+
+  it("rejects malformed thumbnail requests at the boundary", async () => {
+    const { host, replies } = setup();
+    host.handle(open(1));
+    for (const [reqId, payload] of [
+      [2, { page: 1, widthPx: 8, heightPx: 100 }],
+      [3, { page: 1, widthPx: 100.5, heightPx: 100 }],
+      [4, { page: 0, widthPx: 100, heightPx: 100 }],
+      [5, { page: 1, widthPx: 100, heightPx: 4096 }],
+      [6, { page: 1, widthPx: 100 }],
+    ] as const) {
+      host.handle({ type: "render.thumbnail", reqId, payload });
+    }
+    host.handle(thumb(7, 3));
+    await host.idle();
+    for (const reqId of [2, 3, 4, 5, 6]) expect(codeOf(replies, reqId)).toBe("invalid-request");
+    expect(codeOf(replies, 7)).toBe("out-of-range");
   });
 });
