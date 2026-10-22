@@ -122,3 +122,17 @@ test("a _next/static asset carries the static headers", async ({ request }) => {
   expect(res.headers()["strict-transport-security"]).toBe(STATIC_HEADERS["strict-transport-security"]);
   expect(res.headers()["x-content-type-options"]).toBe("nosniff");
 });
+
+test("the pdf.js parser worker is served same-origin with its narrow CSP (ADR 0005)", async ({ request }) => {
+  const res = await request.get("/pdfjs/6.4.299/build/pdf.worker.min.mjs");
+  expect(res.status()).toBe(200);
+  expect(res.headers()["content-type"]).toMatch(/javascript/);
+  const csp = parseCsp(res.headers()["content-security-policy"]);
+  expect(csp.get("script-src")).toEqual(["'self'", "'wasm-unsafe-eval'"]);
+  expect(csp.get("default-src")).toEqual(["'none'"]);
+  expect(res.headers()["x-content-type-options"]).toBe("nosniff");
+  const wasm = await request.get("/pdfjs/6.4.299/wasm/openjpeg.wasm");
+  expect(wasm.status()).toBe(200);
+  expect(wasm.headers()["content-type"]).toBe("application/wasm");
+  expect((await request.get("/pdfjs/6.4.299/wasm/quickjs-eval.wasm")).status()).toBe(404);
+});

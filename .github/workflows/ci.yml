@@ -71,8 +71,13 @@ jobs:
         run: node scripts/supabase-env.mjs --github-env
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
-      - name: Playwright e2e
+      # e2e runs against the production build (real CSP, static pdf.js assets).
+      - name: Build
+        run: npm run build
+      - name: Playwright e2e (production build)
         run: npm run e2e
+        env:
+          E2E_PROD: "1"
       - name: Upload Playwright report
         if: failure()
         uses: actions/upload-artifact@v7

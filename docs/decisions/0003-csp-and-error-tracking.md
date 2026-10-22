@@ -36,4 +36,5 @@ pages (`experimental.sri` covers external chunks only).
 
 - Story 13.1: hash manifest, `(marketing)` root layout, `MARKETING_PATHS`.
 - Bump to `@sentry/nextjs` 11.7.0+ (SDK-side query filtering) after 2026-10-26.
-- Story 3.1: add `'wasm-unsafe-eval'` only if pdf.js needs main-thread WebAssembly.
+- Story 3.1: add `'wasm-unsafe-eval'` only if pdf.js needs main-thread WebAssembly. Resolved by
+  ADR 0005: the page CSP is unchanged. Only the pdf.js parser worker's own response policy has it.

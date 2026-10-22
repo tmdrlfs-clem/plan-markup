@@ -5,6 +5,22 @@
 - `zones/` - zone and sprinkler-layout JSON fixtures for the 4541 engine tests (format below).
 - `private/` - the founder's real drawings and `.btx` files. Git-ignored, never committed.
 
+## Viewer fixtures (Story 3.1, committed in `pdf/`)
+
+All synthetic. Regenerate with `node scripts/fixtures/make-viewer-fixtures.mjs` (needs the dev
+dependencies) and `python scripts/fixtures/make-wasm-images.py` (Pillow with OpenJPEG and libtiff).
+
+| File | What | Used by |
+| --- | --- | --- |
+| `vector-a3.pdf` | Copy of `export-sample.pdf`: A3 vector plan with Helvetica text | e2e open (chooser, drop) |
+| `image-only.pdf` | A4 page with one raster image, no paths or text (a "scan") | image-only HintBar |
+| `corrupt.pdf` | `%PDF-1.7` header followed by text that is not PDF syntax | "not a valid PDF" error |
+| `password.pdf` | One page, AES-256, user password `plan-markup-test` | "password-protected" error |
+| `wasm-images.pdf` | A JPX (JPXDecode) and a CCITT G4 image | wasm decoders under the worker CSP (ADR 0005) |
+
+`password.pdf` is not deterministic (random salts), so the script rewrites it only when it is
+missing or with `--force`.
+
 ## Render performance fixtures and reference hardware (A10, Story 2.3)
 
 NFR1 / NFR2 are measured on the reference machine below with these fixtures (all under
