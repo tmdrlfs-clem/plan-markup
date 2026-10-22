@@ -136,7 +136,9 @@ export class ViewerInput {
     });
     this.on(win, "keydown", (e) => this.onKeyDown(e as KeyboardEvent));
     this.on(win, "keyup", (e) => this.onKeyUp(e as KeyboardEvent));
-    this.on(win, "blur", () => {
+    // Focus leaving the canvas (also when the window loses focus) ends Space-pan and drags:
+    // their keyup / pointerup may never arrive here.
+    this.on(canvas, "focusout", () => {
       setTempPan(false);
       this.altDown = false;
       this.endDrag(false);

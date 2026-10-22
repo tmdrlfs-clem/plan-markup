@@ -178,6 +178,14 @@ describe("ViewerInput", () => {
     expect(t.zoomStep).not.toHaveBeenCalled();
   });
 
+  it("focus leaving the canvas ends a held Space pan", () => {
+    canvas.focus();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", code: "Space", bubbles: true }));
+    expect(viewerStore.getState().tempPan).toBe(true);
+    canvas.blur();
+    expect(viewerStore.getState().tempPan).toBe(false);
+  });
+
   it("middle-button drag pans with any tool", () => {
     canvas.dispatchEvent(pointer("pointerdown", { x: 0, y: 0, button: 1 }));
     canvas.dispatchEvent(pointer("pointermove", { x: 5, y: 7 }));
