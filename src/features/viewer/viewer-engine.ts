@@ -29,6 +29,13 @@
 // page label is detected in the worker on demand (render.sheetLabel), after
 // the page's tiles are requested. On a multi-page document a page that cannot
 // be drawn is a page-level failure (Retry; the other pages stay reachable).
+//
+// Thumbnails (Story 3.4): `thumbnail(index, box, listener)` hands the page
+// fitted into a device-px box to the Thumbnails panel. Held in a small LRU of
+// their own; made from the page's finished preview when it is large enough
+// (createImageBitmap resize, off the main thread), otherwise rendered by the
+// worker at the lowest priority (render.thumbnail, IndexedDB-cached). A
+// listener that goes away cancels the request once nobody else waits for it.
 
 import {
   DEFAULT_TILE_SIZE,
@@ -97,6 +104,28 @@ export type ViewerEngineOptions = {
   cancelFrame?: (id: number) => void;
 };
 
+/** In-memory budget of the Thumbnails panel's rasters (bytes). */
+export const THUMBNAIL_BUDGET = 48 * 1024 * 1024;
+
+/** A device-px box a thumbnail is fitted into (render.thumbnail limits: 16…2048). */
+export type ThumbnailBox = { width: number; height: number };
+
+/** Called once per request: the bitmap (owned by the engine; draw it, do not close it) or a failure. */
+export type ThumbnailListener = (result: { bitmap: ImageBitmap } | { error: true }) => void;
+
+type PendingThumbnail = { reqId: number | null; listeners: Set<ThumbnailListener> };
+
+/** The thumbnail raster size of a page in a box: fitted, whole device px. */
+export function thumbnailSize(page: { width: number; height: number }, box: ThumbnailBox): ThumbnailBox {
+  const scale = Math.min(box.width / page.width, box.height / page.height);
+  return {
+    width: Math.max(1, Math.min(box.width, Math.round(page.width * scale))),
+    height: Math.max(1, Math.min(box.height, Math.round(page.height * scale))),
+  };
+}
+
+const clampThumbPx = (px: number) => Math.min(2048, Math.max(16, Math.round(px)));
+
 /** "page" / "width" keep the view fitted on resize until the user zooms or pans. */
 export type FitMode = "page" | "width" | null;
 
@@ -159,6 +188,11 @@ export class ViewerEngine {
   /** The shown page's preview failed (multi-page documents; Retry asks again). */
   private previewFailed = false;
   private sha256: string | null = null;
+  /** Thumbnail rasters by `<page>:<w>x<h>` (1-based page), and the requests in flight. */
+  private readonly thumbs = new LruByteCache<ImageBitmap>(THUMBNAIL_BUDGET, (_k, b) => closeBitmap(b));
+  private readonly thumbPending = new Map<string, PendingThumbnail>();
+  /** Bumped per document: thumbnail replies for an older one are dropped. */
+  private documentGeneration = 0;
   view: ViewState = { zoom: 1, centerX: 0, centerY: 0, rotation: 0 };
   private fitMode: FitMode = "page";
 
@@ -286,7 +320,14 @@ export class ViewerEngine {
     this.page = this.pages[this.pageIndex];
     this.fitMode = "page";
     this.view = this.viewForPage(this.pageIndex, { zoom: 1, centerX: 0, centerY: 0, rotation: 0 });
-    this.update({ pageCount: opened.pageCount, pageIndex: this.pageIndex, pageLabels: this.pageLabels, sheetLabels: {} });
+    this.update({
+      pageCount: opened.pageCount,
+      pageIndex: this.pageIndex,
+      pages: opened.pages,
+      documentId: opened.sha256,
+      pageLabels: this.pageLabels,
+      sheetLabels: {},
+    });
     this.invalidate();
     await this.loadPreview(generation);
   }
@@ -362,8 +403,12 @@ export class ViewerEngine {
     return this.pageIndex + 1;
   }
 
-  /** Asks the worker for the sheet number of a page without a page label (once per page). */
-  private requestSheetLabel(index: number): void {
+  /**
+   * Asks the worker for the sheet number of a page without a page label (once
+   * per page; the Thumbnails panel asks for the rows it shows).
+   */
+  requestSheetLabel(index: number): void {
+    if (!this.page || !Number.isInteger(index) || index < 0 || index >= this.pages.length) return;
     const label = this.pageLabels?.[index];
     if ((label && label !== String(index + 1)) || this.sheetRequested.has(index)) return;
     this.sheetRequested.add(index);
@@ -480,9 +525,100 @@ export class ViewerEngine {
     this.invalidate();
   }
 
+  // ---- thumbnails ---------------------------------------------------------
+
+  /**
+   * The thumbnail of page `index` (0-based) fitted into `box` (device px).
+   * `listener` is called once: at once when the raster is held in memory,
+   * otherwise when it is ready or failed. Returns a function that drops the
+   * listener (and cancels the request when nobody else waits for it).
+   */
+  thumbnail(index: number, box: ThumbnailBox, listener: ThumbnailListener): () => void {
+    const none = () => undefined;
+    if (!this.page || !Number.isInteger(index) || index < 0 || index >= this.pages.length) return none;
+    const fit = { width: clampThumbPx(box.width), height: clampThumbPx(box.height) };
+    const key = `${index + 1}:${fit.width}x${fit.height}`;
+    const held = this.thumbs.get(key);
+    if (held) {
+      listener({ bitmap: held });
+      return none;
+    }
+    let pending = this.thumbPending.get(key);
+    if (!pending) {
+      pending = { reqId: null, listeners: new Set() };
+      this.thumbPending.set(key, pending);
+      this.loadThumbnail(key, index, fit, pending);
+    }
+    const entry = pending;
+    entry.listeners.add(listener);
+    return () => {
+      if (!entry.listeners.delete(listener) || entry.listeners.size > 0 || this.thumbPending.get(key) !== entry) return;
+      this.thumbPending.delete(key);
+      if (entry.reqId !== null) this.client.cancel([entry.reqId]);
+    };
+  }
+
+  /** Thumbnail requests waiting for a raster (tests, diagnostics). */
+  get pendingThumbnails(): number {
+    return this.thumbPending.size;
+  }
+
+  /** The page's finished preview, shown or kept in the tile LRU, if any. */
+  private finishedPreview(index: number): Tile | null {
+    if (index === this.pageIndex) return this.preview && this.previewFinal ? this.preview : null;
+    return this.cache.peek(previewKey(index + 1)) ?? null;
+  }
+
+  private loadThumbnail(key: string, index: number, box: ThumbnailBox, pending: PendingThumbnail): void {
+    const generation = this.documentGeneration;
+    const size = thumbnailSize(this.pages[index], box);
+    const source = this.finishedPreview(index);
+    // The preview is the whole page: reuse it when it holds at least the thumbnail's pixels.
+    if (source && source.width >= size.width && source.height >= size.height && typeof createImageBitmap === "function") {
+      createImageBitmap(source.bitmap, { resizeWidth: size.width, resizeHeight: size.height, resizeQuality: "high" }).then(
+        (bitmap) => this.settleThumbnail(key, pending, generation, bitmap),
+        // The preview went away meanwhile (page change, eviction): render it instead.
+        () => {
+          if (generation === this.documentGeneration && this.thumbPending.get(key) === pending) this.requestThumbnail(key, index, box, pending);
+        },
+      );
+      return;
+    }
+    this.requestThumbnail(key, index, box, pending);
+  }
+
+  private requestThumbnail(key: string, index: number, box: ThumbnailBox, pending: PendingThumbnail): void {
+    const generation = this.documentGeneration;
+    const call = this.client.request("render.thumbnail", { page: index + 1, widthPx: box.width, heightPx: box.height });
+    pending.reqId = call.reqId;
+    call.promise.then(
+      ({ tile }) => this.settleThumbnail(key, pending, generation, tile.bitmap),
+      (e: unknown) => {
+        if (generation !== this.documentGeneration || this.thumbPending.get(key) !== pending) return;
+        this.thumbPending.delete(key);
+        if (e instanceof WorkerRequestError && e.code === "cancelled") return;
+        for (const listener of pending.listeners) listener({ error: true });
+      },
+    );
+  }
+
+  private settleThumbnail(key: string, pending: PendingThumbnail, generation: number, bitmap: ImageBitmap): void {
+    if (generation !== this.documentGeneration || this.thumbPending.get(key) !== pending || this.destroyed) {
+      closeBitmap(bitmap);
+      return;
+    }
+    this.thumbPending.delete(key);
+    this.thumbs.set(key, bitmap, bitmapBytes(bitmap.width, bitmap.height));
+    for (const listener of pending.listeners) listener({ bitmap });
+  }
+
   /** Drops everything of the current document (worker work, bitmaps, timers). */
   private resetDocument(): void {
     const ids = [...this.inflight.values()];
+    for (const pending of this.thumbPending.values()) if (pending.reqId !== null) ids.push(pending.reqId);
+    this.thumbPending.clear();
+    this.thumbs.clear();
+    this.documentGeneration++;
     if (this.openReq !== null) ids.push(this.openReq);
     if (this.previewReq !== null) ids.push(this.previewReq);
     this.client.cancel(ids);

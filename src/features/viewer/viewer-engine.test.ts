@@ -799,3 +799,113 @@ describe("ViewerEngine: pages (Story 3.3)", () => {
     expect(client.last("render.preview").payload).toMatchObject({ page: 3 });
   });
 });
+
+describe("ViewerEngine: thumbnails (Story 3.4)", () => {
+  const PAGES = [PAGE, { width: 500, height: 1000, rotate: 0 }, { width: 1000, height: 500, rotate: 90 }];
+  const BOX = { width: 200, height: 150 };
+
+  async function openPages(client: FakeClient, engine: ViewerEngine, sha = "thumbs") {
+    void engine.open(file());
+    await flush();
+    client.last("render.open").resolve({ sha256: sha, pageCount: PAGES.length, pages: PAGES, pageLabels: null, fromCache: false });
+    await flush();
+  }
+
+  const thumbReply = (width: number, height: number) => ({ tile: { ...tilePayload(0.2), width, height, bitmap: bitmap(width, height) } });
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("publishes the page sizes and the document id for the panel", async () => {
+    const { client, engine } = setupRecording();
+    await openPages(client, engine);
+    expect(state.pages).toEqual(PAGES);
+    expect(state.documentId).toBe("thumbs");
+  });
+
+  it("renders a missing thumbnail in the worker, then serves it from memory", async () => {
+    const { client, engine } = setupRecording();
+    await openPages(client, engine);
+    const listener = vi.fn();
+    engine.thumbnail(1, BOX, listener);
+    expect(client.last("render.thumbnail").payload).toEqual({ page: 2, widthPx: 200, heightPx: 150 });
+    const reply = thumbReply(75, 150);
+    client.last("render.thumbnail").resolve(reply);
+    await flush();
+    expect(listener).toHaveBeenCalledWith({ bitmap: reply.tile.bitmap });
+    const again = vi.fn();
+    engine.thumbnail(1, BOX, again);
+    expect(again).toHaveBeenCalledWith({ bitmap: reply.tile.bitmap }); // synchronously, no new request
+    expect(client.all("render.thumbnail")).toHaveLength(1);
+    expect(engine.pendingThumbnails).toBe(0);
+  });
+
+  it("listeners of the same thumbnail share one request; it is cancelled when the last one leaves", async () => {
+    const { client, engine } = setupRecording();
+    await openPages(client, engine);
+    const a = engine.thumbnail(2, BOX, vi.fn());
+    const b = engine.thumbnail(2, BOX, vi.fn());
+    expect(client.all("render.thumbnail")).toHaveLength(1);
+    const reqId = client.last("render.thumbnail").reqId;
+    a();
+    expect(client.cancelled).not.toContain(reqId);
+    b();
+    expect(client.cancelled).toContain(reqId);
+    expect(engine.pendingThumbnails).toBe(0);
+  });
+
+  it("clamps the box to the worker's limits and ignores pages out of range", async () => {
+    const { client, engine } = setupRecording();
+    await openPages(client, engine);
+    engine.thumbnail(0, { width: 4000.4, height: 3.2 }, vi.fn());
+    expect(client.last("render.thumbnail").payload).toEqual({ page: 1, widthPx: 2048, heightPx: 16 });
+    const listener = vi.fn();
+    for (const i of [-1, 3, 0.5]) engine.thumbnail(i, BOX, listener);
+    expect(client.all("render.thumbnail")).toHaveLength(1);
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it("reuses the page's finished preview when it is large enough (no worker request)", async () => {
+    const resized = bitmap(200, 100);
+    const create = vi.fn(async () => resized);
+    vi.stubGlobal("createImageBitmap", create);
+    const { client, engine } = setupRecording();
+    await openPages(client, engine);
+    client.last("render.preview").resolve({ tile: tilePayload(1), content: null }); // 1000 x 500 preview of page 1
+    await flush();
+    const listener = vi.fn();
+    engine.thumbnail(0, BOX, listener);
+    await flush();
+    expect(create).toHaveBeenCalledWith(expect.anything(), { resizeWidth: 200, resizeHeight: 100, resizeQuality: "high" });
+    expect(listener).toHaveBeenCalledWith({ bitmap: resized });
+    expect(client.all("render.thumbnail")).toHaveLength(0);
+  });
+
+  it("a failed thumbnail reports an error; a later request asks again", async () => {
+    const { client, engine } = setupRecording();
+    await openPages(client, engine);
+    const listener = vi.fn();
+    engine.thumbnail(1, BOX, listener);
+    client.last("render.thumbnail").reject(new WorkerRequestError("render-failed", { name: "Error", message: "x" }));
+    await flush();
+    expect(listener).toHaveBeenCalledWith({ error: true });
+    engine.thumbnail(1, BOX, vi.fn());
+    expect(client.all("render.thumbnail")).toHaveLength(2);
+  });
+
+  it("a page change does not cancel thumbnails; a new document does, and drops late replies", async () => {
+    const { client, engine } = setupRecording();
+    await openPages(client, engine, "first");
+    const listener = vi.fn();
+    engine.thumbnail(2, BOX, listener);
+    const call = client.last("render.thumbnail");
+    engine.goToPage(1);
+    expect(client.cancelled).not.toContain(call.reqId);
+    await openPages(client, engine, "second");
+    expect(client.cancelled).toContain(call.reqId);
+    const late = thumbReply(200, 100);
+    call.resolve(late);
+    await flush();
+    expect(listener).not.toHaveBeenCalled();
+    expect(late.tile.bitmap.close).toHaveBeenCalled();
+  });
+});

@@ -1,6 +1,6 @@
 import { createStore } from "zustand/vanilla";
 
-import type { ContentFlags } from "@/workers/render-protocol";
+import type { ContentFlags, PageInfo } from "@/workers/render-protocol";
 
 export type ViewerStatus = "empty" | "loading" | "ready" | "error";
 
@@ -37,6 +37,10 @@ export interface ViewerState {
   pageCount: number;
   /** 0-based index of the shown page. */
   pageIndex: number;
+  /** Page sizes in points with /Rotate applied (the Thumbnails panel's aspect ratios). */
+  pages: PageInfo[];
+  /** The open document's sha256 (thumbnails are per document), once known. */
+  documentId: string | null;
   /** Cleaned /PageLabels of the document (null: none worth showing). */
   pageLabels: string[] | null;
   /** Sheet numbers detected from page text, by 0-based page (null: none found). */
@@ -66,6 +70,8 @@ const INITIAL: ViewerState = {
   fileName: null,
   pageCount: 0,
   pageIndex: 0,
+  pages: [],
+  documentId: null,
   pageLabels: null,
   sheetLabels: {},
   content: null,

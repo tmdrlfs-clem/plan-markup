@@ -2,6 +2,8 @@
 // CanvasViewport registers its engine; with no document the commands do nothing
 // (and the workspace shows them disabled).
 
+import type { ThumbnailBox, ThumbnailListener } from "./viewer-engine";
+
 export interface ViewerCommandTarget {
   zoomStep(direction: 1 | -1): void;
   fitPage(): void;
@@ -12,6 +14,9 @@ export interface ViewerCommandTarget {
   readonly currentPage: number;
   readonly pageCount: number;
   focusCanvas(): void;
+  /** Story 3.4 (absent on test doubles): see ViewerEngine.thumbnail / requestSheetLabel. */
+  thumbnail?(index: number, box: ThumbnailBox, listener: ThumbnailListener): () => void;
+  requestSheetLabel?(index: number): void;
 }
 
 let target: ViewerCommandTarget | null = null;
@@ -39,6 +44,13 @@ export const viewerCommands = {
   goToPage: (index: number) => target?.goToPage(index),
   /** Back to the canvas (Escape in the page input). */
   focusCanvas: () => target?.focusCanvas(),
+};
+
+/** The Thumbnails panel's access to the mounted engine (nothing happens without one). */
+export const viewerThumbnails = {
+  request: (index: number, box: ThumbnailBox, listener: ThumbnailListener): (() => void) =>
+    target?.thumbnail?.(index, box, listener) ?? (() => undefined),
+  requestSheetLabel: (index: number) => target?.requestSheetLabel?.(index),
 };
 
 /** The commands without arguments (toolbar buttons and menu items). */

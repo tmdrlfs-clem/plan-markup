@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { registerViewerEngine, viewerCommands } from "./viewer-commands";
+import { registerViewerEngine, viewerCommands, viewerThumbnails } from "./viewer-commands";
 
 describe("viewerCommands", () => {
   it("route to the registered engine and do nothing without one", () => {
@@ -37,5 +37,34 @@ describe("viewerCommands", () => {
     unregister();
     viewerCommands.fitPage();
     expect(engine.fitPage).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("viewerThumbnails", () => {
+  it("route thumbnail and sheet-label requests to the engine; without one they do nothing", () => {
+    const listener = vi.fn();
+    expect(viewerThumbnails.request(0, { width: 100, height: 80 }, listener)()).toBeUndefined();
+    viewerThumbnails.requestSheetLabel(0);
+    const cancel = vi.fn();
+    const engine = {
+      zoomStep: vi.fn(),
+      fitPage: vi.fn(),
+      fitWidth: vi.fn(),
+      rotate: vi.fn(),
+      goToPage: vi.fn(),
+      focusCanvas: vi.fn(),
+      currentPage: 0,
+      pageCount: 2,
+      thumbnail: vi.fn(() => cancel),
+      requestSheetLabel: vi.fn(),
+    };
+    const unregister = registerViewerEngine(engine);
+    viewerThumbnails.request(1, { width: 100, height: 80 }, listener)();
+    viewerThumbnails.requestSheetLabel(1);
+    expect(engine.thumbnail).toHaveBeenCalledWith(1, { width: 100, height: 80 }, listener);
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(engine.requestSheetLabel).toHaveBeenCalledWith(1);
+    unregister();
+    expect(listener).not.toHaveBeenCalled();
   });
 });
