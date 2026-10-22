@@ -10,6 +10,10 @@ const ARIA_KEY_NAMES: Record<string, string> = {
   escape: "Escape",
   "+": "Plus",
   "-": "Minus",
+  "←": "ArrowLeft",
+  "→": "ArrowRight",
+  "↑": "ArrowUp",
+  "↓": "ArrowDown",
 };
 
 const MAC_SYMBOLS: Record<string, string> = {

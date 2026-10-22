@@ -88,7 +88,8 @@ describe("WorkspaceShell layout", () => {
       "Settings",
       "Help",
     ]);
-    expect(screen.getByRole("status")).toHaveTextContent("No drawing open");
+    expect(screen.getByRole("contentinfo")).toHaveTextContent("No drawing open");
+    expect(screen.getByRole("status")).toHaveTextContent("");
   });
 
   it("shows the empty workspace with Open and no recent drawings", () => {
@@ -375,10 +376,10 @@ describe("view navigation (Story 3.2)", () => {
     expect(within(rail).getByRole("radio", { name: "Line" })).toHaveAttribute("aria-disabled", "true");
   });
 
-  it("the status bar shows the zoom after the file name", () => {
+  it("the status bar shows the file name, the pager, then the zoom", () => {
     setup();
     openDrawing();
-    expect(screen.getByRole("contentinfo")).toHaveTextContent("a.pdf64%");
+    expect(screen.getByRole("contentinfo")).toHaveTextContent(/^a\.pdf.*\/ \d+.*64%/);
   });
 
   it("the memory warning shows in the HintBar once the viewer reports pressure", async () => {

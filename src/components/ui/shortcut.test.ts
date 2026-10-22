@@ -33,6 +33,7 @@ describe("toAriaKeyShortcuts", () => {
   it("maps + and - keys", () => {
     expect(toAriaKeyShortcuts("Ctrl++")).toBe("Control+Plus");
     expect(toAriaKeyShortcuts("Ctrl+-")).toBe("Control+Minus");
+    expect(toAriaKeyShortcuts("PageDown Ctrl+→", false)).toBe("PageDown Control+ArrowRight");
   });
 
   it("upper-cases single letters and joins several shortcuts with a space", () => {

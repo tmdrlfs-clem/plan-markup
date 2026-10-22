@@ -1,5 +1,6 @@
 // Public surface of the viewer feature. Other features import from here only.
 export { DocumentViewer, IMAGE_ONLY_HINT, MEMORY_HINT } from "./document-viewer";
+export { PagePager, currentSheetLabel, pageAnnouncement } from "./page-pager";
 export { viewerCommands, type ViewerCommand } from "./viewer-commands";
 export {
   hasDocument,

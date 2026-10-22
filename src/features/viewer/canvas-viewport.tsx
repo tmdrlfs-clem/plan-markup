@@ -7,6 +7,7 @@ import { useStore } from "zustand";
 import { Button } from "@/components/ui/button";
 import { RenderClient } from "@/workers/rpc";
 
+import { currentSheetLabel } from "./page-pager";
 import { registerViewerEngine } from "./viewer-commands";
 import { ViewerEngine, type DeviceSize } from "./viewer-engine";
 import { ViewerInput } from "./viewer-input";
@@ -73,6 +74,7 @@ export function CanvasViewport({ onOpen, onOpenFiles, createWorker = defaultWork
   const error = useStore(viewerStore, (s) => s.error);
   const pageCount = useStore(viewerStore, (s) => s.pageCount);
   const pageIndex = useStore(viewerStore, (s) => s.pageIndex);
+  const sheetLabel = useStore(viewerStore, (s) => currentSheetLabel(s)?.short ?? null);
   const failedTiles = useStore(viewerStore, (s) => s.failedTiles);
   const content = useStore(viewerStore, (s) => s.content);
   const firstFrameMs = useStore(viewerStore, (s) => s.timings.firstFrameMs);
@@ -173,7 +175,8 @@ export function CanvasViewport({ onOpen, onOpenFiles, createWorker = defaultWork
 
   const fileError = status === "error" && error !== null;
   const canvasClass = "absolute inset-0 h-full w-full";
-  const label = pageCount > 0 ? `Drawing canvas, page ${pageIndex + 1} of ${pageCount}` : "Drawing canvas";
+  const label =
+    pageCount > 0 ? `Drawing canvas, page ${pageIndex + 1} of ${pageCount}${sheetLabel ? `, ${sheetLabel}` : ""}` : "Drawing canvas";
 
   return (
     <div

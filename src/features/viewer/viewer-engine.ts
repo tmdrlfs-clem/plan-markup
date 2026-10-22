@@ -351,6 +351,11 @@ export class ViewerEngine {
     }
   }
 
+  /** Moves the keyboard focus to the canvas (Escape in the page input). */
+  focusCanvas(): void {
+    this.canvases.active.focus?.({ preventScroll: true });
+  }
+
   /** 1-based number of the shown page (worker requests and tile keys). */
   private get pageNo(): number {
     return this.pageIndex + 1;

@@ -10,7 +10,7 @@ import { Toaster } from "@/components/ui/toast";
 import { toast } from "@/components/ui/toast-store";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { signOut } from "@/features/account/actions";
-import { DocumentViewer, viewerStore } from "@/features/viewer";
+import { DocumentViewer, PagePager, currentSheetLabel, hasDocument, pageAnnouncement, viewerStore } from "@/features/viewer";
 
 import { AccountMenu, type WorkspaceUser } from "./account-menu";
 import { EmptyWorkspace } from "./empty-workspace";
@@ -69,6 +69,9 @@ function ShellBody({ user }: { user: WorkspaceUser }) {
   const viewerStatus = useStore(viewerStore, (s) => s.status);
   const fileName = useStore(viewerStore, (s) => s.fileName);
   const zoom = useStore(viewerStore, (s) => s.zoom);
+  const announcement = useStore(viewerStore, (s) =>
+    hasDocument(s) ? pageAnnouncement(s.pageIndex, s.pageCount, currentSheetLabel(s)) : "",
+  );
 
   const fileInput = useRef<HTMLInputElement>(null);
   const open = useCallback(() => fileInput.current?.click(), []);
@@ -183,7 +186,12 @@ function ShellBody({ user }: { user: WorkspaceUser }) {
         tabIndex={-1}
         className="shrink-0 border-t border-border bg-surface-2 focus-ring"
       >
-        <WorkspaceStatusBar fileName={viewerStatus === "error" ? null : fileName} zoom={zoom} />
+        <WorkspaceStatusBar
+          fileName={viewerStatus === "error" ? null : fileName}
+          zoom={zoom}
+          pager={<PagePager />}
+          announcement={announcement}
+        />
       </footer>
 
       <input
