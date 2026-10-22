@@ -24,10 +24,26 @@ describe("next.config.ts", { timeout: 30_000 }, () => {
   it("sends the six static security headers on every path", async () => {
     const { nextConfig } = await load();
     const rules = await nextConfig.headers!();
-    expect(rules).toHaveLength(1);
+    expect(rules).toHaveLength(2);
     expect(rules[0].source).toBe("/:path*");
     expect(Object.fromEntries(rules[0].headers.map((h) => [h.key, h.value]))).toEqual(SIX);
     expect(rules[0].headers.map((h) => h.key.toLowerCase())).not.toContain("content-security-policy");
+  });
+
+  it("adds the pdf.js parser-worker CSP and a long cache to /pdfjs only (Story 3.1, ADR 0005)", async () => {
+    const { nextConfig } = await load();
+    const { PDFJS_WORKER_CSP } = await import("../../src/lib/security/headers");
+    const rules = await nextConfig.headers!();
+    expect(rules[1].source).toBe("/pdfjs/:path*");
+    expect(Object.fromEntries(rules[1].headers.map((h) => [h.key, h.value]))).toEqual({
+      "Content-Security-Policy": PDFJS_WORKER_CSP,
+      "Cache-Control": "public, max-age=31536000, immutable",
+    });
+  });
+
+  it("keeps private fixtures out of every server trace", async () => {
+    const { nextConfig } = await load();
+    expect(nextConfig.outputFileTracingExcludes).toEqual({ "/**": ["./fixtures/private/**/*"] });
   });
 
   it("removes X-Powered-By", async () => {

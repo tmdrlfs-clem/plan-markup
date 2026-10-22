@@ -1,3 +1,9 @@
+// RETIRED (Story 3.1): the /spike/render page and its fixture and pdfjs routes
+// were removed when the workspace viewer replaced them, and the render worker
+// protocol changed (render.<verb> requests). This script is kept only as the
+// record of how the Story 2.3 numbers were taken; it no longer runs. Epic 3
+// measurements use the workspace viewer (docs/spikes/2-3-render-report.md).
+//
 // Render spike measurement (Story 2.3). Local only: needs the private fixtures,
 // the reference machine and a server on --base with the spike gate open (next dev,
 // or `next start` with PLAN_MARKUP_LOCAL_SPIKE=1). Always exits 0: it measures.

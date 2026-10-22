@@ -1,23 +1,37 @@
-// pdf.js tile renderer for the render worker (Story 2.3 spike). Runs inside our
-// Web Worker: pdf.js draws onto an OffscreenCanvas, the result leaves as an
-// ImageBitmap. No DOM: the canvas and filter factories below replace pdf.js's
-// DOM ones, and fonts go through the worker's own FontFaceSet (self.fonts).
+// pdf.js tile renderer for the render worker (Story 3.1, from the Story 2.3
+// spike). Runs inside our Web Worker: pdf.js draws onto an OffscreenCanvas and
+// the result leaves as an ImageBitmap. No DOM: the canvas and filter factories
+// below replace pdf.js's DOM ones, and fonts go through the worker's own
+// FontFaceSet (self.fonts).
 //
-// Two pdf.js setups (measured in docs/spikes/2-3-render-report.md):
-// - "inline": pdf.js's parser (pdf.worker.mjs) runs in this worker too, as
-//   pdf.js's "fake worker" (globalThis.pdfjsWorker). One thread parses and draws.
-// - "nested": pdf.js's parser runs in its own nested worker, loaded from
-//   `${assetBase}build/pdf.worker.min.mjs`; parsing overlaps drawing.
+// pdf.js's parser (pdf.worker.min.mjs) runs in its own nested worker loaded
+// from the same-origin static copy in public/pdfjs/<version>/ (2.3 report:
+// parsing overlaps drawing, 1.35-1.7 s vs 3.4 s first frame on L17). That
+// response carries its own narrow CSP (PDFJS_WORKER_CSP, ADR 0005).
+//
+// Safety (AR27, NFR30): isEvalSupported is off, no scripting is ever set up
+// (pdf.sandbox and the quickjs wasm are not shipped), no annotation layer is
+// built (annotations are drawn into the raster only, so nothing is clickable
+// and no link or action is ever followed), and forms are not rendered as widgets.
 
 import {
   AnnotationMode,
   GlobalWorkerOptions,
+  OPS,
   getDocument,
+  version as pdfjsVersion,
   type PDFDocumentLoadingTask,
   type PDFDocumentProxy,
   type PDFPageProxy,
 } from "pdfjs-dist";
-import type { PageInfo, RendererOptions, TileJob, TileRenderer } from "./render.worker";
+import { contentFlags, type OpsTable } from "@/core/render/content-flags";
+import { RenderError, type ContentFlags, type PageInfo } from "./render-protocol";
+import type { RenderedTile, TileJob, TileRenderer } from "./render.worker";
+
+/** Absolute URL (ending in "/") of the same-origin pdf.js assets for this pdf.js version. */
+export function pdfjsAssetBase(origin: string): string {
+  return `${origin}/pdfjs/${pdfjsVersion}/`;
+}
 
 type CanvasAndContext = { canvas: OffscreenCanvas | null; context: OffscreenCanvasRenderingContext2D | null };
 
@@ -63,21 +77,36 @@ type FontScope = { fonts?: unknown };
 const PARTIAL_FIRST_MS = 300;
 const PARTIAL_EVERY_MS = 500;
 
-let setupMode: "inline" | "nested" | null = null;
+let parserWorker: Worker | null = null;
 
-/** Configures pdf.js's own worker once per realm (it cannot be switched afterwards). */
-async function setupPdfjsWorker(mode: "inline" | "nested", assetBase: string): Promise<void> {
-  if (setupMode) {
-    if (setupMode !== mode) throw new Error(`pdf.js worker already set up as "${setupMode}"`);
-    return;
+/** Starts pdf.js's parser worker once per realm (pdf.js keeps using the same port). */
+function ensureParserWorker(assetBase: string): void {
+  if (parserWorker) return;
+  parserWorker = new Worker(`${assetBase}build/pdf.worker.min.mjs`, { type: "module" });
+  GlobalWorkerOptions.workerPort = parserWorker;
+}
+
+/** Maps pdf.js open failures to protocol codes. */
+export function openError(e: unknown): RenderError {
+  const name = e instanceof Error ? e.name : "";
+  if (name === "PasswordException") {
+    return new RenderError("password-required", "The PDF is password-protected");
   }
-  if (mode === "inline") {
-    const parser = await import("pdfjs-dist/build/pdf.worker.mjs");
-    (globalThis as { pdfjsWorker?: unknown }).pdfjsWorker = parser;
-  } else {
-    GlobalWorkerOptions.workerPort = new Worker(`${assetBase}build/pdf.worker.min.mjs`, { type: "module" });
-  }
-  setupMode = mode;
+  return new RenderError("invalid-pdf", "The file is not a valid PDF");
+}
+
+type RenderTaskInternals = { _internalRenderTask?: { operatorList?: { fnArray?: number[]; argsArray?: unknown[] } } };
+
+/**
+ * Content flags from the operator list pdf.js just executed. The list is only
+ * reachable through RenderTask's internal task (pdf.js 6.4.299, pinned); a
+ * separate getOperatorList() call would parse the page a second time. Returns
+ * null if the internals ever change, which only hides the image-only hint.
+ */
+function flagsOf(task: unknown): ContentFlags | null {
+  const list = (task as RenderTaskInternals)._internalRenderTask?.operatorList;
+  if (!list || !Array.isArray(list.fnArray) || !Array.isArray(list.argsArray)) return null;
+  return contentFlags(list.fnArray, list.argsArray, OPS as unknown as OpsTable);
 }
 
 export class PdfjsTileRenderer implements TileRenderer<ImageBitmap> {
@@ -85,13 +114,13 @@ export class PdfjsTileRenderer implements TileRenderer<ImageBitmap> {
   private doc: PDFDocumentProxy | null = null;
   private readonly pages = new Map<number, PDFPageProxy>();
 
-  /** `assetBase` is an absolute URL ending in "/" that serves pdf.js's wasm, fonts, cmaps, iccs and build/. */
+  /** `assetBase` is an absolute URL ending in "/" (pdfjsAssetBase). */
   constructor(private readonly assetBase: string) {}
 
-  async open(bytes: Uint8Array, options: RendererOptions): Promise<PageInfo[]> {
-    await setupPdfjsWorker(options.pdfjsWorker ?? "inline", this.assetBase);
+  async open(bytes: Uint8Array): Promise<PageInfo[]> {
+    ensureParserWorker(this.assetBase);
     const fontScope: FontScope = { fonts: (globalThis as FontScope).fonts };
-    this.task = getDocument({
+    const task = getDocument({
       data: bytes,
       isEvalSupported: false,
       // Our factories: pdf.js's defaults create DOM canvases and SVG filters.
@@ -107,26 +136,33 @@ export class PdfjsTileRenderer implements TileRenderer<ImageBitmap> {
       cMapUrl: `${this.assetBase}cmaps/`,
       cMapPacked: true,
       iccUrl: `${this.assetBase}iccs/`,
+      enableXfa: false,
       verbosity: 0,
     } as Parameters<typeof getDocument>[0]);
-    this.doc = await this.task.promise;
-    const out: PageInfo[] = [];
-    for (let i = 1; i <= this.doc.numPages; i++) {
-      const page = await this.doc.getPage(i);
-      this.pages.set(i, page);
-      const vp = page.getViewport({ scale: 1 });
-      out.push({ width: vp.width, height: vp.height });
+    this.task = task;
+    try {
+      this.doc = await task.promise;
+      const out: PageInfo[] = [];
+      for (let i = 1; i <= this.doc.numPages; i++) {
+        const page = await this.doc.getPage(i);
+        this.pages.set(i, page);
+        const vp = page.getViewport({ scale: 1 });
+        out.push({ width: vp.width, height: vp.height, rotate: page.rotate });
+      }
+      return out;
+    } catch (e) {
+      if (this.task === task) await this.close();
+      throw openError(e);
     }
-    return out;
   }
 
-  async render(job: TileJob, signal: AbortSignal, onPartial?: (bitmap: ImageBitmap) => void): Promise<ImageBitmap> {
+  async render(job: TileJob, signal: AbortSignal, onPartial?: (bitmap: ImageBitmap) => void): Promise<RenderedTile<ImageBitmap>> {
     const page = this.pages.get(job.page);
-    if (!page) throw new RangeError("page not loaded");
+    if (!page) throw new RenderError("out-of-range", "Page not loaded");
     const canvas = new OffscreenCanvas(job.width, job.height);
     // willReadFrequently forces a CPU (software) canvas. A GPU-backed worker canvas
     // sends every pdf.js path to the GPU process, which then starves the page's
-    // compositor (measured: 1 fps during A0 tile renders). See the spike report.
+    // compositor (measured: 1 fps during A0 tile renders). See the 2.3 report.
     const ctx = canvas.getContext("2d", { alpha: false, willReadFrequently: true });
     if (!ctx) throw new Error("No 2D context");
     ctx.fillStyle = "#ffffff";
@@ -137,6 +173,8 @@ export class PdfjsTileRenderer implements TileRenderer<ImageBitmap> {
       canvasContext: ctx as unknown as CanvasRenderingContext2D,
       viewport,
       transform: [1, 0, 0, 1, -job.x, -job.y],
+      // Existing annotations are drawn into the raster, read-only (A3); form
+      // widgets are drawn as their appearance, never as live fields.
       annotationMode: AnnotationMode.ENABLE,
       background: "#ffffff",
     });
@@ -161,7 +199,10 @@ export class PdfjsTileRenderer implements TileRenderer<ImageBitmap> {
     } finally {
       signal.removeEventListener("abort", onAbort);
     }
-    return canvas.transferToImageBitmap();
+    const content = job.content ? flagsOf(task) : undefined;
+    // convertToBlob copies the pixels synchronously, so the canvas can be handed over next.
+    const encoded = job.encode ? canvas.convertToBlob({ type: "image/png" }) : null;
+    return { bitmap: canvas.transferToImageBitmap(), encoded, content };
   }
 
   release(bitmap: ImageBitmap): void {

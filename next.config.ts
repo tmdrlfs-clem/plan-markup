@@ -27,12 +27,9 @@ export const nextConfig: NextConfig = {
       { source: `${PDFJS_ASSET_PATH}/:path*`, headers: [...PDFJS_ASSET_HEADERS] },
     ];
   },
-  // Never trace the founder's private drawings into a server bundle (the Story 2.3
-  // spike's fixture route reads them at runtime, locally only), nor pdfjs-dist
-  // into the spike routes (they serve it from node_modules in dev).
+  // Never trace the founder's private drawings into a server bundle.
   outputFileTracingExcludes: {
     "/**": ["./fixtures/private/**/*"],
-    "/spike/**": ["./node_modules/pdfjs-dist/**/*"],
   },
   // Server actions: Next.js compares Origin with Host / X-Forwarded-Host and rejects
   // mismatches. Same-origin only, so serverActions.allowedOrigins stays unset. Add the

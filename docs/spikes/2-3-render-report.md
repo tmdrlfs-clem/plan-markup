@@ -157,6 +157,14 @@ system memory. These items are deferred to Epic 3:
 
 ## Gate and security of the prototype
 
+> **Retired in Story 3.1 (2026-10-22).** The `/spike/render`, `/spike/fixture/[name]` and
+> `/spike/pdfjs/[...path]` routes, the `PLAN_MARKUP_LOCAL_SPIKE` gate (`src/lib/spike/`) and the
+> proxy's `/spike` exemption were deleted once the workspace viewer replaced them; `/spike/*` is
+> now an ordinary protected path that 404s. pdf.js assets are served from
+> `public/pdfjs/<version>/` (ADR 0005). `scripts/spike-render/measure.mjs` is retired with them
+> (it targets the removed page and the old worker protocol); `make-a0.mjs` and
+> `inspect-fixtures.mjs` still work. The text below describes the prototype as it was.
+
 `/spike/render`, `/spike/fixture/[name]` and `/spike/pdfjs/[...path]` return 404 unless one of
 these holds:
 

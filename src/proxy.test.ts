@@ -171,51 +171,6 @@ describe("proxy security headers", () => {
   });
 });
 
-describe("proxy: /spike perf-spike routes (Story 2.3)", () => {
-  it("requires a session in production without the local flag", async () => {
-    session.isAuthenticated = false;
-    const proxy = await loadProxy("production");
-    const res = await proxy(request("/spike/render"));
-    expect(res.status).toBe(307);
-    expect(res.headers.get("location")).toBe("http://localhost:3020/sign-in?next=%2Fspike%2Frender");
-    expect(session.seen).toHaveLength(1);
-  });
-
-  it("requires a session in production with the flag on a non-loopback host", async () => {
-    session.isAuthenticated = false;
-    vi.stubEnv("PLAN_MARKUP_LOCAL_SPIKE", "1");
-    const proxy = await loadProxy("production");
-    const res = await proxy(new NextRequest("https://app.example.com/spike/render"));
-    expect(res.status).toBe(307);
-  });
-
-  it("skips the session in development and keeps the CSP and static headers", async () => {
-    session.isAuthenticated = false;
-    const proxy = await loadProxy("development");
-    const res = await proxy(request("/spike/render"));
-    expect(res.headers.get("x-middleware-next")).toBe("1");
-    expect(session.seen).toHaveLength(0);
-    expect(nonceOf(res.headers.get("content-security-policy"))).toBeTruthy();
-    expectStaticHeaders(res);
-  });
-
-  it("skips the session in a local production build with the flag on localhost", async () => {
-    session.isAuthenticated = false;
-    vi.stubEnv("PLAN_MARKUP_LOCAL_SPIKE", "1");
-    const proxy = await loadProxy("production");
-    const res = await proxy(request("/spike/fixture/x.pdf"));
-    expect(res.headers.get("x-middleware-next")).toBe("1");
-    expect(parseCsp(res.headers.get("content-security-policy")).get("script-src")).not.toContain("'unsafe-eval'");
-  });
-
-  it("does not exempt look-alike paths", async () => {
-    session.isAuthenticated = false;
-    const proxy = await loadProxy("development");
-    const res = await proxy(request("/spiked"));
-    expect(res.status).toBe(307);
-  });
-});
-
 describe("proxy matcher (Story 3.1)", () => {
   // Next anchors each matcher source at the start and end of the pathname.
   async function matches(pathname: string): Promise<boolean> {

@@ -1,182 +1,171 @@
-// PDF tile render worker (Story 2.3 spike; protocol kept for Epic 3).
+// PDF render worker (Story 3.1; protocol in render-protocol.ts, AR14).
 //
-// Requests (main -> worker):
-//   { type: "open", reqId, bytes, preview?: { page, bucket, maxWidth, maxHeight }, options? }
-//       The PDF bytes are transferred once (post with `renderOpenRequest`).
-//       `options` go to the renderer (pdf.js: which worker setup to use).
-//       Replies { type: "opened", reqId, pages, ms } and then, when `preview` is
-//       set, one low-resolution whole-page tile ({ type: "tile", preview: true })
-//       scaled to fit maxWidth x maxHeight device px (the viewer's fit bucket),
-//       so the viewer can show something before any real tile is ready. With
-//       `preview.progressive`, snapshots of the preview are also posted while it
-//       renders ({ type: "tile", preview: true, partial: true }, ~every 500 ms).
-//   { type: "renderTile", reqId, page, bucket, scale, col, row, tileSize }
-//       `scale` is device px per point (the bucket's scale). Replies
-//       { type: "tile", reqId, ..., bitmap } with the ImageBitmap transferred.
-//   { type: "cancel", reqIds?: number[], all?: boolean }
-//       Queued requests are dropped and a running render is aborted; each gets
-//       { type: "cancelled", reqId }. Unknown ids are ignored. No other reply.
-//   { type: "close", reqId }  Cancels everything, releases the document, replies "closed".
-// Errors: { type: "error", reqId, error } via serializeWorkerError (reqId null
-// when the request had none). Requests run one at a time in arrival order.
+// One document at a time. Requests run one at a time in arrival order, except
+// that render.cancel and render.close act at once. pdf.js (render-pdfjs.ts)
+// is injected as a `TileRenderer`, so tests drive the protocol with a stub, and
+// the IndexedDB raster cache is injected as a `RasterCache` (null = no cache).
 //
-// The renderer is injected (`RenderWorkerHost`), so tests drive the protocol
-// with a stub; the real one is pdf.js (render-pdfjs.ts), loaded lazily in the worker.
+// Open: the worker hashes the bytes (sha256, off the main thread), asks the
+// cache for the document's page sizes and, on a hit, answers at once while
+// pdf.js parses in the background; previews and tiles then come from the cache
+// when present and wait for pdf.js only on a miss. Rendered tiles are encoded
+// (PNG) and stored after they are posted, never on the critical path.
 
 import { tileGrid, tileRect } from "@/core/render/tiles";
-import { serializeWorkerError, type SerializedWorkerError } from "@/core/worker/error";
-
-/** Page size in points, rotation applied (pdf.js viewport at scale 1). */
-export type PageInfo = { width: number; height: number };
+import { serializeWorkerError } from "@/core/worker/error";
+import {
+  RenderError,
+  renderRequestSchema,
+  type ContentFlags,
+  type OpenResult,
+  type PageInfo,
+  type PreviewPayload,
+  type RenderErrorCode,
+  type RenderReply,
+  type TilePayload,
+  type TileRequestPayload,
+} from "./render-protocol";
 
 /** A device-pixel rectangle of a page rendered at `scale` device px per point. */
-export type TileJob = { page: number; scale: number; x: number; y: number; width: number; height: number };
-
-export type RendererOptions = { pdfjsWorker?: "inline" | "nested" };
-
-export interface TileRenderer<B> {
-  open(bytes: Uint8Array, options: RendererOptions): Promise<PageInfo[]>;
-  /**
-   * Must reject (any error) once `signal` aborts. `onPartial`, when given, may
-   * be called with snapshots of the unfinished render (owned by the callee).
-   */
-  render(job: TileJob, signal: AbortSignal, onPartial?: (bitmap: B) => void): Promise<B>;
-  /** Releases a bitmap that will not be posted (rendered after a cancel). */
-  release(bitmap: B): void;
-  close(): Promise<void>;
-}
-
-export type OpenRequest = {
-  type: "open";
-  reqId: number;
-  bytes: ArrayBuffer | Uint8Array;
-  preview?: { page: number; bucket: number; maxWidth: number; maxHeight: number; progressive?: boolean };
-  options?: RendererOptions;
-};
-export type RenderTileRequest = {
-  type: "renderTile";
-  reqId: number;
+export type TileJob = {
   page: number;
-  bucket: number;
   scale: number;
-  col: number;
-  row: number;
-  tileSize: number;
-};
-export type CancelRequest = { type: "cancel"; reqIds?: number[]; all?: boolean };
-export type CloseRequest = { type: "close"; reqId: number };
-export type RenderWorkerRequest = OpenRequest | RenderTileRequest | CancelRequest | CloseRequest;
-
-export type TileReply<B> = {
-  type: "tile";
-  reqId: number;
-  preview: boolean;
-  /** A snapshot of an unfinished preview; the finished tile follows. */
-  partial: boolean;
-  page: number;
-  bucket: number;
-  col: number;
-  row: number;
-  scale: number;
-  /** Device-pixel rectangle of the tile within the page at `scale`. */
   x: number;
   y: number;
   width: number;
   height: number;
-  bitmap: B;
-  /** Time spent rendering, and waiting in the queue before that (ms). */
-  renderMs: number;
-  waitMs: number;
+  /** Also encode the result for the raster cache. */
+  encode: boolean;
+  /** Also report the page's content flags (from the operator list). */
+  content: boolean;
 };
 
-export type RenderWorkerReply<B> =
-  | { type: "opened"; reqId: number; pages: PageInfo[]; ms: number }
-  | TileReply<B>
-  | { type: "cancelled"; reqId: number }
-  | { type: "closed"; reqId: number }
-  | { type: "error"; reqId: number | null; error: SerializedWorkerError };
+export type RenderedTile<B> = {
+  bitmap: B;
+  /** PNG of the same pixels when `job.encode` was set and encoding is possible. */
+  encoded: Promise<Blob> | null;
+  /** Set when `job.content` was asked and the operator list was readable. */
+  content?: ContentFlags | null;
+};
 
-/** Main-thread helper: the open message and its transfer list (the bytes move, no copy). */
-export function renderOpenRequest(
-  reqId: number,
-  bytes: Uint8Array<ArrayBuffer>,
-  preview?: OpenRequest["preview"],
-  options?: RendererOptions,
-): [OpenRequest, Transferable[]] {
-  const msg: OpenRequest = { type: "open", reqId, bytes };
-  if (preview) msg.preview = preview;
-  if (options) msg.options = options;
-  return [msg, [bytes.buffer]];
+export interface TileRenderer<B> {
+  /** Parses the document; rejects with a RenderError ("invalid-pdf" / "password-required"). */
+  open(bytes: Uint8Array): Promise<PageInfo[]>;
+  /**
+   * Must reject (any error) once `signal` aborts. `onPartial`, when given, may
+   * be called with snapshots of the unfinished render (owned by the callee).
+   */
+  render(job: TileJob, signal: AbortSignal, onPartial?: (bitmap: B) => void): Promise<RenderedTile<B>>;
+  /** Releases a bitmap that will not be posted. */
+  release(bitmap: B): void;
+  close(): Promise<void>;
+}
+
+export type DocMeta = { pages: PageInfo[]; content: (ContentFlags | null)[] };
+
+/** The raster cache as the worker sees it; every method must swallow its own storage errors. */
+export interface RasterCache<B> {
+  getDoc(sha256: string): Promise<DocMeta | null>;
+  putDoc(sha256: string, meta: DocMeta): Promise<void>;
+  getTile(key: string): Promise<B | null>;
+  putTile(key: string, blob: Blob): Promise<void>;
+}
+
+/** Cache keys: sha256 + page + bucket (with its device scale) + tile; the preview has its own. */
+export function previewCacheKey(sha256: string, page: number): string {
+  return `${sha256}:${page}:preview`;
+}
+export function tileCacheKey(sha256: string, req: TileRequestPayload): string {
+  // A bucket's device scale depends on the viewport (fit) and the DPR, so the
+  // scale is part of the key: a different window never reuses mismatched tiles.
+  return `${sha256}:${req.page}:${req.bucket}@${Math.round(req.scale * 1e4)}:${req.tileSize}:${req.col}:${req.row}`;
+}
+
+export async function sha256Hex(bytes: Uint8Array): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", bytes as Uint8Array<ArrayBuffer>);
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 type Job =
-  | { kind: "open"; reqId: number; bytes: Uint8Array; preview?: OpenRequest["preview"]; options: RendererOptions; queuedAt: number }
-  | { kind: "tile"; req: RenderTileRequest; preview: boolean; progressive?: boolean; queuedAt: number }
-  | { kind: "close"; reqId: number; queuedAt: number };
+  | { kind: "open"; reqId: number; bytes: Uint8Array; queuedAt: number }
+  | { kind: "preview"; reqId: number; payload: PreviewPayload; queuedAt: number }
+  | { kind: "tile"; reqId: number; payload: TileRequestPayload; queuedAt: number };
 
-const isFiniteNumber = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
-const isIndex = (v: unknown): v is number => Number.isInteger(v) && (v as number) >= 0;
+type Doc = {
+  sha256: string;
+  pages: PageInfo[];
+  content: (ContentFlags | null)[];
+  /** Resolves when pdf.js has parsed the document; rejects with its open error. */
+  ready: Promise<void>;
+};
+
+function codeOf(e: unknown): RenderErrorCode {
+  return e instanceof RenderError ? e.code : "render-failed";
+}
+
+const CANCELLED = () => new RenderError("cancelled", "Request cancelled");
 
 /**
  * Protocol state machine. `post` sends a reply (with its transfer list);
- * `transferOf` names the transferables of a rendered bitmap.
+ * `transferOf` names the transferables of a bitmap.
  */
 export class RenderWorkerHost<B> {
   private readonly queue: Job[] = [];
   private running: { reqId: number; abort: AbortController } | null = null;
   private pumping = false;
-  private pages: PageInfo[] | null = null;
+  private doc: Doc | null = null;
+  /** Bumped by every open and close: work for an older document is dropped. */
+  private generation = 0;
 
   constructor(
     private readonly renderer: TileRenderer<B>,
-    private readonly post: (reply: RenderWorkerReply<B>, transfer: Transferable[]) => void,
+    private readonly post: (reply: RenderReply<B>, transfer: Transferable[]) => void,
     private readonly transferOf: (bitmap: B) => Transferable[] = () => [],
+    private readonly cache: RasterCache<B> | null = null,
     private readonly now: () => number = () => performance.now(),
+    private readonly hash: (bytes: Uint8Array) => Promise<string> = sha256Hex,
   ) {}
 
   /** Handles one incoming message. Never throws; malformed input gets an error reply. */
   handle(data: unknown): void {
-    const msg = (typeof data === "object" && data !== null ? data : {}) as Record<string, unknown>;
-    if (msg.type === "cancel") {
-      this.cancel(msg);
-      return;
+    const parsed = renderRequestSchema.safeParse(data);
+    if (!parsed.success) {
+      const raw = (typeof data === "object" && data !== null ? data : {}) as { reqId?: unknown };
+      const reqId = typeof raw.reqId === "number" && Number.isFinite(raw.reqId) ? raw.reqId : null;
+      return this.error(reqId, new RenderError("invalid-request", "Invalid render request"));
     }
-    const reqId = isFiniteNumber(msg.reqId) ? msg.reqId : null;
-    if (reqId === null) return this.error(null, new TypeError("reqId must be a finite number"));
+    const msg = parsed.data;
     const queuedAt = this.now();
     switch (msg.type) {
-      case "open": {
-        const bytes =
-          msg.bytes instanceof Uint8Array ? msg.bytes : msg.bytes instanceof ArrayBuffer ? new Uint8Array(msg.bytes) : null;
-        if (!bytes) return this.error(reqId, new TypeError("bytes must be a Uint8Array or an ArrayBuffer"));
-        const preview = msg.preview as OpenRequest["preview"] | undefined;
-        const okPreview =
-          isIndex(preview?.page) && preview.page >= 1 && Number.isInteger(preview.bucket) &&
-          isFiniteNumber(preview.maxWidth) && preview.maxWidth >= 1 && isFiniteNumber(preview.maxHeight) && preview.maxHeight >= 1;
-        if (preview !== undefined && !okPreview) {
-          return this.error(reqId, new TypeError("invalid preview"));
-        }
-        const raw = (typeof msg.options === "object" && msg.options !== null ? msg.options : {}) as Record<string, unknown>;
-        const options: RendererOptions = {};
-        if (raw.pdfjsWorker === "inline" || raw.pdfjsWorker === "nested") options.pdfjsWorker = raw.pdfjsWorker;
-        this.queue.push({ kind: "open", reqId, bytes, preview, options, queuedAt });
+      case "render.cancel": {
+        const ids = new Set(msg.payload.reqIds ?? []);
+        this.cancel(msg.payload.all === true ? null : ids);
+        this.result(msg.reqId, {});
+        return;
+      }
+      case "render.close":
+        this.generation++;
+        this.cancel(null, true);
+        void this.closeDocument().then(
+          () => this.result(msg.reqId, {}),
+          (e: unknown) => this.error(msg.reqId, e),
+        );
+        return;
+      case "render.open": {
+        const b = msg.payload.bytes;
+        const bytes = b instanceof Uint8Array ? b : new Uint8Array(b);
+        // A new document replaces the current one: everything queued is stale.
+        this.generation++;
+        this.cancel(null, true);
+        this.queue.push({ kind: "open", reqId: msg.reqId, bytes, queuedAt });
         break;
       }
-      case "renderTile": {
-        const r = msg as Partial<RenderTileRequest>;
-        const valid =
-          isIndex(r.page) && r.page >= 1 && Number.isInteger(r.bucket) && isFiniteNumber(r.scale) && r.scale > 0 &&
-          isIndex(r.col) && isIndex(r.row) && Number.isInteger(r.tileSize) && (r.tileSize as number) > 0;
-        if (!valid) return this.error(reqId, new TypeError("invalid renderTile request"));
-        this.queue.push({ kind: "tile", req: r as RenderTileRequest, preview: false, queuedAt });
+      case "render.preview":
+        this.queue.push({ kind: "preview", reqId: msg.reqId, payload: msg.payload, queuedAt });
         break;
-      }
-      case "close":
-        this.cancelAll();
-        this.queue.push({ kind: "close", reqId, queuedAt });
+      case "render.tile":
+        this.queue.push({ kind: "tile", reqId: msg.reqId, payload: msg.payload, queuedAt });
         break;
-      default:
-        return this.error(reqId, new TypeError("Unknown request type"));
     }
     void this.pump();
   }
@@ -186,126 +175,200 @@ export class RenderWorkerHost<B> {
     while (this.pumping || this.queue.length > 0) await new Promise((r) => setTimeout(r, 0));
   }
 
-  private cancel(msg: Record<string, unknown>): void {
-    if (msg.all === true) return this.cancelAll();
-    const ids = Array.isArray(msg.reqIds) ? new Set(msg.reqIds.filter(isFiniteNumber)) : new Set<number>();
+  /** Cancels queued and running work: the given ids, or all (`null`). `opens` also drops queued opens. */
+  private cancel(ids: Set<number> | null, opens = false): void {
     for (let i = this.queue.length - 1; i >= 0; i--) {
       const job = this.queue[i];
-      if (job.kind === "tile" && ids.has(job.req.reqId)) {
+      if (job.kind === "open" && !opens) continue;
+      if (ids === null || ids.has(job.reqId)) {
         this.queue.splice(i, 1);
-        this.post({ type: "cancelled", reqId: job.req.reqId }, []);
+        this.error(job.reqId, CANCELLED());
       }
     }
-    if (this.running && ids.has(this.running.reqId)) this.running.abort.abort();
+    if (this.running && (ids === null || ids.has(this.running.reqId))) this.running.abort.abort();
   }
 
-  /** Drops every queued tile (open and close jobs stay) and aborts the running tile. */
-  private cancelAll(): void {
-    const kept: Job[] = [];
-    for (const job of this.queue) {
-      if (job.kind === "tile") this.post({ type: "cancelled", reqId: job.req.reqId }, []);
-      else kept.push(job);
-    }
-    this.queue.length = 0;
-    this.queue.push(...kept);
-    this.running?.abort.abort();
+  private result(reqId: number, payload: unknown, transfer: Transferable[] = []): void {
+    this.post({ type: "result", reqId, payload }, transfer);
   }
 
   private error(reqId: number | null, e: unknown): void {
-    this.post({ type: "error", reqId, error: serializeWorkerError(e) }, []);
+    this.post({ type: "error", reqId, code: codeOf(e), error: serializeWorkerError(e) }, []);
+  }
+
+  private async closeDocument(): Promise<void> {
+    const had = this.doc !== null;
+    this.doc = null;
+    if (had) await this.renderer.close();
   }
 
   private async pump(): Promise<void> {
     if (this.pumping) return;
     this.pumping = true;
     try {
-      for (let job = this.queue.shift(); job; job = this.queue.shift()) await this.run(job);
+      for (let job = this.queue.shift(); job; job = this.queue.shift()) {
+        const abort = new AbortController();
+        this.running = { reqId: job.reqId, abort };
+        try {
+          await this.run(job, abort.signal);
+        } catch (e) {
+          this.error(job.reqId, abort.signal.aborted ? CANCELLED() : e);
+        } finally {
+          this.running = null;
+        }
+      }
     } finally {
       this.pumping = false;
     }
   }
 
-  private async run(job: Job): Promise<void> {
-    if (job.kind === "open") {
-      const t0 = this.now();
-      try {
-        if (this.pages) await this.renderer.close();
-        this.pages = await this.renderer.open(job.bytes, job.options);
-        this.post({ type: "opened", reqId: job.reqId, pages: this.pages, ms: this.now() - t0 }, []);
-      } catch (e) {
-        this.pages = null;
-        return this.error(job.reqId, e);
-      }
-      const p = job.preview;
-      if (p) {
-        // One whole-page tile at the preview scale, ahead of anything queued.
-        const page = this.pages[p.page - 1];
-        if (!page) return this.error(job.reqId, new RangeError("preview page out of range"));
-        const scale = Math.min(p.maxWidth / page.width, p.maxHeight / page.height);
-        const size = Math.ceil(Math.max(page.width, page.height) * scale);
-        this.queue.unshift({
-          kind: "tile",
-          preview: true,
-          progressive: p.progressive === true,
-          queuedAt: this.now(),
-          req: { type: "renderTile", reqId: job.reqId, page: p.page, bucket: p.bucket, scale, col: 0, row: 0, tileSize: size },
-        });
-      }
-      return;
+  private async run(job: Job, signal: AbortSignal): Promise<void> {
+    if (job.kind === "open") return this.open(job, signal);
+    const doc = this.doc;
+    if (!doc) throw new RenderError("no-document", "No document is open");
+    const page = doc.pages[(job.kind === "preview" ? job.payload.page : job.payload.page) - 1];
+    if (!page) throw new RenderError("out-of-range", "Page out of range");
+    if (job.kind === "preview") return this.preview(job, doc, page, signal);
+    return this.tile(job, doc, page, signal);
+  }
+
+  private async open(job: Extract<Job, { kind: "open" }>, signal: AbortSignal): Promise<void> {
+    const generation = this.generation;
+    await this.closeDocument();
+    const sha256 = await this.hash(job.bytes);
+    if (signal.aborted) throw CANCELLED();
+    const cached = await this.cache?.getDoc(sha256).catch(() => null);
+    // pdf.js may take ownership of (detach) the bytes: hash first, then hand them over.
+    const loading = this.renderer.open(job.bytes);
+    if (cached && cached.pages.length > 0) {
+      const ready = loading.then(() => undefined);
+      ready.catch(() => undefined); // observed by the jobs that need pdf.js
+      this.doc = { sha256, pages: cached.pages, content: cached.content, ready };
+      const result: OpenResult = { sha256, pageCount: cached.pages.length, pages: cached.pages, fromCache: true };
+      return this.result(job.reqId, result);
     }
-    if (job.kind === "close") {
-      try {
-        if (this.pages) await this.renderer.close();
-        this.pages = null;
-        this.post({ type: "closed", reqId: job.reqId }, []);
-      } catch (e) {
-        this.error(job.reqId, e);
-      }
-      return;
+    const pages = await loading;
+    if (generation !== this.generation) {
+      await this.renderer.close();
+      throw CANCELLED();
     }
-    const { req } = job;
-    const page = this.pages?.[req.page - 1];
-    if (!this.pages) return this.error(req.reqId, new Error("No document is open"));
-    if (!page) return this.error(req.reqId, new RangeError("page out of range"));
-    const grid = tileGrid(page, req.scale, req.tileSize);
-    if (req.col >= grid.cols || req.row >= grid.rows) return this.error(req.reqId, new RangeError("tile out of range"));
-    const rect = tileRect(grid, req.col, req.row);
-    const abort = new AbortController();
-    this.running = { reqId: req.reqId, abort };
+    if (pages.length === 0) throw new RenderError("invalid-pdf", "The document has no pages");
+    const content = pages.map(() => null);
+    this.doc = { sha256, pages, content, ready: Promise.resolve() };
+    void this.cache?.putDoc(sha256, { pages, content }).catch(() => undefined);
+    const result: OpenResult = { sha256, pageCount: pages.length, pages, fromCache: false };
+    this.result(job.reqId, result);
+  }
+
+  private async preview(
+    job: Extract<Job, { kind: "preview" }>,
+    doc: Doc,
+    page: PageInfo,
+    signal: AbortSignal,
+  ): Promise<void> {
+    const p = job.payload;
     const t0 = this.now();
-    const base = { type: "tile", reqId: req.reqId, preview: job.preview, page: req.page, bucket: req.bucket, col: req.col, row: req.row, scale: req.scale, ...rect } as const;
-    const onPartial = job.progressive
+    const waitMs = t0 - job.queuedAt;
+    const key = previewCacheKey(doc.sha256, p.page);
+    const hit = await this.cache?.getTile(key).catch(() => null);
+    if (hit && doc.content[p.page - 1] !== null) {
+      const tile = this.payloadFromCache(hit, p.page, null, 0, 0, page, waitMs, t0);
+      return this.result(job.reqId, { tile, content: doc.content[p.page - 1] }, this.transferOf(hit));
+    }
+    if (hit) this.renderer.release(hit);
+    await doc.ready;
+    if (signal.aborted) throw CANCELLED();
+    const scale = Math.min(p.maxWidth / page.width, p.maxHeight / page.height);
+    const size = Math.ceil(Math.max(page.width, page.height) * scale);
+    const grid = tileGrid(page, scale, size);
+    const rect = tileRect(grid, 0, 0);
+    const base = { page: p.page, bucket: null, col: 0, row: 0, scale, ...rect, fromCache: false, waitMs };
+    const onPartial = p.progressive
       ? (bitmap: B) => {
-          if (abort.signal.aborted) return this.renderer.release(bitmap);
-          const now = this.now();
-          this.post({ ...base, partial: true, bitmap, renderMs: now - t0, waitMs: t0 - job.queuedAt }, this.transferOf(bitmap));
+          if (signal.aborted) return this.renderer.release(bitmap);
+          const tile: TilePayload<B> = { ...base, bitmap, renderMs: this.now() - t0 };
+          this.post({ type: "progress", reqId: job.reqId, payload: { tile } }, this.transferOf(bitmap));
         }
       : undefined;
-    try {
-      const bitmap = await this.renderer.render({ page: req.page, scale: req.scale, ...rect }, abort.signal, onPartial);
-      if (abort.signal.aborted) {
-        // Finished after a cancel: drop it.
-        this.renderer.release(bitmap);
-        this.post({ type: "cancelled", reqId: req.reqId }, []);
-        return;
-      }
-      const t1 = this.now();
-      this.post(
-        {
-          ...base,
-          partial: false,
-          bitmap,
-          renderMs: t1 - t0,
-          waitMs: t0 - job.queuedAt,
-        },
-        this.transferOf(bitmap),
-      );
-    } catch (e) {
-      if (abort.signal.aborted) this.post({ type: "cancelled", reqId: req.reqId }, []);
-      else this.error(req.reqId, e);
-    } finally {
-      this.running = null;
+    const encode = this.cache !== null;
+    const out = await this.renderer.render({ page: p.page, scale, ...rect, encode, content: true }, signal, onPartial);
+    if (signal.aborted) {
+      this.renderer.release(out.bitmap);
+      throw CANCELLED();
     }
+    const content = out.content ?? null;
+    doc.content[p.page - 1] = content;
+    const tile: TilePayload<B> = { ...base, bitmap: out.bitmap, renderMs: this.now() - t0 };
+    this.result(job.reqId, { tile, content }, this.transferOf(out.bitmap));
+    if (this.cache && content) void this.cache.putDoc(doc.sha256, { pages: doc.pages, content: doc.content }).catch(() => undefined);
+    this.store(key, out.encoded);
+  }
+
+  private async tile(job: Extract<Job, { kind: "tile" }>, doc: Doc, page: PageInfo, signal: AbortSignal): Promise<void> {
+    const r = job.payload;
+    const grid = tileGrid(page, r.scale, r.tileSize);
+    if (r.col >= grid.cols || r.row >= grid.rows) throw new RenderError("out-of-range", "Tile out of range");
+    const rect = tileRect(grid, r.col, r.row);
+    const t0 = this.now();
+    const waitMs = t0 - job.queuedAt;
+    const key = tileCacheKey(doc.sha256, r);
+    const hit = await this.cache?.getTile(key).catch(() => null);
+    const base = { page: r.page, bucket: r.bucket, col: r.col, row: r.row, scale: r.scale, ...rect, waitMs };
+    if (hit) {
+      const tile: TilePayload<B> = { ...base, bitmap: hit, fromCache: true, renderMs: this.now() - t0 };
+      return this.result(job.reqId, { tile }, this.transferOf(hit));
+    }
+    await doc.ready;
+    if (signal.aborted) throw CANCELLED();
+    const out = await this.renderer.render({ page: r.page, scale: r.scale, ...rect, encode: this.cache !== null, content: false }, signal);
+    if (signal.aborted) {
+      this.renderer.release(out.bitmap);
+      throw CANCELLED();
+    }
+    const tile: TilePayload<B> = { ...base, bitmap: out.bitmap, fromCache: false, renderMs: this.now() - t0 };
+    this.result(job.reqId, { tile }, this.transferOf(out.bitmap));
+    this.store(key, out.encoded);
+  }
+
+  private payloadFromCache(
+    bitmap: B,
+    pageNo: number,
+    bucket: number | null,
+    col: number,
+    row: number,
+    page: PageInfo,
+    waitMs: number,
+    t0: number,
+  ): TilePayload<B> {
+    // The cached preview keeps its own pixel size; its scale follows from the page width.
+    const size = this.sizeOf(bitmap);
+    const scale = size ? size.width / page.width : 1;
+    return {
+      page: pageNo,
+      bucket,
+      col,
+      row,
+      scale,
+      x: 0,
+      y: 0,
+      width: size?.width ?? Math.ceil(page.width),
+      height: size?.height ?? Math.ceil(page.height),
+      bitmap,
+      fromCache: true,
+      renderMs: this.now() - t0,
+      waitMs,
+    };
+  }
+
+  private sizeOf(bitmap: B): { width: number; height: number } | null {
+    const b = bitmap as unknown as { width?: unknown; height?: unknown };
+    return typeof b.width === "number" && typeof b.height === "number" ? { width: b.width, height: b.height } : null;
+  }
+
+  private store(key: string, encoded: Promise<Blob> | null): void {
+    if (!this.cache || !encoded) return;
+    const cache = this.cache;
+    void encoded.then((blob) => cache.putTile(key, blob)).catch(() => undefined);
   }
 }
 
@@ -317,8 +380,8 @@ type WorkerScope = {
 
 declare const WorkerGlobalScope: (new () => unknown) | undefined;
 
-// Wire up only inside a real worker (not in Vitest/Node). pdf.js loads lazily;
-// messages that arrive before it is ready are queued.
+// Wire up only inside a real worker (not in Vitest/Node). pdf.js and the cache
+// load lazily; messages that arrive before they are ready are queued.
 if (typeof WorkerGlobalScope !== "undefined" && globalThis instanceof WorkerGlobalScope) {
   const scope = globalThis as unknown as WorkerScope;
   const pending: unknown[] = [];
@@ -327,12 +390,19 @@ if (typeof WorkerGlobalScope !== "undefined" && globalThis instanceof WorkerGlob
     if (host) host.handle(event.data);
     else pending.push(event.data);
   });
-  void import("./render-pdfjs")
-    .then(({ PdfjsTileRenderer }) => {
-      // Spike: pdf.js assets come from the dev-only /spike/pdfjs/ route (Epic 3 serves them statically).
-      const renderer = new PdfjsTileRenderer(`${scope.location.origin}/spike/pdfjs/`);
-      host = new RenderWorkerHost<ImageBitmap>(renderer, (reply, transfer) => scope.postMessage(reply, transfer), (b) => [b]);
+  void Promise.all([import("./render-pdfjs"), import("./render-cache")])
+    .then(async ([{ PdfjsTileRenderer, pdfjsAssetBase }, { openRasterCache }]) => {
+      const renderer = new PdfjsTileRenderer(pdfjsAssetBase(scope.location.origin));
+      const cache = await openRasterCache();
+      host = new RenderWorkerHost<ImageBitmap>(
+        renderer,
+        (reply, transfer) => scope.postMessage(reply, transfer),
+        (b) => [b],
+        cache,
+      );
       for (const data of pending.splice(0)) host.handle(data);
     })
-    .catch((e: unknown) => scope.postMessage({ type: "error", reqId: null, error: serializeWorkerError(e) }, []));
+    .catch((e: unknown) =>
+      scope.postMessage({ type: "error", reqId: null, code: "render-failed", error: serializeWorkerError(e) }, []),
+    );
 }

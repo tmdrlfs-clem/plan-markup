@@ -4,7 +4,6 @@ import { getPublicEnv } from "@/lib/env";
 import { buildNonceCsp, buildStaticCsp, generateNonce } from "@/lib/security/csp";
 import { applyStaticSecurityHeaders } from "@/lib/security/headers";
 import { cspModeFor } from "@/lib/security/route-policy";
-import { isSpikePath, spikeAllowedFor } from "@/lib/spike/guard";
 
 /**
  * Paths reachable without a session (exact match). Everything else the matcher
@@ -69,14 +68,6 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   request.headers.delete("content-security-policy-report-only");
   if (nonce) request.headers.set("x-nonce", nonce);
   else request.headers.delete("x-nonce");
-
-  // Story 2.3 perf spike: /spike skips the session only where the spike gate is
-  // open (next dev, or a local build with PLAN_MARKUP_LOCAL_SPIKE=1 on a loopback
-  // host). Everywhere else it is a protected path like any other, and the pages
-  // and route handlers under it 404 on their own. The CSP is unchanged.
-  if (isSpikePath(request.nextUrl.pathname) && spikeAllowedFor(request.nextUrl.host)) {
-    return withSecurityHeaders(NextResponse.next({ request }), csp);
-  }
 
   // updateSession builds NextResponse.next({ request }), which forwards the
   // request headers set above to rendering.
