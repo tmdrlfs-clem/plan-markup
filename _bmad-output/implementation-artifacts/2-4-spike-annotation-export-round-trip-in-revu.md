@@ -63,6 +63,8 @@ Claude Opus 5.5 (claude-opus-5-5)
 - Chrome PDF viewer (Playwright 1.64.1 bundled Chromium, headed): all four files open, all 35
   cells visible and matching the pdf.js renders; no page errors.
 - Local gates: typecheck, lint, 1001 tests (92 files), build, check:pinned all pass.
+- CI run 39708496856 (commit 59705a8): success (checks incl. the export harness diff test on
+  Linux, e2e, gitleaks); Database run 39708496971: success.
 
 ### Completion Notes List
 
