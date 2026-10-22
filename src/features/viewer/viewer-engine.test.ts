@@ -568,7 +568,7 @@ describe("ViewerEngine: gestures (Story 3.2)", () => {
     engine.zoomStep(1);
     paint();
     expect(state.zoom).toBe(141);
-    expect(canvases.active.dataset.view).toMatch(/^1\.414214 /);
+    expect(canvases.active.dataset.view).toMatch(/^1\.414213562 /);
     vi.runAllTimers();
     // Reopen the same document (same sha256): the view comes back.
     void engine.open(file());

@@ -820,7 +820,7 @@ export class ViewerEngine {
       this.update({ zoom });
     }
     const v = this.view;
-    const text = `${v.zoom.toFixed(6)} ${v.centerX.toFixed(3)} ${v.centerY.toFixed(3)} ${v.rotation}`;
+    const text = `${v.zoom.toFixed(9)} ${v.centerX.toFixed(3)} ${v.centerY.toFixed(3)} ${v.rotation}`;
     if (text !== this.shownView && this.canvases.active.dataset) {
       this.shownView = text;
       this.canvases.active.dataset.view = text;

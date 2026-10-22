@@ -1,6 +1,6 @@
 # Story 3.2: Zoom, pan, fit and rotate the view
 
-Status: review
+Status: done
 
 ## Story
 
@@ -33,6 +33,38 @@ so that navigating a large sheet feels instant.
 - [x] **Task 4: Commands**: enable toolbar row 1 zoom out / zoom in / fit page / fit width + View menu items (and add Rotate view clockwise / counter-clockwise to the View menu and toolbar) when a document is open; ToolRail Select and Pan become enabled (other tools stay disabled with their reason). Shortcuts bound in `use-workspace-shortcuts.ts` (or the viewer's own hook) with the canvas-focus rule.
 - [x] **Task 5: DPR + memory warning + status bar** (AC 4–6).
 - [x] **Task 6: Tests**: unit for `view.ts` (zoomAt fixed point incl. rotation, fit page/width for portrait/landscape/rotated pages, clamps, bucket choice), input normalisation, the shortcut focus rule; viewer store tool transitions (Space temp pan restores tool). Playwright `e2e/viewer-navigate.spec.ts` on the committed `fixtures/pdf/vector-a3.pdf` (AC 7). Optional local-only perf check (not in CI): 5 s scripted pan/zoom on the L17 fixture reporting p50/p5 frame time and longest task, run once and recorded in the Debug Log.
+
+### Review Follow-ups (AI)
+
+Code review of 2026-10-23: 10 findings, all fixed in commit 9982f15 (plus the `data-view` precision fix below). Each has a unit test.
+
+- [x] [AI-Review][High] **1. Drawn scale differed from rendered scale** (`viewer-engine.ts`): tiles and the preview were rendered at the quantised scale but drawn at the exact view scale, so 512 px tiles were resampled to 511 px and the preview shrank.
+  - Fix: a raster whose scale matches zoom x DPR is placed by `oneToOneBox`: the page origin is rounded once and the raster's integer offset is added for each view rotation. It is copied at its own pixel size, on whole device px, and neighbours abut exactly.
+  - Tile scales are exact 2^k (see 3). Fit page snaps its zoom up to the preview's quantised scale (at most 0.07 % larger, inside the padding).
+  - Tests: 25 sub-pixel pan phases, all four rotations, and the fit-page preview at an odd window size and DPR 1.25.
+- [x] [AI-Review][High] **2. Fractional backing store** (`canvas-viewport.tsx`): the backing store is now sized from ResizeObserver `device-pixel-content-box`. A stale size (DPR changed first) is rounded until the observer reports.
+  - Where `device-pixel-content-box` is unsupported (Safari), `measureDevice` floors the size to whole device px and sets the canvases' CSS size to device / DPR.
+  - The engine takes the device size (`setViewport(..., device)`), so the viewport is exactly device / DPR.
+- [x] [AI-Review][High] **3. Buckets anchored to the viewport fit**: buckets are absolute now. Bucket k is 2^k device px per point and is chosen from zoom x DPR (`bucketForScale(deviceScale)`).
+  - A resize, panel toggle or DPR change at the same zoom keeps every tile, in memory and in IndexedDB, with nothing cancelled. A DPR change requests the new bucket at settle.
+  - The preview stays keyed by its own fit-box scale. At fit page after a resize, the preview is re-rendered for the new box (non-progressive; the old one stays drawn) instead of requesting tiles.
+  - Key docs updated in `tile-cache.ts` and `render.worker.ts`. The in-memory key is `page:bucket:col:row`.
+- [x] [AI-Review][High] **4. Bucket cap** (old MAX_BUCKET 3 = 8x fit): the range is now MIN_BUCKET -8 to MAX_BUCKET 9 (512 device px per point). That is 6400 % at a DPR of up to 6, within the worker's scale limit of 1000.
+  - Requests stay limited to the viewport plus a one-tile ring, and the 90 % budget stop is unchanged.
+- [x] [AI-Review][Med] **5. Failure state across buckets**: `failed` maps each key to its bucket. At settle, entries of other buckets are dropped and the alert count is republished, so returning to a bucket re-requests its tiles.
+  - A failure that arrives after the view left its bucket is ignored. The hatch is drawn only for the target bucket.
+- [x] [AI-Review][Med] **6. Per-frame cost**:
+  - `bucketCounts` tracks cached tiles per bucket (counted on insert, uncounted in the LRU's `onEvict`), and drawing visits only those buckets.
+  - Grids are computed once per bucket and page.
+  - The viewport box is computed once per frame, and each bucket is walked over a plain `tileRange` (new in `tiles.ts`, also used by `visibleTiles`) with no priority sort.
+- [x] [AI-Review][Med] **7. Browser zoom while loading or in render error**: Ctrl+wheel on the canvas and Ctrl+0 / Ctrl+9 (focus or pointer over the canvas) now always `preventDefault` while a document area exists (`status !== "empty"`). The viewer acts only once a page is shown (`hasDocument`).
+- [x] [AI-Review][Low] **8. Duplicates**: `fitPageView` uses `tiles.ts` `fitScale`, which keeps the size guard (a non-positive page throws; the viewport is at least 1 px). `drawOrder` became `drawBuckets` (cached buckets only), and `allBuckets` and the engine's `fitScale` getter were removed.
+- [x] [AI-Review][Low] **9. Alt+drag with the Zoom tool zoomed in**.
+  - Chosen behaviour (documented in `viewer-input.ts` and `view.ts`): Alt+drag zooms out so that the current view fits into the rectangle.
+  - `zoomOutToRect`: the zoom is multiplied by min(rect / viewport) and never increases, and the old view centre lands on the rectangle's centre. Alt+click still steps out by √2.
+- [x] [AI-Review][Low] **10. pointerId**: `pointercancel` and `lostpointercapture` end the drag only for the dragging pointer.
+
+Also fixed: `data-view` published the zoom with 6 decimals, too coarse for the e2e √2 ratio once fit page snaps to the quantised scale (CI run 39826327983 failed on it). It now has 9 decimals.
 
 ## Dev Notes
 
@@ -71,6 +103,11 @@ Claude Opus 5.5 (claude-opus-5-5)
 - Screenshot: `fixtures/private/traces/3-2-l17-zoom.png` (git-ignored).
   - View: L17 at 4x fit (bucket 2 exactly: four Ctrl+wheel notches of √2), zoom 172 %.
   - Reviewed: the tiles are sharp (hairlines, dimension text and hatching are crisp). No seams, gaps or blank tiles at the 512 px tile edges.
+
+- **Review follow-up re-check (2026-10-23)**, same setup: production build, headless Chromium, 1920 x 1080, DPR 1, L17, the same 5 s script.
+  - 299 frames: p50 **16.7 ms**, p95 **16.7 ms**, slowest 33.4 ms; **no long task**.
+  - Screenshot `fixtures/private/traces/3-2-l17-zoom.png`, taken at zoom exactly 2.000000000 (2 device px per point: bucket 1, so tiles are drawn 1:1). Hairlines, dimension text and hatching are crisp, with no seams. The script now steers Ctrl+wheel to an exact bucket scale, since 4x fit is no longer a bucket.
+  - Local e2e (`viewer-navigate`, `viewer-open`, perf) on the production build: 10 passed.
 
 ### Completion Notes List
 
@@ -162,6 +199,7 @@ Claude Opus 5.5 (claude-opus-5-5)
 
 ### Change Log
 
+- 2026-10-23: Review follow-ups (Claude Opus 5.5): 10 findings fixed (absolute zoom buckets, 1:1 rasters, device-pixel backing store, failure scoping, draw loop, browser-zoom guard, Alt+drag zoom out, pointerId). Status → done. Commits 9982f15 and the follow-up below.
 - 2026-10-22: Story 3.2 implemented (Claude Opus 5.5). Status → review.
   - View transform: zoom, centre, rotation; fit page/width; clamps; √2 steps.
   - Input: wheel, Ctrl+wheel and pinch, Space/middle/Pan-tool drag, Zoom tool, keys with the canvas-focus rule.

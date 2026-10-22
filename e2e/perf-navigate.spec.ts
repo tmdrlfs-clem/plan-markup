@@ -67,13 +67,23 @@ test("L17: 5 s of pan and zoom keep frames under budget", async ({ browser }) =>
   });
   process.stdout.write(`L17 perf: ${JSON.stringify(result)}\n`);
 
-  // Zoom into a detailed area at a bucket scale and let the tiles land, then screenshot.
+  // Zoom into a detailed area exactly at a bucket scale (buckets are absolute: 2^k device px
+  // per point; here 2 CSS px per point at DPR 1 = bucket 1), let the tiles land, then screenshot.
   await page.getByRole("toolbar", { name: "Document" }).getByRole("button", { name: "Fit page" }).click();
   const box = (await canvas.boundingBox())!;
   await page.mouse.move(box.x + box.width * 0.45, box.y + box.height * 0.45);
-  await page.keyboard.down("Control");
-  for (let i = 0; i < 4; i++) await page.mouse.wheel(0, -100); // 4 x √2 = 4x fit: bucket 2 exactly
-  await page.keyboard.up("Control");
+  const dpr = await page.evaluate(() => window.devicePixelRatio);
+  const target = 2 / dpr;
+  for (let i = 0; i < 4; i++) {
+    const zoom = Number((await canvas.getAttribute("data-view"))!.split(" ")[0]);
+    if (Math.abs(zoom / target - 1) < 1e-9) break;
+    // One 100 px Ctrl+wheel notch is one √2 step (viewer-input wheelZoomFactor), at most 4 per event.
+    const dy = Math.max(-400, Math.min(400, -200 * Math.log2(target / zoom)));
+    await page.keyboard.down("Control");
+    await page.mouse.wheel(0, dy);
+    await page.keyboard.up("Control");
+    await page.waitForTimeout(100);
+  }
   await page.waitForTimeout(4000);
   mkdirSync(TRACES, { recursive: true });
   const shot = path.join(TRACES, "3-2-l17-zoom.png");
