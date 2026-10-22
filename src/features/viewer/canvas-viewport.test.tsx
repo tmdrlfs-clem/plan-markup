@@ -138,6 +138,8 @@ describe("CanvasViewport", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("Parts of the page could not be drawn.");
     expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
     expect(screen.getByTestId("drawing-canvas")).toHaveAttribute("data-state", "render-error");
+    act(() => viewerStore.setState({ failedTiles: 1, pageFailed: true }));
+    expect(screen.getByRole("alert")).toHaveTextContent("This page could not be drawn.");
   });
 
   it("opens dropped files and sets the window title; an image-only page raises the HintBar notice", () => {

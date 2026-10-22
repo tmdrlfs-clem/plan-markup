@@ -713,6 +713,8 @@ describe("ViewerEngine: pages (Story 3.3)", () => {
     const { client, engine } = setupRecording();
     await openPages(client, engine, ["1", "FP-201", "3"]);
     await resolvePreview(client);
+    expect(client.all("render.sheetLabel")).toHaveLength(0); // only after the settle's tile requests
+    vi.runAllTimers();
     const asked = client.all("render.sheetLabel");
     expect(asked.map((c) => c.payload)).toEqual([{ page: 1 }]);
     asked[0].resolve({ label: "S-101" });
@@ -721,9 +723,67 @@ describe("ViewerEngine: pages (Story 3.3)", () => {
     expect(state.pageLabels).toEqual(["1", "FP-201", "3"]);
     engine.goToPage(1); // labelled: nothing to detect
     await resolvePreview(client);
+    vi.runAllTimers();
     expect(client.all("render.sheetLabel")).toHaveLength(1);
     engine.goToPage(0); // kept preview: already asked
+    vi.runAllTimers();
     expect(client.all("render.sheetLabel")).toHaveLength(1);
+  });
+
+  it("asks for the sheet number after the page's tile requests", async () => {
+    const { client, engine } = setupRecording();
+    await openPages(client, engine);
+    await resolvePreview(client);
+    engine.zoomBy(4);
+    vi.runAllTimers();
+    const types = client.calls.map((c) => c.type).filter((t) => t === "render.tile" || t === "render.sheetLabel");
+    expect(types.at(-1)).toBe("render.sheetLabel");
+    expect(types.filter((t) => t === "render.tile").length).toBeGreaterThan(0);
+  });
+
+  it("a page that cannot be drawn fails alone: the document stays open, Retry asks again", async () => {
+    const { client, engine } = setupRecording();
+    await openPages(client, engine);
+    await resolvePreview(client, 1, { hasVector: true, hasText: false, imageOnly: false });
+    paint();
+    engine.goToPage(1);
+    client.last("render.preview").reject(new WorkerRequestError("render-failed", { name: "Error", message: "broken page" }));
+    await flush();
+    expect(state.status).toBe("ready");
+    expect(state.error).toBeNull();
+    expect(state).toMatchObject({ failedTiles: 1, pageFailed: true, pageIndex: 1 });
+    // Retry re-requests the page's preview.
+    engine.retryFailedTiles();
+    expect(state).toMatchObject({ failedTiles: 0, pageFailed: false });
+    expect(client.last("render.preview").payload).toMatchObject({ page: 2 });
+    client.last("render.preview").reject(new WorkerRequestError("render-failed", { name: "Error", message: "still broken" }));
+    await flush();
+    // The other pages stay reachable.
+    engine.goToPage(0);
+    expect(state).toMatchObject({ failedTiles: 0, pageFailed: false, pageIndex: 0, status: "ready" });
+  });
+
+  it("a worker crash still fails the whole document", async () => {
+    const { client, engine } = setupRecording();
+    await openPages(client, engine);
+    await resolvePreview(client);
+    engine.goToPage(1);
+    client.last("render.preview").reject(new WorkerRequestError("worker-failed", { name: "Error", message: "gone" }));
+    await flush();
+    expect(state.status).toBe("error");
+  });
+
+  it("a late preview reply of the previous document does not set the new document's content flags", async () => {
+    const { client, engine } = setupRecording();
+    await openPages(client, engine, null, "first");
+    const stale = client.last("render.preview");
+    await openPages(client, engine, null, "second");
+    await resolvePreview(client, 1, { hasVector: true, hasText: false, imageOnly: false });
+    stale.resolve({ tile: tilePayload(1), content: { hasVector: false, hasText: false, imageOnly: true } });
+    await flush();
+    engine.goToPage(1);
+    engine.goToPage(0); // page 1's flags of the second document
+    expect(state.content).toMatchObject({ imageOnly: false });
   });
 
   it("reopening the document comes back to the page it was left on", async () => {

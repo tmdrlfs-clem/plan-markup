@@ -76,6 +76,7 @@ export function CanvasViewport({ onOpen, onOpenFiles, createWorker = defaultWork
   const pageIndex = useStore(viewerStore, (s) => s.pageIndex);
   const sheetLabel = useStore(viewerStore, (s) => currentSheetLabel(s)?.short ?? null);
   const failedTiles = useStore(viewerStore, (s) => s.failedTiles);
+  const pageFailed = useStore(viewerStore, (s) => s.pageFailed);
   const content = useStore(viewerStore, (s) => s.content);
   const firstFrameMs = useStore(viewerStore, (s) => s.timings.firstFrameMs);
   const file = useStore(viewerStore, (s) => s.file);
@@ -214,7 +215,7 @@ export function CanvasViewport({ onOpen, onOpenFiles, createWorker = defaultWork
           role="alert"
           className="absolute right-3 top-3 flex items-center gap-2 rounded-md border border-strong bg-surface-1 py-1 pl-3 pr-1 text-ws-md shadow-2"
         >
-          <span>Parts of the page could not be drawn.</span>
+          <span>{pageFailed ? "This page could not be drawn." : "Parts of the page could not be drawn."}</span>
           <Button size="sm" variant="secondary" onClick={() => engineRef.current?.retryFailedTiles()}>
             <RotateCw size={14} aria-hidden="true" />
             Retry

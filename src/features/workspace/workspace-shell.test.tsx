@@ -6,7 +6,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { hintStore } from "@/components/ui/hint-store";
 import { resetToasts, toastStore } from "@/components/ui/toast-store";
-import { openDocument, resetViewer, viewerCommands, viewerStore } from "@/features/viewer";
+import {
+  ANNOUNCE_DELAY_MS,
+  ANNOUNCE_LABEL_WAIT_MS,
+  openDocument,
+  resetViewer,
+  viewerCommands,
+  viewerStore,
+} from "@/features/viewer";
 
 import { storageKey } from "./layout-persistence";
 import { BANNER_DISMISSED_KEY } from "./narrow-banner";
@@ -382,15 +389,32 @@ describe("view navigation (Story 3.2)", () => {
     expect(screen.getByRole("contentinfo")).toHaveTextContent(/^a\.pdf.*\/ \d+.*64%/);
   });
 
-  it("announces the page in the status bar's polite live region (with the sheet label)", () => {
-    setup();
-    openDrawing();
-    const live = screen.getByRole("status");
-    expect(live).toHaveAttribute("aria-live", "polite");
-    expect(live).toHaveTextContent("Page 1 of 1");
-    act(() => viewerStore.setState({ pageCount: 12, pageIndex: 2, pageLabels: null, sheetLabels: { 2: "A1721" } }));
-    expect(live).toHaveTextContent(/^Page 3 of 12, A1721$/);
-    expect(screen.getByRole("group", { name: "Pages" })).toBeInTheDocument();
+  it("announces the settled page once, with its sheet label, in a polite live region", () => {
+    vi.useFakeTimers();
+    try {
+      setup();
+      openDrawing();
+      const live = screen.getByRole("status");
+      expect(live).toHaveAttribute("aria-live", "polite");
+      act(() => vi.advanceTimersByTime(ANNOUNCE_LABEL_WAIT_MS));
+      expect(live).toHaveTextContent(/^Page 1 of 1$/);
+      // Key repeats: the pages passed through are not announced.
+      act(() => viewerStore.setState({ pageCount: 12, pageIndex: 1, pageLabels: null, sheetLabels: {} }));
+      act(() => vi.advanceTimersByTime(100));
+      act(() => viewerStore.setState({ pageIndex: 2 }));
+      act(() => vi.advanceTimersByTime(ANNOUNCE_DELAY_MS));
+      expect(live).toHaveTextContent(/^Page 1 of 1$/); // page 3's sheet number is still being looked up
+      act(() => viewerStore.setState({ sheetLabels: { 2: "A1721" } }));
+      act(() => vi.advanceTimersByTime(ANNOUNCE_DELAY_MS));
+      expect(live).toHaveTextContent(/^Page 3 of 12, A1721$/);
+      // A page label is final at once.
+      act(() => viewerStore.setState({ pageIndex: 3, pageLabels: Array.from({ length: 12 }, (_, i) => (i === 3 ? "FP-204" : "")) }));
+      act(() => vi.advanceTimersByTime(ANNOUNCE_DELAY_MS));
+      expect(live).toHaveTextContent(/^Page 4 of 12, FP-204$/);
+      expect(screen.getByRole("group", { name: "Pages" })).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("the memory warning shows in the HintBar once the viewer reports pressure", async () => {

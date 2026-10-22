@@ -12,10 +12,20 @@
 /** Drawing-number shapes: "A1721", "FP-101", "M.201B", "12-AR-001". */
 const SHEET_NUMBER = [/^[A-Z]{1,3}[-.]?\d{2,5}[A-Z]?$/, /^\d{2,4}-[A-Z]{1,2}-\d{2,4}$/];
 
+/**
+ * Shapes that match SHEET_NUMBER but are not drawing numbers, common in
+ * fire-protection title blocks and notes: pipe sizes and pressure ratings
+ * ("DN150", "PN16") and standards ("NZS4541", "AS1851", "EN12845", "BS9251").
+ */
+const NOT_SHEET_NUMBER = [/^(?:DN|NB|PN)\d{2,4}$/, /^(?:NZS|AS|BS|EN|ISO|DIN|IEC)[-.]?\d{4,5}$/];
+
 /** True when `token` looks like a drawing (sheet) number. */
 export function isSheetNumber(token: string): boolean {
-  return SHEET_NUMBER.some((re) => re.test(token));
+  return SHEET_NUMBER.some((re) => re.test(token)) && !NOT_SHEET_NUMBER.some((re) => re.test(token));
 }
+
+/** Longest page label kept (render-cache.ts validates stored labels against it). */
+export const MAX_PAGE_LABEL_LENGTH = 1000;
 
 const CONTROL = /[\u0000-\u001f\u007f]/g;
 
@@ -30,7 +40,7 @@ export function cleanLabel(label: string): string {
  */
 export function cleanPageLabels(labels: readonly (string | null | undefined)[] | null | undefined): string[] | null {
   if (!labels || labels.length === 0) return null;
-  const out = labels.map((l) => cleanLabel(l ?? ""));
+  const out = labels.map((l) => cleanLabel(l ?? "").slice(0, MAX_PAGE_LABEL_LENGTH));
   return out.some((l, i) => l !== "" && l !== String(i + 1)) ? out : null;
 }
 
@@ -58,23 +68,23 @@ export function sheetLabelOf(pageNumber: number, pageLabel: string | null | unde
 }
 
 /**
- * The 0-based page a typed label names: an exact match of a page label (full
- * or its sheet number) or of a detected sheet number; null when none matches.
+ * The 0-based page a typed label names: a match, ignoring case, of a page label
+ * (full or its sheet number) or of a detected sheet number; null when none matches.
  */
 export function pageForLabel(
   text: string,
   pageLabels: readonly string[] | null,
   detected: Readonly<Record<number, string | null>>,
 ): number | null {
-  const wanted = cleanLabel(text);
+  const wanted = cleanLabel(text).toUpperCase();
   if (wanted === "") return null;
   if (pageLabels) {
     for (let i = 0; i < pageLabels.length; i++) {
       const label = sheetLabelOf(i + 1, pageLabels[i], null);
-      if (label && (label.full === wanted || label.short === wanted)) return i;
+      if (label && (label.full.toUpperCase() === wanted || label.short.toUpperCase() === wanted)) return i;
     }
   }
-  for (const [index, label] of Object.entries(detected)) if (label === wanted) return Number(index);
+  for (const [index, label] of Object.entries(detected)) if (label?.toUpperCase() === wanted) return Number(index);
   return null;
 }
 

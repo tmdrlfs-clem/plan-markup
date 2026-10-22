@@ -113,10 +113,13 @@ type Doc = {
   sha256: string;
   pages: PageInfo[];
   content: (ContentFlags | null)[];
-  pageLabels: string[] | null;
+  /** Undefined while an entry cached before Story 3.3 waits for pdf.js to read them. */
+  pageLabels: string[] | null | undefined;
   sheetLabels: Record<string, string | null>;
   /** Resolves when pdf.js has parsed the document; rejects with its open error. */
   ready: Promise<void>;
+  /** `ready` has settled: jobs that need pdf.js no longer wait. */
+  parsed: boolean;
 };
 
 function codeOf(e: unknown): RenderErrorCode {
@@ -230,7 +233,9 @@ export class RenderWorkerHost<B> {
 
   /** Stores the document's metadata in the raster cache (never on the critical path). */
   private persist(doc: Doc): void {
-    const meta: DocMeta = { pages: doc.pages, content: doc.content, pageLabels: doc.pageLabels, sheetLabels: doc.sheetLabels };
+    // Unknown labels stay absent: a stored null would read as "this document has none".
+    const meta: DocMeta = { pages: doc.pages, content: doc.content, sheetLabels: doc.sheetLabels };
+    if (doc.pageLabels !== undefined) meta.pageLabels = doc.pageLabels;
     void this.cache?.putDoc(doc.sha256, meta).catch(() => undefined);
   }
 
@@ -244,7 +249,7 @@ export class RenderWorkerHost<B> {
     if (this.pumping) return;
     this.pumping = true;
     try {
-      for (let job = this.queue.shift(); job; job = this.queue.shift()) {
+      for (let job = this.nextJob(); job; job = this.nextJob()) {
         const abort = new AbortController();
         this.running = { reqId: job.reqId, abort };
         try {
@@ -258,6 +263,28 @@ export class RenderWorkerHost<B> {
     } finally {
       this.pumping = false;
     }
+  }
+
+  /**
+   * The next job to run: the queue in order, except that sheet-label jobs (text
+   * extraction, never urgent) wait until no open / preview / tile job is queued
+   * and pdf.js has parsed the document, unless their answer is already cached.
+   * They would otherwise hold the queue while pdf.js parses, in front of tiles
+   * the raster cache could answer at once.
+   */
+  private nextJob(): Job | undefined {
+    let label = -1;
+    for (let i = 0; i < this.queue.length; i++) {
+      const job = this.queue[i];
+      if (job.kind !== "sheetLabel") return this.queue.splice(i, 1)[0];
+      if (label < 0 && this.sheetLabelRunnable(job)) label = i;
+    }
+    return label < 0 ? undefined : this.queue.splice(label, 1)[0];
+  }
+
+  private sheetLabelRunnable(job: Extract<Job, { kind: "sheetLabel" }>): boolean {
+    const doc = this.doc;
+    return !doc || doc.parsed || String(job.payload.page) in doc.sheetLabels;
   }
 
   private async run(job: Job, signal: AbortSignal): Promise<void> {
@@ -285,15 +312,21 @@ export class RenderWorkerHost<B> {
     const loading = this.renderer.open(job.bytes);
     if (cached && cached.pages.length > 0) {
       const ready = loading.then(() => undefined);
-      ready.catch(() => undefined); // observed by the jobs that need pdf.js
       const doc: Doc = {
         sha256,
         pages: cached.pages,
         content: cached.content,
-        pageLabels: cached.pageLabels ?? null,
+        pageLabels: cached.pageLabels,
         sheetLabels: { ...cached.sheetLabels },
         ready,
+        parsed: false,
       };
+      // Observed by the jobs that need pdf.js; deferred sheet-label jobs may run now.
+      const settled = () => {
+        doc.parsed = true;
+        if (this.doc === doc) void this.pump();
+      };
+      ready.then(settled, settled);
       this.doc = doc;
       // An entry from before page labels were stored: read them once pdf.js is ready, for next time.
       if (cached.pageLabels === undefined) {
@@ -310,7 +343,7 @@ export class RenderWorkerHost<B> {
         sha256,
         pageCount: cached.pages.length,
         pages: cached.pages,
-        pageLabels: doc.pageLabels,
+        pageLabels: doc.pageLabels ?? null,
         fromCache: true,
       };
       return this.result(job.reqId, result);
@@ -328,7 +361,7 @@ export class RenderWorkerHost<B> {
       if (generation === this.generation) await this.renderer.close();
       throw CANCELLED();
     }
-    const doc: Doc = { sha256, pages, content, pageLabels, sheetLabels: {}, ready: Promise.resolve() };
+    const doc: Doc = { sha256, pages, content, pageLabels, sheetLabels: {}, ready: Promise.resolve(), parsed: true };
     this.doc = doc;
     this.persist(doc);
     const result: OpenResult = { sha256, pageCount: pages.length, pages, pageLabels, fromCache: false };

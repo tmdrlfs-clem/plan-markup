@@ -46,6 +46,8 @@ export interface ViewerState {
   error: ViewerErrorCode | null;
   /** Tiles that failed to render and can be retried (render error state). */
   failedTiles: number;
+  /** The whole shown page failed to render (a multi-page document stays open; Retry). */
+  pageFailed: boolean;
   timings: ViewerTimings;
   /** Zoom in percent of actual size (100 % = 96/72 CSS px per point, like Revu), once a page is shown. */
   zoom: number | null;
@@ -69,6 +71,7 @@ const INITIAL: ViewerState = {
   content: null,
   error: null,
   failedTiles: 0,
+  pageFailed: false,
   timings: { firstPartialMs: null, firstFrameMs: null },
   zoom: null,
   memoryPressure: false,

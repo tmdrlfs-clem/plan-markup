@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
-import { useId, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { useStore } from "zustand";
 
 import { ESCAPE_LOCAL_ATTR } from "@/components/ui/dialog-shared";
@@ -39,6 +39,34 @@ export function currentSheetLabel(s: Pick<ViewerState, "pageIndex" | "pageLabels
 /** "Page 3 of 12, A1721": the canvas label and the status bar's announcement (AC 2, AC 6). */
 export function pageAnnouncement(pageIndex: number, pageCount: number, label: SheetLabel | null): string {
   return `Page ${pageIndex + 1} of ${pageCount}${label ? `, ${label.short}` : ""}`;
+}
+
+/** A page change is announced once it has settled (key repeats are not read out one by one). */
+export const ANNOUNCE_DELAY_MS = 300;
+/** How long the announcement waits for the page's detected sheet number before going without it. */
+export const ANNOUNCE_LABEL_WAIT_MS = 1500;
+
+/** The shown page's sheet label is final: a page label, or the detection has answered. */
+export function sheetLabelSettled(s: Pick<ViewerState, "pageIndex" | "pageLabels" | "sheetLabels">): boolean {
+  const label = s.pageLabels?.[s.pageIndex];
+  return (!!label && label !== String(s.pageIndex + 1)) || s.pageIndex in s.sheetLabels;
+}
+
+/**
+ * The status bar's polite announcement (AC 6), e.g. "Page 3 of 12, A1721". It
+ * changes only after the page has settled for ANNOUNCE_DELAY_MS, and waits (up
+ * to ANNOUNCE_LABEL_WAIT_MS) for a pending sheet-label lookup, so a screen
+ * reader hears each page once, with its label.
+ */
+export function usePageAnnouncement(): string {
+  const text = useStore(viewerStore, (s) => (hasDocument(s) ? pageAnnouncement(s.pageIndex, s.pageCount, currentSheetLabel(s)) : ""));
+  const settled = useStore(viewerStore, sheetLabelSettled);
+  const [shown, setShown] = useState(text);
+  useEffect(() => {
+    const timer = setTimeout(() => setShown(text), text === "" ? 0 : settled ? ANNOUNCE_DELAY_MS : ANNOUNCE_LABEL_WAIT_MS);
+    return () => clearTimeout(timer);
+  }, [text, settled]);
+  return shown;
 }
 
 /**
@@ -108,7 +136,6 @@ export function PagePager() {
         <input
           id={inputId}
           type="text"
-          inputMode="numeric"
           autoComplete="off"
           spellCheck={false}
           value={draft ?? String(pageIndex + 1)}

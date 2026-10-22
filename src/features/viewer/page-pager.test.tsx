@@ -50,7 +50,7 @@ beforeEach(() => resetViewer());
 afterEach(() => unregister());
 
 describe("resolvePageEntry", () => {
-  it("takes page numbers in range and exact labels; anything else is null", () => {
+  it("takes page numbers in range and labels (any case); anything else is null", () => {
     expect(resolvePageEntry("3", 12, null, {})).toBe(2);
     expect(resolvePageEntry(" 12 ", 12, null, {})).toBe(11);
     for (const bad of ["0", "13", "-1", "2.5", "abc", ""]) expect(resolvePageEntry(bad, 12, null, {})).toBeNull();
@@ -58,7 +58,9 @@ describe("resolvePageEntry", () => {
     expect(resolvePageEntry("A1721", 3, labels, {})).toBe(1);
     expect(resolvePageEntry("A1721 - LEVEL 17 RCP", 3, labels, {})).toBe(1);
     expect(resolvePageEntry("FP-201", 3, labels, {})).toBe(2);
-    expect(resolvePageEntry("fp-201", 3, labels, {})).toBeNull(); // exact only
+    expect(resolvePageEntry("fp-201", 3, labels, {})).toBe(2); // case-insensitive (founder decision)
+    expect(resolvePageEntry("a1721", 3, labels, {})).toBe(1);
+    expect(resolvePageEntry("FP-20", 3, labels, {})).toBeNull();
     expect(resolvePageEntry("S-101", 3, labels, { 0: "S-101" })).toBe(0);
   });
 });
@@ -146,5 +148,13 @@ describe("PagePager", () => {
     expect(await screen.findByRole("tooltip")).toHaveTextContent("A1721 - LEVEL 17 RCP");
     act(() => viewerStore.setState({ pageIndex: 2 }));
     expect(screen.queryByTestId("sheet-label")).not.toBeInTheDocument();
+  });
+
+  it("labels match in any case, and the field asks for a normal (not digits-only) keyboard", async () => {
+    const { engine, user } = setup(3, { pageLabels: ["1", "A1721 - LEVEL 17 RCP", "3"] });
+    expect(input()).not.toHaveAttribute("inputmode", "numeric");
+    await user.click(input());
+    await user.keyboard("{Control>}a{/Control}a1721{Enter}");
+    expect(engine.goToPage).toHaveBeenLastCalledWith(1);
   });
 });

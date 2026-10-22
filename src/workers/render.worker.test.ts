@@ -35,7 +35,10 @@ class StubRenderer implements TileRenderer<Bitmap> {
   runs: TextRun[] = [];
   textReads = 0;
 
+  labelsGate: Promise<void> | null = null;
+
   async pageLabels(): Promise<(string | null)[] | null> {
+    if (this.labelsGate) await this.labelsGate;
     return this.labels;
   }
 
@@ -336,6 +339,62 @@ describe("RenderWorkerHost: raster cache", () => {
     expect(resultOf(second.replies, 2)).toMatchObject({ content: VECTOR, tile: { fromCache: true, width: 500, scale: 0.5 } });
     expect(resultOf(second.replies, 3)).toMatchObject({ tile: { fromCache: true, col: 0, row: 0 } });
     expect(second.renderer.jobs).toHaveLength(0);
+  });
+
+  it("a sheet-label job waits for pdf.js without holding up cached tiles queued after it", async () => {
+    const cache = cached();
+    const first = setup(cache);
+    first.renderer.runs = TITLE_RUNS;
+    first.host.handle(open(1));
+    first.host.handle(tile(2));
+    await first.host.idle();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const second = setup(cache);
+    second.renderer.runs = TITLE_RUNS;
+    let ready!: () => void;
+    second.renderer.openGate = new Promise((r) => (ready = r));
+    second.host.handle(open(1));
+    second.host.handle(sheetLabel(2)); // not cached yet: needs pdf.js
+    second.host.handle(tile(3));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(resultOf(second.replies, 3)).toMatchObject({ tile: { fromCache: true } });
+    expect(byReq(second.replies, 2)).toHaveLength(0);
+    ready();
+    await second.host.idle();
+    expect(resultOf(second.replies, 2)).toEqual({ label: "FP-301" });
+  });
+
+  it("runs sheet-label jobs after the queued previews and tiles", async () => {
+    const { host, replies, renderer } = setup();
+    renderer.runs = TITLE_RUNS;
+    host.handle(open(1));
+    host.handle(sheetLabel(2));
+    host.handle(preview(3));
+    host.handle(tile(4));
+    await host.idle();
+    const order = replies.filter((r) => r.type === "result").map((r) => r.reqId);
+    expect(order).toEqual([1, 3, 4, 2]);
+  });
+
+  it("an old entry's unknown page labels are not stored as 'none' while they are being read", async () => {
+    const cache = cached();
+    await cache.putDoc(SHA, { pages: [PAGE_A], content: [null] });
+    const { host, renderer } = setup(cache);
+    renderer.pages = [PAGE_A];
+    renderer.labels = ["X-101 - PLAN"];
+    let labelsRead!: () => void;
+    renderer.labelsGate = new Promise((r) => (labelsRead = r));
+    host.handle(open(1));
+    host.handle(preview(2)); // a cache miss: renders, then stores the content flags
+    await host.idle();
+    await new Promise((r) => setTimeout(r, 10));
+    const meta = await cache.getDoc(SHA);
+    expect(meta?.content[0]).toEqual(VECTOR);
+    expect(meta?.pageLabels).toBeUndefined();
+    labelsRead();
+    await new Promise((r) => setTimeout(r, 10));
+    expect((await cache.getDoc(SHA))?.pageLabels).toEqual(["X-101 - PLAN"]);
   });
 
   it("keeps page labels and detected sheet labels with the document: a reopen answers from the cache", async () => {

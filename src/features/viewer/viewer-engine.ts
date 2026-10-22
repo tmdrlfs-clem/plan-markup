@@ -26,7 +26,9 @@
 // page anyway), shows whatever the new page already has and requests its
 // preview, then tiles. Each page keeps its own view; a page seen for the first
 // time opens at the current fit mode. The sheet number of a page without a
-// page label is detected in the worker on demand (render.sheetLabel).
+// page label is detected in the worker on demand (render.sheetLabel), after
+// the page's tiles are requested. On a multi-page document a page that cannot
+// be drawn is a page-level failure (Retry; the other pages stay reachable).
 
 import {
   DEFAULT_TILE_SIZE,
@@ -154,6 +156,8 @@ export class ViewerEngine {
   private readonly sheetRequested = new Set<number>();
   /** The document's first complete frame has been reported (status ready). */
   private firstFrameShown = false;
+  /** The shown page's preview failed (multi-page documents; Retry asks again). */
+  private previewFailed = false;
   private sha256: string | null = null;
   view: ViewState = { zoom: 1, centerX: 0, centerY: 0, rotation: 0 };
   private fitMode: FitMode = "page";
@@ -329,6 +333,7 @@ export class ViewerEngine {
     this.failed.clear();
     this.grids.clear();
     this.needed = new Set();
+    this.previewFailed = false;
     this.generation++;
     // Keep the finished preview (the LRU's budget decides how long); drop an unfinished one.
     if (this.preview && this.previewFinal) {
@@ -341,14 +346,10 @@ export class ViewerEngine {
     this.preview = this.cache.take(previewKey(this.pageNo)) ?? null;
     this.previewFinal = this.preview !== null;
     this.view = this.viewForPage(index, this.view);
-    this.update({ pageIndex: index, content: this.contents[index] ?? null, failedTiles: 0 });
+    this.update({ pageIndex: index, content: this.contents[index] ?? null, failedTiles: 0, pageFailed: false });
     this.invalidate();
-    if (this.previewFinal) {
-      this.scheduleSettle(0);
-      this.requestSheetLabel(index);
-    } else {
-      void this.loadPreview(this.generation);
-    }
+    if (this.previewFinal) this.scheduleSettle(0);
+    else void this.loadPreview(this.generation);
   }
 
   /** Moves the keyboard focus to the canvas (Escape in the page input). */
@@ -398,6 +399,8 @@ export class ViewerEngine {
 
   private async loadPreview(generation: number): Promise<void> {
     const index = this.pageIndex;
+    // This document's flags: a late reply after another open must not touch the new document's.
+    const contents = this.contents;
     const call = this.client.request(
       "render.preview",
       { page: index + 1, ...this.previewBox(), progressive: true },
@@ -415,16 +418,22 @@ export class ViewerEngine {
     this.previewReq = call.reqId;
     try {
       const { tile, content } = await call.promise;
-      if (this.contents.length > index) this.contents[index] = content;
+      if (contents.length > index) contents[index] = content;
       if (generation !== this.generation) return closeBitmap(tile.bitmap);
       this.setPreview(tile);
       this.previewFinal = true;
       if (!this.firstFrameShown) this.pendingFirstFrame = true;
       this.update({ content });
       this.scheduleSettle(0);
-      this.requestSheetLabel(index);
     } catch (e) {
       if (generation !== this.generation || (e instanceof WorkerRequestError && e.code === "cancelled")) return;
+      if (this.pages.length > 1 && !(e instanceof WorkerRequestError && e.code === "worker-failed")) {
+        // One bad page must not lock the set: the pager, the keys and the other pages keep working.
+        this.previewFailed = true;
+        this.update({ status: "ready", content: null, failedTiles: 1, pageFailed: true });
+        this.invalidate();
+        return;
+      }
       this.update({ status: "error", error: viewerErrorOf(e) });
     } finally {
       if (this.previewReq === call.reqId) this.previewReq = null;
@@ -500,6 +509,7 @@ export class ViewerEngine {
     this.sheetLabels = {};
     this.sheetRequested.clear();
     this.firstFrameShown = false;
+    this.previewFailed = false;
     this.sha256 = null;
     this.openReq = null;
     this.previewReq = null;
@@ -653,6 +663,8 @@ export class ViewerEngine {
       this.settleTimer = null;
       this.rememberView();
       this.requestTiles();
+      // After the tiles: text extraction is never urgent (the worker also runs it last).
+      if (this.page && this.previewFinal) this.requestSheetLabel(this.pageIndex);
     }, ms);
   }
 
@@ -752,10 +764,15 @@ export class ViewerEngine {
     );
   }
 
-  /** Retries every failed tile (the render error state's Retry action). */
+  /** Retries every failed tile, or the page's failed preview (the render error state's Retry action). */
   retryFailedTiles(): void {
     this.failed.clear();
-    this.update({ failedTiles: 0 });
+    this.update({ failedTiles: 0, pageFailed: false });
+    if (this.previewFailed && this.page) {
+      this.previewFailed = false;
+      void this.loadPreview(this.generation);
+      return;
+    }
     this.requestTiles();
   }
 

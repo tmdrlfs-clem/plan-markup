@@ -10,7 +10,7 @@ import { Toaster } from "@/components/ui/toast";
 import { toast } from "@/components/ui/toast-store";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { signOut } from "@/features/account/actions";
-import { DocumentViewer, PagePager, currentSheetLabel, hasDocument, pageAnnouncement, viewerStore } from "@/features/viewer";
+import { DocumentViewer, PagePager, usePageAnnouncement, viewerStore } from "@/features/viewer";
 
 import { AccountMenu, type WorkspaceUser } from "./account-menu";
 import { EmptyWorkspace } from "./empty-workspace";
@@ -69,9 +69,7 @@ function ShellBody({ user }: { user: WorkspaceUser }) {
   const viewerStatus = useStore(viewerStore, (s) => s.status);
   const fileName = useStore(viewerStore, (s) => s.fileName);
   const zoom = useStore(viewerStore, (s) => s.zoom);
-  const announcement = useStore(viewerStore, (s) =>
-    hasDocument(s) ? pageAnnouncement(s.pageIndex, s.pageCount, currentSheetLabel(s)) : "",
-  );
+  const announcement = usePageAnnouncement();
 
   const fileInput = useRef<HTMLInputElement>(null);
   const open = useCallback(() => fileInput.current?.click(), []);

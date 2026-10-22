@@ -1,6 +1,6 @@
 # Story 3.3: Page pager and page keys
 
-Status: review
+Status: done
 
 ## Story
 
@@ -27,6 +27,22 @@ so that I always know where I am in a multi-page set.
 - [x] **Task 3: Sheet number detection** (`src/core/pdf/sheet-label.ts`, framework-free, unit-tested): from pdf.js text content of a page (worker side, on demand per page, cached), pick the most likely sheet number: tokens matching common drawing-number patterns (e.g. `^[A-Z]{1,3}[-.]?\d{2,5}[A-Z]?$`, `^\d{2,4}-[A-Z]{1,2}-\d{2,4}$`), preferring the bottom-right quadrant and larger font size; return null if unsure. Validate on the founder's L17/L21 (expected "A1721" / "A2121" — check locally, never commit private files) and on synthetic text fixtures.
 - [x] **Task 4: Keys + live region + per-page view** (AC 5–7).
 - [x] **Task 5: Fixtures and tests**: generate `fixtures/pdf/multi-page.pdf` (4 pages, mixed sizes/orientations, page labels on two pages, one page with a sheet number in a title block) with a script; unit tests for sheet-label detection, input revert logic, per-page view memory, engine page switch cancellation; Playwright `e2e/viewer-pages.spec.ts`.
+
+### Review Follow-ups (AI)
+
+Adversarial review 2026-10-23 (Claude Opus 5.5) of 518d050..af08214 against cb4525c. Task 0 checked: only `zoomPercent` and the clamps changed unit; render scales, bucket choice (`bucketForScale` still clamps to `MAX_BUCKET`, 6400 % x DPR 6 = 512 = bucket 9) and cache keys are unchanged — no finding.
+
+- [x] **[AI-Review][High] A page that fails to render locks the whole document.** `loadPreview` turns any preview failure into document status `error`: the pager is hidden (`hasDocument` is false), the page keys stop (`active()`), and "Try again" reopens at the remembered page (`documentViews.pageIndex`), which fails again — a loop with no way to reach the other pages. Fix: on a multi-page document a page's preview failure is a page-level failure (status stays usable, the Retry overlay re-requests the preview, the pager and keys keep working); only a worker crash or a single-page document fails the document. (`viewer-engine.ts`)
+- [x] **[AI-Review][High] `render.sheetLabel` blocks rendering (head-of-line).** The worker queue is FIFO and the engine posts `render.sheetLabel` before the settle's tile requests. On a cached reopen the job awaits `doc.ready` (the full pdf.js parse, ~2 s on L17) while occupying the queue, so tiles that would come straight from IndexedDB wait behind it; on a parsed document `getTextContent` runs before the page's tiles. Fix: the worker runs sheet-label jobs only when no open/preview/tile job is queued and the document is parsed (or the answer is cached), re-pumping when pdf.js is ready; the engine asks after the settle's tile requests. (`render.worker.ts`, `viewer-engine.ts`)
+- [x] **[AI-Review][Medium] Content flags written across documents.** `loadPreview` stores `this.contents[index] = content` before the generation check; a cancelled preview of the previous document that still resolves writes its flags into the new document's page (wrong image-only HintBar). Fix: write into the `contents` array of the request's own document. (`viewer-engine.ts`)
+- [x] **[AI-Review][Medium] Sheet-number false positives from pipe sizes and standards.** `^[A-Z]{1,3}[-.]?\d{2,5}[A-Z]?$` accepts `DN150`, `PN16`, `NZS4541`, `AS1851`, `EN12845`, `BS9251` — exactly what fire-protection title blocks and notes cite, often in larger type. Fix: reject pipe-size / pressure tokens and 4–5 digit standard references. (`sheet-label.ts`)
+- [x] **[AI-Review][Medium] The live region floods screen readers.** Every intermediate page of a key repeat is announced, and a page without a page label is announced twice (number first, then again when the detected sheet label arrives). Fix: the announcement settles first (short debounce; waits, bounded, for the page's sheet-label lookup). (`page-pager.tsx`, `workspace-shell.tsx`)
+- [x] **[AI-Review][Low] Pre-3.3 cache entries can lose their page labels for good.** While the background label read of an old entry is pending, `persist` (after a preview's content flags or a sheet label) writes `pageLabels: null`, which later reads as "this document has none"; an interrupted session never reads them again. Fix: unknown labels stay absent in the stored metadata. (`render.worker.ts`)
+- [x] **[AI-Review][Low] A page label over 1000 characters poisons the cache entry.** The worker stores labels unbounded but `parseDocMeta` rejects labels over 1000 characters, so such a document misses the raster-cache metadata on every reopen. Fix: `cleanPageLabels` truncates to the schema's limit (shared constant). (`sheet-label.ts`, `render-cache.ts`)
+- [x] **[AI-Review][Low] Typed labels are case-sensitive** (founder decision 2026-10-23: match case-insensitively, e.g. "a1721"). (`sheet-label.ts`)
+- [x] **[AI-Review][Low] The page input asks touch keyboards for digits only** (`inputMode="numeric"`), so labels (AC 3) cannot be typed there. Fix: a normal text keyboard. (`page-pager.tsx`)
+
+Founder decision kept: the pager shows only the sheet number ("A1721"), the full label stays in the tooltip.
 
 ## Dev Notes
 
@@ -109,14 +125,19 @@ Claude Opus 5.5 (claude-opus-5-5)
 
 1. **Compact page labels.** A page label of the form "`<sheet number> - <title>`" shows only its sheet number in the pager, with the full label as the tooltip. Both founder drawings have such labels ("A1721 - LEVEL 17 REFLECTED CEILING PLAN"), and the story expects "A1721". Other labels are shown whole, truncated at 160 px.
 2. **Live region.** The whole status bar was the live region (`role="status"`), which would put the interactive pager inside it and announce every zoom change. The announcement now has its own hidden polite region. The shell unit test reads the file name from the footer instead.
-3. **Typed labels match exactly** (case-sensitive). They match a page label (full, or its sheet number) or a detected number of a page already visited. Pages are detected on demand, so an unvisited page's text-detected number is not yet known.
+3. **Typed labels match exactly** (case-sensitive). *Superseded in review: they match ignoring case (founder decision).* They match a page label (full, or its sheet number) or a detected number of a page already visited. Pages are detected on demand, so an unvisited page's text-detected number is not yet known.
 4. **New worker verb** `render.sheetLabel`, and `pageLabels` / `sheetLabels` are added to the cached document metadata (both optional, so older entries still parse).
 5. **Rotation on first visit.** A page seen for the first time keeps the current view rotation, as well as the fit mode.
 
-**Open questions:**
+**Founder answers (2026-10-23):** the pager keeps showing only the sheet number ("A1721"), the full label in the tooltip; typed labels match case-insensitively (done in the review fixes, decision 3 superseded).
 
-- The UX spec example shows a sheet label with its title ("A1721 Level 17 RCP"). Should the pager show "A1721" (now) or the number plus a shortened title?
-- Should typed labels be case-insensitive?
+**Review fixes (2026-10-23, Claude Opus 5.5)** — all nine Review Follow-ups (AI) fixed with tests:
+
+- High, page failure: `loadPreview` on a multi-page document reports a page-level failure (`failedTiles: 1`, new store flag `pageFailed`, overlay "This page could not be drawn." with Retry → `retryFailedTiles` re-requests the preview); status stays `ready`, so the pager and keys keep working. A `worker-failed` error or a single-page document still fails the document.
+- High, head-of-line: `RenderWorkerHost.nextJob()` runs `render.sheetLabel` only when no open/preview/tile job is queued and pdf.js has parsed the document (`Doc.parsed`, re-pump when `ready` settles), unless the answer is cached. The engine asks from the settle, after `requestTiles`.
+- Medium: `loadPreview` writes content flags into its own document's array; `isSheetNumber` rejects `DN/NB/PN` sizes and 4–5 digit `NZS/AS/BS/EN/ISO/DIN/IEC` references; `usePageAnnouncement` settles the live-region text (300 ms, waiting up to 1.5 s for a pending sheet-label lookup).
+- Low: unknown page labels stay absent from stored metadata; `cleanPageLabels` caps labels at `MAX_PAGE_LABEL_LENGTH` (1000, shared with `render-cache.ts`); case-insensitive label match; the page input no longer sets `inputMode="numeric"`.
+- Checks: typecheck, lint, build clean; `npm test` 1159 tests in 105 files; e2e on the production build 39 passed, 1 skipped (L17 perf opt-in).
 
 ### File List
 
@@ -136,10 +157,12 @@ Claude Opus 5.5 (claude-opus-5-5)
 - `src/features/viewer/canvas-viewport.tsx`, `index.ts`, `viewer-commands.ts`, `viewer-commands.test.ts`, `viewer-engine.ts`, `viewer-engine.test.ts`, `viewer-input.ts`, `viewer-input.test.ts`, `viewer-store.ts` (modified)
 - `src/features/workspace/workspace-shell.tsx`, `workspace-shell.test.tsx`, `workspace-status-bar.tsx` (modified)
 - `src/workers/render-cache.ts`, `render-pdfjs.ts`, `render-protocol.ts`, `render.worker.ts`, `render.worker.test.ts` (modified)
+- Review fixes: `src/core/pdf/sheet-label.ts`, `sheet-label.test.ts`, `src/features/viewer/viewer-engine.ts`, `viewer-engine.test.ts`, `viewer-store.ts`, `canvas-viewport.tsx`, `canvas-viewport.test.tsx`, `page-pager.tsx`, `page-pager.test.tsx`, `index.ts`, `src/features/workspace/workspace-shell.tsx`, `workspace-shell.test.tsx`, `src/workers/render-cache.ts`, `render.worker.ts`, `render.worker.test.ts`
 
 ### Change Log
 
 - 2026-10-23: Story 3.3 implemented (Claude Opus 5.5). Status → review.
+- 2026-10-23: Code review (Claude Opus 5.5): 9 findings (2 High, 3 Medium, 4 Low), all fixed with tests; founder decisions applied (sheet number only in the pager; case-insensitive typed labels). Status → done.
   - Zoom % like Revu (Task 0).
   - Page labels and sheet-number detection in the worker; page switching in the engine with per-page views.
   - The PagePager in the status bar, page keys, and the page announcement.

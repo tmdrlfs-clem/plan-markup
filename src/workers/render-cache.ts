@@ -3,6 +3,7 @@
 // out, so a corrupt or old entry is a miss, never a crash.
 
 import { z } from "zod";
+import { MAX_PAGE_LABEL_LENGTH } from "@/core/pdf/sheet-label";
 import { openTileCache, type TileCache } from "@/lib/idb/tile-cache";
 import type { DocMeta, RasterCache } from "./render.worker";
 
@@ -13,7 +14,7 @@ const docMetaSchema = z.object({
     .min(1)
     .max(100_000),
   content: z.array(flags.nullable()),
-  pageLabels: z.array(z.string().max(1000)).nullable().optional(),
+  pageLabels: z.array(z.string().max(MAX_PAGE_LABEL_LENGTH)).nullable().optional(),
   sheetLabels: z.record(z.string().regex(/^\d+$/), z.string().max(100).nullable()).optional(),
 });
 

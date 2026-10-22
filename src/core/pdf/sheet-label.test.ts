@@ -5,6 +5,7 @@ import {
   cleanPageLabels,
   detectSheetLabel,
   isSheetNumber,
+  MAX_PAGE_LABEL_LENGTH,
   pageForLabel,
   sheetLabelOf,
   type TextRun,
@@ -46,6 +47,14 @@ describe("isSheetNumber", () => {
   it("rejects revisions, paper sizes, grid refs, words and dates", () => {
     for (const t of ["2", "A1", "D3", "PCIP1133", "LEVEL", "16/08/26", "a1721", "ABCD12"]) expect(isSheetNumber(t)).toBe(false);
   });
+
+  it("rejects pipe sizes, pressure ratings and standard references", () => {
+    for (const t of ["DN150", "DN25", "NB100", "PN16", "NZS4541", "AS1851", "AS-2118", "EN12845", "BS9251", "ISO9001", "DIN1988"]) {
+      expect(isSheetNumber(t)).toBe(false);
+    }
+    // Real sheet numbers with the same letters stay sheet numbers.
+    for (const t of ["AS101", "EN-201", "D150A", "PN-01"]) expect(isSheetNumber(t)).toBe(true);
+  });
 });
 
 describe("detectSheetLabel", () => {
@@ -62,6 +71,15 @@ describe("detectSheetLabel", () => {
   it("finds a number inside a longer run (e.g. 'DWG NO. FP-301')", () => {
     const runs = [...body(), { str: "DWG NO. FP-301", x: 2000, y: 1600, width: 120, fontSize: 9 }];
     expect(detectSheetLabel(runs, A1)).toBe("FP-301");
+  });
+
+  it("is not fooled by a large pipe size or standard reference in the title block", () => {
+    const notes = [
+      { str: "DN150", x: 2250, y: 1500, width: 50, fontSize: 24 },
+      { str: "DESIGNED TO NZS4541", x: 2000, y: 1560, width: 150, fontSize: 18 },
+    ];
+    expect(detectSheetLabel([...body(), ...notes], A1)).toBeNull();
+    expect(detectSheetLabel([...body(), ...notes, ...titleBlock()], A1)).toBe("A1721");
   });
 
   it("ignores numbers outside the bottom-right quadrant", () => {
@@ -116,7 +134,20 @@ describe("page labels", () => {
     expect(sheetLabelOf(5, null, null)).toBeNull();
   });
 
-  it("pageForLabel matches page labels (full or number) and detected numbers exactly", () => {
+  it("pageForLabel ignores case (founder decision 2026-10-23)", () => {
+    const labels = ["1", "A1721 - LEVEL 17 RCP", "FP-201"];
+    expect(pageForLabel("a1721", labels, {})).toBe(1);
+    expect(pageForLabel("a1721 - level 17 rcp", labels, {})).toBe(1);
+    expect(pageForLabel("fp-201", labels, {})).toBe(2);
+    expect(pageForLabel("s-101", null, { 0: "S-101", 3: null })).toBe(0);
+  });
+
+  it("cleanPageLabels caps a label at MAX_PAGE_LABEL_LENGTH (the cache schema's limit)", () => {
+    const long = "X".repeat(MAX_PAGE_LABEL_LENGTH + 50);
+    expect(cleanPageLabels([long])?.[0]).toHaveLength(MAX_PAGE_LABEL_LENGTH);
+  });
+
+  it("pageForLabel matches page labels (full or number) and detected numbers", () => {
     const labels = ["1", "A1721 - LEVEL 17", "FP-201"];
     expect(pageForLabel("A1721", labels, {})).toBe(1);
     expect(pageForLabel("FP-201", labels, {})).toBe(2);
