@@ -58,6 +58,7 @@ Claude Opus 5.5 (claude-opus-5-5)
 
 ### Debug Log References
 
+- CI run **39763243132** (typecheck/lint/unit/guards, Playwright e2e on the production build including `viewer-navigate.spec.ts`, gitleaks): success. Commit 4629873.
 - Local, production build (`next build` + `next start`, E2E_PROD=1, workers 1, Docker + local Supabase): full e2e 36 passed, 1 skipped (the opt-in perf check). `viewer-navigate.spec.ts` 4/4 passed on the first run.
 - **L17 perf check** (`e2e/perf-navigate.spec.ts`, opt-in with `PERF_L17=1`, never in CI). Run once.
   - Setup: production build, headless Chromium, 1920 x 1080, DPR 1, file `fixtures/private/pdf/A1721-…-Rev.2.pdf`.
