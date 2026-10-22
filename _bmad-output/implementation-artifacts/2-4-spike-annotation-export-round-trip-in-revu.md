@@ -1,6 +1,6 @@
 # Story 2.4: Spike — annotation export round-trip in Revu
 
-Status: in-progress
+Status: review
 
 ## Story
 
@@ -18,14 +18,14 @@ so that FR60 and NFR41 are achievable with `@cantoo/pdf-lib`.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Sample drawing + markup set**: `scripts/spike-export/make-sample.mjs` → `fixtures/pdf/export-sample.pdf` (committed, small). A typed in-memory markup set in PDF user space (`src/core/export/sample-set.ts`) with a calibration (e.g. 1:100, mm) so measurements have values.
-- [ ] **Task 2: Native annotation writer** (`src/core/export/annotations.ts`, framework-free, `@cantoo/pdf-lib` 2.11.1 low-level `context` API): map each type to the standard PDF subtype — Line (`/LE` arrow endings, `/IT /LineDimension` for dimensions with `/LL`/`/LLE`), PolyLine, Polygon (`/IT /PolygonCloud` + `/BE /S /C` for clouds), Square, Circle, Ink, FreeText (`/IT /FreeTextCallout` with `/CL` for callouts and cloud+ leader, `/FreeTextTypeWriter` for typewriter), Text (note), Highlight/Underline/StrikeOut (`/QuadPoints`), Stamp (vector `/AP`; image stamp via image XObject in `/AP`), Link (`/URI`), flag as a Stamp. Always write `/AP /N` ourselves (viewers differ in regenerating appearances), plus `/Subj`, `/T` (author), `/M`, `/CreationDate`, `/NM` (stable id), `/C`, `/IC`, `/CA`, `/BS`.
-- [ ] **Task 3: Measurements**: calibrated types carry an ISO 32000 `/Measure` dictionary (`/Subtype /RL`, `/R` ratio text, `/X`/`/D`/`/A` number formats) and `/IT` (`/LineDimension`, `/PolyLineDimension`, `/PolygonDimension`), `/Contents` with the value text. Angle/radius/diameter/count have no standard intent — choose the closest standard form and record it. For Revu interoperability you may **observe** how Revu itself encodes measurements by decoding the founder's `.btx` measurement items with the Story 2.1 parser (structure only, e.g. which keys Revu uses for counts); never copy client content, and record any Revu-specific key you add and why. Produce variant files if two encodings compete (e.g. standard-only vs standard + Revu keys) so the founder's check decides.
-- [ ] **Task 4: White-out, dynamic fill, device stamp, groups, layers**: white-out = Square with white fill (native file) — note that it is only a visual cover (true removal deferred); dynamic fill = Polygon with `/Measure` area; device stamp = Stamp with our metadata in a private key prefixed `/PM_` (document it); groups via `/IRT` + `/RT /Group` (the form Revu and Acrobat use); layers via `/OC` → OCG in the catalog `/OCProperties` (`/OCGs`, `/D /Order`, `/ON`).
-- [ ] **Task 5: Appearance-only + flatten writers**: (b) same geometry as annotations with only `/AP` and no type semantics; (c) flatten = draw each annotation's appearance form XObject into the page content stream at its `/Rect` (with the `/Matrix`/`/BBox` mapping per ISO 32000 12.5.5), remove the annotations, honour OCG visibility (hidden layers not flattened) — this is the prototype of FR58/FR61.
-- [ ] **Task 6: Harness**: `npm run spike:export` writes `fixtures/private/export/{native,appearance-only,flattened}.pdf` (+ variant files) — synthetic content, but kept out of git so iterations do not churn the repo; prints the paths. It also renders each file with pdf.js (Node, `@napi-rs/canvas`, annotations enabled) to PNGs and diffs flattened vs native (AC 4, threshold constant documented), and opens each file in headed Chromium (Playwright) for a screenshot of Chrome's PDF viewer — look at the screenshots yourself and record the Chrome column of the checklist.
-- [ ] **Task 7: Checklist + A5 table**: write `docs/export-mapping.md`: how to run, file list, the checklist table (rows = types and variants, columns = Revu / Acrobat × visible / editable / measurement kept / subject+author / layer / group), Chrome column filled, Revu and Acrobat columns left `?` for the founder, and a provisional A5 table with the reasoning; after the founder reports results the table is finalised (a follow-up commit, not this agent's job).
-- [ ] **Task 8: Tests** (AC 5) co-located, node env.
+- [x] **Task 1: Sample drawing + markup set**: `scripts/spike-export/make-sample.mjs` → `fixtures/pdf/export-sample.pdf` (committed, small). A typed in-memory markup set in PDF user space (`src/core/export/sample-set.ts`) with a calibration (e.g. 1:100, mm) so measurements have values.
+- [x] **Task 2: Native annotation writer** (`src/core/export/annotations.ts`, framework-free, `@cantoo/pdf-lib` 2.11.1 low-level `context` API): map each type to the standard PDF subtype — Line (`/LE` arrow endings, `/IT /LineDimension` for dimensions with `/LL`/`/LLE`), PolyLine, Polygon (`/IT /PolygonCloud` + `/BE /S /C` for clouds), Square, Circle, Ink, FreeText (`/IT /FreeTextCallout` with `/CL` for callouts and cloud+ leader, `/FreeTextTypeWriter` for typewriter), Text (note), Highlight/Underline/StrikeOut (`/QuadPoints`), Stamp (vector `/AP`; image stamp via image XObject in `/AP`), Link (`/URI`), flag as a Stamp. Always write `/AP /N` ourselves (viewers differ in regenerating appearances), plus `/Subj`, `/T` (author), `/M`, `/CreationDate`, `/NM` (stable id), `/C`, `/IC`, `/CA`, `/BS`.
+- [x] **Task 3: Measurements**: calibrated types carry an ISO 32000 `/Measure` dictionary (`/Subtype /RL`, `/R` ratio text, `/X`/`/D`/`/A` number formats) and `/IT` (`/LineDimension`, `/PolyLineDimension`, `/PolygonDimension`), `/Contents` with the value text. Angle/radius/diameter/count have no standard intent — choose the closest standard form and record it. For Revu interoperability you may **observe** how Revu itself encodes measurements by decoding the founder's `.btx` measurement items with the Story 2.1 parser (structure only, e.g. which keys Revu uses for counts); never copy client content, and record any Revu-specific key you add and why. Produce variant files if two encodings compete (e.g. standard-only vs standard + Revu keys) so the founder's check decides.
+- [x] **Task 4: White-out, dynamic fill, device stamp, groups, layers**: white-out = Square with white fill (native file) — note that it is only a visual cover (true removal deferred); dynamic fill = Polygon with `/Measure` area; device stamp = Stamp with our metadata in a private key prefixed `/PM_` (document it); groups via `/IRT` + `/RT /Group` (the form Revu and Acrobat use); layers via `/OC` → OCG in the catalog `/OCProperties` (`/OCGs`, `/D /Order`, `/ON`).
+- [x] **Task 5: Appearance-only + flatten writers**: (b) same geometry as annotations with only `/AP` and no type semantics; (c) flatten = draw each annotation's appearance form XObject into the page content stream at its `/Rect` (with the `/Matrix`/`/BBox` mapping per ISO 32000 12.5.5), remove the annotations, honour OCG visibility (hidden layers not flattened) — this is the prototype of FR58/FR61.
+- [x] **Task 6: Harness**: `npm run spike:export` writes `fixtures/private/export/{native,appearance-only,flattened}.pdf` (+ variant files) — synthetic content, but kept out of git so iterations do not churn the repo; prints the paths. It also renders each file with pdf.js (Node, `@napi-rs/canvas`, annotations enabled) to PNGs and diffs flattened vs native (AC 4, threshold constant documented), and opens each file in headed Chromium (Playwright) for a screenshot of Chrome's PDF viewer — look at the screenshots yourself and record the Chrome column of the checklist.
+- [x] **Task 7: Checklist + A5 table**: write `docs/export-mapping.md`: how to run, file list, the checklist table (rows = types and variants, columns = Revu / Acrobat × visible / editable / measurement kept / subject+author / layer / group), Chrome column filled, Revu and Acrobat columns left `?` for the founder, and a provisional A5 table with the reasoning; after the founder reports results the table is finalised (a follow-up commit, not this agent's job).
+- [x] **Task 8: Tests** (AC 5) co-located, node env.
 
 ## Dev Notes
 
@@ -47,10 +47,74 @@ so that FR60 and NFR41 are achievable with `@cantoo/pdf-lib`.
 
 ### Agent Model Used
 
+Claude Opus 5.5 (claude-opus-5-5)
+
 ### Debug Log References
+
+- Revu key survey (structure only, Story 2.1 parser on `fixtures/private/btx/*.btx`): only count
+  measurements exist in the founder's tool chests: `Polygon` + `/IT /PolygonCount`, `/BBMeasure`
+  (`/Type /Measure /Subtype /RL /R /X /D /A /T /V /TargetUnitConversion`), `/NumCounts`,
+  `/MeasurementTypes 128`, `/CountStyle /Checkmark`, `/Version 1`; `/Vertices` held 8-12 numbers
+  for `/NumCounts 1`. No client content copied.
+- `npm run spike:export`: native 38 KB / native-revu 41 KB / appearance-only 31 KB / flattened
+  39.5 KB, 39 annotations each (35 cells; cloud+ = 2, group = 3, layer test = 2); flatten
+  39 drawn / 0 dropped / 1 kept (link). Flattened vs native: 0 px differ (threshold 0.5 % of ink);
+  appearance-only vs native: 0 px.
+- Chrome PDF viewer (Playwright 1.64.1 bundled Chromium, headed): all four files open, all 35
+  cells visible and matching the pdf.js renders; no page errors.
+- Local gates: typecheck, lint, 1001 tests (92 files), build, check:pinned all pass.
 
 ### Completion Notes List
 
+- `src/core/pdf/` (new, shared): content-stream helpers moved out of `src/core/btx/appearance.ts`
+  (re-exported there, btx tests unchanged), Helvetica AFM widths, a plain PDF value model with
+  pdf-lib conversion, and a form XObject writer (Flate content, shared fonts/images).
+- `src/core/export/` (keep, Epic 8 engine): `model.ts` (markup model, 33 types), `measure.ts`
+  (values + ISO 32000 `/Measure`), `appearance.ts` (our `/AP /N` for every type: clouds, arcs,
+  callouts, dimensions with leaders, captions, icons), `annotations.ts` (native and
+  appearance-only writers, OCG layers, `/IRT` + `/RT /Group` groups, `/PM_Device`, optional Revu
+  keys), `flatten.ts` (ISO 32000-1 12.5.5 matrix, OCG visibility incl. OCMD, hidden flags, links
+  kept, layered content wrapped in `/OC BDC`), `export.ts` (entry point), `sample-set.ts`
+  (synthetic layout + markup set).
+- `scripts/spike-export/` (throwaway): sample generator (`--check` mode), harness, page diff.
+- `docs/export-mapping.md`: how to run, files, encoding per type, private/Revu keys, checklist
+  (Chrome filled, Revu/Acrobat `?`), provisional A5 table, known gaps.
+- Decisions: arc = PolyLine through arc points; count = Polygon of the counted points (Revu form in
+  the variant); angle = 3-vertex PolyLine; radius/diameter = Circle + `/Measure` + value in
+  `/Contents`; white-out provisional A5 = forced flatten (visual cover only); FreeText `/C` is the
+  background colour, border colour in `/DA` (`RG`).
+- Not done here (founder): Revu 21 and Acrobat columns of the checklist; finalising the A5 table.
+
 ### File List
 
+- `src/core/pdf/content.ts` (new)
+- `src/core/pdf/helvetica.ts` (new)
+- `src/core/pdf/value.ts` (new)
+- `src/core/pdf/form.ts` (new)
+- `src/core/pdf/pdf.test.ts` (new)
+- `src/core/btx/appearance.ts` (modified: helpers moved to `src/core/pdf/content.ts`)
+- `src/core/export/model.ts` (new)
+- `src/core/export/measure.ts` (new)
+- `src/core/export/appearance.ts` (new)
+- `src/core/export/annotations.ts` (new)
+- `src/core/export/flatten.ts` (new)
+- `src/core/export/export.ts` (new)
+- `src/core/export/sample-set.ts` (new)
+- `src/core/export/annotations.test.ts` (new)
+- `src/core/export/flatten.test.ts` (new)
+- `src/core/export/measure.test.ts` (new)
+- `scripts/spike-export/make-sample.mjs` (new)
+- `scripts/spike-export/run.mjs` (new)
+- `scripts/spike-export/diff.mjs` (new)
+- `scripts/spike-export/harness.test.mjs` (new)
+- `fixtures/pdf/export-sample.pdf` (new, generated)
+- `docs/export-mapping.md` (new)
+- `package.json` (modified: `spike:export`, `spike:export:sample`)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` (modified)
+
 ### Change Log
+
+- 2026-10-22: Story 2.4 implemented: shared `src/core/pdf` helpers, export engine prototype
+  (native / appearance-only / flatten), synthetic A3 sample, harness with pdf.js diff (0 px) and
+  Chrome screenshots, `docs/export-mapping.md` with checklist and provisional A5 table. Status →
+  review (founder's Revu/Acrobat check pending).
