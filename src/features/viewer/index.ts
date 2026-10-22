@@ -8,6 +8,7 @@ export {
   pageAnnouncement,
   usePageAnnouncement,
 } from "./page-pager";
+export { ThumbnailsPanel } from "./thumbnails-panel";
 export { viewerCommands, type ViewerCommand } from "./viewer-commands";
 export {
   hasDocument,
