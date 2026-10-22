@@ -240,6 +240,219 @@ describe("ViewerEngine", () => {
   });
 });
 
+type Op = { op: string; args: unknown[] };
+
+/** A canvas whose 2D context records draw calls. */
+function recordingCanvas(ops: Op[]): HTMLCanvasElement {
+  const ctx = new Proxy(
+    {},
+    {
+      get: (_t, prop: string) => (prop === "canvas" ? undefined : (...args: unknown[]) => void ops.push({ op: prop, args })),
+      set: () => true,
+    },
+  );
+  return { width: 0, height: 0, dataset: {} as DOMStringMap, getContext: () => ctx } as unknown as HTMLCanvasElement;
+}
+
+function setupRecording(budgetBytes?: number) {
+  const client = new FakeClient();
+  const ops: Op[] = [];
+  const active: Op[] = [];
+  const canvases: ViewerCanvases = { tiles: recordingCanvas(ops), markups: canvas(), active: recordingCanvas(active) };
+  frames = [];
+  let t = 0;
+  const engine = new ViewerEngine(canvases, client as unknown as RenderClient, (patch) => Object.assign(state, patch), {
+    now: () => (t += 10),
+    requestFrame: (cb) => frames.push(cb),
+    cancelFrame: () => undefined,
+    budgetBytes,
+  });
+  engine.setViewport(1032, 532, 1);
+  return { client, engine, ops, active, canvases };
+}
+
+/** Bitmaps drawn, in order. */
+const drawn = (ops: Op[]) => ops.filter((o) => o.op === "drawImage").map((o) => o.args[0] as { width: number; height: number });
+
+async function readyAtFit(client: FakeClient, engine: ViewerEngine) {
+  await openToPreview(client, engine);
+  client.last("render.preview").resolve({ tile: tilePayload(1), content: null });
+  await flush();
+  vi.runAllTimers();
+}
+
+function resolveTiles(calls: Call[]) {
+  for (const c of calls) {
+    const p = c.payload as { scale: number; col: number; row: number; tileSize: number; bucket: number };
+    const w = Math.min(p.tileSize, Math.ceil(PAGE.width * p.scale) - p.col * p.tileSize);
+    const h = Math.min(p.tileSize, Math.ceil(PAGE.height * p.scale) - p.row * p.tileSize);
+    const tile = { page: 1, bucket: p.bucket, col: p.col, row: p.row, scale: p.scale, x: p.col * p.tileSize, y: p.row * p.tileSize };
+    c.resolve({ tile: { ...tile, width: w, height: h, bitmap: bitmap(w, h), fromCache: false, renderMs: 1, waitMs: 0 } });
+  }
+}
+
+describe("ViewerEngine: gestures (Story 3.2)", () => {
+  it("during a gesture only redraws (coalesced to one frame); tiles are requested once it settles", async () => {
+    const { client, engine } = setupRecording();
+    await readyAtFit(client, engine);
+    paint();
+    for (let i = 0; i < 10; i++) engine.zoomBy(1.1, { x: 100, y: 100 });
+    engine.panBy(30, 0);
+    expect(frames).toHaveLength(1);
+    expect(client.all("render.tile")).toHaveLength(0);
+    vi.advanceTimersByTime(149);
+    expect(client.all("render.tile")).toHaveLength(0);
+    vi.advanceTimersByTime(1);
+    expect(client.all("render.tile").length).toBeGreaterThan(0);
+  });
+
+  it("requests visible tiles first, centre first, and cancels the stale ones of the old view", async () => {
+    const { client, engine } = setupRecording();
+    await readyAtFit(client, engine);
+    engine.zoomBy(4); // bucket 2
+    vi.runAllTimers();
+    const first = client.all("render.tile");
+    // The viewport centre at zoom 4 is page (500, 250) -> device (2000, 1000) -> tile (3, 1).
+    expect(first[0].payload).toMatchObject({ col: 3, row: 1 });
+    engine.panBy(-2000, 0); // far right: the old tiles are no longer needed
+    vi.runAllTimers();
+    const stale = first.map((c) => c.reqId).filter((id) => client.cancelled.includes(id));
+    expect(stale.length).toBeGreaterThan(0);
+  });
+
+  it("keeps old-bucket tiles drawn underneath until the new bucket's tiles arrive", async () => {
+    const { client, engine, ops } = setupRecording();
+    await readyAtFit(client, engine);
+    engine.zoomBy(2); // bucket 1
+    vi.runAllTimers();
+    resolveTiles(client.all("render.tile"));
+    await flush();
+    paint();
+    ops.length = 0;
+    engine.panBy(0, 0);
+    paint();
+    const bucket1 = drawn(ops).length;
+    expect(bucket1).toBeGreaterThan(1); // preview + bucket-1 tiles
+    ops.length = 0;
+    engine.zoomBy(2); // bucket 2, nothing rendered yet
+    paint();
+    // The preview and the bucket-1 tiles in view are still drawn (scaled): no blank flash.
+    expect(drawn(ops).length).toBeGreaterThan(1);
+  });
+
+  it("draws a tile 1:1 at integer device px at its bucket scale", async () => {
+    const { client, engine, ops } = setupRecording();
+    await readyAtFit(client, engine);
+    engine.zoomBy(2);
+    vi.runAllTimers();
+    resolveTiles(client.all("render.tile"));
+    await flush();
+    paint();
+    ops.length = 0;
+    engine.panBy(0, 0);
+    paint();
+    const tiles = ops.filter((o) => o.op === "drawImage" && (o.args[0] as { width: number }).width === 512);
+    expect(tiles.length).toBeGreaterThan(0);
+    for (const t of tiles) {
+      const [b, x, y, w, h] = t.args as [{ width: number; height: number }, number, number, number, number];
+      expect([Number.isInteger(x), Number.isInteger(y), w, h]).toEqual([true, true, b.width, b.height]);
+    }
+  });
+
+  it("rotating the view re-renders nothing and draws the same bitmaps turned a quarter", async () => {
+    const { client, engine, ops } = setupRecording();
+    await readyAtFit(client, engine);
+    paint();
+    const before = client.calls.length;
+    engine.rotate(90);
+    vi.runAllTimers();
+    ops.length = 0;
+    paint();
+    expect(client.calls.length).toBe(before);
+    expect(engine.view.rotation).toBe(90);
+    expect(ops.some((o) => o.op === "setTransform" && (o.args as number[])[1] === 1)).toBe(true);
+    // Still fitted: the page is 500 x 1000 on screen now.
+    expect(engine.view.zoom).toBeCloseTo((532 - 32) / 1000, 9);
+    engine.rotate(-90);
+    expect(engine.view.rotation).toBe(0);
+  });
+
+  it("fit page / fit width keep fitting on resize; a zoom leaves fit mode", async () => {
+    const { client, engine } = setupRecording();
+    await readyAtFit(client, engine);
+    engine.fitWidth();
+    expect(engine.currentFitMode).toBe("width");
+    engine.setViewport(2032, 532, 1);
+    expect(engine.view.zoom).toBeCloseTo(2, 9); // (2032 - 32) / 1000
+    engine.zoomStep(1);
+    expect(engine.currentFitMode).toBeNull();
+    expect(engine.view.zoom).toBeCloseTo(2 * Math.SQRT2, 9);
+    engine.fitPage();
+    expect(engine.view.zoom).toBeCloseTo(1, 9); // (532 - 32) / 500
+  });
+
+  it("draws the Zoom tool's rubber band on the active canvas", async () => {
+    const { client, engine, active } = setupRecording();
+    await readyAtFit(client, engine);
+    engine.setZoomRect({ x: 10, y: 20, width: 30, height: 40 });
+    paint();
+    expect(active.find((o) => o.op === "strokeRect")?.args).toEqual([10.5, 20.5, 30, 40]);
+    active.length = 0;
+    engine.setZoomRect(null);
+    paint();
+    expect(active.some((o) => o.op === "strokeRect")).toBe(false);
+  });
+
+  it("publishes the zoom percent once per change and keeps each document's view in memory", async () => {
+    const { client, engine, canvases } = setupRecording();
+    await readyAtFit(client, engine);
+    paint();
+    expect(state.zoom).toBe(100);
+    engine.zoomStep(1);
+    paint();
+    expect(state.zoom).toBe(141);
+    expect(canvases.active.dataset.view).toMatch(/^1\.414214 /);
+    vi.runAllTimers();
+    // Reopen the same document (same sha256): the view comes back.
+    void engine.open(file());
+    await flush();
+    client.last("render.open").resolve({ sha256: "s", pageCount: 1, pages: [PAGE], fromCache: true });
+    await flush();
+    expect(engine.view.zoom).toBeCloseTo(Math.SQRT2, 9);
+    // Another document starts at fit page.
+    void engine.open(file("b.pdf"));
+    await flush();
+    client.last("render.open").resolve({ sha256: "other", pageCount: 1, pages: [PAGE], fromCache: false });
+    await flush();
+    expect(engine.view.zoom).toBeCloseTo(1, 9);
+  });
+});
+
+describe("ViewerEngine: memory warning (AC 5)", () => {
+  it("warns once when the visible tiles do not fit the budget, never before", async () => {
+    // Bucket 1 at 1032 x 532: about 8 visible 512 px tiles (8 MB); the budget holds 2 MB.
+    const { client, engine } = setupRecording(2 * 1024 * 1024);
+    await readyAtFit(client, engine);
+    expect(state.memoryPressure).toBeFalsy();
+    engine.zoomBy(2);
+    vi.runAllTimers();
+    expect(state.memoryPressure).toBe(true);
+    const requested = client.all("render.tile").length;
+    expect(requested).toBeGreaterThan(0);
+    expect(requested).toBeLessThan(4); // stops at the budget instead of evicting its own tiles
+  });
+
+  it("stays quiet when the budget holds the view", async () => {
+    const { client, engine } = setupRecording();
+    await readyAtFit(client, engine);
+    engine.zoomBy(8);
+    vi.runAllTimers();
+    resolveTiles(client.all("render.tile"));
+    await flush();
+    expect(state.memoryPressure).toBeFalsy();
+  });
+});
+
 describe("canvasStateOf", () => {
   it("covers loading, ready, image-only and render error", () => {
     const base = { content: null, failedTiles: 0, error: null };
