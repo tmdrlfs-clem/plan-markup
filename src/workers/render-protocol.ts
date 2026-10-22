@@ -5,7 +5,7 @@
 //
 // Requests (main -> worker): { type: "render.<verb>", reqId, payload }
 //   render.open     { bytes: ArrayBuffer }  The bytes are transferred (renderOpenMessage).
-//                   -> result OpenResult. A reopen of a cached file answers from the
+//                   -> result OpenResult (page sizes and page labels). A reopen of a cached file answers from the
 //                   IndexedDB raster cache before pdf.js has parsed anything.
 //   render.preview  { page, maxWidth, maxHeight, progressive? }  One whole-page tile
 //                   scaled to fit maxWidth x maxHeight device px.
@@ -13,6 +13,9 @@
 //                   -> result PreviewResult (with the page's content flags).
 //   render.tile     { page, bucket, scale, col, row, tileSize }  `scale` is device px
 //                   per point. -> result TileResult.
+//   render.sheetLabel { page }  The page's sheet number detected from its text near
+//                   the title block (src/core/pdf/sheet-label.ts), cached per document.
+//                   -> result { label: string | null }.
 //   render.cancel   { reqIds?, all? }  Each cancelled request gets an error reply
 //                   with code "cancelled"; the cancel itself gets result {}.
 //   render.close    {}  Cancels everything and releases the document. -> result {}.
@@ -75,6 +78,11 @@ export type OpenResult = {
   sha256: string;
   pageCount: number;
   pages: PageInfo[];
+  /**
+   * Cleaned /PageLabels (src/core/pdf/sheet-label.ts cleanPageLabels), one per page;
+   * null when the document has none or they are all just the page numbers.
+   */
+  pageLabels: string[] | null;
   /** True when the answer came from the raster cache (pdf.js still loads in the background). */
   fromCache: boolean;
 };
@@ -125,6 +133,7 @@ export const tilePayloadSchema = z.object({
   row: index,
   tileSize: z.number().int().min(16).max(4096),
 });
+export const sheetLabelPayloadSchema = z.object({ page: pageNumber });
 export const cancelPayloadSchema = z.object({
   reqIds: z.array(reqId).max(10_000).optional(),
   all: z.boolean().optional(),
@@ -135,6 +144,7 @@ export const renderRequestSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("render.open"), reqId, payload: openPayloadSchema }),
   z.object({ type: z.literal("render.preview"), reqId, payload: previewPayloadSchema }),
   z.object({ type: z.literal("render.tile"), reqId, payload: tilePayloadSchema }),
+  z.object({ type: z.literal("render.sheetLabel"), reqId, payload: sheetLabelPayloadSchema }),
   z.object({ type: z.literal("render.cancel"), reqId, payload: cancelPayloadSchema }),
   z.object({ type: z.literal("render.close"), reqId, payload: closePayloadSchema }),
 ]);
@@ -145,12 +155,15 @@ export type OpenPayload = z.infer<typeof openPayloadSchema>;
 export type PreviewPayload = z.infer<typeof previewPayloadSchema>;
 export type TileRequestPayload = z.infer<typeof tilePayloadSchema>;
 export type CancelPayload = z.infer<typeof cancelPayloadSchema>;
+export type SheetLabelPayload = z.infer<typeof sheetLabelPayloadSchema>;
+export type SheetLabelResult = { label: string | null };
 
 /** Result payload per verb. */
 export type RenderResultMap<B> = {
   "render.open": OpenResult;
   "render.preview": PreviewResult<B>;
   "render.tile": TileResult<B>;
+  "render.sheetLabel": SheetLabelResult;
   "render.cancel": Record<string, never>;
   "render.close": Record<string, never>;
 };
@@ -159,6 +172,7 @@ export type RenderPayloadMap = {
   "render.open": { bytes: ArrayBuffer };
   "render.preview": PreviewPayload;
   "render.tile": TileRequestPayload;
+  "render.sheetLabel": SheetLabelPayload;
   "render.cancel": CancelPayload;
   "render.close": Record<string, never>;
 };

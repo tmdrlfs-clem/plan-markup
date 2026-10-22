@@ -24,6 +24,7 @@ import {
   type PDFDocumentProxy,
   type PDFPageProxy,
 } from "pdfjs-dist";
+import type { TextRun } from "@/core/pdf/sheet-label";
 import { contentFlags, type OpsTable } from "@/core/render/content-flags";
 import { RenderError, type ContentFlags, type PageInfo } from "./render-protocol";
 import type { RenderedTile, TileJob, TileRenderer } from "./render.worker";
@@ -246,6 +247,26 @@ export class PdfjsTileRenderer implements TileRenderer<ImageBitmap> {
 
   release(bitmap: ImageBitmap): void {
     bitmap.close();
+  }
+
+  async pageLabels(): Promise<(string | null)[] | null> {
+    return this.doc ? this.doc.getPageLabels() : null;
+  }
+
+  /** The page's text runs in page space (pdf.js viewport at scale 1, /Rotate applied). */
+  async textRuns(pageNo: number, signal: AbortSignal): Promise<TextRun[]> {
+    const page = this.pages.get(pageNo);
+    if (!page) throw new RenderError("out-of-range", "Page not loaded");
+    const content = await (this.parserFailed ? Promise.race([page.getTextContent(), this.parserFailed]) : page.getTextContent());
+    if (signal.aborted) return [];
+    const viewport = page.getViewport({ scale: 1 });
+    const runs: TextRun[] = [];
+    for (const item of content.items) {
+      if (!("str" in item) || item.str.trim() === "") continue;
+      const [x, y] = viewport.convertToViewportPoint(item.transform[4], item.transform[5]);
+      runs.push({ str: item.str, x, y, width: item.width, fontSize: Math.hypot(item.transform[2], item.transform[3]) });
+    }
+    return runs;
   }
 
   async close(): Promise<void> {

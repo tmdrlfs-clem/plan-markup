@@ -13,11 +13,16 @@ const docMetaSchema = z.object({
     .min(1)
     .max(100_000),
   content: z.array(flags.nullable()),
+  pageLabels: z.array(z.string().max(1000)).nullable().optional(),
+  sheetLabels: z.record(z.string().regex(/^\d+$/), z.string().max(100).nullable()).optional(),
 });
 
 export function parseDocMeta(value: unknown): DocMeta | null {
   const parsed = docMetaSchema.safeParse(value);
   if (!parsed.success || parsed.data.content.length !== parsed.data.pages.length) return null;
+  const { pageLabels } = parsed.data;
+  // Labels that do not match the pages are dropped (read again from the PDF), not the whole entry.
+  if (pageLabels && pageLabels.length !== parsed.data.pages.length) return { ...parsed.data, pageLabels: undefined };
   return parsed.data;
 }
 

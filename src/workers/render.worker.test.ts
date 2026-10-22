@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { memoryTileBackend, TileCache } from "@/lib/idb/tile-cache";
+import type { TextRun } from "@/core/pdf/sheet-label";
 import { rasterCache } from "./render-cache";
 import { RenderError, renderOpenMessage, type ContentFlags, type PageInfo, type RenderReply } from "./render-protocol";
 import {
@@ -30,6 +31,18 @@ class StubRenderer implements TileRenderer<Bitmap> {
   openError: Error | null = null;
   released: Bitmap[] = [];
   partials = 0;
+  labels: (string | null)[] | null = null;
+  runs: TextRun[] = [];
+  textReads = 0;
+
+  async pageLabels(): Promise<(string | null)[] | null> {
+    return this.labels;
+  }
+
+  async textRuns(): Promise<TextRun[]> {
+    this.textReads++;
+    return this.runs;
+  }
 
   async open(bytes: Uint8Array): Promise<PageInfo[]> {
     this.opened++;
@@ -84,6 +97,15 @@ function setup(cache: RasterCache<Bitmap> | null = null) {
 }
 
 const PDF = () => new Uint8Array([37, 80, 68, 70, 45, 49, 46, 55]);
+const PAGE_A = { width: 1000, height: 600, rotate: 0 };
+/** A title block: caption plus a large drawing number in the bottom-right corner, among body text. */
+const TITLE_RUNS: TextRun[] = [
+  { str: "GRID A", x: 100, y: 100, width: 30, fontSize: 8 },
+  { str: "NOTES", x: 120, y: 140, width: 30, fontSize: 8 },
+  { str: "DRAWING NUMBER", x: 860, y: 560, width: 60, fontSize: 6 },
+  { str: "FP-301", x: 870, y: 585, width: 50, fontSize: 18 },
+];
+const sheetLabel = (reqId: number, page = 1) => ({ type: "render.sheetLabel", reqId, payload: { page } });
 const SHA = createHash("sha256").update(PDF()).digest("hex");
 const open = (reqId: number, bytes = PDF()) => ({ type: "render.open", reqId, payload: { bytes: bytes.buffer } });
 const preview = (reqId: number, extra: Record<string, unknown> = {}) => ({
@@ -117,7 +139,20 @@ describe("RenderWorkerHost: open", () => {
     ];
     host.handle(open(1));
     await host.idle();
-    expect(resultOf(replies, 1)).toEqual({ sha256: SHA, pageCount: 2, pages: renderer.pages, fromCache: false });
+    expect(resultOf(replies, 1)).toEqual({ sha256: SHA, pageCount: 2, pages: renderer.pages, pageLabels: null, fromCache: false });
+  });
+
+  it("returns the cleaned page labels, and null when they are only the page numbers", async () => {
+    const { host, replies, renderer } = setup();
+    renderer.pages = [PAGE_A, PAGE_A];
+    renderer.labels = ["A1721 - LEVEL 17\u0000", "2"];
+    host.handle(open(1));
+    await host.idle();
+    expect(resultOf(replies, 1).pageLabels).toEqual(["A1721 - LEVEL 17", "2"]);
+    renderer.labels = ["1", "2"];
+    host.handle(open(2));
+    await host.idle();
+    expect(resultOf(replies, 2).pageLabels).toBeNull();
   });
 
   it.each([
@@ -303,6 +338,44 @@ describe("RenderWorkerHost: raster cache", () => {
     expect(second.renderer.jobs).toHaveLength(0);
   });
 
+  it("keeps page labels and detected sheet labels with the document: a reopen answers from the cache", async () => {
+    const cache = cached();
+    const first = setup(cache);
+    first.renderer.labels = ["S-1", "S-2"];
+    first.renderer.pages = [PAGE_A, PAGE_A];
+    first.renderer.runs = TITLE_RUNS;
+    first.host.handle(open(1));
+    first.host.handle(sheetLabel(2, 2));
+    await first.host.idle();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(resultOf(first.replies, 2)).toEqual({ label: "FP-301" });
+
+    const second = setup(cache);
+    let ready!: () => void;
+    second.renderer.openGate = new Promise((r) => (ready = r));
+    second.host.handle(open(1));
+    second.host.handle(sheetLabel(2, 2));
+    await new Promise((r) => setTimeout(r, 10));
+    // Both answered before pdf.js has parsed anything.
+    expect(resultOf(second.replies, 1)).toMatchObject({ fromCache: true, pageLabels: ["S-1", "S-2"] });
+    expect(resultOf(second.replies, 2)).toEqual({ label: "FP-301" });
+    expect(second.renderer.textReads).toBe(0);
+    ready();
+    await second.host.idle();
+  });
+
+  it("an entry cached before page labels were stored reads them once pdf.js is ready", async () => {
+    const cache = cached();
+    await cache.putDoc(SHA, { pages: [PAGE_A], content: [null] });
+    const { host, replies, renderer } = setup(cache);
+    renderer.labels = ["X-101 - PLAN"];
+    host.handle(open(1));
+    await host.idle();
+    expect(resultOf(replies, 1)).toMatchObject({ fromCache: true, pageLabels: null });
+    await new Promise((r) => setTimeout(r, 10));
+    expect((await cache.getDoc(SHA))?.pageLabels).toEqual(["X-101 - PLAN"]);
+  });
+
   it("a cache miss on reopen waits for pdf.js, then renders", async () => {
     const cache = cached();
     const first = setup(cache);
@@ -415,5 +488,30 @@ describe("deferredRasterCache", () => {
     expect(await none.getTile("k")).toBeNull();
     expect(await none.getDoc("s")).toBeNull();
     await expect(none.putTile("k", new Blob())).resolves.toBeUndefined();
+  });
+});
+
+describe("RenderWorkerHost: render.sheetLabel", () => {
+  it("detects the page's sheet number from its text, once per page", async () => {
+    const { host, replies, renderer } = setup();
+    renderer.runs = TITLE_RUNS;
+    host.handle(open(1));
+    host.handle(sheetLabel(2));
+    host.handle(sheetLabel(3));
+    await host.idle();
+    expect(resultOf(replies, 2)).toEqual({ label: "FP-301" });
+    expect(resultOf(replies, 3)).toEqual({ label: "FP-301" });
+    expect(renderer.textReads).toBe(1);
+  });
+
+  it("answers null when unsure, and out-of-range for a missing page", async () => {
+    const { host, replies, renderer } = setup();
+    renderer.runs = [{ str: "A101 A102", x: 800, y: 500, width: 60, fontSize: 14 }];
+    host.handle(open(1));
+    host.handle(sheetLabel(2));
+    host.handle(sheetLabel(3, 5));
+    await host.idle();
+    expect(resultOf(replies, 2)).toEqual({ label: null });
+    expect(codeOf(replies, 3)).toBe("out-of-range");
   });
 });

@@ -35,8 +35,12 @@ export interface ViewerState {
   openSeq: number;
   fileName: string | null;
   pageCount: number;
-  /** 0-based; the pager arrives in Story 3.3. */
+  /** 0-based index of the shown page. */
   pageIndex: number;
+  /** Cleaned /PageLabels of the document (null: none worth showing). */
+  pageLabels: string[] | null;
+  /** Sheet numbers detected from page text, by 0-based page (null: none found). */
+  sheetLabels: Record<number, string | null>;
   /** Content flags of the current page, once known. */
   content: ContentFlags | null;
   error: ViewerErrorCode | null;
@@ -60,6 +64,8 @@ const INITIAL: ViewerState = {
   fileName: null,
   pageCount: 0,
   pageIndex: 0,
+  pageLabels: null,
+  sheetLabels: {},
   content: null,
   error: null,
   failedTiles: 0,

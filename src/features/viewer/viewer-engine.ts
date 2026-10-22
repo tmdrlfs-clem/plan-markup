@@ -20,6 +20,13 @@
 // integer device px. That is a tile whenever zoom x dpr is exactly 2^k, and the
 // preview at fit page (fit page snaps to the preview's quantised scale; after a
 // resize the preview is re-rendered for the new fit box).
+//
+// Pages (Story 3.3): one page is shown at a time. goToPage cancels the old
+// page's work, keeps its finished preview in the tile LRU (tiles are keyed by
+// page anyway), shows whatever the new page already has and requests its
+// preview, then tiles. Each page keeps its own view; a page seen for the first
+// time opens at the current fit mode. The sheet number of a page without a
+// page label is detected in the worker on demand (render.sheetLabel).
 
 import {
   DEFAULT_TILE_SIZE,
@@ -57,7 +64,7 @@ import {
   type Rect,
   type ViewState,
 } from "@/core/render/view";
-import type { PageInfo, TilePayload } from "@/workers/render-protocol";
+import type { ContentFlags, PageInfo, TilePayload } from "@/workers/render-protocol";
 import { WorkerRequestError, type RenderClient } from "@/workers/rpc";
 
 import type { ViewerErrorCode, ViewerState } from "./viewer-store";
@@ -91,8 +98,10 @@ export type ViewerEngineOptions = {
 /** "page" / "width" keep the view fitted on resize until the user zooms or pans. */
 export type FitMode = "page" | "width" | null;
 
-/** A raster held by the engine; `bucket` is null for the preview. */
-type Tile = { bitmap: ImageBitmap; bucket: number | null; x: number; y: number; width: number; height: number; scale: number };
+/** A raster held by the engine; `bucket` is null for a preview. `page` is 1-based. */
+type Tile = { bitmap: ImageBitmap; page: number; bucket: number | null; x: number; y: number; width: number; height: number; scale: number };
+
+type PageView = { view: ViewState; fitMode: FitMode };
 
 /** A device-px box: left, top, right, bottom. */
 type Box = { l: number; t: number; r: number; b: number };
@@ -110,8 +119,11 @@ function viewerErrorOf(e: unknown): ViewerErrorCode {
   return "render-failed";
 }
 
-/** The view of each document opened in this session, by sha256 (kept in memory only, AC 6). */
-const documentViews = new Map<string, { view: ViewState; fitMode: FitMode }>();
+/** Each document's current page and per-page views this session, by sha256 (memory only; 3.2 AC 6, 3.3 AC 5). */
+const documentViews = new Map<string, { pageIndex: number; views: Map<number, PageView> }>();
+
+/** LRU key of a page's finished preview while another page is shown. */
+const previewKey = (page: number) => `${page}:preview`;
 
 /** Forgets the remembered views (tests). */
 export function clearDocumentViews(): void {
@@ -127,7 +139,21 @@ export class ViewerEngine {
 
   private viewport: Size = { width: 1, height: 1 };
   private dpr = 1;
+  /** The shown page, or null before a document is open. */
   private page: PageInfo | null = null;
+  private pages: PageInfo[] = [];
+  /** 0-based index of the shown page. */
+  private pageIndex = 0;
+  /** Content flags per page, once its preview has rendered. */
+  private contents: (ContentFlags | null)[] = [];
+  /** The view of every page visited in this document. */
+  private pageViews = new Map<number, PageView>();
+  private pageLabels: string[] | null = null;
+  /** Detected sheet numbers by 0-based page (null: none found). */
+  private sheetLabels: Record<number, string | null> = {};
+  private readonly sheetRequested = new Set<number>();
+  /** The document's first complete frame has been reported (status ready). */
+  private firstFrameShown = false;
   private sha256: string | null = null;
   view: ViewState = { zoom: 1, centerX: 0, centerY: 0, rotation: 0 };
   private fitMode: FitMode = "page";
@@ -136,15 +162,15 @@ export class ViewerEngine {
   private previewFinal = false;
   /** Scale of the preview re-render in flight (fit page after a resize), if any. */
   private previewPending: number | null = null;
-  /** Bumped per open: replies for an older document are dropped. */
+  /** Bumped per open and per page change: replies for an older document or page are dropped. */
   private generation = 0;
   private openReq: number | null = null;
   private previewReq: number | null = null;
   private readonly inflight = new Map<string, number>(); // tile key -> reqId
   /** Failed tiles (key -> bucket); only the target bucket's survive a settle. */
   private readonly failed = new Map<string, number>();
-  /** Cached tiles per bucket, so drawing skips empty buckets. */
-  private readonly bucketCounts = new Map<number, number>();
+  /** Cached tiles per page and bucket, so drawing skips empty buckets. */
+  private readonly bucketCounts = new Map<number, Map<number, number>>();
   /** Tile grid per bucket of the current page. */
   private readonly grids = new Map<number, TileGrid>();
   /** Keys of the tiles the current view needs (the memory warning watches their eviction). */
@@ -167,7 +193,7 @@ export class ViewerEngine {
     this.tileSize = options.tileSize ?? DEFAULT_TILE_SIZE;
     this.cache = new LruByteCache<Tile>(options.budgetBytes ?? 256 * 1024 * 1024, (_k, t) => {
       closeBitmap(t.bitmap);
-      if (t.bucket !== null) this.countTile(t.bucket, -1);
+      if (t.bucket !== null) this.countTile(t.page, t.bucket, -1);
     });
     this.now = options.now ?? (() => performance.now());
     this.requestFrame = options.requestFrame ?? ((cb) => requestAnimationFrame(cb));
@@ -245,19 +271,109 @@ export class ViewerEngine {
       if (this.openReq === open.reqId) this.openReq = null;
     }
     if (generation !== this.generation) return;
-    this.page = opened.pages[0];
+    this.pages = opened.pages;
+    this.contents = opened.pages.map(() => null);
+    this.pageLabels = opened.pageLabels ?? null;
     this.sha256 = opened.sha256;
-    // A document seen before in this session comes back where it was left.
+    // A document seen before in this session comes back to the page and views it was left at.
     const saved = documentViews.get(opened.sha256);
-    this.fitMode = saved ? saved.fitMode : "page";
-    this.view = saved
-      ? saved.fitMode
-        ? this.fittedView(saved.fitMode, saved.view.rotation)
-        : clampView(saved.view, this.page, this.viewport)
-      : this.fittedView("page", 0);
-    this.update({ pageCount: opened.pageCount, pageIndex: 0 });
+    this.pageViews = new Map(saved?.views);
+    this.pageIndex = Math.min(saved?.pageIndex ?? 0, this.pages.length - 1);
+    this.page = this.pages[this.pageIndex];
+    this.fitMode = "page";
+    this.view = this.viewForPage(this.pageIndex, { zoom: 1, centerX: 0, centerY: 0, rotation: 0 });
+    this.update({ pageCount: opened.pageCount, pageIndex: this.pageIndex, pageLabels: this.pageLabels, sheetLabels: {} });
     this.invalidate();
     await this.loadPreview(generation);
+  }
+
+  /**
+   * The view of page `index`: its own view when visited before, otherwise the
+   * current fit mode (fit page by default) at the current view rotation.
+   */
+  private viewForPage(index: number, current: ViewState): ViewState {
+    const saved = this.pageViews.get(index);
+    if (saved) {
+      this.fitMode = saved.fitMode;
+      return saved.fitMode ? this.fittedView(saved.fitMode, saved.view.rotation) : clampView(saved.view, this.page!, this.viewport);
+    }
+    this.fitMode = this.fitMode ?? "page";
+    return this.fittedView(this.fitMode, current.rotation);
+  }
+
+  // ---- pages --------------------------------------------------------------
+
+  /** 0-based index of the shown page. */
+  get currentPage(): number {
+    return this.pageIndex;
+  }
+
+  get pageCount(): number {
+    return this.pages.length;
+  }
+
+  /**
+   * Shows page `index` (0-based; out of range or the current page does nothing).
+   * The old page's tile and preview requests are cancelled, so rapid key
+   * repeats only render the last page fully.
+   */
+  goToPage(index: number): void {
+    if (!this.page || !Number.isInteger(index) || index < 0 || index >= this.pages.length || index === this.pageIndex) return;
+    this.rememberView();
+    const ids = [...this.inflight.values()];
+    if (this.previewReq !== null) ids.push(this.previewReq);
+    this.client.cancel(ids);
+    this.inflight.clear();
+    this.previewReq = null;
+    this.previewPending = null;
+    this.failed.clear();
+    this.grids.clear();
+    this.needed = new Set();
+    this.generation++;
+    // Keep the finished preview (the LRU's budget decides how long); drop an unfinished one.
+    if (this.preview && this.previewFinal) {
+      this.cache.set(previewKey(this.pageNo), this.preview, bitmapBytes(this.preview.width, this.preview.height));
+    } else if (this.preview) {
+      closeBitmap(this.preview.bitmap);
+    }
+    this.pageIndex = index;
+    this.page = this.pages[index];
+    this.preview = this.cache.take(previewKey(this.pageNo)) ?? null;
+    this.previewFinal = this.preview !== null;
+    this.view = this.viewForPage(index, this.view);
+    this.update({ pageIndex: index, content: this.contents[index] ?? null, failedTiles: 0 });
+    this.invalidate();
+    if (this.previewFinal) {
+      this.scheduleSettle(0);
+      this.requestSheetLabel(index);
+    } else {
+      void this.loadPreview(this.generation);
+    }
+  }
+
+  /** 1-based number of the shown page (worker requests and tile keys). */
+  private get pageNo(): number {
+    return this.pageIndex + 1;
+  }
+
+  /** Asks the worker for the sheet number of a page without a page label (once per page). */
+  private requestSheetLabel(index: number): void {
+    const label = this.pageLabels?.[index];
+    if ((label && label !== String(index + 1)) || this.sheetRequested.has(index)) return;
+    this.sheetRequested.add(index);
+    const sha = this.sha256;
+    const call = this.client.request("render.sheetLabel", { page: index + 1 });
+    call.promise.then(
+      ({ label: found }) => {
+        if (this.sha256 !== sha || this.destroyed) return;
+        this.sheetLabels = { ...this.sheetLabels, [index]: found };
+        this.update({ sheetLabels: this.sheetLabels });
+      },
+      () => {
+        // Cancelled or failed: no label; a later visit may ask again.
+        if (this.sha256 === sha) this.sheetRequested.delete(index);
+      },
+    );
   }
 
   /** The rotation-0 fit box in device px: the preview is the fit-page raster whatever the view rotation. */
@@ -276,14 +392,15 @@ export class ViewerEngine {
   }
 
   private async loadPreview(generation: number): Promise<void> {
+    const index = this.pageIndex;
     const call = this.client.request(
       "render.preview",
-      { page: 1, ...this.previewBox(), progressive: true },
+      { page: index + 1, ...this.previewBox(), progressive: true },
       {
         onProgress: ({ tile }) => {
           if (generation !== this.generation || this.previewFinal) return closeBitmap(tile.bitmap);
           this.setPreview(tile);
-          if (this.timingsPartial === null) {
+          if (this.timingsPartial === null && !this.firstFrameShown) {
             this.timingsPartial = this.now() - this.openedAt;
             this.pendingPartial = true;
           }
@@ -293,12 +410,14 @@ export class ViewerEngine {
     this.previewReq = call.reqId;
     try {
       const { tile, content } = await call.promise;
+      if (this.contents.length > index) this.contents[index] = content;
       if (generation !== this.generation) return closeBitmap(tile.bitmap);
       this.setPreview(tile);
       this.previewFinal = true;
-      this.pendingFirstFrame = true;
+      if (!this.firstFrameShown) this.pendingFirstFrame = true;
       this.update({ content });
       this.scheduleSettle(0);
+      this.requestSheetLabel(index);
     } catch (e) {
       if (generation !== this.generation || (e instanceof WorkerRequestError && e.code === "cancelled")) return;
       this.update({ status: "error", error: viewerErrorOf(e) });
@@ -319,7 +438,7 @@ export class ViewerEngine {
       this.client.cancel([this.previewReq]);
     }
     const generation = this.generation;
-    const call = this.client.request("render.preview", { page: 1, ...this.previewBox(), progressive: false });
+    const call = this.client.request("render.preview", { page: this.pageNo, ...this.previewBox(), progressive: false });
     this.previewReq = call.reqId;
     this.previewPending = scale;
     const settle = (): boolean => {
@@ -343,7 +462,7 @@ export class ViewerEngine {
 
   private setPreview(t: TilePayload<ImageBitmap>): void {
     if (this.preview) closeBitmap(this.preview.bitmap);
-    this.preview = { bitmap: t.bitmap, bucket: null, x: t.x, y: t.y, width: t.width, height: t.height, scale: t.scale };
+    this.preview = { bitmap: t.bitmap, page: t.page, bucket: null, x: t.x, y: t.y, width: t.width, height: t.height, scale: t.scale };
     this.invalidate();
   }
 
@@ -368,6 +487,14 @@ export class ViewerEngine {
     this.pendingPartial = false;
     this.timingsPartial = null;
     this.page = null;
+    this.pages = [];
+    this.pageIndex = 0;
+    this.contents = [];
+    this.pageViews = new Map();
+    this.pageLabels = null;
+    this.sheetLabels = {};
+    this.sheetRequested.clear();
+    this.firstFrameShown = false;
     this.sha256 = null;
     this.openReq = null;
     this.previewReq = null;
@@ -379,7 +506,9 @@ export class ViewerEngine {
   }
 
   private rememberView(): void {
-    if (this.sha256 && this.page) documentViews.set(this.sha256, { view: this.view, fitMode: this.fitMode });
+    if (!this.sha256 || !this.page) return;
+    this.pageViews.set(this.pageIndex, { view: this.view, fitMode: this.fitMode });
+    documentViews.set(this.sha256, { pageIndex: this.pageIndex, views: new Map(this.pageViews) });
   }
 
   // ---- view ---------------------------------------------------------------
@@ -493,13 +622,15 @@ export class ViewerEngine {
    * geometries.
    */
   private memKey(bucket: number, col: number, row: number): string {
-    return tileKey(1, bucket, col, row);
+    return tileKey(this.pageNo, bucket, col, row);
   }
 
-  private countTile(bucket: number, delta: 1 | -1): void {
-    const n = (this.bucketCounts.get(bucket) ?? 0) + delta;
-    if (n > 0) this.bucketCounts.set(bucket, n);
-    else this.bucketCounts.delete(bucket);
+  private countTile(page: number, bucket: number, delta: 1 | -1): void {
+    let counts = this.bucketCounts.get(page);
+    if (!counts) this.bucketCounts.set(page, (counts = new Map()));
+    const n = (counts.get(bucket) ?? 0) + delta;
+    if (n > 0) counts.set(bucket, n);
+    else counts.delete(bucket);
   }
 
   /** Tiles of `bucket` intersecting the viewport (plus a `margin` ring), priority-ordered. */
@@ -567,7 +698,7 @@ export class ViewerEngine {
         continue;
       }
       if (this.inflight.has(key) || this.failed.has(key)) continue;
-      this.requestTile(key, { page: 1, bucket, scale: bucketScale(bucket), col: t.col, row: t.row, tileSize: this.tileSize });
+      this.requestTile(key, { page: this.pageNo, bucket, scale: bucketScale(bucket), col: t.col, row: t.row, tileSize: this.tileSize });
     }
     this.invalidate();
   }
@@ -588,10 +719,10 @@ export class ViewerEngine {
         if (generation !== this.generation || this.inflight.get(key) !== call.reqId) return closeBitmap(tile.bitmap);
         this.inflight.delete(key);
         // Counted before set: set's onEvict (replacement or over-budget) uncounts it.
-        this.countTile(payload.bucket, 1);
+        this.countTile(payload.page, payload.bucket, 1);
         const evicted = this.cache.set(
           key,
-          { bitmap: tile.bitmap, bucket: payload.bucket, x: tile.x, y: tile.y, width: tile.width, height: tile.height, scale: tile.scale },
+          { bitmap: tile.bitmap, page: payload.page, bucket: payload.bucket, x: tile.x, y: tile.y, width: tile.width, height: tile.height, scale: tile.scale },
           bitmapBytes(tile.width, tile.height),
         );
         // Eviction had to drop a tile this view needs: the budget cannot hold the view.
@@ -731,12 +862,13 @@ export class ViewerEngine {
     ctx.restore();
   }
 
-  /** Buckets holding tiles, farthest from `target` first and `target` last (on top). */
+  /** The shown page's buckets holding tiles, farthest from `target` first and `target` last (on top). */
   private drawBuckets(target: number): number[] {
+    const counts = this.bucketCounts.get(this.pageNo);
     const order: number[] = [];
-    for (const bucket of this.bucketCounts.keys()) if (bucket !== target) order.push(bucket);
+    if (counts) for (const bucket of counts.keys()) if (bucket !== target) order.push(bucket);
     order.sort((a, b) => Math.abs(b - target) - Math.abs(a - target));
-    if (this.bucketCounts.has(target) || this.failed.size > 0) order.push(target);
+    if (counts?.has(target) || this.failed.size > 0) order.push(target);
     return order;
   }
 
@@ -789,6 +921,7 @@ export class ViewerEngine {
     }
     if (this.pendingFirstFrame) {
       this.pendingFirstFrame = false;
+      this.firstFrameShown = true;
       const firstFrameMs = this.now() - this.openedAt;
       try {
         performance.mark("viewer:first-frame");

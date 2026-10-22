@@ -263,6 +263,15 @@ export class LruByteCache<V> {
     return evicted;
   }
 
+  /** Removes and returns the value without `onEvict`: the caller owns it again. */
+  take(key: string): V | undefined {
+    const entry = this.map.get(key);
+    if (!entry) return undefined;
+    this.map.delete(key);
+    this.total -= entry.bytes;
+    return entry.value;
+  }
+
   delete(key: string): boolean {
     const entry = this.map.get(key);
     if (!entry) return false;

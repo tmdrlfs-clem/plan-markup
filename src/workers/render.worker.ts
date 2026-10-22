@@ -11,6 +11,7 @@
 // when present and wait for pdf.js only on a miss. Rendered tiles are encoded
 // (PNG) and stored after they are posted, never on the critical path.
 
+import { cleanPageLabels, detectSheetLabel, type TextRun } from "@/core/pdf/sheet-label";
 import { quantizeScale, scaleStep, tileGrid, tileRect } from "@/core/render/tiles";
 import { serializeWorkerError } from "@/core/worker/error";
 import {
@@ -22,6 +23,7 @@ import {
   type PreviewPayload,
   type RenderErrorCode,
   type RenderReply,
+  type SheetLabelPayload,
   type TilePayload,
   type TileRequestPayload,
 } from "./render-protocol";
@@ -58,10 +60,21 @@ export interface TileRenderer<B> {
   render(job: TileJob, signal: AbortSignal, onPartial?: (bitmap: B) => void): Promise<RenderedTile<B>>;
   /** Releases a bitmap that will not be posted. */
   release(bitmap: B): void;
+  /** The document's raw page labels (/PageLabels), once opened; null without any. */
+  pageLabels?(): Promise<(string | null)[] | null>;
+  /** The text runs of a page in page space (sheet number detection). */
+  textRuns?(page: number, signal: AbortSignal): Promise<TextRun[]>;
   close(): Promise<void>;
 }
 
-export type DocMeta = { pages: PageInfo[]; content: (ContentFlags | null)[] };
+export type DocMeta = {
+  pages: PageInfo[];
+  content: (ContentFlags | null)[];
+  /** Cleaned page labels (sheet-label.ts cleanPageLabels); absent in entries written before Story 3.3. */
+  pageLabels?: string[] | null;
+  /** Detected sheet numbers by 1-based page (null: none found); pages not yet looked at are absent. */
+  sheetLabels?: Record<string, string | null>;
+};
 
 /** The raster cache as the worker sees it; every method must swallow its own storage errors. */
 export interface RasterCache<B> {
@@ -93,12 +106,15 @@ export async function sha256Hex(bytes: Uint8Array): Promise<string> {
 type Job =
   | { kind: "open"; reqId: number; bytes: Uint8Array; queuedAt: number }
   | { kind: "preview"; reqId: number; payload: PreviewPayload; queuedAt: number }
-  | { kind: "tile"; reqId: number; payload: TileRequestPayload; queuedAt: number };
+  | { kind: "tile"; reqId: number; payload: TileRequestPayload; queuedAt: number }
+  | { kind: "sheetLabel"; reqId: number; payload: SheetLabelPayload; queuedAt: number };
 
 type Doc = {
   sha256: string;
   pages: PageInfo[];
   content: (ContentFlags | null)[];
+  pageLabels: string[] | null;
+  sheetLabels: Record<string, string | null>;
   /** Resolves when pdf.js has parsed the document; rejects with its open error. */
   ready: Promise<void>;
 };
@@ -170,6 +186,9 @@ export class RenderWorkerHost<B> {
       case "render.tile":
         this.queue.push({ kind: "tile", reqId: msg.reqId, payload: msg.payload, queuedAt });
         break;
+      case "render.sheetLabel":
+        this.queue.push({ kind: "sheetLabel", reqId: msg.reqId, payload: msg.payload, queuedAt });
+        break;
     }
     void this.pump();
   }
@@ -198,6 +217,21 @@ export class RenderWorkerHost<B> {
 
   private error(reqId: number | null, e: unknown): void {
     this.post({ type: "error", reqId, code: codeOf(e), error: serializeWorkerError(e) }, []);
+  }
+
+  /** The renderer's page labels, cleaned; null when there are none or they cannot be read. */
+  private async readPageLabels(): Promise<string[] | null> {
+    try {
+      return cleanPageLabels(await this.renderer.pageLabels?.());
+    } catch {
+      return null;
+    }
+  }
+
+  /** Stores the document's metadata in the raster cache (never on the critical path). */
+  private persist(doc: Doc): void {
+    const meta: DocMeta = { pages: doc.pages, content: doc.content, pageLabels: doc.pageLabels, sheetLabels: doc.sheetLabels };
+    void this.cache?.putDoc(doc.sha256, meta).catch(() => undefined);
   }
 
   private async closeDocument(): Promise<void> {
@@ -230,9 +264,10 @@ export class RenderWorkerHost<B> {
     if (job.kind === "open") return this.open(job, signal);
     const doc = this.doc;
     if (!doc) throw new RenderError("no-document", "No document is open");
-    const page = doc.pages[(job.kind === "preview" ? job.payload.page : job.payload.page) - 1];
+    const page = doc.pages[job.payload.page - 1];
     if (!page) throw new RenderError("out-of-range", "Page out of range");
     if (job.kind === "preview") return this.preview(job, doc, page, signal);
+    if (job.kind === "sheetLabel") return this.sheetLabel(job, doc, page, signal);
     return this.tile(job, doc, page, signal);
   }
 
@@ -251,8 +286,33 @@ export class RenderWorkerHost<B> {
     if (cached && cached.pages.length > 0) {
       const ready = loading.then(() => undefined);
       ready.catch(() => undefined); // observed by the jobs that need pdf.js
-      this.doc = { sha256, pages: cached.pages, content: cached.content, ready };
-      const result: OpenResult = { sha256, pageCount: cached.pages.length, pages: cached.pages, fromCache: true };
+      const doc: Doc = {
+        sha256,
+        pages: cached.pages,
+        content: cached.content,
+        pageLabels: cached.pageLabels ?? null,
+        sheetLabels: { ...cached.sheetLabels },
+        ready,
+      };
+      this.doc = doc;
+      // An entry from before page labels were stored: read them once pdf.js is ready, for next time.
+      if (cached.pageLabels === undefined) {
+        void ready
+          .then(() => this.readPageLabels())
+          .then((pageLabels) => {
+            if (this.doc !== doc) return;
+            doc.pageLabels = pageLabels;
+            this.persist(doc);
+          })
+          .catch(() => undefined);
+      }
+      const result: OpenResult = {
+        sha256,
+        pageCount: cached.pages.length,
+        pages: cached.pages,
+        pageLabels: doc.pageLabels,
+        fromCache: true,
+      };
       return this.result(job.reqId, result);
     }
     const pages = await loading;
@@ -263,9 +323,15 @@ export class RenderWorkerHost<B> {
     }
     if (pages.length === 0) throw new RenderError("invalid-pdf", "The document has no pages");
     const content = pages.map(() => null);
-    this.doc = { sha256, pages, content, ready: Promise.resolve() };
-    void this.cache?.putDoc(sha256, { pages, content }).catch(() => undefined);
-    const result: OpenResult = { sha256, pageCount: pages.length, pages, fromCache: false };
+    const pageLabels = await this.readPageLabels();
+    if (stale()) {
+      if (generation === this.generation) await this.renderer.close();
+      throw CANCELLED();
+    }
+    const doc: Doc = { sha256, pages, content, pageLabels, sheetLabels: {}, ready: Promise.resolve() };
+    this.doc = doc;
+    this.persist(doc);
+    const result: OpenResult = { sha256, pageCount: pages.length, pages, pageLabels, fromCache: false };
     this.result(job.reqId, result);
   }
 
@@ -311,8 +377,22 @@ export class RenderWorkerHost<B> {
     doc.content[p.page - 1] = content;
     const tile: TilePayload<B> = { ...base, bitmap: out.bitmap, renderMs: this.now() - t0 };
     this.result(job.reqId, { tile, content }, this.transferOf(out.bitmap));
-    if (this.cache && content) void this.cache.putDoc(doc.sha256, { pages: doc.pages, content: doc.content }).catch(() => undefined);
+    if (content) this.persist(doc);
     this.store(key, out.encoded);
+  }
+
+  /** The page's detected sheet number (cached with the document; text is read once per page). */
+  private async sheetLabel(job: Extract<Job, { kind: "sheetLabel" }>, doc: Doc, page: PageInfo, signal: AbortSignal): Promise<void> {
+    const key = String(job.payload.page);
+    if (key in doc.sheetLabels) return this.result(job.reqId, { label: doc.sheetLabels[key] });
+    await doc.ready;
+    if (signal.aborted) throw CANCELLED();
+    const runs = this.renderer.textRuns ? await this.renderer.textRuns(job.payload.page, signal) : [];
+    if (signal.aborted) throw CANCELLED();
+    const label = detectSheetLabel(runs, page);
+    doc.sheetLabels[key] = label;
+    this.result(job.reqId, { label });
+    if (this.doc === doc) this.persist(doc);
   }
 
   private async tile(job: Extract<Job, { kind: "tile" }>, doc: Doc, page: PageInfo, signal: AbortSignal): Promise<void> {

@@ -619,3 +619,123 @@ describe("canvasStateOf", () => {
     expect(canvasStateOf({ ...base, status: "error", error: "invalid-pdf" })).toBe("render-error");
   });
 });
+
+describe("ViewerEngine: pages (Story 3.3)", () => {
+  const PAGES = [PAGE, { width: 500, height: 1000, rotate: 0 }, { width: 1000, height: 500, rotate: 90 }];
+
+  async function openPages(client: FakeClient, engine: ViewerEngine, pageLabels: string[] | null = null, sha = "multi") {
+    void engine.open(file());
+    await flush();
+    client.last("render.open").resolve({ sha256: sha, pageCount: PAGES.length, pages: PAGES, pageLabels, fromCache: false });
+    await flush();
+  }
+
+  async function resolvePreview(client: FakeClient, scale = 1, content: unknown = null) {
+    client.last("render.preview").resolve({ tile: tilePayload(scale), content });
+    await flush();
+  }
+
+  it("goToPage cancels the old page's work, fits the new page and renders its preview, then tiles", async () => {
+    const { client, engine } = setupRecording();
+    await openPages(client, engine);
+    await resolvePreview(client, 1, { hasVector: true, hasText: false, imageOnly: false });
+    paint();
+    expect(state.status).toBe("ready");
+    engine.zoomBy(2);
+    vi.runAllTimers();
+    const tiles = client.all("render.tile").map((c) => c.reqId);
+    expect(tiles.length).toBeGreaterThan(0);
+    engine.goToPage(1);
+    expect(client.cancelled).toEqual(expect.arrayContaining(tiles));
+    expect(state.pageIndex).toBe(1);
+    expect(state.content).toBeNull(); // page 2's flags are not known yet
+    expect(client.last("render.preview").payload).toMatchObject({ page: 2, progressive: true });
+    expect(engine.currentFitMode).toBe("page");
+    expect(engine.view.zoom).toBeCloseTo((532 - 32) / 1000, 9); // 500 x 1000 page in 1032 x 532
+    await resolvePreview(client, 0.5, { hasVector: false, hasText: false, imageOnly: true });
+    expect(state.content).toMatchObject({ imageOnly: true });
+    expect(state.status).toBe("ready");
+  });
+
+  it("coming back shows the page's kept preview at once and restores its own view", async () => {
+    const { client, engine } = setupRecording();
+    await openPages(client, engine);
+    await resolvePreview(client, 1, { hasVector: true, hasText: false, imageOnly: false });
+    engine.zoomStep(1);
+    const page1View = engine.view;
+    engine.goToPage(1);
+    await resolvePreview(client, 0.5);
+    const previews = client.all("render.preview").length;
+    engine.goToPage(0);
+    expect(client.all("render.preview")).toHaveLength(previews); // kept in the LRU, not re-rendered
+    expect(engine.view).toEqual(page1View);
+    expect(engine.currentFitMode).toBeNull();
+    expect(state.content).toMatchObject({ hasVector: true });
+  });
+
+  it("a page visited first opens at the current fit mode", async () => {
+    const { client, engine } = setupRecording();
+    await openPages(client, engine);
+    await resolvePreview(client);
+    engine.fitWidth();
+    engine.goToPage(1);
+    expect(engine.currentFitMode).toBe("width");
+    expect(engine.view.zoom).toBeCloseTo((1032 - 32) / 500, 9);
+  });
+
+  it("rapid page changes cancel the stale previews: only the last page renders", async () => {
+    const { client, engine } = setupRecording();
+    await openPages(client, engine);
+    await resolvePreview(client);
+    engine.goToPage(1);
+    const second = client.last("render.preview");
+    engine.goToPage(2);
+    expect(client.cancelled).toContain(second.reqId);
+    // A late reply for page 2 is dropped.
+    const late = tilePayload(0.5);
+    second.resolve({ tile: late, content: null });
+    await flush();
+    expect(late.bitmap.close).toHaveBeenCalled();
+    expect(client.last("render.preview").payload).toMatchObject({ page: 3 });
+  });
+
+  it("ignores out-of-range and same-page requests", async () => {
+    const { client, engine } = setupRecording();
+    await openPages(client, engine);
+    await resolvePreview(client);
+    const calls = client.calls.length;
+    for (const i of [-1, 0, 3, 1.5]) engine.goToPage(i);
+    expect(client.calls.length).toBe(calls);
+    expect(engine.currentPage).toBe(0);
+  });
+
+  it("asks the worker for the sheet number of pages without a page label, once each", async () => {
+    const { client, engine } = setupRecording();
+    await openPages(client, engine, ["1", "FP-201", "3"]);
+    await resolvePreview(client);
+    const asked = client.all("render.sheetLabel");
+    expect(asked.map((c) => c.payload)).toEqual([{ page: 1 }]);
+    asked[0].resolve({ label: "S-101" });
+    await flush();
+    expect(state.sheetLabels).toEqual({ 0: "S-101" });
+    expect(state.pageLabels).toEqual(["1", "FP-201", "3"]);
+    engine.goToPage(1); // labelled: nothing to detect
+    await resolvePreview(client);
+    expect(client.all("render.sheetLabel")).toHaveLength(1);
+    engine.goToPage(0); // kept preview: already asked
+    expect(client.all("render.sheetLabel")).toHaveLength(1);
+  });
+
+  it("reopening the document comes back to the page it was left on", async () => {
+    const { client, engine } = setupRecording();
+    await openPages(client, engine);
+    await resolvePreview(client);
+    engine.goToPage(2);
+    await resolvePreview(client);
+    vi.runAllTimers();
+    await openPages(client, engine);
+    expect(engine.currentPage).toBe(2);
+    expect(state.pageIndex).toBe(2);
+    expect(client.last("render.preview").payload).toMatchObject({ page: 3 });
+  });
+});

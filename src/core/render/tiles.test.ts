@@ -183,6 +183,15 @@ describe("tileKey / bitmapBytes", () => {
 });
 
 describe("LruByteCache", () => {
+  it("take removes an entry without onEvict and frees its bytes", () => {
+    const evicted: string[] = [];
+    const cache = new LruByteCache<string>(10, (k) => evicted.push(k));
+    cache.set("a", "A", 4);
+    expect(cache.take("a")).toBe("A");
+    expect([cache.has("a"), cache.bytes, evicted]).toEqual([false, 0, []]);
+    expect(cache.take("a")).toBeUndefined();
+  });
+
   it("evicts least recently used entries by bytes", () => {
     const evicted: string[] = [];
     const cache = new LruByteCache<string>(300, (k) => evicted.push(k));
