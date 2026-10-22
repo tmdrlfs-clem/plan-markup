@@ -51,6 +51,7 @@ Code review of 2026-10-23: 10 findings, all fixed in commit 9982f15 (plus the `d
   - Key docs updated in `tile-cache.ts` and `render.worker.ts`. The in-memory key is `page:bucket:col:row`.
 - [x] [AI-Review][High] **4. Bucket cap** (old MAX_BUCKET 3 = 8x fit): the range is now MIN_BUCKET -8 to MAX_BUCKET 9 (512 device px per point). That is 6400 % at a DPR of up to 6, within the worker's scale limit of 1000.
   - Requests stay limited to the viewport plus a one-tile ring, and the 90 % budget stop is unchanged.
+  - The worker's `render.tile` schema now takes its bucket bounds from `MIN_BUCKET` / `MAX_BUCKET` (it had capped at 8; `render-protocol.test.ts`).
 - [x] [AI-Review][Med] **5. Failure state across buckets**: `failed` maps each key to its bucket. At settle, entries of other buckets are dropped and the alert count is republished, so returning to a bucket re-requests its tiles.
   - A failure that arrives after the view left its bucket is ignored. The hatch is drawn only for the target bucket.
 - [x] [AI-Review][Med] **6. Per-frame cost**:

@@ -29,6 +29,7 @@
 // and reports that scale in the reply.
 
 import { z } from "zod";
+import { MAX_BUCKET, MIN_BUCKET } from "@/core/render/tiles";
 import type { ContentFlags as CoreContentFlags } from "@/core/render/content-flags";
 import type { SerializedWorkerError } from "@/core/worker/error";
 
@@ -118,7 +119,7 @@ export const previewPayloadSchema = z.object({
 });
 export const tilePayloadSchema = z.object({
   page: pageNumber,
-  bucket: z.number().int().min(-8).max(8),
+  bucket: z.number().int().min(MIN_BUCKET).max(MAX_BUCKET),
   scale: positive.max(1000),
   col: index,
   row: index,
