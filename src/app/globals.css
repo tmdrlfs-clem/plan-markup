@@ -137,6 +137,17 @@
   --radius-md: 3px;
   --radius-lg: 4px;
 
+  /* Indeterminate progress bar (canvas loading, UX-DR12). */
+  --animate-progress: progress-slide 1.2s ease-in-out infinite;
+  @keyframes progress-slide {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(300%);
+    }
+  }
+
   /* Workspace type scale. */
   --text-ws-xs: 11px;
   --text-ws-xs--line-height: 1.5;

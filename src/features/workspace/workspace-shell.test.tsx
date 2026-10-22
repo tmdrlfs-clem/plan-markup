@@ -4,7 +4,9 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { hintStore } from "@/components/ui/hint-store";
 import { resetToasts, toastStore } from "@/components/ui/toast-store";
+import { resetViewer, viewerStore } from "@/features/viewer";
 
 import { storageKey } from "./layout-persistence";
 import { BANNER_DISMISSED_KEY } from "./narrow-banner";
@@ -12,6 +14,17 @@ import { WorkspaceShell } from "./workspace-shell";
 
 const signOut = vi.fn<() => Promise<void>>(async () => {});
 vi.mock("@/features/account/actions", () => ({ signOut: () => signOut() }));
+
+// The real viewport starts a render worker (none in jsdom); its own tests cover it.
+vi.mock("@/features/viewer/canvas-viewport", () => ({
+  CanvasViewport: ({ onOpen }: { onOpen: () => void }) => (
+    <div data-testid="canvas-viewport">
+      <button type="button" onClick={onOpen}>
+        Open another file
+      </button>
+    </div>
+  ),
+}));
 
 const USER = { id: "user-1", name: "Sam Drafter", email: "sam@example.com" };
 
@@ -43,6 +56,8 @@ beforeEach(() => {
   localStorage.clear();
   sessionStorage.clear();
   resetToasts();
+  resetViewer();
+  hintStore.setState({ hint: null });
   signOut.mockClear();
 });
 
@@ -232,18 +247,62 @@ describe("opening files", () => {
     expect(zone).toHaveAttribute("data-dragging", "true");
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Drop to open");
     fireEvent.drop(zone, { dataTransfer });
-    expect(zone).not.toHaveAttribute("data-dragging");
+    // A PDF replaces the drop zone with the viewer; a refused file leaves it idle.
+    if (zone.isConnected) expect(zone).not.toHaveAttribute("data-dragging");
   }
 
-  it("a dropped PDF shows the placeholder toast; other files are refused", () => {
+  it("a dropped PDF opens in the viewer: canvas, status bar name and window title", () => {
     setup();
     drop([new File(["%PDF"], "L17 RCP.pdf", { type: "application/pdf" })]);
-    expect(toastStore.getState().visible.map((t) => t.title)).toEqual(["Opening drawings arrives with the viewer."]);
+    expect(viewerStore.getState()).toMatchObject({ status: "loading", fileName: "L17 RCP.pdf" });
+    expect(screen.queryByTestId("drop-zone")).not.toBeInTheDocument();
+    expect(screen.getByTestId("canvas-viewport")).toBeInTheDocument();
+    expect(screen.getByRole("contentinfo")).toHaveTextContent("L17 RCP.pdf");
+    expect(document.title).toBe("L17 RCP.pdf — Plan Markup");
+    expect(toastStore.getState().visible).toHaveLength(0);
+  });
+
+  it("other files are refused with a warning and the workspace stays empty", () => {
+    setup();
     drop([new File(["x"], "notes.txt", { type: "text/plain" })]);
     expect(toastStore.getState().visible.at(-1)).toMatchObject({
       title: "Only PDF files can be opened.",
       variant: "warning",
     });
+    expect(viewerStore.getState().status).toBe("empty");
+    expect(screen.getByRole("contentinfo")).toHaveTextContent("No drawing open");
+  });
+
+  it("several files open the first PDF and say tabs are coming", () => {
+    setup();
+    drop([
+      new File(["x"], "notes.txt", { type: "text/plain" }),
+      new File(["%PDF"], "A.pdf", { type: "application/pdf" }),
+      new File(["%PDF"], "B.pdf", { type: "application/pdf" }),
+    ]);
+    expect(viewerStore.getState().fileName).toBe("A.pdf");
+    expect(toastStore.getState().visible.map((t) => t.title)).toEqual(["Tabs arrive soon — opened A.pdf"]);
+  });
+
+  it("an image-only page shows the HintBar under the toolbar; Dismiss hides it", async () => {
+    const { user } = setup();
+    drop([new File(["%PDF"], "scan.pdf", { type: "application/pdf" })]);
+    act(() => viewerStore.setState({ status: "ready", content: { hasVector: false, hasText: false, imageOnly: true } }));
+    const hint = await screen.findByTestId("hint-bar");
+    expect(hint).toHaveTextContent(
+      "This page is an image — snapping and scale detection are unavailable; calibrate manually",
+    );
+    expect(hint.closest("header")).not.toBeNull();
+    await user.click(within(hint).getByRole("button", { name: "Dismiss" }));
+    expect(screen.queryByTestId("hint-bar")).not.toBeInTheDocument();
+  });
+
+  it("a file error clears the title and status bar name", () => {
+    setup();
+    drop([new File(["junk"], "bad.pdf", { type: "application/pdf" })]);
+    act(() => viewerStore.setState({ status: "error", error: "invalid-pdf" }));
+    expect(screen.getByRole("contentinfo")).toHaveTextContent("No drawing open");
+    expect(document.title).not.toContain("bad.pdf");
   });
 
   it("a file dropped outside the drop zone does not replace the page", () => {

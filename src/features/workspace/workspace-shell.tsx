@@ -2,12 +2,15 @@
 
 import { useCallback, useEffect, useRef, useTransition, type RefObject } from "react";
 import { unstable_rethrow } from "next/navigation";
+import { useStore } from "zustand";
 
+import { HintBar } from "@/components/ui/hint-bar";
 import { Panel } from "@/components/ui/panel";
 import { Toaster } from "@/components/ui/toast";
 import { toast } from "@/components/ui/toast-store";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { signOut } from "@/features/account/actions";
+import { DocumentViewer, viewerStore } from "@/features/viewer";
 
 import { AccountMenu, type WorkspaceUser } from "./account-menu";
 import { EmptyWorkspace } from "./empty-workspace";
@@ -63,6 +66,9 @@ function ShellBody({ user }: { user: WorkspaceUser }) {
   const setBottomSize = useLayout((s) => s.setBottomSize);
   const hideAllPanels = useLayout((s) => s.hideAllPanels);
 
+  const viewerStatus = useStore(viewerStore, (s) => s.status);
+  const fileName = useStore(viewerStore, (s) => s.fileName);
+
   const fileInput = useRef<HTMLInputElement>(null);
   const open = useCallback(() => fileInput.current?.click(), []);
   const [signingOut, startTransition] = useTransition();
@@ -106,6 +112,8 @@ function ShellBody({ user }: { user: WorkspaceUser }) {
         <div data-region="toolbar">
           <WorkspaceToolbar onOpen={open} />
         </div>
+        {/* File-level notices sit in the flow under toolbar row 2, never over the canvas. */}
+        <HintBar />
       </header>
 
       <div className="flex min-h-0 flex-1">
@@ -135,7 +143,11 @@ function ShellBody({ user }: { user: WorkspaceUser }) {
           </div>
         )}
         <main data-region="canvas" tabIndex={-1} className="min-w-0 flex-1 bg-surface-0 focus-ring">
-          <EmptyWorkspace onOpen={open} onOpenFiles={openFiles} recent={[]} />
+          {viewerStatus === "empty" ? (
+            <EmptyWorkspace onOpen={open} onOpenFiles={openFiles} recent={[]} />
+          ) : (
+            <DocumentViewer onOpen={open} onOpenFiles={openFiles} />
+          )}
         </main>
         <aside aria-label="Tools" data-region="tool-rail" className="w-11 shrink-0 border-l border-border bg-surface-2">
           <ToolRail />
@@ -170,7 +182,7 @@ function ShellBody({ user }: { user: WorkspaceUser }) {
         tabIndex={-1}
         className="shrink-0 border-t border-border bg-surface-2 focus-ring"
       >
-        <WorkspaceStatusBar />
+        <WorkspaceStatusBar fileName={viewerStatus === "error" ? null : fileName} />
       </footer>
 
       <input
