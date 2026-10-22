@@ -28,7 +28,9 @@
     "check:types": "node scripts/check-types-drift.mjs",
     "env:local": "node scripts/supabase-env.mjs --write .env.local",
     "admin:create-user": "node --env-file-if-exists=.env.local scripts/admin-create-user.mjs",
-    "spike:btx": "node --import ./scripts/spike-btx/ts-hooks.mjs scripts/spike-btx/run.mjs"
+    "spike:btx": "node --import ./scripts/spike-btx/ts-hooks.mjs scripts/spike-btx/run.mjs",
+    "spike:export": "node --import ./scripts/spike-btx/ts-hooks.mjs scripts/spike-export/run.mjs",
+    "spike:export:sample": "node --import ./scripts/spike-btx/ts-hooks.mjs scripts/spike-export/make-sample.mjs"
   },
   "dependencies": {
     "@cantoo/pdf-lib": "2.11.1",

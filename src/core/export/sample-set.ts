@@ -160,6 +160,8 @@ const base = (id: string, subject: string): { id: string; subject: string; autho
 
 function markups(): Markup[] {
   const r = TEXT_RUNS;
+  const cloudText = textBoxAt(8, 0.4, 0.92, "Check bulkhead", 7);
+  const cloudTextX = round((cloudText[0] + cloudText[2]) / 2);
   return [
     { ...base("pm-line", "Line"), type: "line", from: at(0, 0.05, 0.2), to: at(0, 0.95, 0.8), color: RED, width: 1.5 },
     { ...base("pm-arrow", "Arrow"), type: "arrow", from: at(1, 0.05, 0.2), to: at(1, 0.95, 0.8), endings: ["None", "ClosedArrow"], color: RED, fill: RED, width: 1.5 },
@@ -174,8 +176,9 @@ function markups(): Markup[] {
       type: "cloudPlus",
       points: [at(8, 0.05, 0.05), at(8, 0.5, 0.05), at(8, 0.5, 0.45), at(8, 0.05, 0.45)],
       intensity: 1,
-      textRect: textBoxAt(8, 0.42, 1, "Check bulkhead", 7),
-      leader: [at(8, 0.5, 0.35), at(8, 0.62, 0.58), at(8, 0.62, 0.7)],
+      textRect: cloudText,
+      // Arrow at the cloud edge, knee below the text box, end on the box's bottom edge.
+      leader: [at(8, 0.52, 0.3), [cloudTextX, at(8, 0, 0.55)[1]], [cloudTextX, cloudText[1]]],
       text: "Check bulkhead",
       fontSize: 7,
       textColor: RED,
