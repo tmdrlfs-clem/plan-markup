@@ -1,6 +1,6 @@
 # Story 3.2: Zoom, pan, fit and rotate the view
 
-Status: in-progress
+Status: review
 
 ## Story
 
@@ -54,10 +54,118 @@ so that navigating a large sheet feels instant.
 
 ### Agent Model Used
 
+Claude Opus 5.5 (claude-opus-5-5)
+
 ### Debug Log References
+
+- Local, production build (`next build` + `next start`, E2E_PROD=1, workers 1, Docker + local Supabase): full e2e 36 passed, 1 skipped (the opt-in perf check). `viewer-navigate.spec.ts` 4/4 passed on the first run.
+- **L17 perf check** (`e2e/perf-navigate.spec.ts`, opt-in with `PERF_L17=1`, never in CI). Run once.
+  - Setup: production build, headless Chromium, 1920 x 1080, DPR 1, file `fixtures/private/pdf/A1721-…-Rev.2.pdf`.
+  - Script: 5 s of synthetic wheel input, one event per frame: Ctrl+wheel zoom in, then pan, a 300 ms pause (tiles settle and render), pan again, then Ctrl+wheel zoom out.
+  - Results over 296 frames:
+    - frame time p50 **16.7 ms**, p95 **16.8 ms** (the 5th-percentile frame rate is about 60 fps);
+    - slowest frame 33.3 ms;
+    - **no long task** (the Long Tasks API reported no task of 50 ms or more).
+  - NFR2 asks for at least 30 fps (target 60) and no task over 50 ms.
+- Screenshot: `fixtures/private/traces/3-2-l17-zoom.png` (git-ignored).
+  - View: L17 at 4x fit (bucket 2 exactly: four Ctrl+wheel notches of √2), zoom 172 %.
+  - Reviewed: the tiles are sharp (hairlines, dimension text and hatching are crisp). No seams, gaps or blank tiles at the 512 px tile edges.
 
 ### Completion Notes List
 
+- **Task 1: view transform.** `src/core/render/view.ts` (framework-free).
+  - The view is `{ zoom, centerX, centerY, rotation }`, with the centre in page space.
+  - Page space is pdf.js's viewport at scale 1 with the page's /Rotate applied. It is the space of the tiles and of `PageInfo`.
+  - `pdfToPageMatrix` maps PDF user space into page space exactly like pdf.js `PageViewport`, including /Rotate and view-box offsets.
+  - Also provided:
+    - page↔screen matrices with the view rotation (`pageToScreenMatrix`, inverse, multiply, apply);
+    - `zoomAt` (keeps the point under the cursor fixed);
+    - `stepZoom` (√2) and the 1 %–6400 % clamp;
+    - `fitPageView` / `fitWidthView` (a tall page starts at its top edge);
+    - `clampView` (at least 10 % of the page per axis stays on screen, capped at the viewport);
+    - `zoomToRect`, `visibleBounds`, `zoomPercent`.
+  - Buckets still come from `tiles.ts` (`bucketForScale(zoom, fit)`, `bucketScale(fit, k, dpr)`).
+- **Task 2: input.** `src/features/viewer/viewer-input.ts`.
+  - Pure helpers:
+    - `normalizeWheel`: a line is 40 px, a page is the viewport height, and Shift turns vertical scroll horizontal;
+    - `wheelZoomFactor`: one 100 px notch is one √2 step, so trackpad pinch (a Ctrl wheel) is smooth;
+    - `resolveViewerKey`, which applies the focus rule;
+    - `cursorFor`.
+  - `ViewerInput` registers `wheel` on the canvas only, with `{ passive: false }`. It handles:
+    - drags with pointer capture: Space, the middle button or the Pan tool pan; the Zoom tool zooms in on a click, out on an Alt+click, and to the rectangle on a drag;
+    - suppression of the middle-button autoscroll;
+    - `+` / `-` zoom about the cursor when it is over the canvas, otherwise about the centre.
+  - Tool state lives in the viewer store: `tool` (select / pan / zoom) and `tempPan`. The tool is kept across documents.
+  - The Zoom tool's rubber band is drawn on the active canvas.
+- **Task 3: gesture rendering** (`viewer-engine.ts`, reworked on the new view).
+  - Every view change redraws the bitmaps already held with the live transform, coalesced to one rAF.
+  - After 150 ms idle, the target bucket's tiles are requested, visible first and centre first. Stale requests get `render.cancel`.
+  - All other buckets' cached tiles are drawn underneath, farthest bucket first and the target last, so there is no flash to blank.
+  - Rotation-aware placement: the destination box is rounded to integer device px and the bitmap is turned a quarter about its centre.
+  - Zoom buckets are relative to the rotation-0 fit, so rotating the view never re-renders.
+  - Raster scale quantisation is refined from 1/16 to 1/1024 octave (`SCALE_STEPS_PER_OCTAVE`). At its bucket scale a tile now lands on exactly its own pixel size at integer device px, a 1:1 copy, so hairlines stay one device pixel (AC 4). Unit-tested.
+- **Task 4: commands.**
+  - `viewer-commands.ts`: the mounted viewport registers its engine. `viewerCommands` (zoom in/out, fit page/width, rotate) and `setTool` are exported from the viewer's public index.
+  - Toolbar row 1 enables Zoom out / Zoom in / Fit page / Fit width and adds Rotate view counter-clockwise / clockwise.
+  - The View menu enables its zoom/fit items and adds both rotate items. These items have no keyboard shortcut.
+  - The ToolRail enables Select and Pan with a drawing open, shows the active tool and switches it. Clicking the active tool keeps it.
+  - The other tools stay disabled with "Arrives with the markup editor", or "Open a drawing first" when no drawing is open.
+  - Keys use the viewer's own handler with the canvas-focus rule (AC 3).
+- **Task 5: DPR, memory warning, status bar.**
+  - DPR: a `(resolution: <dpr>dppx)` media query is re-armed after every change, so a window that moves to another monitor re-measures even without a resize. A DPR or fit change cancels in-flight tiles and re-keys them (3.1 review fix).
+  - Memory warning: requests stop once the visible tiles would fill 90 % of the 256 MB budget, so the view never evicts its own tiles. The HintBar warning "This drawing is using a lot of memory — some areas may redraw as you move" shows once per document, and only when that limit is hit or an eviction drops a tile the current view needs.
+  - Status bar: a zoom `StatusBarItem` after the file name. The engine publishes the percent only when it changes.
+  - The view is kept per document (sha256) in memory for the session, not persisted. Reopening the same file comes back to its view, fit mode and rotation.
+- **Task 6: tests.**
+  - Unit tests:
+    - `view.test.ts`: fixed point under zoom for every rotation, fit page/width for portrait, landscape and rotated pages, clamps, pdf.js-compatible /Rotate;
+    - `viewer-input.test.ts`: wheel normalisation, the focus rule, cursors, store tool transitions (Space restores the tool), and DOM-level drags, keys and Zoom tool;
+    - engine tests: settle debounce, priority, stale cancels, old buckets underneath, 1:1 tiles, rotation without re-render, fit modes, rubber band, zoom publishing, per-document view, memory warning;
+    - `viewer-commands.test.ts`, shell tests and the DPR media-query test.
+  - Playwright `e2e/viewer-navigate.spec.ts` on `vector-a3.pdf` covers:
+    - wheel and Shift+wheel scroll, and Ctrl+wheel zoom about the cursor;
+    - Space-drag, cursors, and `+` / `-`, ignored when the focus is off the canvas;
+    - Ctrl+0 / Ctrl+9, the toolbar and the View menu;
+    - rotate both ways;
+    - the Zoom and Pan tools;
+    - `devicePixelRatio` / `visualViewport.scale` unchanged after Ctrl+0 and Ctrl+wheel on the canvas.
+  - The canvas publishes `data-view="zoom centerX centerY rotation"` for e2e and diagnostics.
+  - Suite: 1087 unit tests in 102 files.
+
+**Decisions and deviations (for review):**
+
+1. **Zoom %.** 100 % is 1 pt per CSS px, as the AC says ("actual size at 72 dpi"). pdf.js and some viewers use 96/72 CSS px per pt for 100 %. The clamp is 0.01–64 CSS px per pt.
+2. **Quantisation step.** The Story 3.1 review fix quantised raster scales to 1/16 octave. That left tiles up to 4.4 % oversampled at their bucket scale, which resamples hairlines. 1/1024 octave keeps cache keys consistent and makes tiles 1:1. Cross-window cache hits now need the same fit to within about 0.07 %, which is the "geometry matches" case.
+3. **Window blur.** The listener is on the canvas's `focusout`, not on the window's `blur`: the near-sharp lint guard flags the string "blur". `focusout` also fires when the window loses focus, since the canvas is the focused element whenever Space-pan can be active.
+4. **Focus after commands.** Toolbar and ToolRail clicks move focus to the button. Single-letter keys need the canvas focused again (a click on it), as AC 3 requires.
+
+**Open questions:**
+
+- Desktop Chrome may keep Ctrl+9 for "last tab" before the page sees it. Ctrl+0 is suppressed, and e2e covers both keys in headless Chromium.
+- Touchscreen two-finger pinch/pan (pointer events) is not handled. Trackpad pinch works through Ctrl+wheel.
+- The perf run used synthetic wheel events in headless Chromium at DPR 1. A headed run at DPR 1.5 and on L21 / A0 has not been done.
+
 ### File List
 
+- `_bmad-output/implementation-artifacts/3-2-zoom-pan-fit-and-rotate-the-view.md` (modified)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` (modified)
+- `e2e/perf-navigate.spec.ts` (new: opt-in, local only)
+- `e2e/viewer-navigate.spec.ts` (new)
+- `src/core/render/tiles.ts`, `tiles.test.ts` (modified)
+- `src/core/render/view.ts`, `view.test.ts` (new)
+- `src/features/viewer/canvas-viewport.tsx`, `canvas-viewport.test.tsx`, `document-viewer.tsx`, `index.ts`, `viewer-engine.ts`, `viewer-engine.test.ts`, `viewer-store.ts` (modified)
+- `src/features/viewer/viewer-commands.ts`, `viewer-commands.test.ts`, `viewer-input.ts`, `viewer-input.test.ts` (new)
+- `src/features/workspace/tool-rail.tsx`, `workspace-menu-bar.tsx`, `workspace-shell.tsx`, `workspace-shell.test.tsx`, `workspace-status-bar.tsx`, `workspace-toolbar.tsx` (modified)
+- `src/lib/idb/tile-cache.ts` (modified: key format doc)
+- `src/workers/render.worker.test.ts` (modified: quantisation step)
+
 ### Change Log
+
+- 2026-10-22: Story 3.2 implemented (Claude Opus 5.5). Status → review.
+  - View transform: zoom, centre, rotation; fit page/width; clamps; √2 steps.
+  - Input: wheel, Ctrl+wheel and pinch, Space/middle/Pan-tool drag, Zoom tool, keys with the canvas-focus rule.
+  - Gesture rendering with settle, cancel and old buckets kept underneath; 1:1 tiles at bucket scale.
+  - Toolbar, View menu and ToolRail commands, and view rotation.
+  - DPR re-measure, the memory warning, and the status bar zoom.
+  - Unit tests, the navigation e2e, and the local L17 perf check.
+  - Commits 9542e6f, 0017adb, 822a824, 05496af, ececd7e, 1919aea.
