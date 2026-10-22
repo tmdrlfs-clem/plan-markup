@@ -56,11 +56,11 @@ development_status:
   1-8-empty-workspace-shell: done
   epic-1-retrospective: optional
   # Epic 2: Risk Spikes (A13)
-  epic-2: in-progress
+  epic-2: done
   2-1-spike-btx-parse-and-render: done
   2-2-spike-close-out-irregular-zone-placement-fable: done
   2-3-spike-a0-render-and-500-markup-frame-rate: done
-  2-4-spike-annotation-export-round-trip-in-revu: review
+  2-4-spike-annotation-export-round-trip-in-revu: done
   epic-2-retrospective: optional
   # Epic 3: Open and Navigate Drawings
   epic-3: backlog

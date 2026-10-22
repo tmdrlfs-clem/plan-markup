@@ -3,8 +3,11 @@
 Story 2.4 spike: do exported markups open, and stay editable, in Revu and Acrobat (FR60, FR61,
 NFR41)? This page has the files to check, how each markup type is encoded, the manual checklist
 and the provisional A5 table. The Chrome column was filled by the dev agent from screenshots;
-the Revu and Acrobat columns (`?`) are for the founder. The A5 table is finalised in a follow-up
-commit once the founder's results are in.
+the Revu and Acrobat columns (`?`) were for the founder.
+
+**Founder result (2026-10-22):** all four files opened in Revu 21 and Acrobat and the founder
+reported no problems ("okay"). No per-cell results were recorded, so the `?` cells below stay
+open; Epic 8 (Stories 8.1/8.2) re-runs this checklist cell by cell before release (NFR41).
 
 ## How to run
 
@@ -176,12 +179,15 @@ cannot edit existing annotations and has no layer panel, so only "vis" applies t
 | flattened.pdf, 21 | hyperlink still clickable | – (Link present, not clicked) | ? | ? |
 | flattened.pdf, 32 | white-out covers "TEMP NOTE" (text is still selectable underneath: expected) | ✓ | ? | ? |
 
-## A5 table (provisional)
+## A5 table (final for the spike)
 
 "Native" = standard annotation, editable elsewhere; "appearance-only" = `/Stamp` with `/AP`
 only (visible, movable, not editable as its type); "forced flatten" = always drawn into the page.
-Provisional until the founder's Revu/Acrobat results; reasoning is the ISO 32000 fit and the
-Chrome/pdf.js result (all types visible, flatten identical at 0 px).
+Accepted after the founder's overall OK in Revu and Acrobat; reasoning is the ISO 32000 fit and the
+Chrome/pdf.js result (all types visible, flatten identical at 0 px). Revu keys: write the
+observed count form (`/IT /PolygonCount` + count keys) and `/FillOpacity`; do **not** add guessed
+`/BBMeasure` keys to other measurement types until a per-cell Revu check shows they help.
+Fallbacks marked below are re-checked cell by cell in Epic 8.
 
 | Type | Mode | Reasoning / fallback |
 | --- | --- | --- |

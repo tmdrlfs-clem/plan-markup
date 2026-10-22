@@ -1,6 +1,6 @@
 # Story 2.4: Spike — annotation export round-trip in Revu
 
-Status: review
+Status: done
 
 ## Story
 
@@ -67,6 +67,8 @@ Claude Opus 5.5 (claude-opus-5-5)
   Linux, e2e, gitleaks); Database run 39708496971: success.
 
 ### Completion Notes List
+
+- 2026-10-22: founder opened all four files in Revu 21 and Acrobat and reported no problems (no per-cell results). A5 table accepted; per-cell checklist re-run deferred to Epic 8 (8.1/8.2). Closed without a separate code review (spike; `src/core/export` is reviewed when Epic 8 builds on it).
 
 - `src/core/pdf/` (new, shared): content-stream helpers moved out of `src/core/btx/appearance.ts`
   (re-exported there, btx tests unchanged), Helvetica AFM widths, a plain PDF value model with
