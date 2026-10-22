@@ -1,6 +1,6 @@
 # Story 2.3: Spike — A0 render and 500-markup frame rate
 
-Status: in-progress
+Status: done
 
 ## Story
 
@@ -24,7 +24,7 @@ so that NFR1 and NFR2 are achievable with the chosen render architecture.
 - [x] **Task 4: Viewer prototype page**: a dev-only route `src/app/(spike)/spike/render/page.tsx` that calls `notFound()` when `process.env.NODE_ENV === "production"` (and is excluded from the proxy auth requirement only in development if needed — do not weaken production auth). It loads a fixture via `<input type="file">` and, in development only, via `?fixture=<name>` from a dev-only route handler that streams files from `fixtures/private/pdf/` (whitelisted names, 404 in production). Canvas stack per architecture: (1) tile canvas (draws `ImageBitmap`s), (2) static markups canvas, (3) active canvas (hover highlight), all sized to the viewport × DPR. Pan with drag/wheel, zoom with Ctrl+wheel around the cursor; during a gesture scale the existing tiles (no re-render) and request new tiles when the gesture settles (~150 ms).
 - [x] **Task 5: 500 markups**: generate 500 seeded synthetic markups in PDF user space (mix: rectangles, clouds-like polylines with arcs, lines with arrowheads, text labels, 66-style sprinkler symbols as small circles+crosses). Draw them in one pass per frame on the static canvas with viewport culling via `rbush` 4.0.1 (pin exact, already in the architecture) and redraw only on view change; hover hit-test via the same index. No React state per markup.
 - [x] **Task 6: Measurement harness**: `scripts/spike-render/measure.mjs` (Playwright, headed Chromium, viewport 1920×1080, DPR 1 and 1.5 if feasible): for each fixture — open and time first low-res tile painted (page sets `performance.mark`s), then a scripted pan sequence (5 s) and zoom sequence (in 4 buckets and out) with 500 markups, collecting frame times via `requestAnimationFrame` deltas in the page and long tasks via `PerformanceObserver('longtask')`, plus a CDP trace saved to `fixtures/private/traces/<fixture>.json`. Run each fixture 3 times; report median. Exit 0 always (it is a measurement).
-- [ ] **Task 7: Report** (AC 4): numbers per fixture (first frame, fps p50/p5 for pan and zoom, longest main-thread task, worker tile render times per bucket, peak JS heap / tile cache bytes), recommended tile size (compare 256 / 512 / 1024 if time allows), zoom buckets, eviction budget, which pdf.js worker setup to use, risks and the decision.
+- [x] **Task 7: Report** (AC 4): numbers per fixture (first frame, fps p50/p5 for pan and zoom, longest main-thread task, worker tile render times per bucket, peak JS heap / tile cache bytes), recommended tile size (compare 256 / 512 / 1024 if time allows), zoom buckets, eviction budget, which pdf.js worker setup to use, risks and the decision.
 - [x] **Task 8: Tests**: unit tests for `tiles.ts` (buckets, visible set, priority, LRU eviction by bytes) and the worker message handler (with a stubbed renderer). No e2e in CI for the spike page (private fixtures); add one Playwright check only that `/spike/render` is 404 in a production build if that is cheap, otherwise a unit test of the guard.
 
 ## Dev Notes
@@ -67,13 +67,22 @@ Claude Opus 5.5 (claude-opus-5-5)
 
 ### Completion Notes List
 
-- Tasks 1-6 and 8 done. Task 7 (report) waits on the full measurement run (see Debug Log).
+- All tasks done. Report: `docs/spikes/2-3-render-report.md`. Decision: go for L17-class
+  drawings and frame rate (L17 production: first frame 1.67 s median, ~60 fps pan/zoom, longest
+  main-thread task 14 ms); change for very heavy A0 (progressive preview + IndexedDB raster cache
+  by sha256, optional upload-time thumbnail) in Epic 3. The synthetic A0 fail (~4.9 s, dev) is an
+  upper-bound stress result.
+- Founder note (2026-10-22): measurement rerun waived; unmeasured items (L21, DPR 1.5, tile size
+  256/512/1024 comparison, A0 on a production build) deferred to Epic 3. Story closed as done
+  without code review (spike); the kept code (`src/core/render/tiles.ts`, render worker protocol)
+  is reviewed in Epic 3.
 - Deviation: the spike page/routes also open in a local production build with
   PLAN_MARKUP_LOCAL_SPIKE=1 on a loopback host (for minified-React timing); default production 404s
   (and the proxy still requires a session). CSP unchanged; no `wasm-unsafe-eval` added.
 
 ### File List
 
+- docs/spikes/2-3-render-report.md
 - fixtures/README.md
 - next.config.ts
 - scripts/spike-render/make-a0.mjs, inspect-fixtures.mjs, measure.mjs
@@ -87,4 +96,5 @@ Claude Opus 5.5 (claude-opus-5-5)
 
 ### Change Log
 
-- 2026-10-22: Tasks 1-6, 8 implemented (069b79b..33ac670); measurement and report pending.
+- 2026-10-22: Tasks 1-6, 8 implemented (069b79b..33ac670).
+- 2026-10-22: Report written from the existing measurements (rerun waived by the founder); story done.
