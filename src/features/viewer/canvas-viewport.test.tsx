@@ -76,6 +76,39 @@ describe("CanvasViewport", () => {
     expect(onOpen).toHaveBeenCalledTimes(1);
   });
 
+  it("re-measures at the new devicePixelRatio when the window moves to another monitor", () => {
+    const queries: { media: string; listeners: Set<() => void> }[] = [];
+    const original = window.matchMedia;
+    window.matchMedia = ((media: string) => {
+      const q = { media, listeners: new Set<() => void>() };
+      queries.push(q);
+      return {
+        media,
+        matches: true,
+        addEventListener: (_: string, fn: () => void) => q.listeners.add(fn),
+        removeEventListener: (_: string, fn: () => void) => q.listeners.delete(fn),
+      };
+    }) as unknown as typeof window.matchMedia;
+    Object.defineProperty(window, "devicePixelRatio", { configurable: true, value: 1 });
+    try {
+      openDocument(new File(["%PDF"], "a.pdf"));
+      const { unmount } = setup();
+      const tiles = screen.getByTestId("tiles-canvas") as HTMLCanvasElement;
+      expect(tiles.width).toBe(1); // jsdom lays out nothing: 1 CSS px x DPR 1
+      expect(queries.at(-1)?.media).toBe("(resolution: 1dppx)");
+      Object.defineProperty(window, "devicePixelRatio", { configurable: true, value: 2 });
+      act(() => queries.at(-1)?.listeners.forEach((fn) => fn()));
+      expect(tiles.width).toBe(2);
+      expect(queries.at(-1)?.media).toBe("(resolution: 2dppx)"); // re-armed for the next change
+      expect(queries.at(-2)?.listeners.size).toBe(0);
+      unmount();
+      expect(queries.at(-1)?.listeners.size).toBe(0);
+    } finally {
+      window.matchMedia = original;
+      Object.defineProperty(window, "devicePixelRatio", { configurable: true, value: 1 });
+    }
+  });
+
   it("offers Retry when tiles failed", () => {
     openDocument(new File(["%PDF"], "a.pdf"));
     setup();
