@@ -9,6 +9,17 @@
 // wire up (ExtGState, image XObject, standard-14 font).
 
 import {
+  colorOp,
+  ellipsePath,
+  fmt,
+  lineEnding,
+  literalText,
+  normalizeRect,
+  nums,
+  type Box,
+  type Pt,
+} from "../pdf/content";
+import {
   dictGet,
   getDict,
   getName,
@@ -19,7 +30,8 @@ import {
   type PdfDict,
 } from "./pdf-object";
 
-export type Box = [number, number, number, number];
+export type { Box } from "../pdf/content";
+export { colorOp, ellipsePath, fmt, lineEnding, literalText, normalizeRect } from "../pdf/content";
 
 export type GeneratedAppearance = {
   bbox: Box;
@@ -47,37 +59,6 @@ export function hasAppearance(dict: PdfDict): boolean {
   if (!ap) return false;
   const n = dictGet(ap, "N");
   return n !== undefined && n !== null;
-}
-
-// ---------------------------------------------------------------- formatting
-
-/** Compact number for content streams (max 4 decimals, no exponent). */
-export function fmt(n: number): string {
-  if (!Number.isFinite(n)) return "0";
-  const r = Math.round(n * 10000) / 10000;
-  if (Object.is(r, -0) || r === 0) return "0";
-  let s = r.toFixed(4);
-  s = s.replace(/0+$/, "").replace(/\.$/, "");
-  return s;
-}
-
-function nums(...ns: number[]): string {
-  return ns.map(fmt).join(" ");
-}
-
-export function normalizeRect(r: number[] | undefined): Box | undefined {
-  if (!r || r.length < 4) return undefined;
-  const [a, b, c, d] = r as [number, number, number, number];
-  return [Math.min(a, c), Math.min(b, d), Math.max(a, c), Math.max(b, d)];
-}
-
-/** Colour operator for a /C or /IC array; undefined when empty/absent (transparent). */
-export function colorOp(c: number[] | undefined, stroke: boolean): string | undefined {
-  if (!c || c.length === 0) return undefined;
-  if (c.length === 1) return `${nums(c[0]!)} ${stroke ? "G" : "g"}`;
-  if (c.length === 3) return `${nums(c[0]!, c[1]!, c[2]!)} ${stroke ? "RG" : "rg"}`;
-  if (c.length === 4) return `${nums(c[0]!, c[1]!, c[2]!, c[3]!)} ${stroke ? "K" : "k"}`;
-  return undefined;
 }
 
 type Border = { width: number; dash: number[] | undefined };
@@ -146,26 +127,6 @@ class Ops {
   }
 }
 
-// Bézier constant for a quarter ellipse.
-const KAPPA = 0.5522847498;
-
-export function ellipsePath(x0: number, y0: number, x1: number, y1: number): string {
-  const cx = (x0 + x1) / 2;
-  const cy = (y0 + y1) / 2;
-  const rx = (x1 - x0) / 2;
-  const ry = (y1 - y0) / 2;
-  const ox = rx * KAPPA;
-  const oy = ry * KAPPA;
-  return [
-    `${nums(cx + rx, cy)} m`,
-    `${nums(cx + rx, cy + oy, cx + ox, cy + ry, cx, cy + ry)} c`,
-    `${nums(cx - ox, cy + ry, cx - rx, cy + oy, cx - rx, cy)} c`,
-    `${nums(cx - rx, cy - oy, cx - ox, cy - ry, cx, cy - ry)} c`,
-    `${nums(cx + ox, cy - ry, cx + rx, cy - oy, cx + rx, cy)} c`,
-    "h",
-  ].join("\n");
-}
-
 /** Paint operator for the current path. */
 function paintOp(fill: boolean, stroke: boolean): string {
   if (fill && stroke) return "B";
@@ -217,63 +178,6 @@ function shapeAppearance(dict: PdfDict, rect: Box, circle: boolean): GeneratedAp
   ops.push(circle ? ellipsePath(x0, y0, x1, y1) : `${nums(x0, y0, x1 - x0, y1 - y0)} re`);
   ops.push(paintOp(fill, stroke));
   return ops.result(rect);
-}
-
-// ---------------------------------------------------------------- line endings
-
-type Pt = [number, number];
-
-/**
- * Path ops for a line ending at `tip`, pointing away from `from`. Returns
- * [ops, closedFill]: closed endings are filled with the interior colour.
- */
-export function lineEnding(style: string, tip: Pt, from: Pt, width: number): { ops: string; closed: boolean } | undefined {
-  const dx = tip[0] - from[0];
-  const dy = tip[1] - from[1];
-  const len = Math.hypot(dx, dy) || 1;
-  const ux = dx / len;
-  const uy = dy / len;
-  // Perpendicular.
-  const px = -uy;
-  const py = ux;
-  const size = Math.max(3 * width, 3);
-  const at = (along: number, across: number): Pt => [tip[0] + ux * along + px * across, tip[1] + uy * along + py * across];
-  const p = (pt: Pt) => nums(pt[0], pt[1]);
-  switch (style) {
-    case "OpenArrow":
-    case "ClosedArrow": {
-      const a = at(-size * 2, size);
-      const b = at(-size * 2, -size);
-      const closed = style === "ClosedArrow";
-      return { ops: `${p(a)} m\n${p(tip)} l\n${p(b)} l${closed ? "\nh" : ""}`, closed };
-    }
-    case "ROpenArrow":
-    case "RClosedArrow": {
-      const a = at(size * 2, size);
-      const b = at(size * 2, -size);
-      const closed = style === "RClosedArrow";
-      return { ops: `${p(a)} m\n${p(tip)} l\n${p(b)} l${closed ? "\nh" : ""}`, closed };
-    }
-    case "Butt":
-      return { ops: `${p(at(0, size))} m\n${p(at(0, -size))} l`, closed: false };
-    case "Slash":
-      return { ops: `${p(at(size * 0.5, size))} m\n${p(at(-size * 0.5, -size))} l`, closed: false };
-    case "Square": {
-      const s = size;
-      return {
-        ops: `${p(at(-s, s))} m\n${p(at(s, s))} l\n${p(at(s, -s))} l\n${p(at(-s, -s))} l\nh`,
-        closed: true,
-      };
-    }
-    case "Diamond": {
-      const s = size;
-      return { ops: `${p(at(0, s))} m\n${p(at(s, 0))} l\n${p(at(0, -s))} l\n${p(at(-s, 0))} l\nh`, closed: true };
-    }
-    case "Circle":
-      return { ops: ellipsePath(tip[0] - size, tip[1] - size, tip[0] + size, tip[1] + size), closed: true };
-    default:
-      return undefined; // None and unknown styles
-  }
 }
 
 function pointsOf(flat: number[]): Pt[] {
@@ -368,19 +272,6 @@ export function parseDefaultAppearance(da: string | undefined): { color: number[
   const g = /(?:^|\s)([\d.]+)\s+g(?:\s|$)/.exec(da);
   if (rg) out.color = [Number(rg[1]), Number(rg[2]), Number(rg[3])];
   else if (g) out.color = [Number(g[1])];
-  return out;
-}
-
-/** Escapes text for a literal string in WinAnsi (non-Latin-1 → "?"). */
-export function literalText(s: string): string {
-  let out = "";
-  for (const ch of s) {
-    const c = ch.codePointAt(0)!;
-    if (ch === "(" || ch === ")" || ch === "\\") out += `\\${ch}`;
-    else if (c < 0x20 || c > 0xff) out += c < 0x20 ? " " : "?";
-    else if (c > 0x7e) out += `\\${c.toString(8).padStart(3, "0")}`;
-    else out += ch;
-  }
   return out;
 }
 

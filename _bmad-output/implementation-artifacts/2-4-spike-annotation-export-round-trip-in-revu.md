@@ -1,6 +1,6 @@
 # Story 2.4: Spike — annotation export round-trip in Revu
 
-Status: ready-for-dev
+Status: in-progress
 
 ## Story
 
