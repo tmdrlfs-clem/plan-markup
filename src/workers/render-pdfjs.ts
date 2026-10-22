@@ -77,13 +77,42 @@ type FontScope = { fonts?: unknown };
 const PARTIAL_FIRST_MS = 300;
 const PARTIAL_EVERY_MS = 500;
 
-let parserWorker: Worker | null = null;
+/** The live parser worker and a promise that rejects when it fails. */
+export type ParserSlot = { worker: Worker; failed: Promise<never> };
 
-/** Starts pdf.js's parser worker once per realm (pdf.js keeps using the same port). */
-function ensureParserWorker(assetBase: string): void {
-  if (parserWorker) return;
-  parserWorker = new Worker(`${assetBase}build/pdf.worker.min.mjs`, { type: "module" });
-  GlobalWorkerOptions.workerPort = parserWorker;
+type ParserWorkerLike = Pick<Worker, "addEventListener" | "terminate">;
+
+let parser: ParserSlot | null = null;
+
+/**
+ * Starts pdf.js's parser worker (once per realm: pdf.js keeps using the same
+ * port). If it fails (an `error` event: it could not load, or crashed), it is
+ * terminated, `failed` rejects so the current task fails instead of hanging,
+ * and the next call starts a new worker on a fresh port.
+ */
+export function ensureParserWorker(
+  assetBase: string,
+  create: (url: string) => ParserWorkerLike = (url) => new Worker(url, { type: "module" }),
+  setPort: (port: Worker | null) => void = (port) => {
+    GlobalWorkerOptions.workerPort = port;
+  },
+): ParserSlot {
+  if (parser) return parser;
+  const worker = create(`${assetBase}build/pdf.worker.min.mjs`) as Worker;
+  let fail!: (e: RenderError) => void;
+  const failed = new Promise<never>((_, reject) => (fail = reject));
+  failed.catch(() => undefined); // observed by the tasks that race it
+  const slot: ParserSlot = { worker, failed };
+  worker.addEventListener("error", () => {
+    if (parser !== slot) return;
+    parser = null;
+    setPort(null);
+    worker.terminate();
+    fail(new RenderError("render-failed", "The PDF parser worker failed"));
+  });
+  parser = slot;
+  setPort(worker);
+  return slot;
 }
 
 /** Maps pdf.js open failures to protocol codes. */
@@ -112,13 +141,15 @@ function flagsOf(task: unknown): ContentFlags | null {
 export class PdfjsTileRenderer implements TileRenderer<ImageBitmap> {
   private task: PDFDocumentLoadingTask | null = null;
   private doc: PDFDocumentProxy | null = null;
-  private readonly pages = new Map<number, PDFPageProxy>();
+  private pages = new Map<number, PDFPageProxy>();
+  /** Rejects when the parser worker of the open document fails. */
+  private parserFailed: Promise<never> | null = null;
 
   /** `assetBase` is an absolute URL ending in "/" (pdfjsAssetBase). */
   constructor(private readonly assetBase: string) {}
 
   async open(bytes: Uint8Array): Promise<PageInfo[]> {
-    ensureParserWorker(this.assetBase);
+    const { failed } = ensureParserWorker(this.assetBase);
     const fontScope: FontScope = { fonts: (globalThis as FontScope).fonts };
     const task = getDocument({
       data: bytes,
@@ -140,18 +171,26 @@ export class PdfjsTileRenderer implements TileRenderer<ImageBitmap> {
       verbosity: 0,
     } as Parameters<typeof getDocument>[0]);
     this.task = task;
+    this.parserFailed = failed;
     try {
-      this.doc = await task.promise;
+      // Local state only until the end: a close() or newer open() may run meanwhile.
+      const doc = await Promise.race([task.promise, failed]);
+      const pages = new Map<number, PDFPageProxy>();
       const out: PageInfo[] = [];
-      for (let i = 1; i <= this.doc.numPages; i++) {
-        const page = await this.doc.getPage(i);
-        this.pages.set(i, page);
+      for (let i = 1; i <= doc.numPages; i++) {
+        const page = await Promise.race([doc.getPage(i), failed]);
+        pages.set(i, page);
         const vp = page.getViewport({ scale: 1 });
         out.push({ width: vp.width, height: vp.height, rotate: page.rotate });
       }
+      if (this.task !== task) throw new RenderError("cancelled", "Superseded by another open or a close");
+      this.doc = doc;
+      this.pages = pages;
       return out;
     } catch (e) {
       if (this.task === task) await this.close();
+      else void task.destroy().catch(() => undefined);
+      if (e instanceof RenderError) throw e;
       throw openError(e);
     }
   }
@@ -195,7 +234,7 @@ export class PdfjsTileRenderer implements TileRenderer<ImageBitmap> {
     signal.addEventListener("abort", onAbort, { once: true });
     try {
       if (signal.aborted) task.cancel();
-      await task.promise;
+      await (this.parserFailed ? Promise.race([task.promise, this.parserFailed]) : task.promise);
     } finally {
       signal.removeEventListener("abort", onAbort);
     }
@@ -210,10 +249,11 @@ export class PdfjsTileRenderer implements TileRenderer<ImageBitmap> {
   }
 
   async close(): Promise<void> {
-    this.pages.clear();
+    this.pages = new Map();
     const task = this.task;
     this.task = null;
     this.doc = null;
-    await task?.destroy();
+    this.parserFailed = null;
+    await task?.destroy().catch(() => undefined);
   }
 }

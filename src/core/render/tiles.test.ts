@@ -8,6 +8,9 @@ import {
   bucketForScale,
   bucketScale,
   fitScale,
+  quantizeScale,
+  scaleStep,
+  stepScale,
   tileGrid,
   tileKey,
   tileRect,
@@ -29,6 +32,28 @@ describe("fitScale", () => {
 
   it("rejects an empty page", () => {
     expect(() => fitScale({ width: 0, height: 10 }, HD)).toThrow(RangeError);
+  });
+});
+
+describe("scale quantisation", () => {
+  it("rounds up to steps of 2^(1/16), keeping exact steps (and float noise) on their step", () => {
+    expect(scaleStep(1)).toBe(0);
+    expect(scaleStep(2)).toBe(16);
+    expect(scaleStep(0.5)).toBe(-16);
+    expect(scaleStep(2 * (1 + 1e-9))).toBe(16);
+    expect(scaleStep(1.01)).toBe(1);
+    expect(stepScale(16)).toBe(2);
+    for (const s of [0.137, 0.5, 0.9, 1.3, 7.77]) {
+      const q = quantizeScale(s);
+      expect(q).toBeGreaterThanOrEqual(s);
+      expect(q / s).toBeLessThan(2 ** (1 / 16) + 1e-9);
+      expect(quantizeScale(q)).toBe(q);
+    }
+  });
+
+  it("maps nearby scales (slightly different windows) to the same step", () => {
+    expect(scaleStep(0.641)).toBe(scaleStep(0.645));
+    expect(() => scaleStep(0)).toThrow(RangeError);
   });
 });
 

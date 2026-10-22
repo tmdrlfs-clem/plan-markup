@@ -64,7 +64,7 @@ development_status:
   epic-2-retrospective: optional
   # Epic 3: Open and Navigate Drawings
   epic-3: in-progress
-  3-1-open-a-local-pdf-and-see-the-first-page-fast: review
+  3-1-open-a-local-pdf-and-see-the-first-page-fast: done
   3-2-zoom-pan-fit-and-rotate-the-view: ready-for-dev
   3-3-page-pager-and-page-keys: backlog
   3-4-thumbnails-panel: backlog

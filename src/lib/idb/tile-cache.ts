@@ -1,14 +1,25 @@
-// IndexedDB raster cache (Story 3.1, NFR1 reopen): encoded tiles keyed by
-// sha256 + page + bucket + tile, and per-document page sizes, so a reopen
-// paints before pdf.js has parsed anything. Used from the render worker.
+// IndexedDB raster cache (Story 3.1, NFR1 reopen): encoded tiles and previews,
+// and per-document page sizes, so a reopen paints before pdf.js has parsed
+// anything. Used from the render worker.
 //
-// Best effort by design: every storage call is wrapped, and any failure
-// (private mode, quota, a blocked or broken database) turns into "no cache"
-// without an error reaching the user. Bounded by a byte budget with
-// least-recently-used eviction.
+// Best effort by design: every storage call is wrapped and no error reaches
+// the user. A failed call is a miss (reads) or is skipped (writes); a quota
+// error on a write evicts and retries once. Only a database that cannot be
+// opened in time, or that must close for another tab (versionchange) or was
+// terminated by the browser, disables the cache. Bounded by a byte budget with
+// least-recently-used eviction. Writes that change the byte total (put and
+// evict) run one at a time on a promise chain.
+//
+// Key format (built by src/workers/render.worker.ts):
+//   tiles:   `<sha256>:<page>:s<step>:<tileSize>:<col>:<row>`
+//   preview: `<sha256>:<page>:preview:s<step>`
+// <page> is 1-based; <step> is the quantised device scale step
+// (src/core/render/tiles.ts scaleStep: 2^(step/16) device px per point). The
+// stored pixels therefore always match the key's geometry, and windows whose
+// fit lands on the same step share entries. Documents are keyed by sha256.
 //
 // The storage is behind `TileCacheBackend`, so the policy (budget, LRU, error
-// swallowing) is tested with the in-memory backend; IndexedDB is the browser one.
+// handling) is tested with the in-memory backend; IndexedDB is the browser one.
 
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
 
@@ -17,6 +28,14 @@ export const DEFAULT_TILE_CACHE_BUDGET = 512 * 1024 * 1024;
 const EVICT_TO = 0.9;
 /** A read refreshes an entry's recency at most this often (avoids a write per read). */
 const TOUCH_AFTER_MS = 60_000;
+/** On a quota error, evict down to this share of the current total, then retry once. */
+const QUOTA_EVICT_TO = 0.5;
+/** openTileCache gives up (no cache) when IndexedDB has not opened by then. */
+export const OPEN_TIMEOUT_MS = 2000;
+
+function isQuotaError(e: unknown): boolean {
+  return (e as { name?: unknown } | null)?.name === "QuotaExceededError";
+}
 
 export type TileRecord = { key: string; blob: Blob; size: number; lastAccess: number };
 export type TileAge = { key: string; size: number; lastAccess: number };
@@ -37,9 +56,11 @@ export type TileCacheOptions = { budgetBytes?: number; now?: () => number };
 export class TileCache {
   readonly budget: number;
   private readonly now: () => number;
-  /** Known total bytes, computed on the first write. */
+  /** Known total bytes, computed lazily inside the write chain (null = unknown). */
   private total: number | null = null;
-  private broken = false;
+  private disabled = false;
+  /** Serialises put/evict so concurrent writes never race on `total`. */
+  private writes: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly backend: TileCacheBackend,
@@ -49,17 +70,22 @@ export class TileCache {
     this.now = now;
   }
 
-  /** False once a storage call failed: the cache then answers misses and stores nothing. */
+  /** False once the cache was disabled: it then answers misses and stores nothing. */
   get usable(): boolean {
-    return !this.broken;
+    return !this.disabled;
   }
 
+  /** Stops using the storage for good (the database closed or must close). */
+  disable(): void {
+    this.disabled = true;
+  }
+
+  /** Runs one storage call; its failure is that call's miss or no-op, never fatal. */
   private async guard<T>(fallback: T, fn: () => Promise<T>): Promise<T> {
-    if (this.broken) return fallback;
+    if (this.disabled) return fallback;
     try {
       return await fn();
     } catch {
-      this.broken = true;
       return fallback;
     }
   }
@@ -69,33 +95,57 @@ export class TileCache {
       const record = await this.backend.getTile(key);
       if (!record) return null;
       const now = this.now();
-      if (now - record.lastAccess >= TOUCH_AFTER_MS) await this.backend.touchTile(key, now);
+      // Recency is a hint: refresh it off the hot path and ignore failures.
+      if (now - record.lastAccess >= TOUCH_AFTER_MS) void this.backend.touchTile(key, now).catch(() => undefined);
       return record.blob;
     });
   }
 
-  async putTile(key: string, blob: Blob): Promise<void> {
-    await this.guard(undefined, async () => {
-      const size = blob.size;
-      if (size > this.budget) return;
-      if (this.total === null) this.total = (await this.backend.tilesByAge()).reduce((n, t) => n + t.size, 0);
-      const old = await this.backend.getTile(key);
-      await this.backend.putTile({ key, blob, size, lastAccess: this.now() });
-      this.total += size - (old?.size ?? 0);
-      if (this.total > this.budget) await this.evict();
-    });
+  putTile(key: string, blob: Blob): Promise<void> {
+    if (this.disabled || blob.size > this.budget) return Promise.resolve();
+    const run = this.writes.then(() => this.guard(undefined, () => this.write(key, blob)));
+    this.writes = run;
+    return run;
   }
 
-  /** Drops the least recently used tiles until the total is under EVICT_TO x budget. */
-  private async evict(): Promise<void> {
-    const target = this.budget * EVICT_TO;
+  /** One serialised put: lazy total, the write (quota: evict, retry once), then budget eviction. */
+  private async write(key: string, blob: Blob): Promise<void> {
+    const size = blob.size;
+    try {
+      this.total ??= await this.measure();
+      const old = await this.backend.getTile(key);
+      const record = { key, blob, size, lastAccess: this.now() };
+      try {
+        await this.backend.putTile(record);
+        this.total += size - (old?.size ?? 0);
+      } catch (e) {
+        if (!isQuotaError(e)) throw e;
+        await this.evict(this.total * QUOTA_EVICT_TO);
+        await this.backend.putTile(record);
+        this.total = await this.measure();
+      }
+      if (this.total > this.budget) await this.evict(this.budget * EVICT_TO);
+    } catch (e) {
+      this.total = null; // unknown after a partial failure: measured again on the next write
+      throw e;
+    }
+  }
+
+  private async measure(): Promise<number> {
+    return (await this.backend.tilesByAge()).reduce((n, t) => n + t.size, 0);
+  }
+
+  /** Drops the least recently used tiles until the total is at most `target` (inside `writes`). */
+  private async evict(target: number): Promise<void> {
+    const tiles = await this.backend.tilesByAge();
+    let total = tiles.reduce((n, t) => n + t.size, 0);
     const drop: string[] = [];
-    let total = this.total ?? 0;
-    for (const tile of await this.backend.tilesByAge()) {
+    for (const tile of tiles) {
       if (total <= target) break;
       drop.push(tile.key);
       total -= tile.size;
     }
+    this.total = null; // unknown until the delete has landed
     await this.backend.deleteTiles(drop);
     this.total = total;
   }
@@ -169,19 +219,63 @@ export function idbTileBackend(db: IDBPDatabase<RasterDb>): TileCacheBackend {
   };
 }
 
-/** Opens the IndexedDB cache, or null when IndexedDB is unavailable or refuses (private mode). */
-export async function openTileCache(options: TileCacheOptions = {}): Promise<TileCache | null> {
+export type OpenTileCacheOptions = TileCacheOptions & {
+  timeoutMs?: number;
+  /** The IndexedDB opener (tests pass a fake; defaults to idb's openDB). */
+  open?: typeof openDB<RasterDb>;
+};
+
+/**
+ * Opens the IndexedDB cache, or null when IndexedDB is unavailable, refuses
+ * (private mode), is blocked by an older connection, or has not opened within
+ * `timeoutMs`. A database that another tab needs to upgrade (`blocking`) is
+ * closed and the cache disabled; so is one the browser terminates.
+ */
+export async function openTileCache(options: OpenTileCacheOptions = {}): Promise<TileCache | null> {
+  const { timeoutMs = OPEN_TIMEOUT_MS, open = openDB<RasterDb>, ...cacheOptions } = options;
+  if (options.open === undefined && typeof indexedDB === "undefined") return null;
+  let cache: TileCache | null = null;
+  let gaveUp = false;
+  let giveUp!: () => void;
+  const givenUp = new Promise<null>((resolve) => {
+    giveUp = () => {
+      gaveUp = true;
+      resolve(null);
+    };
+  });
+  const timer = setTimeout(() => giveUp(), timeoutMs);
   try {
-    if (typeof indexedDB === "undefined") return null;
-    const db = await openDB<RasterDb>(DB_NAME, DB_VERSION, {
+    const raw = open(DB_NAME, DB_VERSION, {
       upgrade(database) {
         const tiles = database.createObjectStore("tiles", { keyPath: "key" });
         tiles.createIndex("lastAccess", "lastAccess");
         database.createObjectStore("docs", { keyPath: "sha256" });
       },
+      // An older connection elsewhere holds the database: stop waiting (no cache).
+      blocked() {
+        giveUp();
+      },
+      // Another tab wants to upgrade: let it, and stop using ours.
+      blocking() {
+        cache?.disable();
+        void raw.then((db) => db.close(), () => undefined);
+      },
+      terminated() {
+        cache?.disable();
+      },
     });
-    return new TileCache(idbTileBackend(db), options);
+    const opening = raw.then((db) => {
+      if (gaveUp) {
+        db.close(); // opened after we stopped waiting
+        return null;
+      }
+      cache = new TileCache(idbTileBackend(db), cacheOptions);
+      return cache;
+    });
+    return await Promise.race([opening, givenUp]);
   } catch {
     return null;
+  } finally {
+    clearTimeout(timer);
   }
 }

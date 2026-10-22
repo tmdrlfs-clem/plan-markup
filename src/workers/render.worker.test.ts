@@ -5,6 +5,7 @@ import { rasterCache } from "./render-cache";
 import { RenderError, renderOpenMessage, type ContentFlags, type PageInfo, type RenderReply } from "./render-protocol";
 import {
   RenderWorkerHost,
+  deferredRasterCache,
   previewCacheKey,
   tileCacheKey,
   type RasterCache,
@@ -285,7 +286,7 @@ describe("RenderWorkerHost: raster cache", () => {
     first.host.handle(tile(3));
     await first.host.idle();
     await new Promise((r) => setTimeout(r, 0)); // stores are fire-and-forget
-    expect(await cache.getTile(previewCacheKey(SHA, 1))).toMatchObject({ width: 500, height: 300 });
+    expect(await cache.getTile(previewCacheKey(SHA, 1, 0.5))).toMatchObject({ width: 500, height: 300 });
     const key = tileCacheKey(SHA, { page: 1, bucket: 0, scale: 1, col: 0, row: 0, tileSize: 512 });
     expect(await cache.getTile(key)).toMatchObject({ width: 512, height: 512 });
 
@@ -334,5 +335,85 @@ describe("RenderWorkerHost: raster cache", () => {
     await second.host.idle();
     expect(resultOf(second.replies, 1)).toMatchObject({ fromCache: true });
     expect(codeOf(second.replies, 2)).toBe("invalid-pdf");
+  });
+
+  it("keys the preview by its scale step: a reopen at another size renders and stores a fresh one", async () => {
+    const cache = cached();
+    const first = setup(cache);
+    first.host.handle(open(1));
+    first.host.handle(preview(2));
+    await first.host.idle();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const second = setup(cache);
+    second.host.handle(open(1));
+    second.host.handle(preview(2, { maxWidth: 800, maxHeight: 800 })); // 0.8 -> step 0.8 rounded up
+    await second.host.idle();
+    await new Promise((r) => setTimeout(r, 0));
+    const out = resultOf(second.replies, 2) as { tile: { fromCache: boolean; scale: number; width: number } };
+    expect(out.tile.fromCache).toBe(false);
+    expect(out.tile.scale).toBeGreaterThanOrEqual(0.8);
+    expect(out.tile.width).toBe(Math.ceil(1000 * out.tile.scale));
+    expect(await cache.getTile(previewCacheKey(SHA, 1, out.tile.scale))).toMatchObject({ width: out.tile.width });
+    // The old size is still there for windows of that size.
+    expect(await cache.getTile(previewCacheKey(SHA, 1, 0.5))).toMatchObject({ width: 500 });
+  });
+
+  it("renders tiles at the quantised scale, so nearby scales share cache entries", async () => {
+    const cache = cached();
+    const first = setup(cache);
+    first.host.handle(open(1));
+    first.host.handle(tile(2, 0, 0, { scale: 0.97 }));
+    await first.host.idle();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(first.renderer.jobs[0].scale).toBe(1); // 0.97 rounds up to step 0 (scale 1)
+    expect(resultOf(first.replies, 2)).toMatchObject({ tile: { scale: 1, fromCache: false } });
+
+    const second = setup(cache);
+    second.host.handle(open(1));
+    second.host.handle(tile(2, 0, 0, { scale: 0.99, bucket: 1 }));
+    await second.host.idle();
+    expect(resultOf(second.replies, 2)).toMatchObject({ tile: { scale: 1, fromCache: true } });
+    expect(tileCacheKey(SHA, { page: 1, bucket: 0, scale: 0.97, col: 0, row: 0, tileSize: 512 })).toBe(`${SHA}:1:s0:512:0:0`);
+  });
+
+  it("a cancel or close while the cache looks the document up installs nothing and answers cancelled", async () => {
+    for (const stop of [
+      { type: "render.cancel", reqId: 9, payload: { all: true } },
+      { type: "render.close", reqId: 9, payload: {} },
+    ]) {
+      let release!: () => void;
+      const gate = new Promise<void>((r) => (release = r));
+      const inner = cached();
+      const slow: RasterCache<Bitmap> = { ...inner, getDoc: async (sha) => (await gate, inner.getDoc(sha)) };
+      const { host, replies, renderer } = setup(slow);
+      host.handle(open(1));
+      await new Promise((r) => setTimeout(r, 0));
+      host.handle(stop);
+      release();
+      await host.idle();
+      await new Promise((r) => setTimeout(r, 0));
+      expect(codeOf(replies, 1)).toBe("cancelled");
+      expect(byReq(replies, 1).filter((r) => r.type === "result")).toHaveLength(0);
+      expect(renderer.opened).toBe(0);
+      host.handle(tile(3));
+      await host.idle();
+      expect(codeOf(replies, 3)).toBe("no-document");
+    }
+  });
+});
+
+describe("deferredRasterCache", () => {
+  it("waits for the opening cache and treats a failed or empty one as misses", async () => {
+    const inner = { getDoc: async () => ({ pages: [], content: [] }), putDoc: async () => undefined, getTile: async () => 1, putTile: async () => undefined };
+    let resolve!: (c: RasterCache<number> | null) => void;
+    const deferred = deferredRasterCache<number>(new Promise((r) => (resolve = r)));
+    const tile = deferred.getTile("k");
+    resolve(inner);
+    expect(await tile).toBe(1);
+    const none = deferredRasterCache<number>(Promise.reject(new Error("no idb")));
+    expect(await none.getTile("k")).toBeNull();
+    expect(await none.getDoc("s")).toBeNull();
+    await expect(none.putTile("k", new Blob())).resolves.toBeUndefined();
   });
 });

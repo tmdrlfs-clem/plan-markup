@@ -32,6 +32,30 @@ export function bucketScale(fit: number, bucket: number, dpr: number): number {
   return fit * 2 ** bucket * dpr;
 }
 
+/** Raster scales are quantised to steps of 2^(1/SCALE_STEPS_PER_OCTAVE) (≈ 4.4 %). */
+export const SCALE_STEPS_PER_OCTAVE = 16;
+
+/**
+ * The quantisation step of a device scale: the smallest integer n with
+ * 2^(n / SCALE_STEPS_PER_OCTAVE) >= scale (a 1e-6 tolerance keeps exact steps on
+ * their own step). Rasters are rendered at `stepScale(scaleStep(s))`, never below
+ * `s`, so windows whose fit scales differ slightly still share cached rasters.
+ */
+export function scaleStep(scale: number): number {
+  if (!(scale > 0)) throw new RangeError("scale must be positive");
+  return Math.ceil(Math.log2(scale) * SCALE_STEPS_PER_OCTAVE - 1e-6) + 0;
+}
+
+/** The device scale of quantisation step `step`. */
+export function stepScale(step: number): number {
+  return 2 ** (step / SCALE_STEPS_PER_OCTAVE);
+}
+
+/** `scale` rounded up to its quantisation step. */
+export function quantizeScale(scale: number): number {
+  return stepScale(scaleStep(scale));
+}
+
 /**
  * The bucket for a view scale: the smallest k with fit * 2^k >= viewScale (a
  * 1e-6 tolerance keeps exact powers on their own bucket), clamped.

@@ -21,7 +21,12 @@
 //   { type: "error", reqId, code, error } either this or a result
 //   { type: "progress", reqId, payload } zero or more before the final reply
 // Bitmaps travel as transferables (no copies). `reqId` is null on an error reply
-// to a message that had no usable reqId.
+// to a message that had no usable reqId, and on a "worker-failed" reply (the
+// worker could not start; the client treats it as fatal).
+//
+// Raster scales are quantised (src/core/render/tiles.ts scaleStep): the worker
+// renders tiles and previews at quantizeScale(requested scale), never below it,
+// and reports that scale in the reply.
 
 import { z } from "zod";
 import type { ContentFlags as CoreContentFlags } from "@/core/render/content-flags";
@@ -36,6 +41,9 @@ export const RENDER_ERROR_CODES = [
   "out-of-range",
   "cancelled",
   "render-failed",
+  // The worker itself failed (start-up, an uncaught error): every pending request
+  // rejects with it and the client starts a new worker on the next open.
+  "worker-failed",
 ] as const;
 export type RenderErrorCode = (typeof RENDER_ERROR_CODES)[number];
 

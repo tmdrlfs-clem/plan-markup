@@ -11,7 +11,7 @@
 // when present and wait for pdf.js only on a miss. Rendered tiles are encoded
 // (PNG) and stored after they are posted, never on the critical path.
 
-import { tileGrid, tileRect } from "@/core/render/tiles";
+import { quantizeScale, scaleStep, tileGrid, tileRect } from "@/core/render/tiles";
 import { serializeWorkerError } from "@/core/worker/error";
 import {
   RenderError,
@@ -71,14 +71,17 @@ export interface RasterCache<B> {
   putTile(key: string, blob: Blob): Promise<void>;
 }
 
-/** Cache keys: sha256 + page + bucket (with its device scale) + tile; the preview has its own. */
-export function previewCacheKey(sha256: string, page: number): string {
-  return `${sha256}:${page}:preview`;
+/**
+ * Raster cache keys (format documented in src/lib/idb/tile-cache.ts). Both carry
+ * the quantised device scale step (tiles.ts scaleStep), so the stored pixels
+ * always match the key's geometry, and a window of a different size reuses
+ * them whenever its fit lands on the same step.
+ */
+export function previewCacheKey(sha256: string, page: number, scale: number): string {
+  return `${sha256}:${page}:preview:s${scaleStep(scale)}`;
 }
 export function tileCacheKey(sha256: string, req: TileRequestPayload): string {
-  // A bucket's device scale depends on the viewport (fit) and the DPR, so the
-  // scale is part of the key: a different window never reuses mismatched tiles.
-  return `${sha256}:${req.page}:${req.bucket}@${Math.round(req.scale * 1e4)}:${req.tileSize}:${req.col}:${req.row}`;
+  return `${sha256}:${req.page}:s${scaleStep(req.scale)}:${req.tileSize}:${req.col}:${req.row}`;
 }
 
 export async function sha256Hex(bytes: Uint8Array): Promise<string> {
@@ -235,9 +238,13 @@ export class RenderWorkerHost<B> {
   private async open(job: Extract<Job, { kind: "open" }>, signal: AbortSignal): Promise<void> {
     const generation = this.generation;
     await this.closeDocument();
+    // A cancel, close or newer open while we wait: stop without touching state.
+    const stale = () => signal.aborted || generation !== this.generation;
+    if (stale()) throw CANCELLED();
     const sha256 = await this.hash(job.bytes);
-    if (signal.aborted) throw CANCELLED();
+    if (stale()) throw CANCELLED();
     const cached = await this.cache?.getDoc(sha256).catch(() => null);
+    if (stale()) throw CANCELLED();
     // pdf.js may take ownership of (detach) the bytes: hash first, then hand them over.
     const loading = this.renderer.open(job.bytes);
     if (cached && cached.pages.length > 0) {
@@ -248,8 +255,9 @@ export class RenderWorkerHost<B> {
       return this.result(job.reqId, result);
     }
     const pages = await loading;
-    if (generation !== this.generation) {
-      await this.renderer.close();
+    if (stale()) {
+      // Only release pdf.js if no newer open has taken it over.
+      if (generation === this.generation) await this.renderer.close();
       throw CANCELLED();
     }
     if (pages.length === 0) throw new RenderError("invalid-pdf", "The document has no pages");
@@ -269,16 +277,18 @@ export class RenderWorkerHost<B> {
     const p = job.payload;
     const t0 = this.now();
     const waitMs = t0 - job.queuedAt;
-    const key = previewCacheKey(doc.sha256, p.page);
+    // Quantised like tiles, so the fit bucket's tiles and the preview share a scale.
+    const scale = quantizeScale(Math.min(p.maxWidth / page.width, p.maxHeight / page.height));
+    const key = previewCacheKey(doc.sha256, p.page, scale);
     const hit = await this.cache?.getTile(key).catch(() => null);
-    if (hit && doc.content[p.page - 1] !== null) {
-      const tile = this.payloadFromCache(hit, p.page, null, 0, 0, page, waitMs, t0);
+    if (hit && doc.content[p.page - 1] !== null && !signal.aborted) {
+      const tile = this.payloadFromCache(hit, p.page, scale, page, waitMs, t0);
       return this.result(job.reqId, { tile, content: doc.content[p.page - 1] }, this.transferOf(hit));
     }
     if (hit) this.renderer.release(hit);
+    if (signal.aborted) throw CANCELLED();
     await doc.ready;
     if (signal.aborted) throw CANCELLED();
-    const scale = Math.min(p.maxWidth / page.width, p.maxHeight / page.height);
     const size = Math.ceil(Math.max(page.width, page.height) * scale);
     const grid = tileGrid(page, scale, size);
     const rect = tileRect(grid, 0, 0);
@@ -306,21 +316,24 @@ export class RenderWorkerHost<B> {
 
   private async tile(job: Extract<Job, { kind: "tile" }>, doc: Doc, page: PageInfo, signal: AbortSignal): Promise<void> {
     const r = job.payload;
-    const grid = tileGrid(page, r.scale, r.tileSize);
+    const scale = quantizeScale(r.scale);
+    const grid = tileGrid(page, scale, r.tileSize);
     if (r.col >= grid.cols || r.row >= grid.rows) throw new RenderError("out-of-range", "Tile out of range");
     const rect = tileRect(grid, r.col, r.row);
     const t0 = this.now();
     const waitMs = t0 - job.queuedAt;
     const key = tileCacheKey(doc.sha256, r);
     const hit = await this.cache?.getTile(key).catch(() => null);
-    const base = { page: r.page, bucket: r.bucket, col: r.col, row: r.row, scale: r.scale, ...rect, waitMs };
+    const base = { page: r.page, bucket: r.bucket, col: r.col, row: r.row, scale, ...rect, waitMs };
+    if (hit && signal.aborted) this.renderer.release(hit);
+    if (signal.aborted) throw CANCELLED();
     if (hit) {
       const tile: TilePayload<B> = { ...base, bitmap: hit, fromCache: true, renderMs: this.now() - t0 };
       return this.result(job.reqId, { tile }, this.transferOf(hit));
     }
     await doc.ready;
     if (signal.aborted) throw CANCELLED();
-    const out = await this.renderer.render({ page: r.page, scale: r.scale, ...rect, encode: this.cache !== null, content: false }, signal);
+    const out = await this.renderer.render({ page: r.page, scale, ...rect, encode: this.cache !== null, content: false }, signal);
     if (signal.aborted) {
       this.renderer.release(out.bitmap);
       throw CANCELLED();
@@ -330,29 +343,19 @@ export class RenderWorkerHost<B> {
     this.store(key, out.encoded);
   }
 
-  private payloadFromCache(
-    bitmap: B,
-    pageNo: number,
-    bucket: number | null,
-    col: number,
-    row: number,
-    page: PageInfo,
-    waitMs: number,
-    t0: number,
-  ): TilePayload<B> {
-    // The cached preview keeps its own pixel size; its scale follows from the page width.
+  private payloadFromCache(bitmap: B, pageNo: number, scale: number, page: PageInfo, waitMs: number, t0: number): TilePayload<B> {
+    // The key carries the scale step, so the stored preview is at exactly `scale`.
     const size = this.sizeOf(bitmap);
-    const scale = size ? size.width / page.width : 1;
     return {
       page: pageNo,
-      bucket,
-      col,
-      row,
+      bucket: null,
+      col: 0,
+      row: 0,
       scale,
       x: 0,
       y: 0,
-      width: size?.width ?? Math.ceil(page.width),
-      height: size?.height ?? Math.ceil(page.height),
+      width: size?.width ?? Math.ceil(page.width * scale),
+      height: size?.height ?? Math.ceil(page.height * scale),
       bitmap,
       fromCache: true,
       renderMs: this.now() - t0,
@@ -372,6 +375,21 @@ export class RenderWorkerHost<B> {
   }
 }
 
+/**
+ * A raster cache that is still opening: every call waits for `opening` (which
+ * must settle, e.g. openTileCache's timeout) and becomes a miss / no-op when it
+ * yields null. Lets the worker host start before IndexedDB has answered.
+ */
+export function deferredRasterCache<B>(opening: Promise<RasterCache<B> | null>): RasterCache<B> {
+  const ready = opening.catch(() => null);
+  return {
+    getDoc: async (sha) => (await ready)?.getDoc(sha) ?? null,
+    putDoc: async (sha, meta) => (await ready)?.putDoc(sha, meta),
+    getTile: async (key) => (await ready)?.getTile(key) ?? null,
+    putTile: async (key, blob) => (await ready)?.putTile(key, blob),
+  };
+}
+
 type WorkerScope = {
   addEventListener(type: "message", listener: (event: { data: unknown }) => void): void;
   postMessage(message: unknown, transfer: Transferable[]): void;
@@ -380,29 +398,35 @@ type WorkerScope = {
 
 declare const WorkerGlobalScope: (new () => unknown) | undefined;
 
-// Wire up only inside a real worker (not in Vitest/Node). pdf.js and the cache
-// load lazily; messages that arrive before they are ready are queued.
+// Wire up only inside a real worker (not in Vitest/Node). The host starts as
+// soon as pdf.js's module has loaded; the IndexedDB cache opens in the
+// background (bounded by openTileCache's timeout) and is never waited for at
+// start. Messages that arrive before the host exists are queued. If the worker
+// cannot start, the queue (with its transferred file bytes) is dropped and a
+// "worker-failed" reply tells the client to fail everything and start afresh.
 if (typeof WorkerGlobalScope !== "undefined" && globalThis instanceof WorkerGlobalScope) {
   const scope = globalThis as unknown as WorkerScope;
-  const pending: unknown[] = [];
+  let pending: unknown[] | null = [];
   let host: RenderWorkerHost<ImageBitmap> | null = null;
   scope.addEventListener("message", (event) => {
     if (host) host.handle(event.data);
-    else pending.push(event.data);
+    else pending?.push(event.data); // after a failed start: dropped
   });
-  void Promise.all([import("./render-pdfjs"), import("./render-cache")])
-    .then(async ([{ PdfjsTileRenderer, pdfjsAssetBase }, { openRasterCache }]) => {
-      const renderer = new PdfjsTileRenderer(pdfjsAssetBase(scope.location.origin));
-      const cache = await openRasterCache();
+  const cache = import("./render-cache").then(({ openRasterCache }) => openRasterCache());
+  void import("./render-pdfjs")
+    .then(({ PdfjsTileRenderer, pdfjsAssetBase }) => {
       host = new RenderWorkerHost<ImageBitmap>(
-        renderer,
+        new PdfjsTileRenderer(pdfjsAssetBase(scope.location.origin)),
         (reply, transfer) => scope.postMessage(reply, transfer),
         (b) => [b],
-        cache,
+        deferredRasterCache(cache),
       );
-      for (const data of pending.splice(0)) host.handle(data);
+      const queued = pending ?? [];
+      pending = null;
+      for (const data of queued) host.handle(data);
     })
-    .catch((e: unknown) =>
-      scope.postMessage({ type: "error", reqId: null, code: "render-failed", error: serializeWorkerError(e) }, []),
-    );
+    .catch((e: unknown) => {
+      pending = null;
+      scope.postMessage({ type: "error", reqId: null, code: "worker-failed", error: serializeWorkerError(e) }, []);
+    });
 }

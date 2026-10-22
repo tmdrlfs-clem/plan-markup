@@ -56,7 +56,8 @@ export function CanvasViewport({ onOpen, onOpenFiles, createWorker = defaultWork
     const markups = markupsRef.current;
     const active = activeRef.current;
     if (!host || !tiles || !markups || !active) return;
-    const client = new RenderClient(createWorker());
+    // A factory, so the client can start a new worker after a fatal failure (Try again).
+    const client = new RenderClient(createWorker);
     const next = new ViewerEngine({ tiles, markups, active }, client, (patch: Partial<ViewerState>) =>
       viewerStore.setState(patch),
     );

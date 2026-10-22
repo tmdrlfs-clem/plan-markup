@@ -1,6 +1,6 @@
 # Story 3.1: Open a local PDF and see the first page fast
 
-Status: review
+Status: done
 
 ## Story
 
@@ -31,6 +31,26 @@ so that I can start work without waiting or uploading anything.
 - [x] **Task 7: States and errors** (AC 6, 7, 8): loading progress bar, image-only, render error with tile retry, inline file errors; status bar file name; document title.
 - [x] **Task 8: Remove the spike route**: delete `src/app/(spike)/` and its fixture/pdfjs routes and the `PLAN_MARKUP_LOCAL_SPIKE` path once the viewer replaces them; keep `scripts/spike-render/measure.mjs` working against `/workspace` (sign-in with the seed user) or note it as retired in the 2.3 report. Proxy and CSP back to their pre-spike shape except what Task 1 requires.
 - [x] **Task 9: Tests**: unit (worker handler with stubbed pdf.js: open/password/invalid/imageOnly flags, cancel; tile cache with fake-indexeddb if already available, else an in-memory adapter test; viewer store). Committed small fixtures in `fixtures/pdf/`: `vector-a3.pdf` (reuse/derive from `export-sample.pdf`), `image-only.pdf`, `corrupt.pdf`, `password.pdf` (generate with a script; document how). Playwright `e2e/viewer-open.spec.ts`: open via chooser and drop → canvas state ready + non-blank pixels; network interception asserts no request body contains the PDF's first 1 KB and no `/storage/` calls (AC 3); corrupt / password inline errors and workspace still usable; image-only HintBar; `/spike/render` 404 in the production build used by CI e2e.
+
+### Review Follow-ups (AI)
+
+Code review of 2026-10-22: 10 findings, all fixed with unit tests.
+
+- [x] [AI-Review][High] Worker start failure / worker `error` / `messageerror` left requests pending forever. A failed start now drops the queued messages (and the transferred bytes) and posts `worker-failed` (new protocol code). On that reply, an `error` or a `messageerror`, `RenderClient` rejects every pending request with `worker-failed`, terminates the worker and marks itself dead. Other requests then fail fast; the next `render.open` starts a new worker (the client now takes a factory). The engine shows the render-error state, and Try again reopens. Tests: `rpc.test.ts`, `viewer-engine.test.ts`.
+- [x] [AI-Review][High] In-memory tile keys omitted the device scale. Keys are now `page:bucket:col:row@s<step>:<tileSize>`. A fit or DPR change cancels in-flight tiles and clears failed markers; late old-scale replies are dropped. Test: `viewer-engine.test.ts`.
+- [x] [AI-Review][Med] The host waited for IndexedDB. It now starts at once with a `deferredRasterCache`. `openTileCache` has a 2 s timeout and `blocked` / `blocking` (close + disable) / `terminated` handlers, and falls back to no cache. Tests: `tile-cache.test.ts`, `render.worker.test.ts`.
+- [x] [AI-Review][Med] The nested pdf.js parser worker had no error listener. `ensureParserWorker` now listens for `error`: it terminates the worker, resets `GlobalWorkerOptions.workerPort`, and rejects a `failed` promise that open and render race against. The next open starts a fresh parser worker. Test: `render-pdfjs.test.ts`.
+- [x] [AI-Review][Med] The cache-hit open path had no cancel check after `await getDoc`. `open` now checks abort and generation after every await. A cancel or close during the lookup installs nothing and answers `cancelled`. Test: `render.worker.test.ts`.
+- [x] [AI-Review][Med] `PdfjsTileRenderer.open` wrote shared state inside its loop. It now uses a local document and page map, and installs them only if `this.task` is still its own; otherwise it rejects `cancelled` and destroys its task. Test: `render-pdfjs.test.ts` (mocked `getDocument`).
+- [x] [AI-Review][Med] `putTile`/evict raced on `total`. Puts and evictions now run on one promise chain, with a single lazy measure of the total; it is reset to unknown after a partial failure. Test: concurrent puts in `tile-cache.test.ts`.
+- [x] [AI-Review][Med] Any storage error disabled the cache for good. Now a failed read is a miss and a failed write is skipped. `QuotaExceededError` evicts to 50 % and retries once. Only open failures, `blocking` and `terminated` disable the cache. Tests: `tile-cache.test.ts`.
+- [x] [AI-Review][Low] `getTile` awaited a readwrite touch. The touch is now fire-and-forget with a catch. Test: `tile-cache.test.ts`.
+- [x] [AI-Review][Med] Preview and tile keys were inconsistent. Raster scales are quantised to 1/16-octave steps (`tiles.ts` `scaleStep` / `quantizeScale`, rounded up, ≤ 4.4 % oversample).
+  - The worker renders tiles and previews at the quantised scale.
+  - Keys carry the step: `<sha>:<page>:s<step>:<tileSize>:<col>:<row>` and `<sha>:<page>:preview:s<step>`.
+  - A reopen at a different window size re-renders and stores a preview at its own step, and still hits wherever the step matches.
+  - The format is documented in `tile-cache.ts`.
+  - Tests: `tiles.test.ts`, `render.worker.test.ts`.
 
 ## Dev Notes
 
@@ -144,6 +164,10 @@ Claude Opus 5.5 (claude-opus-5-5)
 
 ### File List
 
+Review follow-ups (2026-10-22): `src/core/render/tiles.ts`, `tiles.test.ts`; `src/features/viewer/canvas-viewport.tsx`, `viewer-engine.ts`, `viewer-engine.test.ts`; `src/lib/idb/tile-cache.ts`, `tile-cache.test.ts`; `src/workers/render-protocol.ts`, `render-pdfjs.ts`, `render-pdfjs.test.ts`, `render.worker.ts`, `render.worker.test.ts`, `rpc.ts`, `rpc.test.ts` (all modified).
+
+Story implementation:
+
 - `.github/workflows/ci.yml` (modified)
 - `.gitignore` (modified)
 - `_bmad-output/implementation-artifacts/3-1-open-a-local-pdf-and-see-the-first-page-fast.md` (modified)
@@ -184,3 +208,13 @@ Claude Opus 5.5 (claude-opus-5-5)
   - The workspace viewer: fit page, progressive preview, tiles, states, inline errors, HintBar, window title and status bar.
   - Spike route retired; fixtures and e2e added; CI e2e runs on the production build.
   - Commits a7c2061, 706ce90, c25a47a, 1c253f4, 319ec59. CI run 39756497361 green.
+- 2026-10-22: Code review follow-ups, 10 of 10 fixed (Claude Opus 5.5):
+  - fatal worker failures are handled and the worker restarts on the next open;
+  - in-memory keys carry the scale;
+  - the cache opens in the background with a timeout and versionchange handlers;
+  - the parser worker recovers after an error;
+  - cancel-safe open paths;
+  - serialised cache writes with a quota retry;
+  - fire-and-forget touch;
+  - quantised raster scales with consistent cache keys.
+  - Unit tests: 1035 in 99 files. Status → done.

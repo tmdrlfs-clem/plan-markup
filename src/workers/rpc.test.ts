@@ -4,21 +4,25 @@ import { RenderClient, WorkerRequestError, type WorkerLike } from "./rpc";
 class FakeWorker implements WorkerLike {
   posted: { msg: { type: string; reqId: number; payload: unknown }; transfer: Transferable[] }[] = [];
   terminated = false;
-  private listeners = new Set<(e: Event) => void>();
+  private listeners = new Map<string, Set<(e: Event) => void>>();
   postMessage(msg: unknown, transfer?: unknown) {
     this.posted.push({ msg: msg as never, transfer: (transfer ?? []) as Transferable[] });
   }
   addEventListener(type: string, fn: unknown) {
-    if (type === "message") this.listeners.add(fn as (e: Event) => void);
+    if (!this.listeners.has(type)) this.listeners.set(type, new Set());
+    this.listeners.get(type)?.add(fn as (e: Event) => void);
   }
   removeEventListener(type: string, fn: unknown) {
-    if (type === "message") this.listeners.delete(fn as (e: Event) => void);
+    this.listeners.get(type)?.delete(fn as (e: Event) => void);
   }
   terminate() {
     this.terminated = true;
   }
   reply(data: unknown) {
-    for (const fn of this.listeners) fn({ data } as MessageEvent);
+    for (const fn of this.listeners.get("message") ?? []) fn({ data } as MessageEvent);
+  }
+  emit(type: string) {
+    for (const fn of this.listeners.get(type) ?? []) fn(new Event(type));
   }
 }
 
@@ -86,5 +90,44 @@ describe("RenderClient", () => {
     worker.reply({ type: "result", reqId: 999, payload: { tile: { bitmap: { close } } } });
     worker.reply({ type: "progress", reqId: 999, payload: { tile: { bitmap: { close } } } });
     expect(close).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(["error", "messageerror"])("a worker %s event rejects everything pending and the next open starts a new worker", async (event) => {
+    const workers: FakeWorker[] = [];
+    const client = new RenderClient(
+      () => {
+        const w = new FakeWorker();
+        workers.push(w);
+        return w as unknown as Worker;
+      },
+      { report: vi.fn(), attachErrorReporting: false },
+    );
+    const open = client.request("render.open", { bytes: new ArrayBuffer(1) });
+    const tile = client.request("render.tile", { page: 1, bucket: 0, scale: 1, col: 0, row: 0, tileSize: 512 });
+    workers[0].emit(event);
+    await expect(open.promise).rejects.toMatchObject({ code: "worker-failed" });
+    await expect(tile.promise).rejects.toMatchObject({ code: "worker-failed" });
+    expect(workers[0].terminated).toBe(true);
+    expect(client.alive).toBe(false);
+    // Non-open requests fail fast while dead; cancel is a no-op.
+    await expect(client.request("render.preview", { page: 1, maxWidth: 1, maxHeight: 1 }).promise).rejects.toMatchObject({ code: "worker-failed" });
+    client.cancel([1]);
+    expect(workers).toHaveLength(1);
+    const reopen = client.request("render.open", { bytes: new ArrayBuffer(1) });
+    expect(workers).toHaveLength(2);
+    expect(client.alive).toBe(true);
+    workers[1].reply({ type: "result", reqId: reopen.reqId, payload: { sha256: "y", pageCount: 1, pages: [], fromCache: false } });
+    await expect(reopen.promise).resolves.toMatchObject({ sha256: "y" });
+  });
+
+  it("a worker-failed reply (the worker could not start) is fatal too", async () => {
+    const { worker, client, report } = setup();
+    const open = client.request("render.open", { bytes: new ArrayBuffer(1) });
+    worker.reply({ type: "error", reqId: null, code: "worker-failed", error: err("import failed") });
+    await expect(open.promise).rejects.toMatchObject({ code: "worker-failed", message: "import failed" });
+    expect(report).toHaveBeenCalledTimes(1);
+    expect(worker.terminated).toBe(true);
+    // Without a factory the client cannot restart: it stays dead.
+    await expect(client.request("render.open", { bytes: new ArrayBuffer(1) }).promise).rejects.toMatchObject({ code: "worker-failed" });
   });
 });

@@ -162,6 +162,45 @@ describe("ViewerEngine", () => {
     expect(client.all("render.tile").length).toBeGreaterThan(before);
   });
 
+  it("a DPR or fit change cancels in-flight tiles, clears failed markers and re-keys tiles by the new scale", async () => {
+    const { client, engine } = setup();
+    await openToPreview(client, engine);
+    client.last("render.preview").resolve({ tile: tilePayload(1), content: null });
+    await flush();
+    engine.setView({ scale: 2, x: 0, y: 0 });
+    vi.runAllTimers();
+    const first = client.all("render.tile");
+    first[0].reject(new WorkerRequestError("render-failed", { name: "Error", message: "x" }));
+    await flush();
+    expect(state.failedTiles).toBe(1);
+    const pending = first.slice(1).map((c) => c.reqId);
+    engine.setViewport(1032, 532, 1.5);
+    expect(client.cancelled).toEqual(expect.arrayContaining(pending));
+    expect(state.failedTiles).toBe(0);
+    vi.runAllTimers();
+    const next = client.all("render.tile").slice(first.length);
+    expect(next.length).toBeGreaterThan(0);
+    expect((next[0].payload as { scale: number }).scale).toBeGreaterThanOrEqual(3); // 2 x 1.5, quantised up
+    // A late reply for an old-scale request is dropped, not drawn under the new key.
+    const late = tilePayload(2);
+    first[1].resolve({ tile: late });
+    await flush();
+    expect(late.bitmap.close).toHaveBeenCalled();
+  });
+
+  it("a fatal worker failure on a tile shows the render error (Try again reopens)", async () => {
+    const { client, engine } = setup();
+    await openToPreview(client, engine);
+    client.last("render.preview").resolve({ tile: tilePayload(1), content: null });
+    await flush();
+    engine.setView({ scale: 2, x: 0, y: 0 });
+    vi.runAllTimers();
+    client.all("render.tile")[0].reject(new WorkerRequestError("worker-failed", { name: "WorkerError", message: "x" }));
+    await flush();
+    expect(state).toMatchObject({ status: "error", error: "render-failed" });
+    expect(state.failedTiles).toBe(0);
+  });
+
   it("maps open failures to inline file errors", async () => {
     for (const [code, expected] of [
       ["invalid-pdf", "invalid-pdf"],

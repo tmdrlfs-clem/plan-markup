@@ -15,6 +15,8 @@ import {
   bucketForScale,
   bucketScale,
   fitScale,
+  quantizeScale,
+  scaleStep,
   tileGrid,
   tileKey,
   visibleTiles,
@@ -115,6 +117,7 @@ export class ViewerEngine {
   /** Sizes the canvases to the viewport (CSS px) x DPR; keeps "fit page" while in fit mode. */
   setViewport(width: number, height: number, dpr: number): void {
     this.viewport = { width: Math.max(1, width), height: Math.max(1, height) };
+    const before = { fit: this.fit, dpr: this.dpr };
     this.dpr = dpr > 0 ? dpr : 1;
     for (const c of Object.values(this.canvases)) {
       c.width = Math.max(1, Math.round(this.viewport.width * this.dpr));
@@ -122,6 +125,7 @@ export class ViewerEngine {
     }
     if (this.page) {
       this.fit = fitScale(this.page, this.viewport, FIT_PADDING);
+      if (this.fit !== before.fit || this.dpr !== before.dpr) this.dropScaledWork();
       if (this.fitMode) this.view = this.fitView();
       this.scheduleSettle(SETTLE_MS);
     }
@@ -271,6 +275,29 @@ export class ViewerEngine {
 
   // ---- tiles --------------------------------------------------------------
 
+  /** Device scale tiles of `bucket` are rendered at (quantised, as the worker renders them). */
+  private tileScale(bucket: number): number {
+    return quantizeScale(bucketScale(this.fit, bucket, this.dpr));
+  }
+
+  /**
+   * In-memory key of a tile: page, bucket, the quantised device scale step and
+   * the tile size, so a fit or DPR change never mixes geometries.
+   */
+  private memKey(bucket: number, col: number, row: number): string {
+    return `${tileKey(1, bucket, col, row)}@s${scaleStep(this.tileScale(bucket))}:${this.tileSize}`;
+  }
+
+  /** The bucket scales changed (fit or DPR): stale requests go, failed markers reset. */
+  private dropScaledWork(): void {
+    this.client.cancel([...this.inflight.values()]);
+    this.inflight.clear();
+    if (this.failed.size > 0) {
+      this.failed.clear();
+      this.update({ failedTiles: 0 });
+    }
+  }
+
   private scheduleSettle(ms: number): void {
     if (this.settleTimer) clearTimeout(this.settleTimer);
     this.settleTimer = setTimeout(() => {
@@ -283,12 +310,12 @@ export class ViewerEngine {
   requestTiles(): void {
     if (!this.page || !this.previewFinal || this.destroyed) return;
     const bucket = bucketForScale(this.view.scale, this.fit);
-    const scale = bucketScale(this.fit, bucket, this.dpr);
+    const scale = this.tileScale(bucket);
     const grid = tileGrid(this.page, scale, this.tileSize);
     // The preview already holds this resolution (fit page): tiles would add nothing.
     const covered = this.preview !== null && this.preview.scale >= scale * 0.999;
     const needed = covered ? [] : visibleTiles(this.view, this.viewport, grid, 1);
-    const neededKeys = new Set(needed.map((t) => tileKey(1, bucket, t.col, t.row)));
+    const neededKeys = new Set(needed.map((t) => this.memKey(bucket, t.col, t.row)));
     const stale: number[] = [];
     for (const [key, reqId] of this.inflight) {
       if (!neededKeys.has(key)) {
@@ -298,7 +325,7 @@ export class ViewerEngine {
     }
     this.client.cancel(stale);
     for (const t of needed) {
-      const key = tileKey(1, bucket, t.col, t.row);
+      const key = this.memKey(bucket, t.col, t.row);
       if (this.cache.has(key)) {
         this.cache.get(key);
         continue;
@@ -325,6 +352,11 @@ export class ViewerEngine {
         if (generation !== this.generation || this.inflight.get(key) !== call.reqId) return;
         this.inflight.delete(key);
         if (e instanceof WorkerRequestError && e.code === "cancelled") return;
+        if (e instanceof WorkerRequestError && e.code === "worker-failed") {
+          // The worker is gone (and with it the document): the whole view failed. Try again reopens.
+          this.update({ status: "error", error: "render-failed" });
+          return;
+        }
         this.failed.add(key);
         this.update({ failedTiles: this.failed.size });
         this.invalidate();
@@ -368,7 +400,7 @@ export class ViewerEngine {
   /** Grey hatched box for a failed tile (its Retry lives in the DOM overlay). */
   private drawFailed(ctx: CanvasRenderingContext2D, bucket: number, col: number, row: number): void {
     if (!this.page) return;
-    const scale = bucketScale(this.fit, bucket, this.dpr);
+    const scale = this.tileScale(bucket);
     const grid = tileGrid(this.page, scale, this.tileSize);
     const k = (this.view.scale * this.dpr) / scale;
     const x = (col * grid.tileSize - this.view.x * scale) * k;
@@ -406,9 +438,9 @@ export class ViewerEngine {
         const target = bucketForScale(this.view.scale, this.fit);
         const buckets = this.settledBucket !== null && this.settledBucket !== target ? [this.settledBucket, target] : [target];
         for (const bucket of buckets) {
-          const grid = tileGrid(this.page, bucketScale(this.fit, bucket, this.dpr), this.tileSize);
+          const grid = tileGrid(this.page, this.tileScale(bucket), this.tileSize);
           for (const ref of visibleTiles(this.view, this.viewport, grid, 0)) {
-            const key = tileKey(1, bucket, ref.col, ref.row);
+            const key = this.memKey(bucket, ref.col, ref.row);
             const t = this.cache.peek(key);
             if (t) this.placeTile(ctx, t);
             else if (this.failed.has(key)) this.drawFailed(ctx, bucket, ref.col, ref.row);
