@@ -564,10 +564,10 @@ describe("ViewerEngine: gestures (Story 3.2)", () => {
     const { client, engine, canvases } = setupRecording();
     await readyAtFit(client, engine);
     paint();
-    expect(state.zoom).toBe(100);
+    expect(state.zoom).toBe(75); // 1 CSS px per point = 75 % of actual size (96/72)
     engine.zoomStep(1);
     paint();
-    expect(state.zoom).toBe(141);
+    expect(state.zoom).toBe(106);
     expect(canvases.active.dataset.view).toMatch(/^1\.414213562 /);
     vi.runAllTimers();
     // Reopen the same document (same sha256): the view comes back.

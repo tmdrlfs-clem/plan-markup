@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  ACTUAL_SIZE,
   MAX_ZOOM,
   MIN_ZOOM,
   ZOOM_STEP,
@@ -110,11 +111,13 @@ describe("zoomAt", () => {
     expect(stepZoom(MIN_ZOOM, -1)).toBe(MIN_ZOOM);
   });
 
-  it("zoomPercent is relative to actual size at 72 dpi (1 pt = 1 CSS px = 100 %)", () => {
-    expect(zoomPercent(1)).toBe(100);
-    expect(zoomPercent(0.6413)).toBe(64);
-    expect(zoomPercent(0.01)).toBe(1);
-    expect(zoomPercent(64)).toBe(6400);
+  it("zoomPercent is relative to actual size like Revu (100 % = 96/72 CSS px per point)", () => {
+    expect(ACTUAL_SIZE).toBeCloseTo(4 / 3, 15);
+    expect(zoomPercent(96 / 72)).toBe(100);
+    expect(zoomPercent(1)).toBe(75); // 1 CSS px per point
+    expect(zoomPercent(0.6413)).toBe(48);
+    expect(zoomPercent(MIN_ZOOM)).toBe(1);
+    expect(zoomPercent(MAX_ZOOM)).toBe(6400);
   });
 });
 

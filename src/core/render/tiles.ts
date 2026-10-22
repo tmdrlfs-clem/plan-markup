@@ -22,7 +22,8 @@ export type View = { scale: number; x: number; y: number };
 /** 1/256 device px per point (views at or below the fit preview's scale draw the preview instead). */
 export const MIN_BUCKET = -8;
 /**
- * 512 device px per point: the highest zoom (view.ts MAX_ZOOM) at a DPR of up to 6,
+ * 512 device px per point: the highest zoom (view.ts MAX_ZOOM, 6400 % = 85.3 CSS px
+ * per point) at a DPR of up to 6,
  * within the worker's scale limit (render-protocol: 1000). Only the tiles in view
  * are ever requested, so a high bucket costs no more memory than a low one.
  */

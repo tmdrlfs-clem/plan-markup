@@ -16,6 +16,8 @@ test.describe.configure({ mode: "serial" });
 let storageState: BrowserContextOptions["storageState"];
 
 type View = { zoom: number; cx: number; cy: number; rotation: number };
+/** The status-bar zoom: percent of actual size, 100 % = 96/72 CSS px per point (Revu). */
+const percent = (zoom: number) => Math.round((zoom * 72 * 100) / 96);
 
 async function openDrawing(browser: Browser): Promise<Page> {
   const context = await browser.newContext({ viewport: { width: 1600, height: 1000 }, storageState });
@@ -65,7 +67,7 @@ test("wheel scrolls, Shift+wheel scrolls sideways, Ctrl+wheel zooms around the c
   const b = await box(page);
   await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
   const fit = await view(page);
-  await expect(page.getByRole("contentinfo")).toContainText(`${Math.round(fit.zoom * 100)}%`);
+  await expect(page.getByRole("contentinfo")).toContainText(`${percent(fit.zoom)}%`);
 
   await page.mouse.wheel(0, 120);
   const scrolled = await nextView(page, fit);
@@ -95,7 +97,7 @@ test("wheel scrolls, Shift+wheel scrolls sideways, Ctrl+wheel zooms around the c
   expect(after.y).toBeCloseTo(anchor.y, 0);
   // The browser did not zoom the page.
   expect(await page.evaluate(() => [window.devicePixelRatio, window.visualViewport?.scale ?? 1])).toEqual(dpr);
-  await expect(page.getByRole("contentinfo")).toContainText(`${Math.round(zoomed.zoom * 100)}%`);
+  await expect(page.getByRole("contentinfo")).toContainText(`${percent(zoomed.zoom)}%`);
   await page.context().close();
 });
 

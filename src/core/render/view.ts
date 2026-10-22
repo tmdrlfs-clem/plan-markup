@@ -8,7 +8,8 @@
 // - screen: CSS px of the viewport, origin top-left, y down.
 //
 // A view is `{ zoom, centerX, centerY, rotation }`: `zoom` is CSS px per point
-// (1 = actual size at 72 dpi = 100 %), (centerX, centerY) is the page-space
+// (rendering unit; the displayed percentage is relative to ACTUAL_SIZE, see
+// zoomPercent), (centerX, centerY) is the page-space
 // point shown at the viewport centre, and `rotation` turns the view clockwise
 // (view only: the PDF is never changed). Page -> screen is
 //   screen = viewportCentre + zoom * R(rotation) * (p - centre).
@@ -22,9 +23,14 @@ export type Rect = { x: number; y: number; width: number; height: number };
 /** Affine matrix in canvas `setTransform` order: x' = a x + c y + e, y' = b x + d y + f. */
 export type Matrix = readonly [a: number, b: number, c: number, d: number, e: number, f: number];
 
+/**
+ * CSS px per point at 100 % ("actual size"), as in Revu, Acrobat and pdf.js:
+ * 1 pt = 1/72 in shown at the CSS 96 px per inch (founder decision 2026-10-23).
+ */
+export const ACTUAL_SIZE = 96 / 72;
 /** 1 % and 6400 % of actual size. */
-export const MIN_ZOOM = 0.01;
-export const MAX_ZOOM = 64;
+export const MIN_ZOOM = 0.01 * ACTUAL_SIZE;
+export const MAX_ZOOM = 64 * ACTUAL_SIZE;
 /** One zoom step (keys, buttons): √2. */
 export const ZOOM_STEP = Math.SQRT2;
 /** Share of the page (per axis, capped at the viewport) that panning keeps on screen. */
@@ -233,7 +239,7 @@ export function visibleBounds(view: ViewState, viewport: Size): Rect {
   return { x: view.centerX - width / 2, y: view.centerY - height / 2, width, height };
 }
 
-/** Status-bar zoom: percent of actual size at 72 dpi, rounded (1 pt = 1 CSS px = 100 %). */
+/** Status-bar zoom: percent of actual size, rounded (100 % = ACTUAL_SIZE CSS px per point). */
 export function zoomPercent(zoom: number): number {
-  return Math.round(zoom * 100);
+  return Math.round((zoom / ACTUAL_SIZE) * 100);
 }

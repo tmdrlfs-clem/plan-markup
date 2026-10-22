@@ -43,7 +43,7 @@ export interface ViewerState {
   /** Tiles that failed to render and can be retried (render error state). */
   failedTiles: number;
   timings: ViewerTimings;
-  /** Zoom in percent of actual size (72 dpi = 100 %), once a page is shown. */
+  /** Zoom in percent of actual size (100 % = 96/72 CSS px per point, like Revu), once a page is shown. */
   zoom: number | null;
   /** The in-memory tile budget could not hold the visible tiles (memory warning, AC 5). */
   memoryPressure: boolean;

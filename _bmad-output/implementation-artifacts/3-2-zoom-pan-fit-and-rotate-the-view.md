@@ -175,6 +175,7 @@ Claude Opus 5.5 (claude-opus-5-5)
 **Decisions and deviations (for review):**
 
 1. **Zoom %.** 100 % is 1 pt per CSS px, as the AC says ("actual size at 72 dpi"). pdf.js and some viewers use 96/72 CSS px per pt for 100 %. The clamp is 0.01–64 CSS px per pt.
+   - **Superseded (Story 3.3 Task 0, founder decision 2026-10-23):** 100 % is now 96/72 CSS px per pt, like Revu, Acrobat and pdf.js (`view.ts` `ACTUAL_SIZE`). The clamp is 1 %–6400 % in that unit, i.e. 0.0133–85.3 CSS px per pt. Rendering scales and cache keys are unchanged.
 2. **Quantisation step.** The Story 3.1 review fix quantised raster scales to 1/16 octave. That left tiles up to 4.4 % oversampled at their bucket scale, which resamples hairlines. 1/1024 octave keeps cache keys consistent and makes tiles 1:1. Cross-window cache hits now need the same fit to within about 0.07 %, which is the "geometry matches" case.
 3. **Window blur.** The listener is on the canvas's `focusout`, not on the window's `blur`: the near-sharp lint guard flags the string "blur". `focusout` also fires when the window loses focus, since the canvas is the focused element whenever Space-pan can be active.
 4. **Focus after commands.** Toolbar and ToolRail clicks move focus to the button. Single-letter keys need the canvas focused again (a click on it), as AC 3 requires.
