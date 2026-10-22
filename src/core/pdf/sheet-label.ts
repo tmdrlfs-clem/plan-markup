@@ -135,8 +135,10 @@ export function detectSheetLabel(runs: readonly TextRun[], page: { width: number
       const ry = run.y / page.height;
       if (rx < 0.5 || ry < 0.5 || rx > 1.02 || ry > 1.02) continue;
       const size = run.fontSize / typical;
-      const reach = Math.max(40, 4 * run.fontSize);
-      const captioned = captions.some((c) => Math.hypot(c.x - x, c.y - run.y) <= reach || Math.hypot(c.x + c.width - x, c.y - run.y) <= reach);
+      const reach = Math.max(60, 4 * run.fontSize);
+      const captioned = captions.some(
+        (c) => c === run || Math.hypot(c.x - x, c.y - run.y) <= reach || Math.hypot(c.x + c.width - x, c.y - run.y) <= reach,
+      );
       const corner = Math.min(1, (rx + ry) / 2) - 0.5;
       const score = size + (captioned ? 1 : 0) + corner;
       if (size < MIN_RELATIVE_SIZE && !captioned) continue;
