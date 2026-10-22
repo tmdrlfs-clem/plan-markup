@@ -21,6 +21,7 @@ import {
   visibleBounds,
   zoomAt,
   zoomPercent,
+  zoomOutToRect,
   zoomToRect,
   type Rotation,
   type ViewState,
@@ -162,6 +163,11 @@ describe("fit", () => {
     }
   });
 
+  it("fit page keeps the size guard: no page size throws, a tiny viewport still fits", () => {
+    expect(() => fitPageView({ width: 0, height: 10 }, VP, 0)).toThrow(RangeError);
+    expect(fitPageView(LANDSCAPE, { width: 4, height: 4 }, 0, 10).zoom).toBe(MIN_ZOOM); // 1 px / 2000, clamped
+  });
+
   it("fit width fills the width; a tall page starts at its top edge", () => {
     const v = fitWidthView(PORTRAIT, VP, 0, 10);
     expect(v.zoom).toBeCloseTo(980 / 600, 12);
@@ -211,6 +217,32 @@ describe("zoomToRect and visibleBounds", () => {
     const next = zoomToRect(view, VP, { x: 100, y: 100, width: 200, height: 60 });
     expect(next.zoom).toBeCloseTo(5, 12); // min(1000/200, 600/60)
     close({ x: next.centerX, y: next.centerY }, { x: 200, y: 130 });
+  });
+
+  it("zoomOutToRect (Alt+drag) fits the current view into the rectangle, for every rotation", () => {
+    for (const rotation of [0, 90, 180, 270] as Rotation[]) {
+      const view: ViewState = { zoom: 2, centerX: 400, centerY: 250, rotation };
+      const rect = { x: 600, y: 100, width: 250, height: 300 };
+      const out = zoomOutToRect(view, VP, rect);
+      expect(out.zoom).toBeCloseTo(0.5, 12); // 2 x min(250/1000, 300/600)
+      expect(out.rotation).toBe(rotation);
+      // The old view's centre lands on the rectangle's centre, and the old viewport fits inside it.
+      close(pageToScreen(out, VP, { x: 400, y: 250 }), { x: 725, y: 250 });
+      const corner = pageToScreen(out, VP, screenToPage(view, VP, { x: 0, y: 0 }));
+      const opposite = pageToScreen(out, VP, screenToPage(view, VP, { x: VP.width, y: VP.height }));
+      for (const p of [corner, opposite]) {
+        expect(p.x).toBeGreaterThanOrEqual(rect.x - 1e-9);
+        expect(p.x).toBeLessThanOrEqual(rect.x + rect.width + 1e-9);
+        expect(p.y).toBeGreaterThanOrEqual(rect.y - 1e-9);
+        expect(p.y).toBeLessThanOrEqual(rect.y + rect.height + 1e-9);
+      }
+    }
+  });
+
+  it("zoomOutToRect never zooms in and clamps at the minimum", () => {
+    const view: ViewState = { zoom: 0.011, centerX: 0, centerY: 0, rotation: 0 };
+    expect(zoomOutToRect(view, VP, { x: 0, y: 0, width: 5, height: 5 }).zoom).toBe(MIN_ZOOM);
+    expect(zoomOutToRect({ ...view, zoom: 1 }, VP, { x: 0, y: 0, width: 2000, height: 1200 }).zoom).toBe(1);
   });
 
   it("visibleBounds is the page-space box of the viewport (rotation-aware)", () => {

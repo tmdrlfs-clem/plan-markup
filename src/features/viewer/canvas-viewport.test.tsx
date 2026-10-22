@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { hintStore } from "@/components/ui/hint-store";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
+import { measureDevice } from "./canvas-viewport";
 import { DocumentViewer, IMAGE_ONLY_HINT } from "./document-viewer";
 import { openDocument, resetViewer, viewerStore } from "./viewer-store";
 
@@ -42,6 +43,27 @@ beforeEach(() => {
   HTMLCanvasElement.prototype.getContext = (() => null) as typeof HTMLCanvasElement.prototype.getContext;
   resetViewer();
   hintStore.setState({ hint: null });
+});
+
+describe("measureDevice", () => {
+  const canvases = () => [document.createElement("canvas"), document.createElement("canvas")];
+
+  it("uses the observed device-pixel-content-box size as is", () => {
+    const cs = canvases();
+    expect(measureDevice({ width: 800.4, height: 600.2 }, 1.25, { width: 1001, height: 750 }, true, cs)).toEqual({ width: 1001, height: 750 });
+    expect(cs[0].style.width).toBe("");
+  });
+
+  it("ignores a stale observation (DPR changed first) and rounds meanwhile", () => {
+    expect(measureDevice({ width: 800, height: 600 }, 2, { width: 1000, height: 750 }, true, canvases())).toEqual({ width: 1600, height: 1200 });
+  });
+
+  it("without device-pixel-content-box snaps the canvases' CSS size down to whole device px", () => {
+    const cs = canvases();
+    const device = measureDevice({ width: 800.5, height: 600.3 }, 1.5, null, false, cs);
+    expect(device).toEqual({ width: 1200, height: 900 });
+    for (const c of cs) expect([c.style.width, c.style.height]).toEqual(["800px", "600px"]);
+  });
 });
 
 describe("CanvasViewport", () => {

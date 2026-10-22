@@ -74,8 +74,9 @@ export interface RasterCache<B> {
 /**
  * Raster cache keys (format documented in src/lib/idb/tile-cache.ts). Both carry
  * the quantised device scale step (tiles.ts scaleStep), so the stored pixels
- * always match the key's geometry, and a window of a different size reuses
- * them whenever its fit lands on the same step.
+ * always match the key's geometry. Tile scales are absolute buckets (2^k), so
+ * windows of any size share tiles; the preview is shared whenever the fit lands
+ * on the same step.
  */
 export function previewCacheKey(sha256: string, page: number, scale: number): string {
   return `${sha256}:${page}:preview:s${scaleStep(scale)}`;
@@ -277,7 +278,7 @@ export class RenderWorkerHost<B> {
     const p = job.payload;
     const t0 = this.now();
     const waitMs = t0 - job.queuedAt;
-    // Quantised like tiles, so the fit bucket's tiles and the preview share a scale.
+    // Quantised, so windows whose fit lands on the same step share the cached preview.
     const scale = quantizeScale(Math.min(p.maxWidth / page.width, p.maxHeight / page.height));
     const key = previewCacheKey(doc.sha256, p.page, scale);
     const hit = await this.cache?.getTile(key).catch(() => null);

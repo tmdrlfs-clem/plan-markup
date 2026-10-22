@@ -8,15 +8,25 @@
 // - tile space: device pixels of the page rendered at a bucket's scale, cut
 //   into square tiles of `tileSize` device px (edge tiles are smaller).
 //
-// Zoom buckets are powers of two relative to the fit scale: bucket k renders at
-// fitScale * 2^k * dpr device px per point. A view between buckets uses the
-// next bucket up (never upscale a tile at rest), clamped to [MIN_BUCKET, MAX_BUCKET].
+// Zoom buckets are absolute: bucket k renders at exactly 2^k device px per
+// point, whatever the window size, fit or DPR (a view's device scale is
+// zoom x dpr). A view between buckets uses the next bucket up (never upscale a
+// tile at rest), clamped to [MIN_BUCKET, MAX_BUCKET]. Because the scales do not
+// depend on the viewport, resizing the window, toggling a panel or moving to
+// another monitor keeps every cached tile (in memory and in IndexedDB), and a
+// view exactly at 2^k draws its tiles 1:1.
 
 export type Size = { width: number; height: number };
 export type View = { scale: number; x: number; y: number };
 
-export const MIN_BUCKET = -2; // 1/4 of fit
-export const MAX_BUCKET = 3; // 8x fit
+/** 1/256 device px per point (views at or below the fit preview's scale draw the preview instead). */
+export const MIN_BUCKET = -8;
+/**
+ * 512 device px per point: the highest zoom (view.ts MAX_ZOOM) at a DPR of up to 6,
+ * within the worker's scale limit (render-protocol: 1000). Only the tiles in view
+ * are ever requested, so a high bucket costs no more memory than a low one.
+ */
+export const MAX_BUCKET = 9;
 export const DEFAULT_TILE_SIZE = 512;
 
 /** CSS px per point that fits the whole page into the viewport, leaving `padding` CSS px around it. */
@@ -27,16 +37,16 @@ export function fitScale(page: Size, viewport: Size, padding = 0): number {
   return Math.min(w / page.width, h / page.height);
 }
 
-/** Device px per point at bucket `k`. */
-export function bucketScale(fit: number, bucket: number, dpr: number): number {
-  return fit * 2 ** bucket * dpr;
+/** Device px per point at bucket `k`: exactly 2^k (a quantisation step of its own). */
+export function bucketScale(bucket: number): number {
+  return 2 ** bucket;
 }
 
 /**
- * Raster scales are quantised to steps of 2^(1/SCALE_STEPS_PER_OCTAVE) (≈ 0.07 %):
- * fine enough that a 512 px tile rendered at the quantised scale still lands
- * on exactly 512 device px at the exact bucket scale (drawn 1:1, no
- * resampling: hairlines stay one device pixel, Story 3.2 AC 4).
+ * Raster scales are quantised to steps of 2^(1/SCALE_STEPS_PER_OCTAVE) (≈ 0.07 %).
+ * Bucket scales (2^k) are exact steps, so tiles are rendered at exactly their
+ * bucket scale; the fit preview is rendered at its quantised fit scale and the
+ * fit-page view snaps to that same scale, so both are drawn 1:1 (Story 3.2 AC 4).
  */
 export const SCALE_STEPS_PER_OCTAVE = 1024;
 
@@ -62,21 +72,15 @@ export function quantizeScale(scale: number): number {
 }
 
 /**
- * The bucket for a view scale: the smallest k with fit * 2^k >= viewScale (a
- * 1e-6 tolerance keeps exact powers on their own bucket), clamped.
+ * The bucket for a view's device scale (zoom x dpr, device px per point): the
+ * smallest k with 2^k >= deviceScale (a 1e-6 tolerance keeps exact powers on
+ * their own bucket), clamped.
  */
-export function bucketForScale(viewScale: number, fit: number): number {
-  if (!(viewScale > 0) || !(fit > 0)) throw new RangeError("scales must be positive");
-  const k = Math.ceil(Math.log2(viewScale / fit) - 1e-6);
+export function bucketForScale(deviceScale: number): number {
+  if (!(deviceScale > 0)) throw new RangeError("scale must be positive");
+  const k = Math.ceil(Math.log2(deviceScale) - 1e-6);
   // "+ 0" turns -0 (ceil of a tiny negative) into 0.
   return Math.min(MAX_BUCKET, Math.max(MIN_BUCKET, k)) + 0;
-}
-
-/** All buckets from MIN_BUCKET to MAX_BUCKET (inclusive). */
-export function allBuckets(): number[] {
-  const out: number[] = [];
-  for (let k = MIN_BUCKET; k <= MAX_BUCKET; k++) out.push(k);
-  return out;
 }
 
 export type TileGrid = {
@@ -114,13 +118,25 @@ export type TileRef = {
   distance: number;
 };
 
+/** The tile columns and rows a view covers (inclusive; empty when c0 > c1 or r0 > r1). */
+export type TileRange = {
+  /** The viewport itself, not clamped to the page. */
+  view: { c0: number; r0: number; c1: number; r1: number };
+  /** With the margin ring, clamped to the grid: the tiles to visit. */
+  c0: number;
+  r0: number;
+  c1: number;
+  r1: number;
+  /** The viewport centre in tiles. */
+  cx: number;
+  cy: number;
+};
+
 /**
- * Tiles needed for `view` at `grid`: those intersecting the viewport plus a
- * `margin`-tile ring (pre-fetch for panning), clamped to the page. Ordered by
- * priority: in-view tiles first, then by distance from the viewport centre
- * (centre first); ties break by row, then column, so the order is stable.
+ * The tile range of `view` at `grid` plus a `margin`-tile ring, clamped to the
+ * page. Cheap (no allocation per tile): the per-frame draw loop uses it directly.
  */
-export function visibleTiles(view: View, viewport: Size, grid: TileGrid, margin = 1): TileRef[] {
+export function tileRange(view: View, viewport: Size, grid: TileGrid, margin = 0): TileRange {
   if (!(view.scale > 0)) throw new RangeError("view.scale must be positive");
   // Viewport in page points, then in device px of this grid.
   const x0 = view.x * grid.scale;
@@ -132,13 +148,31 @@ export function visibleTiles(view: View, viewport: Size, grid: TileGrid, margin 
   const r0 = Math.floor(y0 / t);
   const c1 = Math.ceil(x1 / t) - 1;
   const r1 = Math.ceil(y1 / t) - 1;
-  const cx = (x0 + x1) / 2 / t;
-  const cy = (y0 + y1) / 2 / t;
+  return {
+    view: { c0, r0, c1, r1 },
+    c0: Math.max(0, c0 - margin),
+    r0: Math.max(0, r0 - margin),
+    c1: Math.min(grid.cols - 1, c1 + margin),
+    r1: Math.min(grid.rows - 1, r1 + margin),
+    cx: (x0 + x1) / 2 / t,
+    cy: (y0 + y1) / 2 / t,
+  };
+}
+
+/**
+ * Tiles needed for `view` at `grid`: those intersecting the viewport plus a
+ * `margin`-tile ring (pre-fetch for panning), clamped to the page. Ordered by
+ * priority: in-view tiles first, then by distance from the viewport centre
+ * (centre first); ties break by row, then column, so the order is stable.
+ */
+export function visibleTiles(view: View, viewport: Size, grid: TileGrid, margin = 1): TileRef[] {
+  const range = tileRange(view, viewport, grid, margin);
+  const { c0, r0, c1, r1 } = range.view;
   const out: TileRef[] = [];
-  for (let row = Math.max(0, r0 - margin); row <= Math.min(grid.rows - 1, r1 + margin); row++) {
-    for (let col = Math.max(0, c0 - margin); col <= Math.min(grid.cols - 1, c1 + margin); col++) {
+  for (let row = range.r0; row <= range.r1; row++) {
+    for (let col = range.c0; col <= range.c1; col++) {
       const inView = col >= c0 && col <= c1 && row >= r0 && row <= r1;
-      const distance = Math.hypot(col + 0.5 - cx, row + 0.5 - cy);
+      const distance = Math.hypot(col + 0.5 - range.cx, row + 0.5 - range.cy);
       out.push({ col, row, inView, distance });
     }
   }

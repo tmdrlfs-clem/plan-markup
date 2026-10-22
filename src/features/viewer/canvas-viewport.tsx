@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { RenderClient } from "@/workers/rpc";
 
 import { registerViewerEngine } from "./viewer-commands";
-import { ViewerEngine } from "./viewer-engine";
+import { ViewerEngine, type DeviceSize } from "./viewer-engine";
 import { ViewerInput } from "./viewer-input";
 import { VIEWER_ERROR_TEXT, canvasStateOf, openDocument, viewerStore, type ViewerState } from "./viewer-store";
 
@@ -23,6 +23,34 @@ export interface CanvasViewportProps {
 
 function defaultWorker(): Worker {
   return new Worker(new URL("../../workers/render.worker.ts", import.meta.url), { type: "module" });
+}
+
+/**
+ * The canvas backing-store size in whole device px. With device-pixel-content-box
+ * support the observed size is used as is (when it still matches the current
+ * layout and DPR; a DPR change can be measured before the observer reports).
+ * Without it, the canvases' CSS size is set to whole device px (floored) so the
+ * backing store maps 1:1 to the screen.
+ */
+export function measureDevice(
+  rect: { width: number; height: number },
+  dpr: number,
+  observed: DeviceSize | null,
+  exactBoxes: boolean,
+  canvases: HTMLCanvasElement[],
+): DeviceSize {
+  const width = Math.max(1, rect.width) * dpr;
+  const height = Math.max(1, rect.height) * dpr;
+  if (exactBoxes) {
+    if (observed && Math.abs(observed.width - width) <= 1 && Math.abs(observed.height - height) <= 1) return observed;
+    return { width: Math.max(1, Math.round(width)), height: Math.max(1, Math.round(height)) };
+  }
+  const device = { width: Math.max(1, Math.floor(width + 1e-6)), height: Math.max(1, Math.floor(height + 1e-6)) };
+  for (const c of canvases) {
+    c.style.width = `${device.width / dpr}px`;
+    c.style.height = `${device.height / dpr}px`;
+  }
+  return device;
 }
 
 function hasFiles(event: DragEvent): boolean {
@@ -63,13 +91,36 @@ export function CanvasViewport({ onOpen, onOpenFiles, createWorker = defaultWork
     const next = new ViewerEngine({ tiles, markups, active }, client, (patch: Partial<ViewerState>) =>
       viewerStore.setState(patch),
     );
+    // The backing store must be exactly the canvas's device pixels, or the compositor
+    // rescales it and blurs every hairline (AC 4). Browsers that report
+    // device-pixel-content-box give that size; elsewhere the canvases' CSS size is
+    // snapped down to whole device px.
+    const canvases = [tiles, markups, active];
+    let deviceBox: DeviceSize | null = null;
+    let exactBoxes = false;
     const measure = () => {
+      const dpr = window.devicePixelRatio || 1;
       const rect = host.getBoundingClientRect();
-      next.setViewport(rect.width, rect.height, window.devicePixelRatio || 1);
+      next.setViewport(rect.width, rect.height, dpr, measureDevice(rect, dpr, deviceBox, exactBoxes, canvases));
     };
-    measure();
-    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    const observer =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver((entries) => {
+            for (const entry of entries) {
+              const box = entry.target === tiles ? entry.devicePixelContentBoxSize?.[0] : undefined;
+              if (box) deviceBox = { width: box.inlineSize, height: box.blockSize };
+            }
+            measure();
+          });
     observer?.observe(host);
+    try {
+      observer?.observe(tiles, { box: "device-pixel-content-box" });
+      exactBoxes = observer !== null;
+    } catch {
+      // Not supported (Safari): measureDevice snaps the CSS size instead.
+    }
+    measure();
     window.addEventListener("resize", measure);
     // A DPR change (the window moved to another monitor, AC 4) does not always resize: watch
     // a resolution query for the current DPR and re-arm it after every change.

@@ -13,7 +13,7 @@
 // (view only: the PDF is never changed). Page -> screen is
 //   screen = viewportCentre + zoom * R(rotation) * (p - centre).
 
-import type { Size } from "./tiles";
+import { fitScale, type Size } from "./tiles";
 
 export type Rotation = 0 | 90 | 180 | 270;
 export type ViewState = { zoom: number; centerX: number; centerY: number; rotation: Rotation };
@@ -151,10 +151,7 @@ export function rotateView(view: ViewState, delta: 90 | -90): ViewState {
 
 /** The whole page, centred, `margin` CSS px free around it. */
 export function fitPageView(page: Size, viewport: Size, rotation: Rotation, margin = 0): ViewState {
-  const s = rotatedSize(page, rotation);
-  const zoom = clampZoom(
-    Math.min(Math.max(1, viewport.width - 2 * margin) / s.width, Math.max(1, viewport.height - 2 * margin) / s.height),
-  );
+  const zoom = clampZoom(fitScale(rotatedSize(page, rotation), viewport, margin));
   return { zoom, centerX: page.width / 2, centerY: page.height / 2, rotation };
 }
 
@@ -210,6 +207,22 @@ export function zoomToRect(view: ViewState, viewport: Size, rect: Rect): ViewSta
   const centre = screenToPage(view, viewport, { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 });
   const factor = Math.min(viewport.width / Math.max(1, rect.width), viewport.height / Math.max(1, rect.height));
   return { ...view, zoom: clampZoom(view.zoom * factor), centerX: centre.x, centerY: centre.y };
+}
+
+/**
+ * Zoom tool Alt+drag: zooms out so that what the viewport shows now fits into
+ * the screen rectangle `rect` (the counterpart of zoomToRect, which zooms the
+ * rectangle up to the viewport). The current view centre lands on the
+ * rectangle's centre; the zoom never increases.
+ */
+export function zoomOutToRect(view: ViewState, viewport: Size, rect: Rect): ViewState {
+  const factor = Math.min(Math.max(1, rect.width) / viewport.width, Math.max(1, rect.height) / viewport.height);
+  const zoom = clampZoom(view.zoom * Math.min(1, factor));
+  const [cos, sin] = cosSin(view.rotation);
+  // The old centre must appear at the rectangle's centre: centre = old - R^-1 (rectCentre - viewportCentre) / zoom.
+  const dx = (rect.x + rect.width / 2 - viewport.width / 2) / zoom;
+  const dy = (rect.y + rect.height / 2 - viewport.height / 2) / zoom;
+  return { ...view, zoom, centerX: view.centerX - (cos * dx + sin * dy), centerY: view.centerY - (-sin * dx + cos * dy) };
 }
 
 /** The page-space bounding box of the viewport. */

@@ -15,8 +15,11 @@
 //   preview: `<sha256>:<page>:preview:s<step>`
 // <page> is 1-based; <step> is the quantised device scale step
 // (src/core/render/tiles.ts scaleStep: 2^(step/1024) device px per point). The
-// stored pixels therefore always match the key's geometry, and windows whose
-// fit lands on the same step share entries. Documents are keyed by sha256.
+// stored pixels therefore always match the key's geometry. Tiles belong to an
+// absolute zoom bucket k (2^k device px per point, step = 1024 k), so they do
+// not depend on the window size, fit or DPR: any window at the same device
+// scale hits them. The preview is keyed by its own (fit box) scale, so only
+// windows whose fit lands on the same step share it. Documents are keyed by sha256.
 //
 // The storage is behind `TileCacheBackend`, so the policy (budget, LRU, error
 // handling) is tested with the in-memory backend; IndexedDB is the browser one.

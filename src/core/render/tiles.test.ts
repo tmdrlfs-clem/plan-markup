@@ -3,7 +3,6 @@ import {
   LruByteCache,
   MAX_BUCKET,
   MIN_BUCKET,
-  allBuckets,
   bitmapBytes,
   bucketForScale,
   bucketScale,
@@ -13,6 +12,7 @@ import {
   stepScale,
   tileGrid,
   tileKey,
+  tileRange,
   tileRect,
   visibleTiles,
 } from "./tiles";
@@ -59,37 +59,42 @@ describe("scale quantisation", () => {
   });
 });
 
-describe("buckets", () => {
-  const fit = 0.5;
-
-  it("bucketScale is fit * 2^k * dpr", () => {
-    expect(bucketScale(fit, 0, 1)).toBe(0.5);
-    expect(bucketScale(fit, 2, 1.5)).toBe(3);
-    expect(bucketScale(fit, -2, 1)).toBe(0.125);
+describe("buckets (absolute: 2^k device px per point)", () => {
+  it("bucketScale is exactly 2^k and an exact quantisation step", () => {
+    expect(bucketScale(0)).toBe(1);
+    expect(bucketScale(3)).toBe(8);
+    expect(bucketScale(-2)).toBe(0.25);
+    for (let k = MIN_BUCKET; k <= MAX_BUCKET; k++) expect(quantizeScale(bucketScale(k))).toBe(bucketScale(k));
   });
 
-  it("picks the smallest bucket at or above the view scale", () => {
-    expect(bucketForScale(0.5, fit)).toBe(0);
-    expect(bucketForScale(0.51, fit)).toBe(1);
-    expect(bucketForScale(1, fit)).toBe(1);
-    expect(bucketForScale(1.9, fit)).toBe(2);
-    expect(bucketForScale(0.3, fit)).toBe(0);
-    expect(bucketForScale(0.25, fit)).toBe(-1);
+  it("picks the smallest bucket at or above the view's device scale", () => {
+    expect(bucketForScale(1)).toBe(0);
+    expect(bucketForScale(1.01)).toBe(1);
+    expect(bucketForScale(2)).toBe(1);
+    expect(bucketForScale(3.8)).toBe(2);
+    expect(bucketForScale(0.6)).toBe(0);
+    expect(bucketForScale(0.5)).toBe(-1);
+  });
+
+  it("does not depend on the window: the same zoom x dpr is the same bucket", () => {
+    // zoom 1.5 at DPR 1 and zoom 0.75 at DPR 2 are both 1.5 device px per point.
+    expect(bucketForScale(1.5 * 1)).toBe(bucketForScale(0.75 * 2));
   });
 
   it("keeps exact powers on their own bucket despite float noise", () => {
-    expect(bucketForScale(fit * 2 ** 2 * (1 + 1e-9), fit)).toBe(2);
+    expect(bucketForScale(4 * (1 + 1e-9))).toBe(2);
+    expect(bucketForScale(Math.SQRT2 * Math.SQRT2)).toBe(1);
   });
 
-  it("clamps to MIN_BUCKET and MAX_BUCKET", () => {
-    expect(bucketForScale(0.0001, fit)).toBe(MIN_BUCKET);
-    expect(bucketForScale(1000, fit)).toBe(MAX_BUCKET);
-    expect(allBuckets()).toEqual([-2, -1, 0, 1, 2, 3]);
+  it("clamps to MIN_BUCKET and MAX_BUCKET (6400 % at DPR 6 is still sharp)", () => {
+    expect(bucketForScale(0.0001)).toBe(MIN_BUCKET);
+    expect(bucketForScale(64 * 6)).toBe(MAX_BUCKET);
+    expect(bucketForScale(1e6)).toBe(MAX_BUCKET);
   });
 
   it("rejects non-positive scales", () => {
-    expect(() => bucketForScale(0, fit)).toThrow(RangeError);
-    expect(() => bucketForScale(1, Number.NaN)).toThrow(RangeError);
+    expect(() => bucketForScale(0)).toThrow(RangeError);
+    expect(() => bucketForScale(Number.NaN)).toThrow(RangeError);
   });
 });
 
@@ -155,6 +160,18 @@ describe("visibleTiles", () => {
   it("is stable for equal distances", () => {
     const a = visibleTiles({ scale: 1, x: 0, y: 0 }, viewport, grid, 0);
     expect(a.map((t) => `${t.col},${t.row}`)).toEqual(["0,0", "1,0", "0,1", "1,1"]);
+  });
+});
+
+describe("tileRange", () => {
+  it("is the viewport's tile range (plus margin, clamped) that visibleTiles enumerates", () => {
+    const grid = tileGrid({ width: 4096, height: 4096 }, 1, 512);
+    const viewport = { width: 1000, height: 600 };
+    const view = { scale: 1, x: 700, y: 300 };
+    const r = tileRange(view, viewport, grid, 1);
+    expect(r.view).toEqual({ c0: 1, r0: 0, c1: 3, r1: 1 });
+    expect([r.c0, r.r0, r.c1, r.r1]).toEqual([0, 0, 4, 2]);
+    expect(visibleTiles(view, viewport, grid, 1)).toHaveLength((r.c1 - r.c0 + 1) * (r.r1 - r.r0 + 1));
   });
 });
 

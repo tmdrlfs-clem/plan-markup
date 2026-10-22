@@ -107,15 +107,16 @@ function target(): ViewerInputTarget & Record<string, ReturnType<typeof vi.fn>> 
     zoomStep: vi.fn(),
     panBy: vi.fn(),
     zoomToRect: vi.fn(),
+    zoomOutToRect: vi.fn(),
     setZoomRect: vi.fn(),
     fitPage: vi.fn(),
     fitWidth: vi.fn(),
   };
 }
 
-function pointer(type: string, init: { x: number; y: number; button?: number; altKey?: boolean }) {
+function pointer(type: string, init: { x: number; y: number; button?: number; altKey?: boolean; pointerId?: number }) {
   const e = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: init.x, clientY: init.y, button: init.button ?? 0, altKey: init.altKey });
-  Object.defineProperty(e, "pointerId", { value: 1 });
+  Object.defineProperty(e, "pointerId", { value: init.pointerId ?? 1 });
   return e;
 }
 
@@ -218,6 +219,53 @@ describe("ViewerInput", () => {
     canvas.dispatchEvent(pointer("pointerup", { x: 40, y: 100 + CLICK_SLOP + 30 }));
     expect(t.zoomToRect).toHaveBeenCalledWith({ x: 40, y: 100, width: 60, height: 30 + CLICK_SLOP });
     expect(t.setZoomRect).toHaveBeenLastCalledWith(null);
+  });
+
+  it("Zoom tool: an Alt+drag zooms out into the rectangle, never in", () => {
+    setTool("zoom");
+    canvas.dispatchEvent(pointer("pointerdown", { x: 100, y: 100, altKey: true }));
+    canvas.dispatchEvent(pointer("pointermove", { x: 160, y: 140 }));
+    canvas.dispatchEvent(pointer("pointerup", { x: 160, y: 140 }));
+    expect(t.zoomOutToRect).toHaveBeenCalledWith({ x: 100, y: 100, width: 60, height: 40 });
+    expect(t.zoomToRect).not.toHaveBeenCalled();
+  });
+
+  it("another pointer's pointercancel or lostpointercapture does not end the drag", () => {
+    setTool("pan");
+    canvas.dispatchEvent(pointer("pointerdown", { x: 0, y: 0, pointerId: 1 }));
+    canvas.dispatchEvent(pointer("pointercancel", { x: 0, y: 0, pointerId: 2 }));
+    canvas.dispatchEvent(pointer("lostpointercapture", { x: 0, y: 0, pointerId: 2 }));
+    canvas.dispatchEvent(pointer("pointermove", { x: 5, y: 7, pointerId: 1 }));
+    expect(t.panBy).toHaveBeenCalledWith(5, 7);
+    canvas.dispatchEvent(pointer("pointercancel", { x: 5, y: 7, pointerId: 1 }));
+    canvas.dispatchEvent(pointer("pointermove", { x: 9, y: 9, pointerId: 1 }));
+    expect(t.panBy).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["loading", { status: "loading", pageCount: 0 }],
+    ["a render error", { status: "error", pageCount: 1, error: "render-failed" }],
+  ] as const)("while %s, Ctrl+wheel, Ctrl+0 and Ctrl+9 never reach the browser but do nothing", (_name, patch) => {
+    viewerStore.setState(patch);
+    canvas.focus();
+    const wheel = new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaY: -100, ctrlKey: true });
+    canvas.dispatchEvent(wheel);
+    expect(wheel.defaultPrevented).toBe(true);
+    for (const digit of ["0", "9"]) {
+      const e = new KeyboardEvent("keydown", { key: digit, code: `Digit${digit}`, ctrlKey: true, bubbles: true, cancelable: true });
+      window.dispatchEvent(e);
+      expect(e.defaultPrevented).toBe(true);
+    }
+    expect(t.zoomBy).not.toHaveBeenCalled();
+    expect(t.fitWidth).not.toHaveBeenCalled();
+    expect(t.fitPage).not.toHaveBeenCalled();
+  });
+
+  it("with no document the browser keeps Ctrl+wheel", () => {
+    viewerStore.setState({ status: "empty", pageCount: 0 });
+    const wheel = new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaY: -100, ctrlKey: true });
+    canvas.dispatchEvent(wheel);
+    expect(wheel.defaultPrevented).toBe(false);
   });
 
   it("keys: +/- zoom at the pointer when it is over the canvas, V/Shift+V/Z pick tools, Ctrl+0 fits width", () => {

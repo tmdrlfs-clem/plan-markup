@@ -6,7 +6,13 @@
 // canvas has focus. Ctrl+9 / Ctrl+0 act when the canvas has focus or the
 // pointer is over it, and then preventDefault so the browser's own zoom reset
 // does not run; elsewhere the browser keeps its defaults. Ctrl+wheel is only
-// listened to on the canvas.
+// listened to on the canvas. The browser's zoom is suppressed whenever a
+// document area is shown (also while it loads or shows a render error); the
+// viewer only acts once a page is there.
+//
+// Zoom tool: click zooms in, Alt+click zooms out (one √2 step about the
+// point); a drag zooms the rectangle up to the viewport, an Alt+drag zooms
+// out so the current view fits into the rectangle (view.ts zoomOutToRect).
 
 import type { Point, Rect } from "@/core/render/view";
 
@@ -92,6 +98,7 @@ export interface ViewerInputTarget {
   zoomStep(direction: 1 | -1, at?: Point): void;
   panBy(dx: number, dy: number): void;
   zoomToRect(rect: Rect): void;
+  zoomOutToRect(rect: Rect): void;
   setZoomRect(rect: Rect | null): void;
   fitPage(): void;
   fitWidth(): void;
@@ -122,8 +129,9 @@ export class ViewerInput {
     this.on(canvas, "pointerdown", (e) => this.onPointerDown(e as PointerEvent));
     this.on(canvas, "pointermove", (e) => this.onPointerMove(e as PointerEvent));
     this.on(canvas, "pointerup", (e) => this.onPointerUp(e as PointerEvent));
-    this.on(canvas, "pointercancel", () => this.endDrag(false));
-    this.on(canvas, "lostpointercapture", () => this.endDrag(false));
+    // Only the dragging pointer ends the drag (another pointer's cancel must not).
+    this.on(canvas, "pointercancel", (e) => this.cancelDrag(e as PointerEvent));
+    this.on(canvas, "lostpointercapture", (e) => this.cancelDrag(e as PointerEvent));
     this.on(canvas, "pointerleave", () => {
       if (!this.drag) this.pointer = null;
     });
@@ -157,8 +165,14 @@ export class ViewerInput {
     this.removers.push(() => el.removeEventListener(type, fn, options));
   }
 
+  /** A page is shown: the viewer acts on input. */
   private active(): boolean {
     return hasDocument(viewerStore.getState());
+  }
+
+  /** A document area is shown (loading, ready or failed): browser zoom input is suppressed. */
+  private documentArea(): boolean {
+    return viewerStore.getState().status !== "empty";
   }
 
   private point(e: { clientX: number; clientY: number }): Point {
@@ -174,10 +188,12 @@ export class ViewerInput {
   }
 
   private onWheel(e: WheelEvent): void {
+    const zoom = e.ctrlKey || e.metaKey;
+    if (zoom && this.documentArea()) e.preventDefault();
     if (!this.active()) return;
     e.preventDefault();
     const { dx, dy } = normalizeWheel(e, this.canvas.clientHeight || 600);
-    if (e.ctrlKey || e.metaKey) this.target.zoomBy(wheelZoomFactor(dy), this.point(e));
+    if (zoom) this.target.zoomBy(wheelZoomFactor(dy), this.point(e));
     else this.target.panBy(-dx, -dy);
   }
 
@@ -215,6 +231,10 @@ export class ViewerInput {
     }
   }
 
+  private cancelDrag(e: PointerEvent): void {
+    if (this.drag && this.drag.pointerId === e.pointerId) this.endDrag(false);
+  }
+
   private onPointerUp(e: PointerEvent): void {
     if (!this.drag || this.drag.pointerId !== e.pointerId) return;
     this.pointer = this.point(e);
@@ -232,6 +252,7 @@ export class ViewerInput {
       if (commit && end) {
         const rect = rectOf(drag.start, end);
         if (rect.width < CLICK_SLOP && rect.height < CLICK_SLOP) this.target.zoomStep(drag.zoomOut ? -1 : 1, drag.start);
+        else if (drag.zoomOut) this.target.zoomOutToRect(rect);
         else this.target.zoomToRect(rect);
       }
     }
@@ -248,14 +269,16 @@ export class ViewerInput {
       this.altDown = true;
       this.updateCursor();
     }
-    if (e.defaultPrevented || !this.active()) return;
+    if (e.defaultPrevented || !this.documentArea()) return;
     const doc = this.canvas.ownerDocument;
     const action = resolveViewerKey(e, {
       canvasFocused: doc.activeElement === this.canvas,
       pointerOver: this.pointer !== null,
     });
     if (!action) return;
+    // Over or focused on the document area the browser never zooms, even before the page is there.
     e.preventDefault();
+    if (!this.active()) return;
     const at = this.pointer ?? undefined;
     switch (action.type) {
       case "zoom-in":

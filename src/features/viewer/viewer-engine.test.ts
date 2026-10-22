@@ -111,7 +111,6 @@ describe("ViewerEngine", () => {
     const open = client.last("render.open");
     expect(open.transfer).toEqual([(open.payload as { bytes: ArrayBuffer }).bytes]);
     expect(state.pageCount).toBe(3);
-    expect(engine.fitScale).toBe(1); // (1032 - 32) / 1000
     expect(engine.view).toEqual({ zoom: 1, centerX: 500, centerY: 250, rotation: 0 }); // (1032 - 2 x FIT_PADDING) / 1000
     expect(client.last("render.preview").payload).toEqual({ page: 1, maxWidth: 1000, maxHeight: 500, progressive: true });
   });
@@ -163,7 +162,7 @@ describe("ViewerEngine", () => {
     expect(client.all("render.tile").length).toBeGreaterThan(before);
   });
 
-  it("a DPR or fit change cancels in-flight tiles, clears failed markers and re-keys tiles by the new scale", async () => {
+  it("a resize at the same zoom keeps every tile: buckets are absolute (2^k device px per point)", async () => {
     const { client, engine } = setup();
     await openToPreview(client, engine);
     client.last("render.preview").resolve({ tile: tilePayload(1), content: null });
@@ -171,22 +170,87 @@ describe("ViewerEngine", () => {
     engine.zoomBy(2);
     vi.runAllTimers();
     const first = client.all("render.tile");
-    first[0].reject(new WorkerRequestError("render-failed", { name: "Error", message: "x" }));
+    resolveTiles(first);
     await flush();
-    expect(state.failedTiles).toBe(1);
-    const pending = first.slice(1).map((c) => c.reqId);
-    engine.setViewport(1032, 532, 1.5);
-    expect(client.cancelled).toEqual(expect.arrayContaining(pending));
-    expect(state.failedTiles).toBe(0);
+    const before = client.calls.length;
+    // A panel toggle / window resize: same zoom, other viewport. Nothing is cancelled or re-rendered.
+    engine.setViewport(900, 532, 1);
+    engine.setViewport(1032, 532, 1);
     vi.runAllTimers();
+    expect(client.cancelled).toEqual([]);
+    expect(client.calls.length).toBe(before);
+  });
+
+  it("a DPR change keeps the tiles; the new bucket is requested at settle and stale requests cancelled there", async () => {
+    const { client, engine } = setup();
+    await openToPreview(client, engine);
+    client.last("render.preview").resolve({ tile: tilePayload(1), content: null });
+    await flush();
+    engine.zoomBy(2);
+    vi.runAllTimers();
+    const first = client.all("render.tile");
+    expect((first[0].payload as { scale: number }).scale).toBe(2);
+    const pending = first.map((c) => c.reqId);
+    engine.setViewport(1032, 532, 1.5); // zoom 2 x DPR 1.5 = 3 device px per point -> bucket 2
+    expect(client.cancelled).toEqual([]);
+    vi.runAllTimers();
+    expect(client.cancelled).toEqual(expect.arrayContaining(pending));
     const next = client.all("render.tile").slice(first.length);
     expect(next.length).toBeGreaterThan(0);
-    expect((next[0].payload as { scale: number }).scale).toBeGreaterThanOrEqual(3); // 2 x 1.5, quantised up
-    // A late reply for an old-scale request is dropped, not drawn under the new key.
+    expect(next[0].payload).toMatchObject({ bucket: 2, scale: 4 });
+    // A late reply for a cancelled request is dropped, not drawn.
     const late = tilePayload(2);
     first[1].resolve({ tile: late });
     await flush();
     expect(late.bitmap.close).toHaveBeenCalled();
+  });
+
+  it("scopes failed tiles to the target bucket: leaving it clears the alert, returning retries", async () => {
+    const { client, engine } = setup();
+    await openToPreview(client, engine);
+    client.last("render.preview").resolve({ tile: tilePayload(1), content: null });
+    await flush();
+    engine.zoomBy(2); // bucket 1
+    vi.runAllTimers();
+    const first = client.all("render.tile");
+    first[0].reject(new WorkerRequestError("render-failed", { name: "Error", message: "x" }));
+    await flush();
+    expect(state.failedTiles).toBe(1);
+    const failedPayload = first[0].payload;
+    engine.zoomBy(2); // bucket 2
+    vi.runAllTimers();
+    expect(state.failedTiles).toBe(0);
+    engine.zoomBy(0.5); // back to bucket 1: the failed tile is asked for again
+    vi.runAllTimers();
+    const again = client.all("render.tile").filter((c) => JSON.stringify(c.payload) === JSON.stringify(failedPayload));
+    expect(again).toHaveLength(2);
+  });
+
+  it("a failure arriving after the view left its bucket raises no alert", async () => {
+    const { client, engine } = setup();
+    await openToPreview(client, engine);
+    client.last("render.preview").resolve({ tile: tilePayload(1), content: null });
+    await flush();
+    engine.zoomBy(2);
+    vi.runAllTimers();
+    const call = client.all("render.tile")[0];
+    engine.zoomBy(2); // not settled yet: the request is still in flight
+    call.reject(new WorkerRequestError("render-failed", { name: "Error", message: "x" }));
+    await flush();
+    expect(state.failedTiles).toBe(0);
+  });
+
+  it("zooms past the old 8x cap: 6400 % uses its own bucket (64 device px per point)", async () => {
+    const { client, engine } = setup();
+    await openToPreview(client, engine);
+    client.last("render.preview").resolve({ tile: tilePayload(1), content: null });
+    await flush();
+    engine.zoomBy(64);
+    vi.runAllTimers();
+    const tiles = client.all("render.tile");
+    expect(tiles[0].payload).toMatchObject({ bucket: 6, scale: 64 });
+    // Only the viewport (plus a ring) is requested: 1032 x 532 px is at most 4 x 3 tiles, + ring 6 x 5.
+    expect(tiles.length).toBeLessThanOrEqual(30);
   });
 
   it("a fatal worker failure on a tile shows the render error (Try again reopens)", async () => {
@@ -340,23 +404,116 @@ describe("ViewerEngine: gestures (Story 3.2)", () => {
     expect(drawn(ops).length).toBeGreaterThan(1);
   });
 
-  it("draws a tile 1:1 at integer device px at its bucket scale", async () => {
+  it("draws every tile 1:1 at whole device px at its bucket scale, abutting, for many positions", async () => {
+    const { client, engine, ops } = setupRecording();
+    await readyAtFit(client, engine);
+    engine.zoomBy(2); // 2 device px per point: bucket 1 exactly
+    vi.runAllTimers();
+    for (let i = 0; i < 25; i++) {
+      // Fractional pans put the page origin at every sub-pixel phase.
+      engine.panBy(-37.37 - i * 0.13, -11.71 - i * 0.29);
+      vi.runAllTimers();
+      resolveTiles(client.all("render.tile")); // settling a promise twice is a no-op
+      await flush();
+      ops.length = 0;
+      paint();
+      const tiles = ops.filter((o) => o.op === "drawImage" && (o.args[0] as { width: number }).width !== 1000);
+      expect(tiles.length).toBeGreaterThan(0);
+      const lefts = new Map<number, number>();
+      for (const t of tiles) {
+        const [b, x, y, w, h] = t.args as [{ width: number; height: number }, number, number, number, number];
+        expect([Number.isInteger(x), Number.isInteger(y), w, h]).toEqual([true, true, b.width, b.height]);
+        lefts.set(x, w);
+      }
+      // Neighbours abut exactly: each tile's right edge is another tile's left edge (or the page edge).
+      const xs = [...lefts.keys()].sort((a, b) => a - b);
+      for (let k = 0; k + 1 < xs.length; k++) expect(xs[k] + (lefts.get(xs[k]) ?? 0)).toBe(xs[k + 1]);
+    }
+  });
+
+  it("draws tiles 1:1 in every view rotation (the box is the bitmap turned a quarter)", async () => {
+    const { client, engine, ops } = setupRecording();
+    await readyAtFit(client, engine);
+    engine.zoomBy(2);
+    engine.panBy(0.37, -0.61);
+    vi.runAllTimers();
+    resolveTiles(client.all("render.tile"));
+    await flush();
+    for (const delta of [90, 90, 90] as const) {
+      engine.rotate(delta);
+      ops.length = 0;
+      paint();
+      const draws = ops.filter((o) => o.op === "drawImage" && (o.args[0] as { width: number }).width !== 1000);
+      expect(draws.length).toBeGreaterThan(0);
+      for (const d of draws) {
+        const [b, x, y, w, h] = d.args as [{ width: number; height: number }, number, number, number, number];
+        // Drawn about the box centre at the bitmap's own size.
+        expect([w, h, x, y]).toEqual([b.width, b.height, -b.width / 2, -b.height / 2]);
+      }
+      const centres = ops.filter((o) => o.op === "setTransform" && (o.args as number[])[0] !== 1).map((o) => o.args as number[]);
+      for (const [, , , , e, f] of centres) {
+        // A centre on a whole or half pixel: the box edges are whole device px.
+        expect(Number.isInteger(e * 2) && Number.isInteger(f * 2)).toBe(true);
+      }
+    }
+  });
+
+  it("fit page snaps to the preview's quantised scale and draws the preview 1:1 (any window, any DPR)", async () => {
+    const { client, engine, ops } = setupRecording();
+    engine.setViewport(1203.4, 777.7, 1.25);
+    await openToPreview(client, engine);
+    const box = client.last("render.preview").payload as { maxWidth: number; maxHeight: number };
+    // The worker renders at quantizeScale(min(box / page)); emulate it.
+    const raw = Math.min(box.maxWidth / PAGE.width, box.maxHeight / PAGE.height);
+    const scale = 2 ** (Math.ceil(Math.log2(raw) * 1024 - 1e-4) / 1024);
+    client.last("render.preview").resolve({ tile: tilePayload(scale), content: null });
+    await flush();
+    vi.runAllTimers();
+    expect(engine.view.zoom * 1.25).toBeCloseTo(scale, 12);
+    expect(client.all("render.tile")).toHaveLength(0);
+    for (const pan of [0, 0.3, 0.55, 0.81]) {
+      engine.fitPage();
+      engine.setView({ ...engine.view, centerX: engine.view.centerX + pan });
+      ops.length = 0;
+      paint();
+      const [b, x, y, w, h] = ops.find((o) => o.op === "drawImage")!.args as [{ width: number; height: number }, number, number, number, number];
+      expect([Number.isInteger(x), Number.isInteger(y), w, h]).toEqual([true, true, b.width, b.height]);
+    }
+  });
+
+  it("fit page after a resize re-renders the preview for the new fit box instead of requesting tiles", async () => {
+    const { client, engine } = setupRecording();
+    await readyAtFit(client, engine);
+    engine.setViewport(2032, 1032, 1); // fit 2 (page 1000 x 500 in 2000 x 1000)
+    vi.runAllTimers();
+    expect(client.all("render.preview")).toHaveLength(2);
+    expect(client.last("render.preview").payload).toEqual({ page: 1, maxWidth: 2000, maxHeight: 1000, progressive: false });
+    expect(client.all("render.tile")).toHaveLength(0);
+    // Another resize before it lands replaces the request.
+    const firstRefresh = client.last("render.preview");
+    engine.setViewport(1532, 782, 1);
+    vi.runAllTimers();
+    expect(client.cancelled).toContain(firstRefresh.reqId);
+    client.last("render.preview").resolve({ tile: tilePayload(1.5), content: null });
+    await flush();
+    vi.runAllTimers();
+    expect(client.all("render.preview")).toHaveLength(3);
+  });
+
+  it("draws only buckets that hold tiles, and no more tiles than the viewport needs", async () => {
     const { client, engine, ops } = setupRecording();
     await readyAtFit(client, engine);
     engine.zoomBy(2);
     vi.runAllTimers();
     resolveTiles(client.all("render.tile"));
     await flush();
-    paint();
+    const peek = vi.spyOn((engine as unknown as { cache: { peek: (k: string) => unknown } }).cache, "peek");
     ops.length = 0;
-    engine.panBy(0, 0);
     paint();
-    const tiles = ops.filter((o) => o.op === "drawImage" && (o.args[0] as { width: number }).width === 512);
-    expect(tiles.length).toBeGreaterThan(0);
-    for (const t of tiles) {
-      const [b, x, y, w, h] = t.args as [{ width: number; height: number }, number, number, number, number];
-      expect([Number.isInteger(x), Number.isInteger(y), w, h]).toEqual([true, true, b.width, b.height]);
-    }
+    // Bucket 1 only: 1032 x 532 at 2 device px per point covers at most 3 x 2 tile slots.
+    const keys = peek.mock.calls.map((c) => c[0]);
+    expect(new Set(keys.map((k) => k.split(":")[1]))).toEqual(new Set(["1"]));
+    expect(keys.length).toBeLessThanOrEqual(6);
   });
 
   it("rotating the view re-renders nothing and draws the same bitmaps turned a quarter", async () => {

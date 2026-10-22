@@ -12,28 +12,34 @@
 // the live transform; once the view has been still for SETTLE_MS the tiles of
 // the new bucket are requested (visible first, centre first) and stale
 // requests cancelled. Tiles of other buckets stay drawn underneath until the
-// new ones cover them. Zoom buckets are relative to the rotation-0 fit, so a
-// view rotation never re-renders anything.
+// new ones cover them. Zoom buckets are absolute (tiles.ts: bucket k is 2^k
+// device px per point), so a view rotation, a window resize, a panel toggle or
+// a DPR change at the same zoom never re-renders a tile.
+//
+// Crisp rasters (AC 4): a raster drawn at its own scale is copied 1:1 at
+// integer device px. That is a tile whenever zoom x dpr is exactly 2^k, and the
+// preview at fit page (fit page snaps to the preview's quantised scale; after a
+// resize the preview is re-rendered for the new fit box).
 
 import {
   DEFAULT_TILE_SIZE,
   LruByteCache,
-  MAX_BUCKET,
-  MIN_BUCKET,
   bitmapBytes,
   bucketForScale,
   bucketScale,
   quantizeScale,
-  scaleStep,
   tileGrid,
   tileKey,
+  tileRange,
   tileRect,
   visibleTiles,
   type Size,
+  type TileGrid,
   type TileRef,
 } from "@/core/render/tiles";
 import {
   clampView,
+  clampZoom,
   fitPageView,
   fitWidthView,
   panBy,
@@ -43,6 +49,7 @@ import {
   stepZoom,
   visibleBounds,
   zoomAt,
+  zoomOutToRect,
   zoomPercent,
   zoomToRect,
   type Matrix,
@@ -61,11 +68,16 @@ export const FIT_PADDING = 16;
 export const SETTLE_MS = 150;
 /** Requests stop once the visible tiles would fill this share of the memory budget. */
 const REQUEST_BUDGET_SHARE = 0.9;
+/** A raster whose scale matches the view's device scale this closely (relative) is drawn 1:1. */
+const ONE_TO_ONE = 1e-9;
 const BACKDROP = "#e5e7eb";
 const PAGE = "#ffffff";
 const ZOOM_RECT = "#e8620c";
 
 export type ViewerCanvases = { tiles: HTMLCanvasElement; markups: HTMLCanvasElement; active: HTMLCanvasElement };
+
+/** The canvas backing store in whole device px, as the host measured it. */
+export type DeviceSize = { width: number; height: number };
 
 export type ViewerEngineOptions = {
   tileSize?: number;
@@ -79,7 +91,11 @@ export type ViewerEngineOptions = {
 /** "page" / "width" keep the view fitted on resize until the user zooms or pans. */
 export type FitMode = "page" | "width" | null;
 
-type Tile = { bitmap: ImageBitmap; x: number; y: number; width: number; height: number; scale: number };
+/** A raster held by the engine; `bucket` is null for the preview. */
+type Tile = { bitmap: ImageBitmap; bucket: number | null; x: number; y: number; width: number; height: number; scale: number };
+
+/** A device-px box: left, top, right, bottom. */
+type Box = { l: number; t: number; r: number; b: number };
 
 const closeBitmap = (b: ImageBitmap) => {
   try {
@@ -113,19 +129,24 @@ export class ViewerEngine {
   private dpr = 1;
   private page: PageInfo | null = null;
   private sha256: string | null = null;
-  /** Fit-page zoom at rotation 0: the base of the zoom buckets. */
-  private fit = 1;
   view: ViewState = { zoom: 1, centerX: 0, centerY: 0, rotation: 0 };
   private fitMode: FitMode = "page";
 
   private preview: Tile | null = null;
   private previewFinal = false;
+  /** Scale of the preview re-render in flight (fit page after a resize), if any. */
+  private previewPending: number | null = null;
   /** Bumped per open: replies for an older document are dropped. */
   private generation = 0;
   private openReq: number | null = null;
   private previewReq: number | null = null;
   private readonly inflight = new Map<string, number>(); // tile key -> reqId
-  private readonly failed = new Set<string>();
+  /** Failed tiles (key -> bucket); only the target bucket's survive a settle. */
+  private readonly failed = new Map<string, number>();
+  /** Cached tiles per bucket, so drawing skips empty buckets. */
+  private readonly bucketCounts = new Map<number, number>();
+  /** Tile grid per bucket of the current page. */
+  private readonly grids = new Map<number, TileGrid>();
   /** Keys of the tiles the current view needs (the memory warning watches their eviction). */
   private needed = new Set<string>();
   private memoryWarned = false;
@@ -144,7 +165,10 @@ export class ViewerEngine {
     options: ViewerEngineOptions = {},
   ) {
     this.tileSize = options.tileSize ?? DEFAULT_TILE_SIZE;
-    this.cache = new LruByteCache<Tile>(options.budgetBytes ?? 256 * 1024 * 1024, (_k, t) => closeBitmap(t.bitmap));
+    this.cache = new LruByteCache<Tile>(options.budgetBytes ?? 256 * 1024 * 1024, (_k, t) => {
+      closeBitmap(t.bitmap);
+      if (t.bucket !== null) this.countTile(t.bucket, -1);
+    });
     this.now = options.now ?? (() => performance.now());
     this.requestFrame = options.requestFrame ?? ((cb) => requestAnimationFrame(cb));
     this.cancelFrame = options.cancelFrame ?? ((id) => cancelAnimationFrame(id));
@@ -161,18 +185,25 @@ export class ViewerEngine {
     this.client.terminate();
   }
 
-  /** Sizes the canvases to the viewport (CSS px) x DPR; keeps a fit mode fitted, clamps otherwise. */
-  setViewport(width: number, height: number, dpr: number): void {
-    this.viewport = { width: Math.max(1, width), height: Math.max(1, height) };
-    const before = { fit: this.fit, dpr: this.dpr };
+  /**
+   * Sizes the canvases. `device` is the backing store in whole device px as the
+   * host measured it (ResizeObserver device-pixel-content-box, or the CSS size
+   * snapped to device px): the viewport is then exactly device / dpr CSS px and
+   * the compositor never rescales the canvas. Without it the backing store is
+   * the CSS size x DPR, rounded. Keeps a fit mode fitted, clamps otherwise.
+   * Cached tiles stay valid: bucket scales depend on neither the viewport nor the DPR.
+   */
+  setViewport(width: number, height: number, dpr: number, device?: DeviceSize): void {
     this.dpr = dpr > 0 ? dpr : 1;
+    const dw = Math.max(1, Math.round(device ? device.width : Math.max(1, width) * this.dpr));
+    const dh = Math.max(1, Math.round(device ? device.height : Math.max(1, height) * this.dpr));
+    this.viewport = device ? { width: dw / this.dpr, height: dh / this.dpr } : { width: Math.max(1, width), height: Math.max(1, height) };
     for (const c of Object.values(this.canvases)) {
-      c.width = Math.max(1, Math.round(this.viewport.width * this.dpr));
-      c.height = Math.max(1, Math.round(this.viewport.height * this.dpr));
+      // Assigning a canvas size clears it, even to the same value.
+      if (c.width !== dw) c.width = dw;
+      if (c.height !== dh) c.height = dh;
     }
     if (this.page) {
-      this.fit = this.baseFit(this.page);
-      if (this.fit !== before.fit || this.dpr !== before.dpr) this.dropScaledWork();
       this.view = this.fitMode ? this.fittedView(this.fitMode) : clampView(this.view, this.page, this.viewport);
       this.scheduleSettle(SETTLE_MS);
     }
@@ -216,7 +247,6 @@ export class ViewerEngine {
     if (generation !== this.generation) return;
     this.page = opened.pages[0];
     this.sha256 = opened.sha256;
-    this.fit = this.baseFit(this.page);
     // A document seen before in this session comes back where it was left.
     const saved = documentViews.get(opened.sha256);
     this.fitMode = saved ? saved.fitMode : "page";
@@ -230,15 +260,25 @@ export class ViewerEngine {
     await this.loadPreview(generation);
   }
 
-  private async loadPreview(generation: number): Promise<void> {
-    // The rotation-0 fit box: the preview is the bucket-0 raster whatever the view rotation.
-    const box = {
+  /** The rotation-0 fit box in device px: the preview is the fit-page raster whatever the view rotation. */
+  private previewBox(): { maxWidth: number; maxHeight: number } {
+    return {
       maxWidth: Math.max(1, (this.viewport.width - 2 * FIT_PADDING) * this.dpr),
       maxHeight: Math.max(1, (this.viewport.height - 2 * FIT_PADDING) * this.dpr),
     };
+  }
+
+  /** The scale the worker renders the current fit box's preview at (render.worker: quantised fit). */
+  private previewScale(): number {
+    if (!this.page) return 1;
+    const box = this.previewBox();
+    return quantizeScale(Math.min(box.maxWidth / this.page.width, box.maxHeight / this.page.height));
+  }
+
+  private async loadPreview(generation: number): Promise<void> {
     const call = this.client.request(
       "render.preview",
-      { page: 1, ...box, progressive: true },
+      { page: 1, ...this.previewBox(), progressive: true },
       {
         onProgress: ({ tile }) => {
           if (generation !== this.generation || this.previewFinal) return closeBitmap(tile.bitmap);
@@ -267,13 +307,43 @@ export class ViewerEngine {
     }
   }
 
+  /**
+   * Fit page after a resize or DPR change: re-renders the preview for the new
+   * fit box (cached in IndexedDB by its own scale), so fit page stays a 1:1
+   * copy. The old preview stays drawn, scaled, until the new one arrives; a
+   * failure keeps it.
+   */
+  private refreshPreview(scale: number): void {
+    if (this.previewReq !== null) {
+      if (this.previewPending === scale) return;
+      this.client.cancel([this.previewReq]);
+    }
+    const generation = this.generation;
+    const call = this.client.request("render.preview", { page: 1, ...this.previewBox(), progressive: false });
+    this.previewReq = call.reqId;
+    this.previewPending = scale;
+    const settle = (): boolean => {
+      if (this.previewReq !== call.reqId) return false;
+      this.previewReq = null;
+      this.previewPending = null;
+      return true;
+    };
+    call.promise.then(
+      ({ tile }) => {
+        if (generation !== this.generation || !settle()) return closeBitmap(tile.bitmap);
+        this.setPreview(tile);
+      },
+      () => void settle(),
+    );
+  }
+
   private timingsPartial: number | null = null;
   private pendingPartial = false;
   private pendingFirstFrame = false;
 
   private setPreview(t: TilePayload<ImageBitmap>): void {
     if (this.preview) closeBitmap(this.preview.bitmap);
-    this.preview = { bitmap: t.bitmap, x: t.x, y: t.y, width: t.width, height: t.height, scale: t.scale };
+    this.preview = { bitmap: t.bitmap, bucket: null, x: t.x, y: t.y, width: t.width, height: t.height, scale: t.scale };
     this.invalidate();
   }
 
@@ -285,12 +355,15 @@ export class ViewerEngine {
     this.client.cancel(ids);
     this.inflight.clear();
     this.failed.clear();
+    this.grids.clear();
     this.needed = new Set();
     this.memoryWarned = false;
     this.cache.clear();
+    this.bucketCounts.clear();
     if (this.preview) closeBitmap(this.preview.bitmap);
     this.preview = null;
     this.previewFinal = false;
+    this.previewPending = null;
     this.pendingFirstFrame = false;
     this.pendingPartial = false;
     this.timingsPartial = null;
@@ -311,15 +384,13 @@ export class ViewerEngine {
 
   // ---- view ---------------------------------------------------------------
 
-  private baseFit(page: PageInfo): number {
-    return fitPageView(page, this.viewport, 0, FIT_PADDING).zoom;
-  }
-
   private fittedView(mode: "page" | "width", rotation = this.view.rotation): ViewState {
     if (!this.page) return this.view;
-    return mode === "page"
-      ? fitPageView(this.page, this.viewport, rotation, FIT_PADDING)
-      : fitWidthView(this.page, this.viewport, rotation, FIT_PADDING);
+    if (mode === "width") return fitWidthView(this.page, this.viewport, rotation, FIT_PADDING);
+    // Fit page snaps up to the quantised raster scale the preview is rendered at (at most
+    // 0.07 % larger, inside the padding), so the preview is drawn 1:1 (AC 4).
+    const fitted = fitPageView(this.page, this.viewport, rotation, FIT_PADDING);
+    return { ...fitted, zoom: clampZoom(quantizeScale(fitted.zoom * this.dpr) / this.dpr) };
   }
 
   /** Sets the view (clamped) and leaves fit mode. */
@@ -366,6 +437,11 @@ export class ViewerEngine {
     this.setView(zoomToRect(this.view, this.viewport, rect));
   }
 
+  /** Zoom tool Alt+drag: the current view shrinks into the rectangle. */
+  zoomOutToRect(rect: Rect): void {
+    this.setView(zoomOutToRect(this.view, this.viewport, rect));
+  }
+
   /** Rotates the view 90° clockwise (90) or counter-clockwise (-90); the PDF is unchanged. */
   rotate(delta: 90 | -90): void {
     if (!this.page) return;
@@ -380,10 +456,6 @@ export class ViewerEngine {
     this.invalidate();
   }
 
-  get fitScale(): number {
-    return this.fit;
-  }
-
   get currentFitMode(): FitMode {
     return this.fitMode;
   }
@@ -394,33 +466,46 @@ export class ViewerEngine {
 
   // ---- tiles --------------------------------------------------------------
 
-  /** Device scale tiles of `bucket` are rendered at (quantised, as the worker renders them). */
-  private tileScale(bucket: number): number {
-    return quantizeScale(bucketScale(this.fit, bucket, this.dpr));
+  /** The view's device scale (device px per point). */
+  private deviceZoom(): number {
+    return this.view.zoom * this.dpr;
+  }
+
+  /** The bucket the current view wants at rest. */
+  private targetBucket(): number {
+    return bucketForScale(this.deviceZoom());
+  }
+
+  /** The tile grid of `bucket` (2^k device px per point) on the current page, computed once per page. */
+  private grid(bucket: number): TileGrid | null {
+    if (!this.page) return null;
+    let grid = this.grids.get(bucket);
+    if (!grid) {
+      grid = tileGrid(this.page, bucketScale(bucket), this.tileSize);
+      this.grids.set(bucket, grid);
+    }
+    return grid;
   }
 
   /**
-   * In-memory key of a tile: page, bucket, the quantised device scale step and
-   * the tile size, so a fit or DPR change never mixes geometries.
+   * In-memory key of a tile: page, bucket, column, row. A bucket is one fixed
+   * scale (2^k) and the tile size is fixed per engine, so the key never mixes
+   * geometries.
    */
   private memKey(bucket: number, col: number, row: number): string {
-    return `${tileKey(1, bucket, col, row)}@s${scaleStep(this.tileScale(bucket))}:${this.tileSize}`;
+    return tileKey(1, bucket, col, row);
   }
 
-  /** The bucket scales changed (fit or DPR): stale requests go, failed markers reset. */
-  private dropScaledWork(): void {
-    this.client.cancel([...this.inflight.values()]);
-    this.inflight.clear();
-    if (this.failed.size > 0) {
-      this.failed.clear();
-      this.update({ failedTiles: 0 });
-    }
+  private countTile(bucket: number, delta: 1 | -1): void {
+    const n = (this.bucketCounts.get(bucket) ?? 0) + delta;
+    if (n > 0) this.bucketCounts.set(bucket, n);
+    else this.bucketCounts.delete(bucket);
   }
 
   /** Tiles of `bucket` intersecting the viewport (plus a `margin` ring), priority-ordered. */
   private tilesInView(bucket: number, margin: number): TileRef[] {
-    if (!this.page) return [];
-    const grid = tileGrid(this.page, this.tileScale(bucket), this.tileSize);
+    const grid = this.grid(bucket);
+    if (!grid) return [];
     // visibleTiles works on axis-aligned page boxes: pass the viewport's page-space bounds.
     const b = visibleBounds(this.view, this.viewport);
     return visibleTiles({ scale: this.view.zoom, x: b.x, y: b.y }, rotatedSize(this.viewport, this.view.rotation), grid, margin);
@@ -438,14 +523,18 @@ export class ViewerEngine {
   /** Requests the visible tiles of the current bucket that the preview does not already cover. */
   requestTiles(): void {
     if (!this.page || !this.previewFinal || this.destroyed) return;
-    const bucket = bucketForScale(this.view.zoom, this.fit);
-    const scale = this.tileScale(bucket);
+    const bucket = this.targetBucket();
+    const deviceZoom = this.deviceZoom();
+    // Fit page whose fit box changed (resize, DPR): a new preview, not tiles.
+    const previewScale = this.previewScale();
+    const fitPreview = this.fitMode === "page" && Math.abs(deviceZoom / previewScale - 1) < ONE_TO_ONE;
+    if (fitPreview && this.preview && this.preview.scale !== previewScale) this.refreshPreview(previewScale);
     // The preview already holds this resolution (fit page or less): tiles would add nothing.
-    const covered = this.preview !== null && this.preview.scale >= scale * 0.999;
-    const grid = tileGrid(this.page, scale, this.tileSize);
+    const covered = fitPreview || (this.preview !== null && this.preview.scale >= deviceZoom * 0.999);
+    const grid = this.grid(bucket);
     const needed: TileRef[] = [];
     let bytes = 0;
-    if (!covered) {
+    if (!covered && grid) {
       // Visible first, centre first; stop at the budget (the rest would only evict the first).
       for (const t of this.tilesInView(bucket, 1)) {
         const r = tileRect(grid, t.col, t.row);
@@ -467,6 +556,10 @@ export class ViewerEngine {
       }
     }
     this.client.cancel(stale);
+    // Failures are scoped to the target bucket: other buckets' are forgotten (retried on return).
+    const failedBefore = this.failed.size;
+    for (const [key, b] of this.failed) if (b !== bucket) this.failed.delete(key);
+    if (this.failed.size !== failedBefore) this.update({ failedTiles: this.failed.size });
     for (const t of needed) {
       const key = this.memKey(bucket, t.col, t.row);
       if (this.cache.has(key)) {
@@ -474,7 +567,7 @@ export class ViewerEngine {
         continue;
       }
       if (this.inflight.has(key) || this.failed.has(key)) continue;
-      this.requestTile(key, { page: 1, bucket, scale, col: t.col, row: t.row, tileSize: this.tileSize });
+      this.requestTile(key, { page: 1, bucket, scale: bucketScale(bucket), col: t.col, row: t.row, tileSize: this.tileSize });
     }
     this.invalidate();
   }
@@ -494,9 +587,11 @@ export class ViewerEngine {
       ({ tile }) => {
         if (generation !== this.generation || this.inflight.get(key) !== call.reqId) return closeBitmap(tile.bitmap);
         this.inflight.delete(key);
+        // Counted before set: set's onEvict (replacement or over-budget) uncounts it.
+        this.countTile(payload.bucket, 1);
         const evicted = this.cache.set(
           key,
-          { bitmap: tile.bitmap, x: tile.x, y: tile.y, width: tile.width, height: tile.height, scale: tile.scale },
+          { bitmap: tile.bitmap, bucket: payload.bucket, x: tile.x, y: tile.y, width: tile.width, height: tile.height, scale: tile.scale },
           bitmapBytes(tile.width, tile.height),
         );
         // Eviction had to drop a tile this view needs: the budget cannot hold the view.
@@ -512,7 +607,9 @@ export class ViewerEngine {
           this.update({ status: "error", error: "render-failed" });
           return;
         }
-        this.failed.add(key);
+        // A reply for a bucket the view has left is not this view's failure.
+        if (payload.bucket !== this.targetBucket()) return;
+        this.failed.set(key, payload.bucket);
         this.update({ failedTiles: this.failed.size });
         this.invalidate();
       },
@@ -549,7 +646,7 @@ export class ViewerEngine {
   }
 
   /** A page-space rectangle on the canvas: device px, edges rounded so neighbours never seam. */
-  private deviceRect(m: Matrix, x0: number, y0: number, x1: number, y1: number): { l: number; t: number; r: number; b: number } {
+  private deviceRect(m: Matrix, x0: number, y0: number, x1: number, y1: number): Box {
     const ax = m[0] * x0 + m[2] * y0 + m[4];
     const ay = m[1] * x0 + m[3] * y0 + m[5];
     const bx = m[0] * x1 + m[2] * y1 + m[4];
@@ -563,11 +660,37 @@ export class ViewerEngine {
   }
 
   /**
-   * Draws a raster at its page rectangle. At the raster's own scale the
-   * destination is the bitmap's exact size at integer device px: a 1:1 copy.
+   * The device box of a raster drawn at its own scale: the page origin rounded
+   * once to a whole device px, plus the raster's integer offset turned by the
+   * view rotation. Every raster of that scale lands on whole device px with its
+   * exact pixel size, and neighbours abut exactly.
+   */
+  private oneToOneBox(m: Matrix, t: Tile): Box {
+    const ox = Math.round(m[4]);
+    const oy = Math.round(m[5]);
+    const { x, y, width: w, height: h } = t;
+    switch (this.view.rotation) {
+      case 0:
+        return { l: ox + x, t: oy + y, r: ox + x + w, b: oy + y + h };
+      case 90: // page (x, y) -> device (o.x - y, o.y + x)
+        return { l: ox - y - h, t: oy + x, r: ox - y, b: oy + x + w };
+      case 180: // -> (o.x - x, o.y - y)
+        return { l: ox - x - w, t: oy - y - h, r: ox - x, b: oy - y };
+      case 270: // -> (o.x + y, o.y - x)
+        return { l: ox + y, t: oy - x - w, r: ox + y + h, b: oy - x };
+    }
+  }
+
+  /**
+   * Draws a raster at its page rectangle. At the raster's own scale it is a
+   * 1:1 copy at whole device px (no resampling: hairlines stay one device px);
+   * otherwise it is scaled into its rounded device rectangle.
    */
   private placeTile(ctx: CanvasRenderingContext2D, m: Matrix, t: Tile): void {
-    const d = this.deviceRect(m, t.x / t.scale, t.y / t.scale, (t.x + t.width) / t.scale, (t.y + t.height) / t.scale);
+    const d =
+      Math.abs(this.deviceZoom() / t.scale - 1) < ONE_TO_ONE
+        ? this.oneToOneBox(m, t)
+        : this.deviceRect(m, t.x / t.scale, t.y / t.scale, (t.x + t.width) / t.scale, (t.y + t.height) / t.scale);
     const w = d.r - d.l;
     const h = d.b - d.t;
     if (w <= 0 || h <= 0 || d.r <= 0 || d.b <= 0 || d.l >= this.canvases.tiles.width || d.t >= this.canvases.tiles.height) return;
@@ -588,10 +711,9 @@ export class ViewerEngine {
   }
 
   /** Grey hatched box for a failed tile (its Retry lives in the DOM overlay). */
-  private drawFailed(ctx: CanvasRenderingContext2D, m: Matrix, bucket: number, col: number, row: number): void {
-    if (!this.page) return;
-    const scale = this.tileScale(bucket);
-    const r = tileRect(tileGrid(this.page, scale, this.tileSize), col, row);
+  private drawFailed(ctx: CanvasRenderingContext2D, m: Matrix, grid: TileGrid, col: number, row: number): void {
+    const r = tileRect(grid, col, row);
+    const scale = grid.scale;
     const d = this.deviceRect(m, r.x / scale, r.y / scale, (r.x + r.width) / scale, (r.y + r.height) / scale);
     const [x, y, w, h] = [d.l, d.t, d.r - d.l, d.b - d.t];
     ctx.save();
@@ -609,12 +731,12 @@ export class ViewerEngine {
     ctx.restore();
   }
 
-  /** Buckets to draw, the target last (on top): others stay underneath until it covers them. */
-  private drawOrder(target: number): number[] {
+  /** Buckets holding tiles, farthest from `target` first and `target` last (on top). */
+  private drawBuckets(target: number): number[] {
     const order: number[] = [];
-    for (let k = MIN_BUCKET; k <= MAX_BUCKET; k++) if (k !== target) order.push(k);
+    for (const bucket of this.bucketCounts.keys()) if (bucket !== target) order.push(bucket);
     order.sort((a, b) => Math.abs(b - target) - Math.abs(a - target));
-    order.push(target);
+    if (this.bucketCounts.has(target) || this.failed.size > 0) order.push(target);
     return order;
   }
 
@@ -631,14 +753,22 @@ export class ViewerEngine {
         ctx.fillRect(paper.l, paper.t, paper.r - paper.l, paper.b - paper.t);
         ctx.imageSmoothingEnabled = true;
         if (this.preview) this.placeTile(ctx, m, this.preview);
-        const target = bucketForScale(this.view.zoom, this.fit);
-        if (this.cache.size > 0 || this.failed.size > 0) {
-          for (const bucket of this.drawOrder(target)) {
-            for (const ref of this.tilesInView(bucket, 0)) {
-              const key = this.memKey(bucket, ref.col, ref.row);
+        const target = this.targetBucket();
+        // The viewport's page-space box, once per frame; per bucket only the tile range (no sort).
+        const b = visibleBounds(this.view, this.viewport);
+        const box = { scale: this.view.zoom, x: b.x, y: b.y };
+        const size = rotatedSize(this.viewport, this.view.rotation);
+        for (const bucket of this.drawBuckets(target)) {
+          const grid = this.grid(bucket);
+          if (!grid) continue;
+          const range = tileRange(box, size, grid, 0);
+          const hatch = bucket === target && this.failed.size > 0;
+          for (let row = range.r0; row <= range.r1; row++) {
+            for (let col = range.c0; col <= range.c1; col++) {
+              const key = this.memKey(bucket, col, row);
               const t = this.cache.peek(key);
               if (t) this.placeTile(ctx, m, t);
-              else if (bucket === target && this.failed.has(key)) this.drawFailed(ctx, m, bucket, ref.col, ref.row);
+              else if (hatch && this.failed.has(key)) this.drawFailed(ctx, m, grid, col, row);
             }
           }
         }
