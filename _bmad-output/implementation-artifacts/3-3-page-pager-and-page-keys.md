@@ -50,6 +50,7 @@ Claude Opus 5.5 (claude-opus-5-5)
 
 ### Debug Log References
 
+- CI run **39837415230** (typecheck/lint/unit/guards, Playwright e2e on the production build including `viewer-pages.spec.ts`, gitleaks): success. Commit 4eb3129.
 - Local checks: `npm run typecheck`, `npm run lint` and `npm run build` are clean. `npm test`: 1147 unit tests in 105 files.
 - Local e2e on the production build (`E2E_PROD=1`, workers 1, Docker + local Supabase): 39 passed, 1 skipped (the opt-in L17 perf check). `viewer-pages.spec.ts` 3/3.
   - Its first local run caught a real bug: Escape in the page input moved focus to the canvas, and the blur that followed committed the stale draft. Fixed, and covered by the unit test.
