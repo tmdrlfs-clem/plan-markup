@@ -63,11 +63,30 @@ function localStorageOrUndefined(): Storage | undefined {
   }
 }
 
-/** Restores the user's snap toggles on mount and saves every change (the workspace shell). */
+const sameSnap = (a: SnapSettings, b: SnapSettings) => a.content === b.content && a.markup === b.markup && a.grid === b.grid;
+
+/**
+ * Restores the user's snap toggles on mount (replacing whatever the previous
+ * user left in the store) and saves every change (the workspace shell). A
+ * change saved by another browser tab of the same user is followed (review
+ * R6), so the tabs never undo each other's toggles.
+ */
 export function useSnapSettingsPersistence(userId: string): void {
   useLayoutEffect(() => {
     const storage = localStorageOrUndefined();
+    const key = snapStorageKey(userId);
     snapSettings.setState(loadSnap(storage, userId), true);
-    return snapSettings.subscribe((s) => saveSnap(storage, userId, s));
+    const unsubscribe = snapSettings.subscribe((s) => saveSnap(storage, userId, s));
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== key) return;
+      const next = parseSnap(event.newValue) ?? DEFAULT_SNAP;
+      // Equal values change nothing (and are not saved back).
+      if (!sameSnap(next, snapSettings.getState())) snapSettings.setState(next, true);
+    };
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      unsubscribe();
+    };
   }, [userId]);
 }

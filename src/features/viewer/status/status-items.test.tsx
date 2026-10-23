@@ -34,6 +34,15 @@ describe("PageSizeItem", () => {
     expect(await screen.findByRole("tooltip", {}, { timeout: 2000 })).toHaveTextContent("Page size: A1, landscape, 841 × 594 mm");
   });
 
+  it("the icon item is a tab stop whose tooltip opens on focus: the size is reachable by keyboard (review R3)", async () => {
+    wrap(<PageSizeItem page={{ width: 841 * MM, height: 594 * MM }} />);
+    const icon = screen.getByTestId("status-page-size-icon");
+    expect(icon).toHaveAttribute("tabindex", "0");
+    expect(icon).toHaveClass("focus-ring");
+    act(() => icon.focus());
+    expect(await screen.findByRole("tooltip", {}, { timeout: 2000 })).toHaveTextContent("Page size: A1, landscape, 841 × 594 mm");
+  });
+
   it("gives other sizes in millimetres", () => {
     wrap(<PageSizeItem page={{ width: 400 * MM, height: 700 * MM }} />);
     expect(screen.getByTestId("status-page-size")).toHaveTextContent("400 × 700 mm");
@@ -83,22 +92,45 @@ describe("SnapToggles", () => {
 });
 
 describe("CursorReadout", () => {
+  const PLAIN = { width: 2000, height: 1500, rotate: 0 };
+
   it("writes the point straight into its text, never announced; blank without a point", () => {
     let renders = 0;
     function Counted() {
       renders++;
-      return <CursorReadout />;
+      return <CursorReadout page={PLAIN} />;
     }
     render(<Counted />);
     const readout = screen.getByTestId("status-cursor");
+    const value = screen.getByTestId("status-cursor-value");
     expect(readout).toHaveAttribute("aria-live", "off");
-    expect(readout).toHaveTextContent("");
+    expect(readout).not.toHaveAttribute("aria-label");
+    expect(readout).toHaveTextContent(/^Cursor position$/);
+    expect(value).toHaveTextContent("");
     act(() => setCursor({ x: 1234.54, y: 678.91 }));
-    expect(readout.textContent).toBe("X 1234.5  Y 678.9 pt");
+    expect(value.textContent).toBe("X 1234.5  Y 678.9 pt");
     act(() => setCursor({ x: 1, y: 2 }));
     act(() => setCursor(null));
-    expect(readout.textContent).toBe("");
+    expect(value.textContent).toBe("");
     expect(renders).toBe(1);
+    act(() => setCursor(null));
+  });
+
+  it("shows the user space point from the page's bottom-left corner, in points (review R1: L17's box is centred on 0, 0)", () => {
+    const l17 = { width: 2383.94, height: 1683.78, rotate: 0, view: [-1191.97, -841.89, 1191.97, 841.89] as [number, number, number, number], userUnit: 1 };
+    const { rerender } = render(<CursorReadout page={l17} />);
+    act(() => setCursor({ x: -1091.97, y: 741.89 }));
+    expect(screen.getByTestId("status-cursor-value").textContent).toBe("X 100.0  Y 1583.8 pt");
+    // A UserUnit of 2: points are twice the user units.
+    rerender(<CursorReadout page={{ ...l17, width: 4767.88, height: 3367.56, userUnit: 2 }} />);
+    expect(screen.getByTestId("status-cursor-value").textContent).toBe("X 200.0  Y 3167.6 pt");
+    act(() => setCursor(null));
+  });
+
+  it("grows rather than overflow for a long readout (review R4)", () => {
+    render(<CursorReadout page={PLAIN} />);
+    expect(screen.getByTestId("status-cursor")).toHaveClass("min-w-[22ch]");
+    expect(screen.getByTestId("status-cursor")).not.toHaveClass("w-[22ch]");
   });
 });
 

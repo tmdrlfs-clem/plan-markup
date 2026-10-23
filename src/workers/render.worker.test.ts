@@ -33,7 +33,7 @@ const VECTOR: ContentFlags = { hasVector: true, hasText: true, imageOnly: false 
 
 /** Stub renderer: renders resolve at once unless `gate` is set; `openGate` holds open(). */
 class StubRenderer implements TileRenderer<Bitmap> {
-  pages: PageInfo[] = [{ width: 1000, height: 600, rotate: 0 }];
+  pages: PageInfo[] = [{ width: 1000, height: 600, rotate: 0, view: [0, 0, 1000, 600], userUnit: 1 }];
   content: ContentFlags | null = VECTOR;
   opened = 0;
   closed = 0;
@@ -117,7 +117,7 @@ function setup(cache: RasterCache<Bitmap> | null = null) {
 }
 
 const PDF = () => new Uint8Array([37, 80, 68, 70, 45, 49, 46, 55]);
-const PAGE_A = { width: 1000, height: 600, rotate: 0 };
+const PAGE_A = { width: 1000, height: 600, rotate: 0, view: [0, 0, 1000, 600] as [number, number, number, number], userUnit: 1 };
 /** A title block: caption plus a large drawing number in the bottom-right corner, among body text. */
 const TITLE_RUNS: TextRun[] = [
   { str: "GRID A", x: 100, y: 100, width: 30, fontSize: 8 },
@@ -154,8 +154,8 @@ describe("RenderWorkerHost: open", () => {
   it("hashes the bytes before pdf.js gets them and returns the page geometry", async () => {
     const { host, replies, renderer } = setup();
     renderer.pages = [
-      { width: 2384, height: 1684, rotate: 0 },
-      { width: 595, height: 842, rotate: 90 },
+      { width: 2384, height: 1684, rotate: 0, view: [-1192, -842, 1192, 842], userUnit: 1 },
+      { width: 595, height: 842, rotate: 90, view: [0, 0, 842, 595], userUnit: 1 },
     ];
     host.handle(open(1));
     await host.idle();

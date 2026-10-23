@@ -77,8 +77,21 @@ export function isRenderErrorCode(value: unknown): value is RenderErrorCode {
   return typeof value === "string" && (RENDER_ERROR_CODES as readonly string[]).includes(value);
 }
 
-/** Page size in points with the page's /Rotate applied (pdf.js viewport at scale 1). */
-export type PageInfo = { width: number; height: number; rotate: number };
+/**
+ * Page size in points with the page's /Rotate (and /UserUnit) applied (pdf.js
+ * viewport at scale 1), and where that page space sits in PDF user space:
+ * `view` is the page's box ([x0, y0, x1, y1], CropBox within MediaBox, user
+ * units, often not at the origin) and `userUnit` its /UserUnit. The worker
+ * always sends both (Story 3.7 review R1); they are optional only for
+ * hand-made pages (tests), meaning [0, 0, unrotated size] and 1.
+ */
+export type PageInfo = {
+  width: number;
+  height: number;
+  rotate: number;
+  view?: [number, number, number, number];
+  userUnit?: number;
+};
 
 /**
  * What the page's operator list draws (src/core/render/content-flags.ts).

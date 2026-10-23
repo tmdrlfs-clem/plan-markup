@@ -121,6 +121,45 @@ export function pdfToPageMatrix(
   return [A, B, C, D, offsetX - A * cx - C * cy, offsetY - B * cx - D * cy];
 }
 
+/**
+ * A page as the worker describes it (PageInfo): its size in page space (points,
+ * /Rotate and /UserUnit applied), its /Rotate, and where page space sits in
+ * PDF user space: the view box (CropBox within MediaBox, [x0, y0, x1, y1] in
+ * user units, often not at the origin: L17's is centred on 0, 0) and the
+ * /UserUnit (points per user unit). Both default to the plain case
+ * ([0, 0, unrotated size], 1).
+ */
+export type PageGeometry = {
+  width: number;
+  height: number;
+  rotate: number;
+  view?: readonly [number, number, number, number];
+  userUnit?: number;
+};
+
+/** PDF user space -> page space for a page with its own view box and UserUnit (pdf.js PageViewport at scale 1). */
+export function userToPageMatrix(page: PageGeometry): Matrix {
+  const u = page.userUnit && page.userUnit > 0 ? page.userUnit : 1;
+  const m = pdfToPageMatrix(page.view ? { width: page.width / u, height: page.height / u, rotate: page.rotate } : page, page.view);
+  return [m[0] * u, m[1] * u, m[2] * u, m[3] * u, m[4] * u, m[5] * u];
+}
+
+/** The PDF user space point at page-space point `p`. */
+export function pageToUser(page: PageGeometry, p: Point): Point {
+  return applyMatrix(invertMatrix(userToPageMatrix(page)), p);
+}
+
+/**
+ * A user space point measured from the bottom-left corner of the unrotated
+ * page (its view box), in points (UserUnit applied): the status bar's X/Y
+ * (Story 3.7 AC 5), whatever the box's origin.
+ */
+export function fromPageCorner(page: PageGeometry, user: Point): Point {
+  const u = page.userUnit && page.userUnit > 0 ? page.userUnit : 1;
+  const [x0, y0] = page.view ?? [0, 0];
+  return { x: (user.x - x0) * u, y: (user.y - y0) * u };
+}
+
 /** The page's size on screen orientation (sides swapped at 90° and 270°). */
 export function rotatedSize(page: Size, rotation: Rotation): Size {
   return rotation === 90 || rotation === 270 ? { width: page.height, height: page.width } : { width: page.width, height: page.height };

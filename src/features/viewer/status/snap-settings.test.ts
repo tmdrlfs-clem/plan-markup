@@ -53,4 +53,32 @@ describe("snap settings", () => {
     setSnap("grid", false);
     expect(JSON.parse(localStorage.getItem(snapStorageKey("me"))!).grid).toBe(true); // no longer saved
   });
+
+  it("another user's workspace gets that user's toggles, never the previous user's (sign-out / sign-in)", () => {
+    saveSnap(localStorage, "a", { content: false, markup: false, grid: true });
+    const { rerender, unmount } = renderHook(({ id }) => useSnapSettingsPersistence(id), { initialProps: { id: "a" } });
+    expect(snapSettings.getState()).toEqual({ content: false, markup: false, grid: true });
+    rerender({ id: "b" });
+    expect(snapSettings.getState()).toEqual(DEFAULT_SNAP);
+    expect(localStorage.getItem(snapStorageKey("b"))).toBeNull(); // nothing of a's saved under b
+    setSnap("grid", true);
+    rerender({ id: "a" });
+    expect(snapSettings.getState()).toEqual({ content: false, markup: false, grid: true });
+    expect(loadSnap(localStorage, "b")).toEqual({ ...DEFAULT_SNAP, grid: true });
+    unmount();
+  });
+
+  it("follows a change saved by another browser tab of the same user, ignores other keys (review R6)", () => {
+    const { unmount } = renderHook(() => useSnapSettingsPersistence("me"));
+    const other = JSON.stringify({ v: 1, content: false, markup: true, grid: true });
+    window.dispatchEvent(new StorageEvent("storage", { key: snapStorageKey("someone"), newValue: other }));
+    expect(snapSettings.getState()).toEqual(DEFAULT_SNAP);
+    window.dispatchEvent(new StorageEvent("storage", { key: snapStorageKey("me"), newValue: other }));
+    expect(snapSettings.getState()).toEqual({ content: false, markup: true, grid: true });
+    window.dispatchEvent(new StorageEvent("storage", { key: snapStorageKey("me"), newValue: null })); // cleared
+    expect(snapSettings.getState()).toEqual(DEFAULT_SNAP);
+    unmount();
+    window.dispatchEvent(new StorageEvent("storage", { key: snapStorageKey("me"), newValue: other }));
+    expect(snapSettings.getState()).toEqual(DEFAULT_SNAP); // no listener left
+  });
 });

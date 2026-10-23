@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 
 import { StatusBarItem } from "@/components/ui/status-bar-item";
+import type { PageGeometry } from "@/core/render/view";
 import { CursorReadout, PageSizeItem, ScaleIndicator, SnapToggles, ZoomItem, type ScaleState } from "@/features/viewer";
 
 export interface WorkspaceStatusBarProps {
@@ -12,8 +13,8 @@ export interface WorkspaceStatusBarProps {
   pager?: ReactNode;
   /** Polite announcement, e.g. "Page 3 of 12, A1721" (Story 3.3 AC 6). */
   announcement?: string;
-  /** The shown page's size in points, /Rotate applied (Story 3.7). */
-  page?: { width: number; height: number } | null;
+  /** The shown page (points, /Rotate applied; its box and UserUnit for the cursor readout) (Story 3.7). */
+  page?: PageGeometry | null;
   /** The shown page's scale (Story 3.7; "not set" until Epic 4). */
   scale?: ScaleState | null;
 }
@@ -51,7 +52,7 @@ export function WorkspaceStatusBar({
           {page ? <PageSizeItem page={page} /> : null}
           {scale ? <ScaleIndicator state={scale} /> : null}
           <SnapToggles />
-          <CursorReadout />
+          <CursorReadout page={page} />
           {zoom !== null ? <ZoomItem zoom={zoom} /> : null}
           {/* Story 6.x: the SaveIndicator. */}
           <span data-testid="status-save" />

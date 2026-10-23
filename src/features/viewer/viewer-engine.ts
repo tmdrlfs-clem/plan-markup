@@ -59,12 +59,10 @@ import {
   clampZoom,
   fitPageView,
   fitWidthView,
-  applyMatrix,
-  invertMatrix,
   panBy,
   pageToScreen,
   pageToScreenMatrix,
-  pdfToPageMatrix,
+  pageToUser,
   rotateView,
   rotatedSize,
   screenToPage,
@@ -1436,8 +1434,9 @@ export class ViewerEngine {
   }
 
   /**
-   * The point under the pointer in PDF units: points, origin at the bottom-left
-   * corner of the unrotated page, whatever the view; null off the page.
+   * The point under the pointer in PDF user space (the page's own box and
+   * UserUnit, as markups and snapping use it), whatever the view; null off the
+   * page. The status bar shows it from the page's bottom-left corner (fromPageCorner).
    */
   cursorPoint(): Point | null {
     const page = this.page;
@@ -1445,7 +1444,7 @@ export class ViewerEngine {
     if (!page || !at) return null;
     const p = screenToPage(this.view, this.viewport, at);
     if (!(p.x >= 0 && p.y >= 0 && p.x <= page.width && p.y <= page.height)) return null;
-    return applyMatrix(invertMatrix(pdfToPageMatrix(page)), p);
+    return pageToUser(page, p);
   }
 
   private publishCursor(): void {

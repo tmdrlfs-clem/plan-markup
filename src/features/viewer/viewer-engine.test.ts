@@ -5,7 +5,7 @@ import { WorkerRequestError, type RenderClient } from "@/workers/rpc";
 
 import { buildPageText } from "@/core/search/page-text";
 
-import { applyMatrix, pageToScreen, pdfToPageMatrix } from "@/core/render/view";
+import { applyMatrix, pageToScreen, pdfToPageMatrix, userToPageMatrix } from "@/core/render/view";
 
 import { searchUi } from "./search-ui";
 import { cursorStore } from "./status/cursor-store";
@@ -1190,6 +1190,28 @@ describe("ViewerEngine: search (Story 3.6)", () => {
       paint();
       expect(cursor()!.x).toBeCloseTo(700, 6);
       expect(cursor()!.y).toBeCloseTo(120, 6);
+    });
+
+    it("is PDF user space for a page box off the origin with a UserUnit (review R1: L17's box is centred on 0, 0)", async () => {
+      const { client, engine } = setup();
+      // User box [-500, -250, 500, 250] at UserUnit 2: page space 2000 x 1000 pt, /Rotate 90 -> 1000 x 2000.
+      const page = { width: 1000, height: 2000, rotate: 90, view: [-500, -250, 500, 250] as [number, number, number, number], userUnit: 2 };
+      void engine.open(file());
+      await flush();
+      client.last("render.open").resolve({ sha256: "u", pageCount: 1, pages: [page], fromCache: false });
+      await flush();
+      client.last("render.preview").resolve({ tile: tilePayload(1), content: null });
+      await flush();
+      vi.runAllTimers();
+      for (const user of [
+        { x: -500, y: -250 },
+        { x: 120, y: -40 },
+      ]) {
+        engine.pointerAt(pageToScreen(engine.view, engine.viewportSize, applyMatrix(userToPageMatrix(page), user)));
+        paint();
+        expect(cursor()!.x).toBeCloseTo(user.x, 6);
+        expect(cursor()!.y).toBeCloseTo(user.y, 6);
+      }
     });
 
     it("zooms to a percentage of actual size about the centre (the zoom menu)", async () => {

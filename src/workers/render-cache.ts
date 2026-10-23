@@ -9,11 +9,18 @@ import { openTileCache, type TileCache } from "@/lib/idb/tile-cache";
 import type { DocMeta, RasterCache } from "./render.worker";
 
 const flags = z.object({ hasVector: z.boolean(), hasText: z.boolean(), imageOnly: z.boolean() });
+const finiteNumber = z.number().finite();
+// `view` and `userUnit` are required: an entry written before Story 3.7's review
+// (without them) is a miss, so the PDF is read once more and the entry rewritten.
+const pageInfo = z.object({
+  width: z.number().positive(),
+  height: z.number().positive(),
+  rotate: z.number().int(),
+  view: z.tuple([finiteNumber, finiteNumber, finiteNumber, finiteNumber]),
+  userUnit: z.number().positive(),
+});
 const docMetaSchema = z.object({
-  pages: z
-    .array(z.object({ width: z.number().positive(), height: z.number().positive(), rotate: z.number().int() }))
-    .min(1)
-    .max(100_000),
+  pages: z.array(pageInfo).min(1).max(100_000),
   content: z.array(flags.nullable()),
   pageLabels: z.array(z.string().max(MAX_PAGE_LABEL_LENGTH)).nullable().optional(),
   sheetLabels: z.record(z.string().regex(/^\d+$/), z.string().max(100).nullable()).optional(),

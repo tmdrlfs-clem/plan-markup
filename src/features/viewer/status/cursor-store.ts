@@ -1,6 +1,7 @@
 // The pointer's position on the page for the status bar's X/Y readout
-// (Story 3.7 AC 5). PDF user space units (points), origin at the bottom-left
-// corner of the unrotated page, whatever the view's zoom and rotation. Written
+// (Story 3.7 AC 5): PDF user space (the page's own box and UserUnit, as
+// markups and snapping use it), whatever the view's zoom and rotation; the
+// readout shows it from the page's bottom-left corner (view.ts fromPageCorner). Written
 // by the active tab's ViewerEngine at most once per animation frame; the
 // readout subscribes to it and writes its text node directly (no React render
 // per move). Story 4.1 writes the snapped point here instead.

@@ -1,3 +1,5 @@
+import { PDFDocument, PDFName, PDFNumber, degrees } from "@cantoo/pdf-lib";
+import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { describe, expect, it } from "vitest";
 import {
   ACTUAL_SIZE,
@@ -8,12 +10,14 @@ import {
   clampView,
   fitPageView,
   fitWidthView,
+  fromPageCorner,
   invertMatrix,
   multiplyMatrix,
   normalizeRotation,
   panBy,
   pageToScreen,
   pageToScreenMatrix,
+  pageToUser,
   pdfToPageMatrix,
   rotateView,
   rotatedSize,
@@ -24,6 +28,7 @@ import {
   zoomPercent,
   zoomOutToRect,
   zoomToRect,
+  userToPageMatrix,
   type Rotation,
   type ViewState,
 } from "./view";
@@ -253,5 +258,49 @@ describe("zoomToRect and visibleBounds", () => {
     const r = visibleBounds({ zoom: 2, centerX: 100, centerY: 100, rotation: 90 }, VP);
     expect(r.width).toBeCloseTo(300, 9);
     expect(r.height).toBeCloseTo(500, 9);
+  });
+});
+
+describe("user space (Story 3.7 review R1)", () => {
+  // Pages whose box is off the origin (L17's is centred on 0, 0), with every
+  // /Rotate and a UserUnit, checked against pdf.js's own viewport.
+  const cases: [string, number, number][] = [];
+  for (const rotate of [0, 90, 180, 270]) for (const unit of [1, 2]) cases.push([`/Rotate ${rotate}, UserUnit ${unit}`, rotate, unit]);
+
+  it.each(cases)("%s: page space <-> user space as pdf.js, the readout measured from the page corner", async (_, rotate, unit) => {
+    const doc = await PDFDocument.create();
+    const page = doc.addPage([400, 300]);
+    page.setMediaBox(-150, 40, 400, 300); // x0 -150, y0 40, x1 250, y1 340
+    page.setCropBox(-100, 50, 300, 250); // view: [-100, 50, 200, 300]
+    page.setRotation(degrees(rotate));
+    if (unit !== 1) page.node.set(PDFName.of("UserUnit"), PDFNumber.of(unit));
+    const task = getDocument({ data: await doc.save(), verbosity: 0 });
+    try {
+      const pdf = await (await task.promise).getPage(1);
+      const vp = pdf.getViewport({ scale: 1 });
+      const geometry = { width: vp.width, height: vp.height, rotate: pdf.rotate, view: pdf.view as [number, number, number, number], userUnit: pdf.userUnit };
+      expect(geometry.view).toEqual([-100, 50, 200, 300]);
+      const m = userToPageMatrix(geometry);
+      for (const user of [
+        { x: -100, y: 50 },
+        { x: 200, y: 300 },
+        { x: 13.5, y: 222.25 },
+      ]) {
+        const [px, py] = vp.convertToViewportPoint(user.x, user.y);
+        close(applyMatrix(m, user), { x: px, y: py });
+        close(pageToUser(geometry, { x: px, y: py }), user);
+      }
+      // The readout: from the box's bottom-left corner, in points.
+      close(fromPageCorner(geometry, { x: -100, y: 50 }), { x: 0, y: 0 });
+      close(fromPageCorner(geometry, { x: 200, y: 300 }), { x: 300 * unit, y: 250 * unit });
+    } finally {
+      await task.destroy();
+    }
+  });
+
+  it("without a view box or UserUnit it is the plain pdfToPageMatrix", () => {
+    const page = { width: 100, height: 50, rotate: 90 };
+    expect(userToPageMatrix(page)).toEqual(pdfToPageMatrix(page));
+    close(fromPageCorner(page, { x: 3, y: 4 }), { x: 3, y: 4 });
   });
 });

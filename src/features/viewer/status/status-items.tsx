@@ -12,6 +12,7 @@ import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from "@/compo
 import { StatusBarItem } from "@/components/ui/status-bar-item";
 import { ToggleButton } from "@/components/ui/toggle-button";
 import { sheetSize } from "@/core/pdf/page-size";
+import { fromPageCorner, type PageGeometry } from "@/core/render/view";
 import { DEFAULT_LENGTH_UNIT, formatCursor } from "@/core/units/format";
 
 import { viewerCommands } from "../viewer-commands";
@@ -36,7 +37,16 @@ export function PageSizeItem({ page }: { page: { width: number; height: number }
         <StatusBarItem label={size.label} icon={icon} tooltip={tooltip} data-testid="status-page-size" />
       </span>
       <span className="contents ws-md:hidden">
-        <StatusBarItem label={size.label} icon={icon} iconOnly tooltip={tooltip} data-testid="status-page-size-icon" />
+        {/* Focusable, so keyboard users reach the size in its tooltip (review R3), like the pager's sheet label. */}
+        <StatusBarItem
+          label={size.label}
+          icon={icon}
+          iconOnly
+          tooltip={tooltip}
+          tabIndex={0}
+          className="rounded-sm focus-ring"
+          data-testid="status-page-size-icon"
+        />
       </span>
     </>
   );
@@ -110,29 +120,33 @@ export function SnapToggles() {
 // ---- cursor ------------------------------------------------------------------------------
 
 /**
- * Cursor X/Y in PDF units (AC 5). The text node is written straight from the
- * cursor store (no React render per pointer move) and never announced
- * (aria-live off, AC 7). A fixed width keeps the bar from shifting.
+ * Cursor X/Y (AC 5): the store's PDF user space point shown in points from the
+ * shown page's bottom-left corner (its box and UserUnit, review R1). The text
+ * node is written straight from the cursor store (no React render per pointer
+ * move) and never announced (aria-live off, AC 7). A minimum width keeps the
+ * bar from shifting; a longer readout grows instead of overflowing (review R4).
  */
-export function CursorReadout() {
+export function CursorReadout({ page = null }: { page?: PageGeometry | null }) {
   const ref = useRef<HTMLSpanElement>(null);
   useEffect(() => {
     const write = (point: { x: number; y: number } | null) => {
       const el = ref.current;
-      const text = formatCursor(point);
+      const text = formatCursor(point && page ? fromPageCorner(page, point) : null);
       if (el && el.textContent !== text) el.textContent = text;
     };
     write(cursorStore.getState().point);
     return cursorStore.subscribe((s) => write(s.point));
-  }, []);
+  }, [page]);
   return (
     <span
-      ref={ref}
       aria-live="off"
-      aria-label="Cursor position"
       data-testid="status-cursor"
-      className="num inline-flex h-6 w-[22ch] shrink-0 items-center whitespace-pre px-2 text-ws-xs text-text"
-    />
+      className="num inline-flex h-6 min-w-[22ch] shrink-0 items-center whitespace-pre px-2 text-ws-xs text-text"
+    >
+      {/* A generic span cannot be named with aria-label (review R5): a hidden prefix instead. */}
+      <span className="sr-only">Cursor position </span>
+      <span ref={ref} data-testid="status-cursor-value" />
+    </span>
   );
 }
 

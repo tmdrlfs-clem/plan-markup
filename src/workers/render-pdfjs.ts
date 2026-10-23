@@ -197,7 +197,8 @@ export class PdfjsTileRenderer implements TileRenderer<ImageBitmap> {
         const page = await Promise.race([doc.getPage(i), failed]);
         pages.set(i, page);
         const vp = page.getViewport({ scale: 1 });
-        out.push({ width: vp.width, height: vp.height, rotate: page.rotate });
+        const [x0, y0, x1, y1] = page.view;
+        out.push({ width: vp.width, height: vp.height, rotate: page.rotate, view: [x0, y0, x1, y1], userUnit: page.userUnit });
       }
       if (this.task !== task) throw new RenderError("cancelled", "Superseded by another open or a close");
       this.doc = doc;

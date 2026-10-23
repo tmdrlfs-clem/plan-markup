@@ -74,7 +74,7 @@ describe("PdfjsTileRenderer.open", () => {
     const promise = new Promise((r) => (resolve = r));
     return { promise, destroy: vi.fn(async () => undefined), resolve };
   }
-  const doc = { numPages: 1, getPage: async () => ({ rotate: 0, getViewport: () => ({ width: 10, height: 20 }) }) };
+  const doc = { numPages: 1, getPage: async () => ({ rotate: 0, view: [5, 6, 15, 26], userUnit: 1, getViewport: () => ({ width: 10, height: 20 }) }) };
 
   it("installs the document only if it is still the current task (a close meanwhile wins)", async () => {
     vi.stubGlobal("Worker", FakeParserWorker);
@@ -91,6 +91,6 @@ describe("PdfjsTileRenderer.open", () => {
     pdfjs.getDocument.mockReturnValueOnce(b);
     const reopening = renderer.open(new Uint8Array([1]));
     b.resolve(doc);
-    await expect(reopening).resolves.toEqual([{ width: 10, height: 20, rotate: 0 }]);
+    await expect(reopening).resolves.toEqual([{ width: 10, height: 20, rotate: 0, view: [5, 6, 15, 26], userUnit: 1 }]);
   });
 });

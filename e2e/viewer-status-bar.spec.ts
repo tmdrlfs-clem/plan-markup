@@ -58,7 +58,7 @@ test("status bar: order, page size per page, scale not set, snap toggles kept, c
 
   // Cursor X/Y in PDF points: near the page's top-left corner X is small and Y near the
   // page height (A3 landscape: 842 pt, origin bottom-left); blank off the page.
-  const cursor = item(page, "status-cursor");
+  const cursor = item(page, "status-cursor-value");
   await expect(cursor).toHaveText("");
   const box = (await canvas(page).boundingBox())!;
   const view = ((await canvas(page).getAttribute("data-view")) ?? "").split(" ").map(Number);

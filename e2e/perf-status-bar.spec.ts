@@ -38,7 +38,7 @@ async function screenOf(page: Page, px: number, py: number) {
 }
 
 async function readout(page: Page) {
-  const text = (await item(page, "status-cursor").textContent()) ?? "";
+  const text = (await item(page, "status-cursor-value").textContent()) ?? "";
   const [x, y] = text.match(/[\d.]+/g)?.map(Number) ?? [Number.NaN, Number.NaN];
   return { text, x, y };
 }
@@ -60,7 +60,7 @@ test("L17 + L21: A1 sheet detected, cursor X/Y sane, no main-thread task over 50
   const at = async (label: string, px: number, py: number) => {
     const s = await screenOf(page, px, py);
     await page.mouse.move(s.x, s.y);
-    await expect(item(page, "status-cursor")).not.toHaveText("");
+    await expect(item(page, "status-cursor-value")).not.toHaveText("");
     const r = await readout(page);
     checks.push(`${label}: ${r.text}`);
     return r;
@@ -115,7 +115,7 @@ test("L17 + L21: A1 sheet detected, cursor X/Y sane, no main-thread task over 50
   await page.keyboard.press("Control+9");
   const s = await screenOf(page, 1192, 842);
   await page.mouse.move(s.x, s.y);
-  await expect(item(page, "status-cursor")).not.toHaveText("");
+  await expect(item(page, "status-cursor-value")).not.toHaveText("");
   process.stdout.write(
     `status bar: L21 and L17 "${await item(page, "status-page-size").textContent()}"; ${checks.join("; ")}; ` +
       `pointer sweep ${moves} moves in 3 s, longest main-thread task ${longest} ms; zoom ${await item(page, "status-zoom").textContent()}\n`,
