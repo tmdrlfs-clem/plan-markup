@@ -453,10 +453,31 @@ describe("view navigation (Story 3.2)", () => {
     expect(within(rail).getByRole("radio", { name: "Line" })).toHaveAttribute("aria-disabled", "true");
   });
 
-  it("the status bar shows the file name, the pager, then the zoom", () => {
+  it("the status bar shows, in order: file name, pager, page size, scale, snap toggles, cursor X/Y, zoom, save slot (Story 3.7)", () => {
     setup();
     openDrawing();
-    expect(screen.getByRole("contentinfo")).toHaveTextContent(/^a\.pdf.*\/ \d+.*64%/);
+    // An A1 sheet, landscape (points).
+    act(() => viewerStore.setState({ pages: [{ width: (841 * 72) / 25.4, height: (594 * 72) / 25.4, rotate: 0 }], pageIndex: 0 }));
+    const bar = screen.getByRole("contentinfo");
+    expect(bar).toHaveTextContent(/^a\.pdf.*\/ \d+.*A1 841 × 594 mm.*Scale not set.*64%/);
+    const order = ["status-file", "status-page-size", "status-scale", "status-snap", "status-cursor", "status-zoom", "status-save"].map((id) =>
+      within(bar).getByTestId(id),
+    );
+    for (let i = 1; i < order.length; i++) {
+      expect(order[i - 1].compareDocumentPosition(order[i]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
+    expect(within(bar).getByRole("group", { name: "Pages" }).compareDocumentPosition(order[1]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // The cursor and the zoom are not in the live region (never announced).
+    expect(screen.getByRole("status").contains(order[4])).toBe(false);
+    expect(order[4]).toHaveAttribute("aria-live", "off");
+  });
+
+  it("the status bar holds only the empty item without a drawing", () => {
+    setup();
+    const bar = screen.getByRole("contentinfo");
+    expect(bar).toHaveTextContent(/^No drawing open$/);
+    expect(within(bar).queryByTestId("status-snap")).toBeNull();
+    expect(within(bar).queryByTestId("status-cursor")).toBeNull();
   });
 
   it("announces the settled page once, with its sheet label, in a polite live region", () => {

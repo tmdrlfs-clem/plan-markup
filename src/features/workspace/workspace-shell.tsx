@@ -19,7 +19,9 @@ import {
   activeSearch,
   hasDocument,
   requestSearchFocus,
+  scaleStateOf,
   usePageAnnouncement,
+  useSnapSettingsPersistence,
   viewerStore,
   viewerTabs,
 } from "@/features/viewer";
@@ -87,6 +89,9 @@ function ShellBody({ user }: { user: WorkspaceUser }) {
   const viewerStatus = useStore(viewerStore, (s) => s.status);
   const fileName = useStore(viewerStore, (s) => s.fileName);
   const zoom = useStore(viewerStore, (s) => s.zoom);
+  // The shown page's facts for the status bar (Story 3.7): they follow the active tab and page.
+  const shownPage = useStore(viewerStore, (s) => (hasDocument(s) ? (s.pages[s.pageIndex] ?? null) : null));
+  useSnapSettingsPersistence(user.id);
   const announcement = usePageAnnouncement();
 
   const fileInput = useRef<HTMLInputElement>(null);
@@ -232,6 +237,8 @@ function ShellBody({ user }: { user: WorkspaceUser }) {
           zoom={zoom}
           pager={<PagePager />}
           announcement={announcement}
+          page={shownPage}
+          scale={shownPage ? scaleStateOf() : null}
         />
       </footer>
 
