@@ -63,6 +63,7 @@ Claude Opus 5.5 (claude-opus-5-5)
 
 ### Debug Log References
 
+- Review fixes (2f9123f): CI run **39920921605** (typecheck/lint/unit/guards, e2e on the production build, gitleaks): success.
 - CI run **39866168246** (typecheck/lint/unit/guards, Playwright e2e on the production build including `viewer-thumbnails.spec.ts`, gitleaks): success.
 - Local checks: `npm run typecheck`, `npm run lint` and `npm run build` are clean. `npm test`: 1190 unit tests in 107 files.
 - Local e2e on the production build (`E2E_PROD=1`, workers 1, Docker + local Supabase): 39 passed, 2 skipped (the opt-in L17 checks). `viewer-thumbnails.spec.ts` passed on its first run. Three `auth.spec.ts` tests failed once right after Supabase restarted cold, then passed (11/11) on a rerun; no auth code changed.

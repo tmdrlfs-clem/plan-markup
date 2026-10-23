@@ -41,6 +41,8 @@ export interface ViewerState {
   pages: PageInfo[];
   /** The open document's sha256 (thumbnails are per document), once known. */
   documentId: string | null;
+  /** The document tab this state belongs to (Story 3.5); null outside tabs. */
+  tabId: string | null;
   /** Cleaned /PageLabels of the document (null: none worth showing). */
   pageLabels: string[] | null;
   /** Sheet numbers detected from page text, by 0-based page (null: none found). */
@@ -72,6 +74,7 @@ const INITIAL: ViewerState = {
   pageIndex: 0,
   pages: [],
   documentId: null,
+  tabId: null,
   pageLabels: null,
   sheetLabels: {},
   content: null,

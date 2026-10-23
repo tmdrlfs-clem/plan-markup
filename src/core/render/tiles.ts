@@ -200,15 +200,42 @@ export function bitmapBytes(width: number, height: number): number {
  * delete, clear), so the owner can release it (ImageBitmap.close()).
  */
 export class LruByteCache<V> {
-  readonly budget: number;
+  private limit: number;
   private readonly map = new Map<string, { value: V; bytes: number }>();
   private total = 0;
   private readonly onEvict?: (key: string, value: V) => void;
 
   constructor(budgetBytes: number, onEvict?: (key: string, value: V) => void) {
     if (!(budgetBytes >= 0)) throw new RangeError("budget must be >= 0");
-    this.budget = budgetBytes;
+    this.limit = budgetBytes;
     this.onEvict = onEvict;
+  }
+
+  get budget(): number {
+    return this.limit;
+  }
+
+  /**
+   * Changes the budget (a document tab going to the background keeps a small
+   * one, Story 3.5); a smaller budget evicts the oldest entries at once.
+   * Returns the evicted keys in eviction order.
+   */
+  setBudget(budgetBytes: number): string[] {
+    if (!(budgetBytes >= 0)) throw new RangeError("budget must be >= 0");
+    this.limit = budgetBytes;
+    return this.evictToBudget();
+  }
+
+  private evictToBudget(): string[] {
+    const evicted: string[] = [];
+    for (const [k, entry] of this.map) {
+      if (this.total <= this.limit) break;
+      this.map.delete(k);
+      this.total -= entry.bytes;
+      evicted.push(k);
+      this.onEvict?.(k, entry.value);
+    }
+    return evicted;
   }
 
   get bytes(): number {
@@ -246,21 +273,13 @@ export class LruByteCache<V> {
       this.total -= old.bytes;
       if (old.value !== value) this.onEvict?.(key, old.value);
     }
-    if (bytes > this.budget) {
+    if (bytes > this.limit) {
       this.onEvict?.(key, value);
       return [key];
     }
     this.map.set(key, { value, bytes });
     this.total += bytes;
-    const evicted: string[] = [];
-    for (const [k, entry] of this.map) {
-      if (this.total <= this.budget) break;
-      this.map.delete(k);
-      this.total -= entry.bytes;
-      evicted.push(k);
-      this.onEvict?.(k, entry.value);
-    }
-    return evicted;
+    return this.evictToBudget();
   }
 
   /** Removes and returns the value without `onEvict`: the caller owns it again. */

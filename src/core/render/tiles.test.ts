@@ -183,6 +183,21 @@ describe("tileKey / bitmapBytes", () => {
 });
 
 describe("LruByteCache", () => {
+  it("setBudget shrinks at once (oldest first) and lets the cache grow again later", () => {
+    const evicted: string[] = [];
+    const cache = new LruByteCache<string>(300, (k) => evicted.push(k));
+    cache.set("a", "A", 100);
+    cache.set("b", "B", 100);
+    cache.set("c", "C", 100);
+    cache.get("a"); // a is now the most recent
+    expect(cache.setBudget(150)).toEqual(["b", "c"]);
+    expect([cache.budget, cache.bytes, cache.has("a"), evicted]).toEqual([150, 100, true, ["b", "c"]]);
+    expect(cache.setBudget(300)).toEqual([]);
+    cache.set("d", "D", 200);
+    expect(cache.bytes).toBe(300);
+    expect(() => cache.setBudget(-1)).toThrow(RangeError);
+  });
+
   it("take removes an entry without onEvict and frees its bytes", () => {
     const evicted: string[] = [];
     const cache = new LruByteCache<string>(10, (k) => evicted.push(k));

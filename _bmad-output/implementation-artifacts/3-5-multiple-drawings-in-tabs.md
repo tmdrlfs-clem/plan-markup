@@ -1,6 +1,6 @@
 # Story 3.5: Multiple drawings in tabs
 
-Status: ready-for-dev
+Status: in-progress
 
 ## Story
 
