@@ -24,7 +24,7 @@ import {
   type PDFDocumentProxy,
   type PDFPageProxy,
 } from "pdfjs-dist";
-import type { TextRun } from "@/core/pdf/sheet-label";
+import { textItemOf, type TextItem } from "@/core/search/page-text";
 import { contentFlags, type OpsTable } from "@/core/render/content-flags";
 import { RenderError, type ContentFlags, type PageInfo } from "./render-protocol";
 import type { RenderedTile, TileJob, TileRenderer } from "./render.worker";
@@ -253,20 +253,31 @@ export class PdfjsTileRenderer implements TileRenderer<ImageBitmap> {
     return this.doc ? this.doc.getPageLabels() : null;
   }
 
-  /** The page's text runs in page space (pdf.js viewport at scale 1, /Rotate applied). */
-  async textRuns(pageNo: number, signal: AbortSignal): Promise<TextRun[]> {
+  /**
+   * The page's text items in page space (pdf.js viewport at scale 1, /Rotate
+   * applied) with their boxes (src/core/search/page-text.ts textItemOf). Empty
+   * items are dropped; whitespace items are kept (they separate words).
+   */
+  async pageText(pageNo: number, signal: AbortSignal): Promise<TextItem[]> {
     const page = this.pages.get(pageNo);
     if (!page) throw new RenderError("out-of-range", "Page not loaded");
     const content = await (this.parserFailed ? Promise.race([page.getTextContent(), this.parserFailed]) : page.getTextContent());
     if (signal.aborted) return [];
     const viewport = page.getViewport({ scale: 1 });
-    const runs: TextRun[] = [];
+    const toPage = (x: number, y: number) => viewport.convertToViewportPoint(x, y);
+    const items: TextItem[] = [];
     for (const item of content.items) {
-      if (!("str" in item) || item.str.trim() === "") continue;
-      const [x, y] = viewport.convertToViewportPoint(item.transform[4], item.transform[5]);
-      runs.push({ str: item.str, x, y, width: item.width, fontSize: Math.hypot(item.transform[2], item.transform[3]) });
+      if (!("str" in item)) continue;
+      if (item.str === "") {
+        // pdf.js marks line ends with empty items: the line break belongs to the item before.
+        const last = items.at(-1);
+        if (item.hasEOL && last) items[items.length - 1] = { ...last, eol: true };
+        continue;
+      }
+      const style = content.styles[item.fontName] as { ascent?: number; descent?: number } | undefined;
+      items.push(textItemOf(item, style ?? {}, toPage));
     }
-    return runs;
+    return items;
   }
 
   async close(): Promise<void> {

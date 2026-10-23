@@ -11,7 +11,8 @@
 // when present and wait for pdf.js only on a miss. Rendered tiles are encoded
 // (PNG) and stored after they are posted, never on the critical path.
 
-import { cleanPageLabels, detectSheetLabel, type TextRun } from "@/core/pdf/sheet-label";
+import { cleanPageLabels, detectSheetLabel } from "@/core/pdf/sheet-label";
+import { buildPageText, type TextItem } from "@/core/search/page-text";
 import { quantizeScale, scaleStep, tileGrid, tileRect } from "@/core/render/tiles";
 import { serializeWorkerError } from "@/core/worker/error";
 import {
@@ -24,6 +25,8 @@ import {
   type RenderErrorCode,
   type RenderReply,
   type SheetLabelPayload,
+  type TextPayload,
+  type TextResult,
   type ThumbnailPayload,
   type TilePayload,
   type TileRequestPayload,
@@ -63,8 +66,11 @@ export interface TileRenderer<B> {
   release(bitmap: B): void;
   /** The document's raw page labels (/PageLabels), once opened; null without any. */
   pageLabels?(): Promise<(string | null)[] | null>;
-  /** The text runs of a page in page space (sheet number detection). */
-  textRuns?(page: number, signal: AbortSignal): Promise<TextRun[]>;
+  /**
+   * The text items of a page in page space, with their boxes (search, Story 3.6;
+   * sheet number detection). Read once per page: the worker caches them.
+   */
+  pageText?(page: number, signal: AbortSignal): Promise<TextItem[]>;
   close(): Promise<void>;
 }
 
@@ -83,6 +89,9 @@ export interface RasterCache<B> {
   putDoc(sha256: string, meta: DocMeta): Promise<void>;
   getTile(key: string): Promise<B | null>;
   putTile(key: string, blob: Blob): Promise<void>;
+  /** A page's text items (validated; null when absent or unreadable). */
+  getText?(key: string): Promise<TextItem[] | null>;
+  putText?(key: string, items: TextItem[]): Promise<void>;
 }
 
 /**
@@ -97,6 +106,11 @@ export function previewCacheKey(sha256: string, page: number, scale: number): st
 }
 export function tileCacheKey(sha256: string, req: TileRequestPayload): string {
   return `${sha256}:${req.page}:s${scaleStep(req.scale)}:${req.tileSize}:${req.col}:${req.row}`;
+}
+
+/** IndexedDB key of a page's text items (v1: the TextItem shape of src/core/search/page-text.ts). */
+export function textCacheKey(sha256: string, page: number): string {
+  return `${sha256}:${page}:text:v1`;
 }
 
 /** IndexedDB key of a page's thumbnail fitted into a widthPx x heightPx box. */
@@ -114,6 +128,8 @@ type Job =
   | { kind: "preview"; reqId: number; payload: PreviewPayload; queuedAt: number }
   | { kind: "tile"; reqId: number; payload: TileRequestPayload; queuedAt: number }
   | { kind: "sheetLabel"; reqId: number; payload: SheetLabelPayload; queuedAt: number }
+  // missed: no cached text and pdf.js is still parsing (as for thumbnails).
+  | { kind: "text"; reqId: number; payload: TextPayload; queuedAt: number; missed?: boolean }
   // `missed`: the raster cache had no copy and pdf.js is still parsing (it waits off the queue's head).
   | { kind: "thumbnail"; reqId: number; payload: ThumbnailPayload; queuedAt: number; missed?: boolean };
 
@@ -124,6 +140,8 @@ type Doc = {
   /** Undefined while an entry cached before Story 3.3 waits for pdf.js to read them. */
   pageLabels: string[] | null | undefined;
   sheetLabels: Record<string, string | null>;
+  /** Text items read so far, by 1-based page (search and sheet labels share them). */
+  text: Map<number, TextItem[]>;
   /** Resolves when pdf.js has parsed the document; rejects with its open error. */
   ready: Promise<void>;
   /** `ready` has settled: jobs that need pdf.js no longer wait. */
@@ -202,6 +220,9 @@ export class RenderWorkerHost<B> {
         break;
       case "render.sheetLabel":
         this.queue.push({ kind: "sheetLabel", reqId: msg.reqId, payload: msg.payload, queuedAt });
+        break;
+      case "render.text":
+        this.queue.push({ kind: "text", reqId: msg.reqId, payload: msg.payload, queuedAt });
         break;
       case "render.thumbnail":
         this.queue.push({ kind: "thumbnail", reqId: msg.reqId, payload: msg.payload, queuedAt });
@@ -294,11 +315,12 @@ export class RenderWorkerHost<B> {
 
   /**
    * The next job to run: open / preview / tile jobs in queue order first, then
-   * sheet labels, then thumbnails. Sheet-label jobs (text extraction, never
-   * urgent) also wait until pdf.js has parsed the document, unless their answer
-   * is cached; a thumbnail the raster cache missed waits for the parse the same
-   * way. Neither holds the queue while pdf.js parses, in front of tiles the
-   * raster cache could answer at once.
+   * sheet labels and page text (search) in queue order, then thumbnails.
+   * Sheet-label jobs (text extraction, never urgent) also wait until pdf.js has
+   * parsed the document, unless their answer is cached; a text or thumbnail job
+   * the caches missed waits for the parse the same way. None of them holds the
+   * queue while pdf.js parses, in front of tiles the raster cache could answer
+   * at once.
    */
   private nextJob(): Job | undefined {
     let label = -1;
@@ -307,6 +329,8 @@ export class RenderWorkerHost<B> {
       const job = this.queue[i];
       if (job.kind === "sheetLabel") {
         if (label < 0 && this.sheetLabelRunnable(job)) label = i;
+      } else if (job.kind === "text") {
+        if (label < 0 && (!job.missed || !this.doc || this.doc.parsed)) label = i;
       } else if (job.kind === "thumbnail") {
         if (thumb < 0 && (!job.missed || !this.doc || this.doc.parsed)) thumb = i;
       } else {
@@ -330,6 +354,7 @@ export class RenderWorkerHost<B> {
     if (!page) throw new RenderError("out-of-range", "Page out of range");
     if (job.kind === "preview") return this.preview(job, doc, page, signal);
     if (job.kind === "sheetLabel") return this.sheetLabel(job, doc, page, signal);
+    if (job.kind === "text") return this.text(job, doc, signal);
     if (job.kind === "thumbnail") return this.thumbnail(job, doc, page, signal);
     return this.tile(job, doc, page, signal);
   }
@@ -354,6 +379,7 @@ export class RenderWorkerHost<B> {
         content: cached.content,
         pageLabels: cached.pageLabels,
         sheetLabels: { ...cached.sheetLabels },
+        text: new Map(),
         ready,
         parsed: false,
       };
@@ -397,7 +423,7 @@ export class RenderWorkerHost<B> {
       if (generation === this.generation) await this.renderer.close();
       throw CANCELLED();
     }
-    const doc: Doc = { sha256, pages, content, pageLabels, sheetLabels: {}, ready: Promise.resolve(), parsed: true };
+    const doc: Doc = { sha256, pages, content, pageLabels, sheetLabels: {}, text: new Map(), ready: Promise.resolve(), parsed: true };
     this.doc = doc;
     this.persist(doc);
     const result: OpenResult = { sha256, pageCount: pages.length, pages, pageLabels, fromCache: false };
@@ -454,14 +480,51 @@ export class RenderWorkerHost<B> {
   private async sheetLabel(job: Extract<Job, { kind: "sheetLabel" }>, doc: Doc, page: PageInfo, signal: AbortSignal): Promise<void> {
     const key = String(job.payload.page);
     if (key in doc.sheetLabels) return this.result(job.reqId, { label: doc.sheetLabels[key] });
-    await doc.ready;
-    if (signal.aborted) throw CANCELLED();
-    const runs = this.renderer.textRuns ? await this.renderer.textRuns(job.payload.page, signal) : [];
-    if (signal.aborted) throw CANCELLED();
+    const items = await this.readText(doc, job.payload.page, signal, true);
+    const runs = (items ?? []).filter((item) => item.str.trim() !== "");
     const label = detectSheetLabel(runs, page);
     doc.sheetLabels[key] = label;
     this.result(job.reqId, { label });
     if (this.doc === doc) this.persist(doc);
+  }
+
+  /**
+   * A page's text items: held in memory, else from IndexedDB, else read by
+   * pdf.js (once per page) and stored. Without a cached copy and before pdf.js
+   * has parsed the document, `wait` false returns null (the caller re-queues).
+   */
+  private async readText(doc: Doc, pageNo: number, signal: AbortSignal, wait: boolean): Promise<TextItem[] | null> {
+    const held = doc.text.get(pageNo);
+    if (held) return held;
+    const key = textCacheKey(doc.sha256, pageNo);
+    const stored = (await this.cache?.getText?.(key).catch(() => null)) ?? null;
+    if (signal.aborted) throw CANCELLED();
+    if (stored) {
+      doc.text.set(pageNo, stored);
+      return stored;
+    }
+    if (!doc.parsed && !wait) return null;
+    await doc.ready;
+    if (signal.aborted) throw CANCELLED();
+    const items = this.renderer.pageText ? await this.renderer.pageText(pageNo, signal) : [];
+    if (signal.aborted) throw CANCELLED();
+    doc.text.set(pageNo, items);
+    void this.cache?.putText?.(key, items).catch(() => undefined);
+    return items;
+  }
+
+  /** The page's text items and its normalised search text (Story 3.6). */
+  private async text(job: Extract<Job, { kind: "text" }>, doc: Doc, signal: AbortSignal): Promise<void> {
+    const items = await this.readText(doc, job.payload.page, signal, job.missed === true);
+    if (items === null) {
+      // Wait for pdf.js off the queue's head (nextJob skips it until the parse settles).
+      job.missed = true;
+      this.queue.push(job);
+      return;
+    }
+    const index = buildPageText(items);
+    const result: TextResult = { items, index };
+    this.result(job.reqId, result, [index.charItem.buffer, index.charOffset.buffer]);
   }
 
   /** The page fitted into the requested box: from the raster cache, else rendered and stored. */
@@ -589,6 +652,8 @@ export function deferredRasterCache<B>(opening: Promise<RasterCache<B> | null>):
     putDoc: async (sha, meta) => (await ready)?.putDoc(sha, meta),
     getTile: async (key) => (await ready)?.getTile(key) ?? null,
     putTile: async (key, blob) => (await ready)?.putTile(key, blob),
+    getText: async (key) => (await ready)?.getText?.(key) ?? null,
+    putText: async (key, items) => (await ready)?.putText?.(key, items),
   };
 }
 

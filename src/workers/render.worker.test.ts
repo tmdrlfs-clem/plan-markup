@@ -2,12 +2,14 @@ import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { memoryTileBackend, TileCache } from "@/lib/idb/tile-cache";
 import type { TextRun } from "@/core/pdf/sheet-label";
+import type { TextItem } from "@/core/search/page-text";
 import { rasterCache } from "./render-cache";
 import { RenderError, renderOpenMessage, type ContentFlags, type PageInfo, type RenderReply } from "./render-protocol";
 import {
   RenderWorkerHost,
   deferredRasterCache,
   previewCacheKey,
+  textCacheKey,
   thumbnailCacheKey,
   tileCacheKey,
   type RasterCache,
@@ -17,6 +19,13 @@ import {
 } from "./render.worker";
 
 type Bitmap = { width: number; height: number; job?: TileJob; closed: boolean; partial?: boolean };
+
+/** A text item for a run: an axis-aligned box from the descent to the ascent. */
+const itemOfRun = (r: TextRun, eol = false): TextItem => ({
+  ...r,
+  quad: [r.x, r.y + 0.2 * r.fontSize, r.x + r.width, r.y + 0.2 * r.fontSize, r.x + r.width, r.y - 0.8 * r.fontSize, r.x, r.y - 0.8 * r.fontSize],
+  eol,
+});
 
 const VECTOR: ContentFlags = { hasVector: true, hasText: true, imageOnly: false };
 
@@ -43,9 +52,14 @@ class StubRenderer implements TileRenderer<Bitmap> {
     return this.labels;
   }
 
-  async textRuns(): Promise<TextRun[]> {
+  /** Text items per page (search); by default the sheet-label runs on every page. */
+  items: Record<number, TextItem[]> = {};
+  textGate: Promise<void> | null = null;
+
+  async pageText(page: number): Promise<TextItem[]> {
     this.textReads++;
-    return this.runs;
+    if (this.textGate) await this.textGate;
+    return this.items[page] ?? this.runs.map(itemOfRun);
   }
 
   async open(bytes: Uint8Array): Promise<PageInfo[]> {
@@ -573,6 +587,109 @@ describe("RenderWorkerHost: render.sheetLabel", () => {
     await host.idle();
     expect(resultOf(replies, 2)).toEqual({ label: null });
     expect(codeOf(replies, 3)).toBe("out-of-range");
+  });
+});
+
+describe("RenderWorkerHost: render.text (Story 3.6)", () => {
+  const text = (reqId: number, page = 1) => ({ type: "render.text", reqId, payload: { page } });
+  const thumb = (reqId: number) => ({ type: "render.thumbnail", reqId, payload: { page: 1, widthPx: 200, heightPx: 150 } });
+  const ROOM: TextItem[] = [
+    itemOfRun({ str: "ROOM", x: 100, y: 100, width: 40, fontSize: 10 }),
+    itemOfRun({ str: "101", x: 145, y: 100, width: 15, fontSize: 10 }, true),
+    itemOfRun({ str: "CH +2700", x: 100, y: 130, width: 60, fontSize: 10 }),
+  ];
+  type Text = { items: TextItem[]; index: { text: string; charItem: Int32Array; charOffset: Int32Array } };
+
+  function cached() {
+    return rasterCache(new TileCache(memoryTileBackend()), async (): Promise<Bitmap> => ({ width: 1, height: 1, closed: false }));
+  }
+
+  it("answers the page's items and normalised text, transfers the index, and reads each page once (shared with sheet labels)", async () => {
+    const { host, replies, renderer, transfers } = setup();
+    renderer.items = { 1: ROOM };
+    host.handle(open(1));
+    host.handle(text(2));
+    host.handle(sheetLabel(3));
+    host.handle(text(4));
+    await host.idle();
+    const result = resultOf(replies, 2) as Text;
+    expect(result.items).toEqual(ROOM);
+    expect(result.index.text).toBe("ROOM 101 CH +2700");
+    expect(result.index.charItem).toBeInstanceOf(Int32Array);
+    const at = replies.findIndex((r) => r.reqId === 2);
+    expect(transfers[at]).toEqual([result.index.charItem.buffer, result.index.charOffset.buffer]);
+    expect((resultOf(replies, 4) as Text).index.text).toBe("ROOM 101 CH +2700");
+    expect(resultOf(replies, 3)).toEqual({ label: null });
+    expect(renderer.textReads).toBe(1);
+  });
+
+  it("runs after previews and tiles, before thumbnails; a cancel rejects it", async () => {
+    const { host, replies, renderer } = setup();
+    renderer.items = { 1: ROOM };
+    host.handle(open(1));
+    host.handle(thumb(2));
+    host.handle(text(3));
+    host.handle(tile(4));
+    host.handle(text(5));
+    host.handle({ type: "render.cancel", reqId: 6, payload: { reqIds: [5] } });
+    await host.idle();
+    const order = replies.filter((r) => r.type === "result" && r.reqId !== 6).map((r) => r.reqId);
+    expect(order).toEqual([1, 4, 3, 2]);
+    expect(codeOf(replies, 5)).toBe("cancelled");
+  });
+
+  it("is stored in IndexedDB: a reopen answers before pdf.js has parsed", async () => {
+    const cache = cached();
+    const first = setup(cache);
+    first.renderer.items = { 1: ROOM };
+    first.host.handle(open(1));
+    first.host.handle(text(2));
+    await first.host.idle();
+    await new Promise((r) => setTimeout(r, 0)); // stores are fire-and-forget
+
+    const second = setup(cache);
+    let parsed!: () => void;
+    second.renderer.openGate = new Promise((r) => (parsed = r));
+    second.host.handle(open(1));
+    second.host.handle(text(2));
+    await new Promise((r) => setTimeout(r, 20));
+    expect((resultOf(second.replies, 2) as Text).index.text).toBe("ROOM 101 CH +2700");
+    expect(second.renderer.textReads).toBe(0);
+    parsed();
+    await second.host.idle();
+  });
+
+  it("a page without stored text waits for pdf.js off the queue's head", async () => {
+    const cache = cached();
+    const first = setup(cache);
+    first.host.handle(open(1));
+    first.host.handle(tile(2));
+    await first.host.idle();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const second = setup(cache);
+    second.renderer.items = { 1: ROOM };
+    let parsed!: () => void;
+    second.renderer.openGate = new Promise((r) => (parsed = r));
+    second.host.handle(open(1));
+    second.host.handle(text(2)); // not stored: needs pdf.js
+    second.host.handle(tile(3));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(resultOf(second.replies, 3)).toMatchObject({ tile: { fromCache: true } });
+    expect(byReq(second.replies, 2)).toHaveLength(0);
+    parsed();
+    await second.host.idle();
+    expect((resultOf(second.replies, 2) as Text).index.text).toBe("ROOM 101 CH +2700");
+  });
+
+  it("rejects stored text of another shape (a miss: read again)", async () => {
+    const cache = cached();
+    await cache.putTile(textCacheKey(SHA, 1), new Blob([JSON.stringify([{ str: 1 }])]));
+    expect(await cache.getText!(textCacheKey(SHA, 1))).toBeNull();
+    await cache.putTile(textCacheKey(SHA, 2), new Blob(["not json"]));
+    expect(await cache.getText!(textCacheKey(SHA, 2))).toBeNull();
+    await cache.putText!(textCacheKey(SHA, 3), ROOM);
+    expect(await cache.getText!(textCacheKey(SHA, 3))).toEqual(ROOM);
   });
 });
 
