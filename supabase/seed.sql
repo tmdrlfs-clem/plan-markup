@@ -6,6 +6,7 @@
 --   user@plan-markup.test         active
 --   pending@plan-markup.test      pending (PendingActivation screen, Story 1.5)
 --   deactivated@plan-markup.test  deactivated (PendingActivation screen, Story 1.5)
+--   theme@plan-markup.test        active, its own theme changed by the themes e2e (Story 3.8)
 --
 -- Fixed UUIDs use version nibble 4 and variant 8 so Zod v4 uuid() accepts them.
 
@@ -34,6 +35,11 @@ values
    'authenticated', 'authenticated', 'deactivated@plan-markup.test',
    extensions.crypt('password123', extensions.gen_salt('bf')), now(),
    '{"provider":"email","providers":["email"]}', '{"name":"Dev Deactivated"}', now(), now(),
+   '', '', '', ''),
+  ('00000000-0000-0000-0000-000000000000', '00000000-0000-4000-8000-00000000000e',
+   'authenticated', 'authenticated', 'theme@plan-markup.test',
+   extensions.crypt('password123', extensions.gen_salt('bf')), now(),
+   '{"provider":"email","providers":["email"]}', '{"name":"Dev Theme"}', now(), now(),
    '', '', '', '');
 
 insert into auth.identities (
@@ -48,7 +54,8 @@ where u.id in (
   '00000000-0000-4000-8000-00000000000a',
   '00000000-0000-4000-8000-00000000000b',
   '00000000-0000-4000-8000-00000000000c',
-  '00000000-0000-4000-8000-00000000000d'
+  '00000000-0000-4000-8000-00000000000d',
+  '00000000-0000-4000-8000-00000000000e'
 );
 
 -- Profiles were created by app.fn_handle_new_user (status pending).
@@ -58,7 +65,7 @@ where id = '00000000-0000-4000-8000-00000000000a';
 
 update public.profiles
 set status = 'active'
-where id = '00000000-0000-4000-8000-00000000000b';
+where id in ('00000000-0000-4000-8000-00000000000b', '00000000-0000-4000-8000-00000000000e');
 
 update public.profiles
 set status = 'deactivated'

@@ -1,6 +1,6 @@
 # Story 3.8: Appearance themes
 
-Status: in-progress
+Status: review
 
 ## Story
 
@@ -20,11 +20,11 @@ so that the workspace suits my eyes and my room.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Migration + RLS + server action** — new migration in `supabase/migrations/`, RLS/RPC per AC 3, types regenerated if the project does that, server action `setTheme` with Zod; DB tests.
-- [ ] **Task 2: Theme provider** — client store for the active theme, apply `data-theme` on the workspace root/html, localStorage fallback, SSR value from profile, no-flash handling within the existing CSP.
-- [ ] **Task 3: Settings → Appearance UI** — menu bar Settings entry (exists from Story 1.7/1.8 — wire it), radio selection with current theme checked, keyboard accessible.
-- [ ] **Task 4: Canvas/overlay tokens** — route all canvas and overlay colours through tokens, re-read on change, redraw overlays (not tiles) on theme switch.
-- [ ] **Task 5: Contrast + tests** — token values finalised for Daylight and High contrast (Blueprint already tuned), contrast unit tests, axe per theme, e2e `e2e/appearance-themes.spec.ts`; screenshots of L17 in all three themes to `fixtures/private/traces/3-8-theme-<name>.png` (never commit private files).
+- [x] **Task 1: Migration + RLS + server action** — new migration in `supabase/migrations/`, RLS/RPC per AC 3, types regenerated if the project does that, server action `setTheme` with Zod; DB tests.
+- [x] **Task 2: Theme provider** — client store for the active theme, apply `data-theme` on the workspace root/html, localStorage fallback, SSR value from profile, no-flash handling within the existing CSP.
+- [x] **Task 3: Settings → Appearance UI** — menu bar Settings entry (exists from Story 1.7/1.8 — wire it), radio selection with current theme checked, keyboard accessible.
+- [x] **Task 4: Canvas/overlay tokens** — route all canvas and overlay colours through tokens, re-read on change, redraw overlays (not tiles) on theme switch.
+- [x] **Task 5: Contrast + tests** — token values finalised for Daylight and High contrast (Blueprint already tuned), contrast unit tests, axe per theme, e2e `e2e/appearance-themes.spec.ts`; screenshots of L17 in all three themes to `fixtures/private/traces/3-8-theme-<name>.png` (never commit private files).
 
 ## Dev Notes
 
@@ -43,10 +43,45 @@ so that the workspace suits my eyes and my room.
 
 ### Agent Model Used
 
+Claude Opus 5.5 (claude-opus-5-5)
+
 ### Debug Log References
+
+- Local: `npm run typecheck`, `npm run lint`, `npm run build` clean; `npm test` (all unit tests, Docker running); `supabase test db` incl. the new `profiles_theme.test.sql`; `npm run check:rls` OK; `npm run db:types` / `db:schema` regenerated (`types.gen.ts`, `schema.sql`).
+- e2e on the production build (`E2E_PROD=1`, workers 1, local Supabase after `npm run db:reset` for the new seeded user): all passed, opt-in private checks skipped. `appearance-themes.spec.ts` passed on its first run; axe-core (`@axe-core/playwright` 4.13.0) found no serious or critical violation in any theme. (`security-headers` failed once only because `NEXT_PUBLIC_SUPABASE_URL` was not exported for the remapped local ports; passes with it.)
+- Local private check `PERF_L17=1 … perf-themes` (L17 at 188 % with search highlights): switching Blueprint → Daylight → High contrast, longest main-thread task **0 ms**, pending tiles after each switch **0, 0, 0** (nothing re-rendered). Screenshots `fixtures/private/traces/3-8-theme-blueprint.png`, `-daylight.png`, `-contrast.png` reviewed: chrome, panels, status bar and highlights follow the theme; the sheet stays white. Not committed.
+- Supabase ran on locally remapped ports 583xx (Windows reserved 55956-57055); `config.toml` / `.env.local` restored afterwards, never committed. The remote database was not migrated.
 
 ### Completion Notes List
 
+- **Task 1 (migration, RLS, action).** `20261024090000_profiles_theme.sql`: `profiles.theme text not null default 'blueprint'` with `profiles_theme_check`, and `grant update (theme)` to `authenticated`. The existing `profiles_update_self` policy limits the rows, the column grants limit the columns to name and theme: no SECURITY DEFINER function, so NFR22 does not apply. pgTAP `profiles_theme.test.sql`: not null, default, new users get Blueprint, the check rejects other values and null, user A changes their own theme, A's update of B's theme changes 0 rows, a theme update cannot carry another column, anon is refused, B unchanged; `profiles_rls.test.sql` now asserts "name and theme only". `setTheme` server action (`src/features/appearance/actions.ts`): `getAuthUser()` (never an id from the input), Zod `ThemeSchema`, `Result` with safe messages; unit-tested. The profile read and `AuthUser` carry `theme` (an unknown stored value reads as Blueprint).
+- **Task 2 (theme on the client).** `src/lib/theme.ts` (themes, labels, schema; shared by server and client; `tokens.ts` re-exports it). The workspace page passes the profile's theme to the shell, which renders it as `data-theme` on its root: the first paint is already right. `useWorkspaceTheme` applies the theme to `<html>` too (portals and the canvas token bridge follow it) and puts Blueprint back when the workspace unmounts; `chooseTheme` switches at once, keeps a copy in localStorage, saves on the profile, and on failure puts the previous theme back with an error toast (a newer choice is never undone by an older failure).
+- **Task 3 (menu).** Settings > Appearance: a submenu of three radio items (Blueprint, Daylight, High contrast) with the current one checked; keyboard: Enter / arrows / Enter (unit test). Replaces the disabled "Theme" placeholder.
+- **Task 4 (canvas tokens).** New per-theme tokens `--canvas-backdrop`, `--canvas-zoom-rect`, `--canvas-failed-fill`, `--canvas-failed-stroke`. The engine reads its whole palette (backdrop, search highlights, Zoom rubber band, failed-tile hatch) from the canvas element's tokens (`viewerPalette`; Blueprint's values only for unreadable tokens, kept equal to globals.css by a test), drops it on every theme change and redraws from the bitmaps in memory: no tile or preview is requested again (jsdom test with a real MutationObserver). The sheet stays white (`SHEET`, the only colour literal the new guard test allows in viewer and workspace code).
+- **Task 5 (contrast, tests).** Contrast pairs for every canvas overlay against the sheet and the backdrop (selection outline, rubber band, failed hatch, snap on the backdrop), the status warning on hover and on the status bar, the accent on the status bar, and the current search hit's outline against its own fill over the sheet. Two real failures fixed: Daylight's backdrop (rubber band 2.98:1 → lighter backdrop `#d9dbdf`) and Daylight's warning text on surface-3 (4.41:1 → `#7a5d00`). `e2e/appearance-themes.spec.ts`: all three themes from the menu with real clicks, the canvas backdrop pixel per theme, axe per theme, the profile's choice in the server-rendered HTML and after a reload, the sign-in page Blueprint with localStorage saying Daylight. `e2e/perf-themes.spec.ts` (local, private).
+
+**Decisions and deviations (for review):**
+
+1. **No pre-paint script.** The workspace is always server-rendered with the signed-in user's profile, so its theme is in the HTML; sign-in and PendingActivation are Blueprint by the scope rule. An inline script would only serve a case that cannot occur and would need a CSP nonce/hash: none was added, `src/proxy.ts` is unchanged. localStorage is the fallback when no profile value is known (and the browser's copy).
+2. **Column grant instead of an RPC.** The self-update policy plus `grant update (theme)` is the column-limited update AC 3 allows; there is no SECURITY DEFINER code to secure.
+3. **Radio items in a submenu, not a dialog** (AC 1 offered both): one click, the state visible, Story 1.7 MenuBar parts.
+4. **A dedicated seeded user** `theme@plan-markup.test` for the themes e2e, so parallel specs signed in as other users never see a changed theme (seed only; local and CI).
+5. **Search highlight fills are not a 3:1 boundary.** They are translucent so the drawing's text stays readable under them (founder decision 2026-10-24, yellow); the current hit is identified by its dark outline, checked at 3:1 against its fill over the sheet in every theme.
+6. **High contrast**: the existing 2 px focus ring (with a 2 px gap) applies to all themes; warnings keep their icon, the snap toggles `aria-pressed` and their pressed bar; verified in the screenshots.
+7. **Admin and marketing stay Daylight** (AC 4): neither exists yet; nothing to wire. Only the workspace follows the profile.
+8. Tasks 2 and 3 are one commit (the shell and the menu props change together).
+9. New dev dependency `@axe-core/playwright` 4.13.0 (exact pin, released 2026-08-11).
+
 ### File List
 
+- `supabase/migrations/20261024090000_profiles_theme.sql`, `supabase/tests/profiles_theme.test.sql` (new); `supabase/tests/profiles_rls.test.sql`, `supabase/seed.sql`, `supabase/schema.sql` (modified)
+- `src/lib/theme.ts` (new); `src/lib/db/profiles.ts`, `src/lib/db/types.gen.ts`, `src/lib/auth/get-auth-user.ts`, `get-auth-user.test.ts` (modified)
+- `src/features/appearance/actions.ts`, `actions.test.ts`, `theme-store.ts`, `theme-store.test.tsx` (new)
+- `src/features/workspace/workspace-shell.tsx`, `workspace-shell.test.tsx`, `workspace-menu-bar.tsx`, `src/app/(workspace)/workspace/page.tsx` (modified)
+- `src/app/globals.css`, `src/components/ui/tokens.ts`, `token-names.ts`, `contrast-pairs.ts`, `contrast.test.ts` (modified); `src/components/ui/viewer-palette.test.ts` (new)
+- `src/features/viewer/viewer-engine.ts` (modified); `src/features/viewer/canvas-colors.test.ts`, `viewer-engine-theme.test.ts` (new)
+- `e2e/appearance-themes.spec.ts`, `e2e/perf-themes.spec.ts` (new); `package.json`, `package-lock.json` (modified)
+
 ### Change Log
+
+- 2026-10-24: Story 3.8 implemented (Claude Opus 5.5): profile theme with column-limited RLS, Settings > Appearance, canvas palette from tokens, contrast pairs, axe per theme. Status → review. Commits 1fbec72, 5526a10, e7f6e2c and the Task 5 commit.
