@@ -1,6 +1,6 @@
 # Story 3.7: Status bar with page size, scale, snap, cursor and zoom
 
-Status: in-progress
+Status: review
 
 ## Story
 
@@ -22,11 +22,11 @@ so that I can trust what I measure and see.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Core** — `src/core/pdf/page-size.ts` (sheet name detection, mm/in formatting) and `src/core/units/format.ts` (or extend an existing formatter) for coordinates; unit tests.
-- [ ] **Task 2: Stores** — snap-settings store (per-user persistence), cursor-position store fed by canvas pointer events in page space (reuse view inverse transform from `src/core/render/view.ts`), scale-state selector (always "not set" for now).
-- [ ] **Task 3: Components** — `ScaleIndicator`, `SnapToggles`, `CursorReadout`, `PageSizeItem`, zoom item, in `src/features/viewer/status/` (or the existing status-bar location); fixed order and responsive collapse.
-- [ ] **Task 4: Wiring per tab** — items follow the active tab and page (3.5), clear on EmptyWorkspace.
-- [ ] **Task 5: Tests** — unit + `e2e/viewer-status-bar.spec.ts`; local L17/L21 check (A1 sheet detected, cursor readout sane, no long tasks while moving the pointer) and screenshot `fixtures/private/traces/3-7-status-bar.png` (never commit private files).
+- [x] **Task 1: Core** — `src/core/pdf/page-size.ts` (sheet name detection, mm/in formatting) and `src/core/units/format.ts` (or extend an existing formatter) for coordinates; unit tests.
+- [x] **Task 2: Stores** — snap-settings store (per-user persistence), cursor-position store fed by canvas pointer events in page space (reuse view inverse transform from `src/core/render/view.ts`), scale-state selector (always "not set" for now).
+- [x] **Task 3: Components** — `ScaleIndicator`, `SnapToggles`, `CursorReadout`, `PageSizeItem`, zoom item, in `src/features/viewer/status/` (or the existing status-bar location); fixed order and responsive collapse.
+- [x] **Task 4: Wiring per tab** — items follow the active tab and page (3.5), clear on EmptyWorkspace.
+- [x] **Task 5: Tests** — unit + `e2e/viewer-status-bar.spec.ts`; local L17/L21 check (A1 sheet detected, cursor readout sane, no long tasks while moving the pointer) and screenshot `fixtures/private/traces/3-7-status-bar.png` (never commit private files).
 
 ## Dev Notes
 
@@ -45,10 +45,73 @@ so that I can trust what I measure and see.
 
 ### Agent Model Used
 
+Claude Opus 5.5 (claude-opus-5-5)
+
 ### Debug Log References
+
+- CI run **40023081059** (23b2645: typecheck/lint/unit/guards, Playwright e2e on the production build including `viewer-status-bar.spec.ts`, gitleaks): success.
+- Local checks: `npm run typecheck`, `npm run lint` and `npm run build` clean; `npm test` 1342 unit tests in 120 files (Docker stopped).
+- Local e2e on the production build (`E2E_PROD=1`, workers 1, Docker + local Supabase): 43 passed, 5 skipped (the opt-in private checks). `viewer-status-bar.spec.ts` failed once on its first run: the page-size item kept `inline-flex` next to `hidden` (both display utilities on one element; Tailwind's order made it visible below 1440 px). The responsive variants now sit on wrapper spans (`hidden ws-md:contents` / `contents ws-md:hidden`).
+- Locally Supabase ran on remapped ports 583xx: Windows had reserved 55956-57055 this boot, so `supabase start` could not bind 56321/56322. `supabase/config.toml` and `.env.local` were changed only locally and restored afterwards; never committed.
+- **Founder drawings** (`PERF_L17=1 E2E_PROD=1 npx playwright test perf-status-bar`, private, nothing committed): L21 and L17 open in two tabs.
+  - Sheet size: both **"A1 841 × 594 mm"** (2384 × 1684 pt, landscape).
+  - Cursor at page point (100, 100) at fit: "X 100.0  Y 1583.8 pt" (page height 1683.8 pt, origin bottom-left). Page centre: "X 1192.0  Y 841.8 pt" at fit, zoomed in, and zoomed in with the view rotated 90°; page (1100, 800) rotated: "X 1100.0  Y 883.8 pt". The readout does not move with the view, only with the page point.
+  - Pointer sweep: 181 moves in 3 s over the canvas: longest main-thread task **0 ms** (Long Tasks API: nothing ≥ 50 ms).
+  - Screenshot `fixtures/private/traces/3-7-status-bar.png` (L17 at fit, 1920 px: file name · pager · A1721 · "A1 841 × 594 mm" · "⚠ Scale not set" · snap toggles · "X 1192.0  Y 841.8 pt" · 31%). Reviewed, not committed.
 
 ### Completion Notes List
 
+- **Task 1: core.**
+  - `src/core/pdf/page-size.ts` `sheetSize(widthPt, heightPt, unit)`: ISO A0–A5, ISO B0–B4, ANSI A–E and ARCH A–E/E1, within ±1 % on each side, named in the page's orientation as shown (/Rotate applied, since `PageInfo` sizes are the rotated viewport): "A1 841 × 594 mm", "ANSI D 34 × 22 in". Other sizes: "W × H mm" in the user's unit.
+  - `src/core/units/format.ts`: `fromPoints`, `DEFAULT_LENGTH_UNIT` ("mm"), `formatCursor(point, measure?)` → "X 1234.5  Y 678.9 pt"; a calibrated `measure` (unit, real length per point) switches it to real units (Epic 4).
+  - Unit tests over every sheet in both orientations, the tolerance, other sizes and units, and a check that no two sheets are within the tolerance of each other.
+- **Task 2: stores.**
+  - `status/snap-settings.ts`: a vanilla zustand store `{ content, markup, grid }` (defaults on, on, off), `setSnap`, and `useSnapSettingsPersistence(userId)` (localStorage `pm.snap.v1.<userId>`, Zod-validated, storage errors fall back to the defaults). Story 4.1 only reads `snapSettings`.
+  - `status/cursor-store.ts`: `{ point }` in PDF units; `setCursor` notifies only on a change.
+  - The engine feeds it: `ViewerInput` reports `pointerAt(point | null)` on pointer move / leave; `ViewerEngine.pointerAt` publishes at most once per animation frame, and again on every draw (a wheel pan under a still pointer moves the page point). `cursorPoint()` inverts the view (`screenToPage`) and the page's /Rotate (`pdfToPageMatrix`), so the readout is independent of zoom and view rotation; null off the page. A background tab clears it and publishes nothing; a new document clears it.
+  - `status/scale-state.ts`: `ScaleState` (`not-set`, `set`, `detected`, `mixed`); `scaleStateOf()` is always "not set" before Epic 4.
+- **Task 3: components** (`src/features/viewer/status/status-items.tsx`, Story 1.7 parts):
+  - `PageSizeItem`: the label from 1440 px wide; narrower, an orientation icon with the label for assistive technology and in the tooltip ("Page size: A1, landscape, 841 × 594 mm").
+  - `ScaleIndicator`: "Scale not set" in the warning colour with the warning icon (StatusBarItem tone), tooltip "Calibration arrives with the Measure tools"; "✓ Scale 1:100", "Scale 1:100 detected — Verify" and "2 scales on page" from the typed prop.
+  - `SnapToggles`: three 24 px `ToggleButton`s (Magnet, PenTool, Grid3x3) in a "Snap" group with `aria-pressed`; each tooltip says what it will do.
+  - `CursorReadout`: writes its text node straight from the cursor store (no React render per move; the test counts one render), `aria-live="off"`, a fixed 22ch width so the bar does not shift.
+  - `ZoomItem`: the Revu-style readout as a `Menu` trigger: Fit page (Ctrl+9), Fit width (Ctrl+0), 50 / 100 / 200 / 400 % (`viewerCommands.zoomTo` → `ViewerEngine.zoomToPercent`, about the centre).
+  - Story 1.7 components extended: `StatusBarItem` forwards its ref and extra props, can be a button without its own onClick (`asButton`, for a menu trigger), can show only its icon (`iconOnly`), truncates its label and opens its tooltip upwards; `IconButton` / `ToggleButton` get an `xs` (24 px) size; `ToggleButton` an optional `tooltip` text.
+- **Task 4: wiring.** `WorkspaceStatusBar` renders file name · PagePager · page size · ScaleIndicator · snap toggles · cursor X/Y · zoom · an empty `status-save` slot (Story 6.x). The shell passes the active tab's shown page (`pages[pageIndex]`, so the items follow tab and page switches) and its scale; without a drawing only "No drawing open" shows. The file name truncates first; the bar is one 24 px line at 1280 px (e2e: no overflow, every item inside the window).
+- **Task 5: tests.** Unit tests for the core, the stores, the engine's cursor (frame throttling, off page, zoom + view rotation, /Rotate 90, background tab), `ViewerInput`, the components and the shell's item order; `e2e/viewer-status-bar.spec.ts` in CI; `e2e/perf-status-bar.spec.ts` opt-in and local.
+- **AC 7:** the polite live region still only carries the page announcement (3.3). The cursor and zoom items are outside it, the cursor `aria-live="off"`. The scale state never changes before Epic 4; Story 4.3 announces its changes through the same region.
+- **AC 8:** search highlights already use their own yellow tokens (3.6 review). The status bar's warnings (Scale not set) use the warning colour and icon, never the accent; the accent appears only as the pressed state of the snap toggles (ToggleButton's selection style).
+
+**Decisions and deviations (for review):**
+
+1. **ScaleIndicator is not a button yet.** Nothing can be done with it before calibration exists, and a button that does nothing is worse for keyboard and screen-reader users than a plain item; it is a `StatusBarItem` span with the tooltip "Calibration arrives with the Measure tools". Story 4.3 adds `onClick` (open Calibrate). No CalibrateDialog stub exists.
+2. **Page size is its own item after the pager** (not the pager's tooltip): from 1440 px the full label; narrower an icon whose tooltip and accessible name carry the size.
+3. **Units:** there is no Settings > Units yet, so `DEFAULT_LENGTH_UNIT` is millimetres. Named sheets use their own unit (ISO in mm, ANSI and ARCH in inches) whatever the preference; only other sizes follow it. A5 is included in the ISO list.
+4. **Zoom item is a menu**, not read-only: the toolbar has zoom in / out and the fits but no presets, so the readout opens Fit page, Fit width and 50 / 100 / 200 / 400 %.
+5. **Snap defaults:** content and markup on, grid off (Revu's defaults). Remembered per user in localStorage (like the workspace layout), not on the server.
+6. **Cursor origin:** the bottom-left corner of the unrotated page as the viewer knows it (the viewport's view box). A MediaBox that does not start at (0, 0) is not in `PageInfo`, so such a PDF's coordinates are relative to its corner, not its raw user space. One decimal, in points.
+7. **Story 1.7 components were extended** (StatusBarItem ref/props/asButton/iconOnly, `xs` size, ToggleButton tooltip), rather than adding new status-bar primitives.
+8. **Snap toggles in the status bar use the ToggleButton's pressed style** (accent fill + inset bar), as everywhere else; warnings never use the accent.
+
+**Questions for the founder:**
+
+- Units: millimetres by default for sizes that are not a standard sheet, and ANSI/ARCH sheets always in inches. Is that right for your drawings, or should a Settings > Units preference come earlier?
+- Snap defaults: content and markup on, grid off, as in Revu?
+- Scale not set: is a tooltip enough until calibration arrives, or should clicking it explain more (a popover)?
+
 ### File List
 
+- `_bmad-output/implementation-artifacts/3-7-status-bar-with-page-size-scale-snap-cursor-and-zoom.md`, `sprint-status.yaml` (modified)
+- `src/core/pdf/page-size.ts`, `page-size.test.ts`, `src/core/units/format.ts`, `format.test.ts` (new)
+- `src/features/viewer/status/snap-settings.ts`, `snap-settings.test.ts`, `cursor-store.ts`, `cursor-store.test.ts`, `scale-state.ts`, `status-items.tsx`, `status-items.test.tsx` (new)
+- `src/features/viewer/viewer-engine.ts`, `viewer-engine.test.ts`, `viewer-input.ts`, `viewer-input.test.ts`, `viewer-commands.ts`, `index.ts` (modified)
+- `src/components/ui/status-bar-item.tsx`, `status-bar-item.test.tsx`, `icon-button.tsx`, `toggle-button.tsx`, `toggle-button.test.tsx` (modified)
+- `src/features/workspace/workspace-status-bar.tsx`, `workspace-shell.tsx`, `workspace-shell.test.tsx` (modified)
+- `e2e/viewer-status-bar.spec.ts`, `e2e/perf-status-bar.spec.ts` (new)
+
 ### Change Log
+
+- 2026-10-24: Story 3.7 implemented (Claude Opus 5.5). Status → review.
+  - Page size, ScaleIndicator, snap toggles (per user), cursor X/Y and the zoom menu in the status bar's fixed order.
+  - Unit tests, e2e and the local L17/L21 check.
+  - Commits f08b2e5, 14317b2, 7ff67cc, 1148dc3, 23b2645.
