@@ -1,6 +1,6 @@
 # Story 3.6: Search text in the drawing
 
-Status: ready-for-dev
+Status: in-progress
 
 ## Story
 
