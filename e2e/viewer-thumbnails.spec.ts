@@ -51,25 +51,34 @@ test("Thumbnails panel: empty state, labelled thumbnails, current-page highlight
   await expect(thumb(page, "Page 2, FP-201")).toHaveAttribute("aria-current", "page");
   await expect(thumb(page, "Page 1, S-101")).not.toHaveAttribute("aria-current", "page");
 
-  // A click navigates.
+  // A click navigates and hands the keyboard to the canvas (Revu; founder decision 2026-10-23).
   await thumb(page, "Page 4").click();
   await expect(pageInput(page)).toHaveValue("4");
   await expect(thumb(page, "Page 4")).toHaveAttribute("aria-current", "page");
   await expect(canvas(page)).toHaveAttribute("data-state", "ready");
+  await expect(canvas(page)).toBeFocused();
+  // The canvas's page keys act at once.
+  await page.keyboard.press("PageUp");
+  await expect(pageInput(page)).toHaveValue("3");
+  await expect(thumb(page, "Page 3, FP-202")).toHaveAttribute("aria-current", "page");
 
-  // Keys move the focus within the list (one tab stop); Enter / Space navigate.
-  await expect(list(page)).toBeFocused();
+  // Keys move the focus within the list (one tab stop); Enter / Space navigate and focus the canvas.
+  await list(page).focus();
   await page.keyboard.press("Home");
   expect(await activeName(page)).toBe("Page 1, S-101");
-  await expect(pageInput(page)).toHaveValue("4"); // moving the focus does not navigate
+  await expect(pageInput(page)).toHaveValue("3"); // moving the focus does not navigate
   await page.keyboard.press("Enter");
   await expect(pageInput(page)).toHaveValue("1");
+  await expect(canvas(page)).toBeFocused();
+  await list(page).focus();
   await page.keyboard.press("ArrowDown");
   await page.keyboard.press("ArrowDown");
   expect(await activeName(page)).toBe("Page 3, FP-202");
   await page.keyboard.press("Space");
   await expect(pageInput(page)).toHaveValue("3");
-  // The page keys are the list's here, not the canvas's.
+  await expect(canvas(page)).toBeFocused();
+  // In the list, the page keys move the list's focus, not the page.
+  await list(page).focus();
   await page.keyboard.press("End");
   expect(await activeName(page)).toBe("Page 4");
   await page.keyboard.press("PageUp");

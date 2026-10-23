@@ -115,6 +115,9 @@ export type ThumbnailListener = (result: { bitmap: ImageBitmap } | { error: true
 
 type PendingThumbnail = { reqId: number | null; listeners: Set<ThumbnailListener> };
 
+/** A sheet-label lookup in flight: the panel rows holding it, and whether the engine needs it. */
+type SheetLabelCall = { reqId: number; holders: number; pinned: boolean };
+
 /** The thumbnail raster size of a page in a box: fitted, whole device px. */
 export function thumbnailSize(page: { width: number; height: number }, box: ThumbnailBox): ThumbnailBox {
   const scale = Math.min(box.width / page.width, box.height / page.height);
@@ -183,6 +186,8 @@ export class ViewerEngine {
   /** Detected sheet numbers by 0-based page (null: none found). */
   private sheetLabels: Record<number, string | null> = {};
   private readonly sheetRequested = new Set<number>();
+  /** Sheet-label lookups in flight, by 0-based page. */
+  private readonly sheetCalls = new Map<number, SheetLabelCall>();
   /** The document's first complete frame has been reported (status ready). */
   private firstFrameShown = false;
   /** The shown page's preview failed (multi-page documents; Retry asks again). */
@@ -405,26 +410,72 @@ export class ViewerEngine {
 
   /**
    * Asks the worker for the sheet number of a page without a page label (once
-   * per page; the Thumbnails panel asks for the rows it shows).
+   * per page). The engine's own lookup for the shown page is pinned: it is
+   * never cancelled.
    */
   requestSheetLabel(index: number): void {
-    if (!this.page || !Number.isInteger(index) || index < 0 || index >= this.pages.length) return;
+    const call = this.startSheetLabel(index);
+    if (call) call.pinned = true;
+  }
+
+  /**
+   * The Thumbnails panel's lookup for a row it shows. Returns a release: when
+   * every row that asked has gone and the engine did not pin it, the worker job
+   * is cancelled (a later visit asks again), so a fling through a long set does
+   * not queue text extraction for every page it passed (3.4 review).
+   */
+  sheetLabel(index: number): () => void {
+    const call = this.startSheetLabel(index);
+    if (!call) return () => undefined;
+    call.holders++;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      call.holders--;
+      if (call.holders > 0 || call.pinned || this.sheetCalls.get(index) !== call) return;
+      this.sheetCalls.delete(index);
+      this.sheetRequested.delete(index);
+      this.client.cancel([call.reqId]);
+    };
+  }
+
+  /** Lookups in flight (tests, diagnostics). */
+  get pendingSheetLabels(): number {
+    return this.sheetCalls.size;
+  }
+
+  /** Starts the lookup of a page once; the call in flight, or null when none is needed or it is answered. */
+  private startSheetLabel(index: number): SheetLabelCall | null {
+    if (!this.page || !Number.isInteger(index) || index < 0 || index >= this.pages.length) return null;
     const label = this.pageLabels?.[index];
-    if ((label && label !== String(index + 1)) || this.sheetRequested.has(index)) return;
+    if (label && label !== String(index + 1)) return null;
+    const inFlight = this.sheetCalls.get(index);
+    if (inFlight) return inFlight;
+    if (this.sheetRequested.has(index)) return null;
     this.sheetRequested.add(index);
     const sha = this.sha256;
-    const call = this.client.request("render.sheetLabel", { page: index + 1 });
-    call.promise.then(
+    const request = this.client.request("render.sheetLabel", { page: index + 1 });
+    const call: SheetLabelCall = { reqId: request.reqId, holders: 0, pinned: false };
+    this.sheetCalls.set(index, call);
+    const done = () => {
+      if (this.sheetCalls.get(index) === call) this.sheetCalls.delete(index);
+    };
+    request.promise.then(
       ({ label: found }) => {
         if (this.sha256 !== sha || this.destroyed) return;
+        done();
         this.sheetLabels = { ...this.sheetLabels, [index]: found };
         this.update({ sheetLabels: this.sheetLabels });
       },
       () => {
         // Cancelled or failed: no label; a later visit may ask again.
-        if (this.sha256 === sha) this.sheetRequested.delete(index);
+        if (this.sha256 !== sha) return;
+        done();
+        if (!this.sheetCalls.has(index)) this.sheetRequested.delete(index);
       },
     );
+    return call;
   }
 
   /** The rotation-0 fit box in device px: the preview is the fit-page raster whatever the view rotation. */
@@ -616,6 +667,8 @@ export class ViewerEngine {
   private resetDocument(): void {
     const ids = [...this.inflight.values()];
     for (const pending of this.thumbPending.values()) if (pending.reqId !== null) ids.push(pending.reqId);
+    for (const call of this.sheetCalls.values()) ids.push(call.reqId);
+    this.sheetCalls.clear();
     this.thumbPending.clear();
     this.thumbs.clear();
     this.documentGeneration++;

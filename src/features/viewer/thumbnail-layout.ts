@@ -80,7 +80,11 @@ export function revealRow(index: number, scrollTop: number, viewportHeight: numb
   const top = index * rowHeight;
   const bottom = top + rowHeight;
   if (top < scrollTop) return top;
-  if (bottom > scrollTop + viewportHeight) return Math.max(0, bottom - viewportHeight);
+  if (bottom > scrollTop + viewportHeight) {
+    // A row taller than the list shows its top (the thumbnail), not its label line.
+    if (rowHeight >= viewportHeight) return top === scrollTop ? null : top;
+    return Math.max(0, bottom - viewportHeight);
+  }
   return null;
 }
 

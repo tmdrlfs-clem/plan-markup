@@ -14,9 +14,9 @@ export interface ViewerCommandTarget {
   readonly currentPage: number;
   readonly pageCount: number;
   focusCanvas(): void;
-  /** Story 3.4 (absent on test doubles): see ViewerEngine.thumbnail / requestSheetLabel. */
+  /** Story 3.4 (absent on test doubles): see ViewerEngine.thumbnail / sheetLabel. */
   thumbnail?(index: number, box: ThumbnailBox, listener: ThumbnailListener): () => void;
-  requestSheetLabel?(index: number): void;
+  sheetLabel?(index: number): () => void;
 }
 
 let target: ViewerCommandTarget | null = null;
@@ -50,7 +50,8 @@ export const viewerCommands = {
 export const viewerThumbnails = {
   request: (index: number, box: ThumbnailBox, listener: ThumbnailListener): (() => void) =>
     target?.thumbnail?.(index, box, listener) ?? (() => undefined),
-  requestSheetLabel: (index: number) => target?.requestSheetLabel?.(index),
+  /** Looks up a row's detected sheet number; the returned release cancels it once no row needs it. */
+  sheetLabel: (index: number): (() => void) => target?.sheetLabel?.(index) ?? (() => undefined),
 };
 
 /** The commands without arguments (toolbar buttons and menu items). */

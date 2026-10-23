@@ -730,6 +730,42 @@ describe("ViewerEngine: pages (Story 3.3)", () => {
     expect(client.all("render.sheetLabel")).toHaveLength(1);
   });
 
+  it("the panel's sheet-number lookups are shared and cancelled when the last row leaves; the engine's own is pinned", async () => {
+    const { client, engine } = setupRecording();
+    await openPages(client, engine);
+    await resolvePreview(client);
+    // Page 3 (index 2): two holders share one worker job; the last release cancels it.
+    const a = engine.sheetLabel(2);
+    const b = engine.sheetLabel(2);
+    const third = client.all("render.sheetLabel");
+    expect(third.map((c) => c.payload)).toEqual([{ page: 3 }]);
+    a();
+    a(); // a second release of the same holder is a no-op
+    expect(client.cancelled).not.toContain(third[0].reqId);
+    b();
+    expect(client.cancelled).toContain(third[0].reqId);
+    expect(engine.pendingSheetLabels).toBe(0);
+    third[0].reject(new WorkerRequestError("cancelled", { name: "Error", message: "c" }));
+    await flush();
+    // A later visit asks again.
+    const again = engine.sheetLabel(2);
+    expect(client.all("render.sheetLabel")).toHaveLength(2);
+    again();
+    // The shown page: the engine's settle pins the lookup, a row leaving does not cancel it.
+    const row = engine.sheetLabel(0);
+    vi.runAllTimers();
+    const first = client.all("render.sheetLabel").at(-1)!;
+    expect(first.payload).toEqual({ page: 1 });
+    row();
+    expect(client.cancelled).not.toContain(first.reqId);
+    first.resolve({ label: "S-101" });
+    await flush();
+    expect(state.sheetLabels?.[0]).toBe("S-101");
+    // Answered: nothing more to ask.
+    engine.sheetLabel(0)();
+    expect(client.all("render.sheetLabel")).toHaveLength(3);
+  });
+
   it("asks for the sheet number after the page's tile requests", async () => {
     const { client, engine } = setupRecording();
     await openPages(client, engine);

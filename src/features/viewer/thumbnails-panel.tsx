@@ -39,6 +39,13 @@ export function ThumbnailsPanel({ emptyText }: { emptyText: string }) {
 
 const readDpr = () => (typeof window === "undefined" ? 1 : window.devicePixelRatio || 1);
 
+/**
+ * How long an overscan row (mounted, not on screen) waits before it asks for
+ * its raster and sheet number: the visible rows go first, and rows a fling only
+ * passes through never ask (3.4 review).
+ */
+export const OVERSCAN_DELAY_MS = 150;
+
 function ThumbnailList({ pages }: { pages: PageInfo[] }) {
   const pageIndex = useStore(viewerStore, (s) => s.pageIndex);
   const pageLabels = useStore(viewerStore, (s) => s.pageLabels);
@@ -65,37 +72,54 @@ function ThumbnailList({ pages }: { pages: PageInfo[] }) {
     return () => observer?.disconnect();
   }, []);
 
+  // A DPR change alone (another monitor, browser zoom) resizes nothing: watch it.
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+    const query = window.matchMedia(`(resolution: ${dpr}dppx)`);
+    const onChange = () => setDpr(readDpr());
+    query.addEventListener?.("change", onChange);
+    return () => query.removeEventListener?.("change", onChange);
+  }, [dpr]);
+
   const layout = thumbnailLayout(size.width, pages, dpr);
   const { rowHeight } = layout;
   const range = visibleRows(scrollTop, size.height, rowHeight, pages.length);
+  const onScreen = visibleRows(scrollTop, size.height, rowHeight, pages.length, 0);
   const rowsPerScreen = Math.max(1, Math.floor(size.height / rowHeight));
 
-  // The current page (pager, keys, a click) stays in view (AC 3).
-  useEffect(() => {
+  // The current page (pager, keys, a click) stays in view (AC 3). Before paint, and the
+  // window follows at once: the rows of the old scroll position never ask for anything.
+  useLayoutEffect(() => {
     const el = listRef.current;
     if (!el) return;
     const top = revealRow(pageIndex, el.scrollTop, el.clientHeight || size.height, rowHeight);
-    if (top !== null) el.scrollTop = top;
+    if (top === null) return;
+    el.scrollTop = top;
+    setScrollTop(el.scrollTop);
   }, [pageIndex, rowHeight, size.height]);
 
   // So does the row the keys moved to.
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = listRef.current;
     if (!el || moved === null) return;
     const top = revealRow(moved.index, el.scrollTop, el.clientHeight || size.height, rowHeight);
-    if (top !== null) el.scrollTop = top;
+    if (top === null) return;
+    el.scrollTop = top;
+    setScrollTop(el.scrollTop);
   }, [moved, rowHeight, size.height]);
 
+  // Navigates and hands the keyboard to the canvas, as Revu does (founder decision 2026-10-23).
   const go = (index: number) => {
     setMoved({ forPage: pageIndex, index });
-    viewerCommands.goToPage(index);
+    if (index !== pageIndex) viewerCommands.goToPage(index);
+    viewerCommands.focusCanvas();
   };
 
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.altKey || event.ctrlKey || event.metaKey) return;
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
-      if (active !== pageIndex) viewerCommands.goToPage(active);
+      go(active);
       return;
     }
     const next = rowForKey(event.key, active, pages.length, rowsPerScreen);
@@ -115,6 +139,8 @@ function ThumbnailList({ pages }: { pages: PageInfo[] }) {
         key={i}
         id={`${idBase}-page-${i}`}
         index={i}
+        count={pages.length}
+        visible={i >= onScreen.first && i <= onScreen.last}
         page={pages[i]}
         top={i * rowHeight}
         rowHeight={rowHeight}
@@ -151,6 +177,9 @@ function ThumbnailList({ pages }: { pages: PageInfo[] }) {
 type RowProps = {
   id: string;
   index: number;
+  count: number;
+  /** On screen (not only in the overscan): asks for its raster at once. */
+  visible: boolean;
   page: PageInfo;
   top: number;
   rowHeight: number;
@@ -166,17 +195,28 @@ type RowProps = {
 
 type RasterState = "pending" | "ready" | "failed";
 
-function ThumbnailRow({ id, index, page, top, rowHeight, box, deviceBox, dpr, label, needsLabel, current, active, onSelect }: RowProps) {
+function ThumbnailRow({ id, index, count, visible, page, top, rowHeight, box, deviceBox, dpr, label, needsLabel, current, active, onSelect }: RowProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [raster, setRaster] = useState<{ key: string; state: RasterState }>({ key: "", state: "pending" });
   const fit = fitInBox(page, box);
   const requestKey = `${deviceBox.width}x${deviceBox.height}`;
   const state = raster.key === requestKey ? raster.state : "pending";
   const drawn = useRef<ImageBitmap | null>(null);
+  // Bumped when the held raster could not be drawn (evicted): asks the engine again.
+  const [attempt, setAttempt] = useState(0);
+
+  // Requests start from a macrotask: at once on screen, later in the overscan.
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    if (armed) return;
+    const timer = setTimeout(() => setArmed(true), visible ? 0 : OVERSCAN_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [armed, visible]);
 
   // The raster for this row's step; a new step (panel resize across a step) asks again (AC 6).
   const { width: boxWidthPx, height: boxHeightPx } = deviceBox;
   useEffect(() => {
+    if (!armed) return;
     const key = `${boxWidthPx}x${boxHeightPx}`;
     return viewerThumbnails.request(index, { width: boxWidthPx, height: boxHeightPx }, (result) => {
       if ("error" in result) {
@@ -185,25 +225,33 @@ function ThumbnailRow({ id, index, page, top, rowHeight, box, deviceBox, dpr, la
         return;
       }
       drawn.current = result.bitmap;
-      paint(canvasRef.current, result.bitmap);
       setRaster({ key, state: "ready" });
     });
-  }, [index, boxWidthPx, boxHeightPx]);
+  }, [armed, index, boxWidthPx, boxHeightPx, attempt]);
 
-  // A resize within the step only redraws the held raster into the new canvas size.
-  useEffect(() => {
-    if (state === "ready" && drawn.current) paint(canvasRef.current, drawn.current);
-  }, [state, fit.width, fit.height, dpr]);
+  // Draws the held raster before paint (a canvas size change clears it). While a new
+  // step is pending, the previous raster stays shown.
+  const shown = raster.state === "ready";
+  useLayoutEffect(() => {
+    if (raster.state !== "ready" || !drawn.current) return;
+    if (paint(canvasRef.current, drawn.current)) return;
+    drawn.current = null;
+    setRaster({ key: "", state: "pending" });
+    setAttempt((n) => n + 1);
+  }, [raster, fit.width, fit.height, dpr]);
 
-  // Pages without a page label: look up the detected sheet number for the rows shown.
+  // Pages without a page label: look up the detected sheet number for the rows shown
+  // (released, and cancelled in the worker, when the row goes).
   useEffect(() => {
-    if (needsLabel) viewerThumbnails.requestSheetLabel(index);
-  }, [index, needsLabel]);
+    if (armed && needsLabel) return viewerThumbnails.sheetLabel(index);
+  }, [armed, index, needsLabel]);
 
   return (
     <div
       id={id}
       role="option"
+      aria-setsize={count}
+      aria-posinset={index + 1}
       aria-selected={current}
       aria-current={current ? "page" : undefined}
       aria-label={thumbnailName(index, label)}
@@ -229,7 +277,7 @@ function ThumbnailRow({ id, index, page, top, rowHeight, box, deviceBox, dpr, la
           <canvas
             ref={canvasRef}
             aria-hidden="true"
-            className={cx("block h-full w-full bg-white", state !== "ready" && "invisible")}
+            className={cx("block h-full w-full bg-white", !shown && "invisible")}
             style={{ width: fit.width, height: fit.height }}
             width={Math.max(1, Math.round(fit.width * dpr))}
             height={Math.max(1, Math.round(fit.height * dpr))}
@@ -247,16 +295,22 @@ function ThumbnailRow({ id, index, page, top, rowHeight, box, deviceBox, dpr, la
   );
 }
 
-/** Draws a held raster into the row's canvas (its backing store already sized). */
-function paint(canvas: HTMLCanvasElement | null, bitmap: ImageBitmap): void {
+/**
+ * Draws a held raster into a row's canvas (its backing store already sized).
+ * False when the bitmap is gone (the engine evicted and closed it): ask again.
+ */
+export function paint(canvas: HTMLCanvasElement | null, bitmap: ImageBitmap): boolean {
+  // A closed ImageBitmap reports 0 x 0.
+  if (!(bitmap.width > 0) || !(bitmap.height > 0)) return false;
   const ctx = canvas?.getContext("2d");
-  if (!canvas || !ctx) return;
+  if (!canvas || !ctx) return true; // nothing to draw into (jsdom): not the raster's fault
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
   try {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    return true;
   } catch {
-    // The engine evicted (closed) it meanwhile; the next request draws again.
+    return false;
   }
 }

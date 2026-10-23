@@ -69,6 +69,9 @@ describe("virtual window", () => {
     expect(revealRow(5, 0, 300, 100)).toBe(300);
     expect(revealRow(1, 0, 300, 100)).toBeNull();
     expect(revealRow(2, 500, 300, 100)).toBe(200);
+    // A row taller than the list shows its top.
+    expect(revealRow(3, 0, 150, 200)).toBe(600);
+    expect(revealRow(0, 0, 150, 200)).toBeNull();
   });
 });
 
