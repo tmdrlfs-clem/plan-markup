@@ -77,7 +77,7 @@ import {
   type Rect,
   type ViewState,
 } from "@/core/render/view";
-import { readCanvasTokens, subscribeCanvasTokens, type CanvasTokens } from "@/components/ui/tokens";
+import { readCanvasTokens, subscribeCanvasTokens, viewerPalette, type ViewerPalette } from "@/components/ui/tokens";
 import type { Quad } from "@/core/search/page-text";
 import type { ContentFlags, PageInfo, TilePayload } from "@/workers/render-protocol";
 import { WorkerRequestError, type RenderClient } from "@/workers/rpc";
@@ -95,27 +95,12 @@ export const SETTLE_MS = 150;
 const REQUEST_BUDGET_SHARE = 0.9;
 /** A raster whose scale matches the view's device scale this closely (relative) is drawn 1:1. */
 const ONE_TO_ONE = 1e-9;
-const BACKDROP = "#e5e7eb";
-const PAGE = "#ffffff";
-const ZOOM_RECT = "#e8620c";
-/**
- * Search highlights (Story 3.6), Revu/Acrobat-style yellow: the theme's
- * --canvas-search-* tokens; these when a token cannot be read (tests).
- */
-const SEARCH_COLORS = { hit: "rgba(255, 214, 0, 0.4)", current: "rgba(255, 170, 0, 0.6)", outline: "#8a5a00" };
+/** The PDF sheet is never recoloured: white in every theme (Story 3.8 AC 2). Every other canvas colour is a theme token. */
+const SHEET = "#ffffff";
 /** A hit smaller than this on screen (CSS px) is zoomed in to it when shown (3.6 AC 3). */
 export const MIN_HIT_PX = 24;
 /** Space kept around a hit brought into view (CSS px). */
 const HIT_MARGIN = 32;
-
-/** The search highlight colours of a theme (the defaults where a token is missing). */
-function searchColorsOf(tokens: CanvasTokens): typeof SEARCH_COLORS {
-  return {
-    hit: tokens.searchHit || SEARCH_COLORS.hit,
-    current: tokens.searchCurrent || SEARCH_COLORS.current,
-    outline: tokens.searchOutline || SEARCH_COLORS.outline,
-  };
-}
 
 export type ViewerCanvases = { tiles: HTMLCanvasElement; markups: HTMLCanvasElement; active: HTMLCanvasElement };
 
@@ -309,9 +294,11 @@ export class ViewerEngine {
     this.unsubscribeSearchUi = searchUi.subscribe((s, prev) => {
       if (s.panelOpen !== prev.panelOpen) this.invalidate();
     });
-    // A theme change recolours the highlights.
-    this.unsubscribeTokens = subscribeCanvasTokens((tokens) => {
-      this.searchColors = searchColorsOf(tokens);
+    // A theme change (Story 3.8) recolours the canvas: backdrop, highlights, rubber band,
+    // failed tiles. Re-read from the canvas (the workspace root carries the theme) and redraw
+    // from the bitmaps in memory; no tile is rendered again.
+    this.unsubscribeTokens = subscribeCanvasTokens(() => {
+      this.palette = null;
       this.invalidate();
     });
   }
@@ -320,8 +307,8 @@ export class ViewerEngine {
   readonly search: DocumentSearch;
   private readonly unsubscribeSearchUi: () => void;
   private readonly unsubscribeTokens: () => void;
-  /** The search highlight colours (read from the theme on first use and on every theme change). */
-  private searchColors: typeof SEARCH_COLORS | null = null;
+  /** The theme's canvas colours (read on first use and again after every theme change). */
+  private palette: ViewerPalette | null = null;
 
   // ---- lifecycle ----------------------------------------------------------
 
@@ -1233,9 +1220,10 @@ export class ViewerEngine {
     const d = this.deviceRect(m, r.x / scale, r.y / scale, (r.x + r.width) / scale, (r.y + r.height) / scale);
     const [x, y, w, h] = [d.l, d.t, d.r - d.l, d.b - d.t];
     ctx.save();
-    ctx.fillStyle = "#f3f4f6";
+    const palette = this.colors();
+    ctx.fillStyle = palette.failedFill;
     ctx.fillRect(x, y, w, h);
-    ctx.strokeStyle = "#9ca3af";
+    ctx.strokeStyle = palette.failedStroke;
     ctx.lineWidth = 1;
     ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
     ctx.beginPath();
@@ -1261,12 +1249,12 @@ export class ViewerEngine {
     const ctx = this.canvases.tiles.getContext("2d");
     if (ctx) {
       ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.fillStyle = BACKDROP;
+      ctx.fillStyle = this.colors().backdrop;
       ctx.fillRect(0, 0, this.canvases.tiles.width, this.canvases.tiles.height);
       if (this.page) {
         const m = this.deviceMatrix();
         const paper = this.deviceRect(m, 0, 0, this.page.width, this.page.height);
-        ctx.fillStyle = PAGE;
+        ctx.fillStyle = SHEET;
         ctx.fillRect(paper.l, paper.t, paper.r - paper.l, paper.b - paper.t);
         ctx.imageSmoothingEnabled = true;
         if (this.preview) this.placeTile(ctx, m, this.preview);
@@ -1325,7 +1313,7 @@ export class ViewerEngine {
     if (!c) return;
     const k = this.dpr;
     c.save();
-    c.strokeStyle = ZOOM_RECT;
+    c.strokeStyle = this.colors().zoomRect;
     c.lineWidth = Math.max(1, Math.round(k));
     c.setLineDash([4 * k, 3 * k]);
     c.strokeRect(Math.round(r.x * k) + 0.5, Math.round(r.y * k) + 0.5, Math.round(r.width * k), Math.round(r.height * k));
@@ -1350,7 +1338,8 @@ export class ViewerEngine {
     if (!marks) return;
     const c = this.canvases.active.getContext("2d");
     if (!c) return;
-    const colors = (this.searchColors ??= this.readSearchColors());
+    const palette = this.colors();
+    const colors = { hit: palette.searchHit, current: palette.searchCurrent, outline: palette.searchOutline };
     const m = this.deviceMatrix();
     const path = (quads: readonly Quad[]) => {
       for (const q of quads) {
@@ -1377,12 +1366,16 @@ export class ViewerEngine {
     c.restore();
   }
 
-  private readSearchColors(): typeof SEARCH_COLORS {
-    try {
-      return searchColorsOf(readCanvasTokens(this.canvases.active));
-    } catch {
-      return SEARCH_COLORS;
+  /** The theme's canvas colours, read from the canvas element's tokens (Blueprint's where unreadable). */
+  private colors(): ViewerPalette {
+    if (!this.palette) {
+      try {
+        this.palette = viewerPalette(readCanvasTokens(this.canvases.active));
+      } catch {
+        this.palette = viewerPalette(null);
+      }
     }
+    return this.palette;
   }
 
   /** Shows page `page` (0-based) and brings a page-space rectangle into view (a search hit of text `textHeight` points tall). */

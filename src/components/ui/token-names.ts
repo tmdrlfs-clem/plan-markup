@@ -30,6 +30,10 @@ export const REQUIRED_THEME_VARS = [
   "--canvas-search-hit",
   "--canvas-search-current",
   "--canvas-search-outline",
+  "--canvas-backdrop",
+  "--canvas-zoom-rect",
+  "--canvas-failed-fill",
+  "--canvas-failed-stroke",
   "--canvas-handle-size",
 ] as const;
 

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { contrastRatio } from "./contrast";
-import { CANVAS_SHEET, CONTRAST_PAIRS, MIN_RATIO } from "./contrast-pairs";
+import { contrastRatio as ratioOf, compositeOver, parseColor } from "./contrast";
+import { CANVAS_SHEET, CONTRAST_PAIRS, MIN_RATIO, SEARCH_CURRENT_PAIR } from "./contrast-pairs";
 import { parseThemeBlock, readGlobalsCss } from "./theme-css";
 import { THEME_NAMES } from "./token-names";
 
@@ -52,6 +53,12 @@ describe.each(THEME_NAMES)("theme %s contrast", (theme) => {
       ratio >= min,
       `${theme}: ${pair.label} = ${ratio.toFixed(2)}:1, needs >= ${min}:1`,
     ).toBe(true);
+  });
+
+  it("the current search hit's outline reaches 3:1 against its fill over the sheet (Story 3.8)", () => {
+    const fill = compositeOver(parseColor(vars[SEARCH_CURRENT_PAIR.fill]), parseColor(CANVAS_SHEET));
+    const hex = `#${[fill.r, fill.g, fill.b].map((c) => Math.round(c).toString(16).padStart(2, "0")).join("")}`;
+    expect(ratioOf(vars[SEARCH_CURRENT_PAIR.outline], hex)).toBeGreaterThanOrEqual(3);
   });
 
   it("selection reaches 3:1 on the sheet via accent or its dark outline", () => {

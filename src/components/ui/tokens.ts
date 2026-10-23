@@ -23,6 +23,11 @@ export interface CanvasTokens {
   searchOutline: string;
   /** Canvas surround (surface-0). */
   surround: string;
+  /** Story 3.8: the canvas around the sheet, the Zoom tool's rubber band, a failed tile's box. */
+  backdrop: string;
+  zoomRect: string;
+  failedFill: string;
+  failedStroke: string;
   /** Handle size in px. */
   handleSize: number;
   fontFamily: string;
@@ -55,9 +60,41 @@ export function readCanvasTokens(
     searchCurrent: readVar(style, "--canvas-search-current"),
     searchOutline: readVar(style, "--canvas-search-outline"),
     surround: readVar(style, "--surface-0"),
+    backdrop: readVar(style, "--canvas-backdrop"),
+    zoomRect: readVar(style, "--canvas-zoom-rect"),
+    failedFill: readVar(style, "--canvas-failed-fill"),
+    failedStroke: readVar(style, "--canvas-failed-stroke"),
     handleSize: Number.isFinite(handle) ? handle : DEFAULT_HANDLE_SIZE,
     fontFamily: readVar(style, "--font-inter") || getComputedStyle(el).fontFamily,
   };
+}
+
+/** The viewer's canvas colours (Story 3.8): the theme's, read from its tokens. */
+export type ViewerPalette = Pick<
+  CanvasTokens,
+  "backdrop" | "zoomRect" | "failedFill" | "failedStroke" | "searchHit" | "searchCurrent" | "searchOutline"
+>;
+
+/**
+ * Blueprint's values (globals.css, kept equal by tokens.test.ts), only for
+ * tokens a page cannot read (no stylesheet: unit tests, a canvas outside the
+ * themed tree). The theme's own values always win.
+ */
+export const VIEWER_PALETTE_FALLBACK: Readonly<ViewerPalette> = Object.freeze({
+  backdrop: "#e5e7eb",
+  zoomRect: "#c24e00",
+  failedFill: "#f3f4f6",
+  failedStroke: "#6b7280",
+  searchHit: "rgba(255, 214, 0, 0.4)",
+  searchCurrent: "rgba(255, 170, 0, 0.6)",
+  searchOutline: "#8a5a00",
+});
+
+/** The viewer's palette from `tokens`, an unreadable token falling back to Blueprint's value. */
+export function viewerPalette(tokens: Partial<CanvasTokens> | null): ViewerPalette {
+  const out = { ...VIEWER_PALETTE_FALLBACK };
+  if (tokens) for (const key of Object.keys(out) as (keyof ViewerPalette)[]) if (tokens[key]) out[key] = tokens[key];
+  return out;
 }
 
 export function getTheme(root: HTMLElement = document.documentElement): Theme {
