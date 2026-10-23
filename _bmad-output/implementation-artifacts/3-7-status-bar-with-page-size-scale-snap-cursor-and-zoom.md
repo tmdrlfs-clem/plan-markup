@@ -60,7 +60,7 @@ Claude Opus 5.5 (claude-opus-5-5)
 
 ### Debug Log References
 
-- **Review (2026-10-24):** review commit 0690dc7 (findings, tile culling, `perf-tiles`), CI run **40027866338** success. Fix commit: CI run recorded below.
+- **Review (2026-10-24):** review commit 0690dc7 (findings, tile culling, `perf-tiles`), CI run **40027866338** success. Fix commit b2a4136: CI run **40029012558** success.
 - Review fixes, local: `npm run typecheck`, `npm run lint`, `npm run build` clean; `npm test` 1364 unit tests in 121 files; e2e on the production build (`E2E_PROD=1`, workers 1): 43 passed, 6 skipped (opt-in private checks). Local private checks: `perf-status-bar` (L17/L21 "A1 841 × 594 mm", L17 page (100, 100) "X 100.0  Y 1583.8 pt", rotated and zoomed unchanged, longest main-thread task 0 ms), `perf-search` (reveals complete 1.5-1.7 s instead of 2.3-10.3 s, longest task 0 ms), `perf-tiles` (numbers in R2). Supabase on remapped local ports 583xx (Windows reserved 55956-57055 again), restored afterwards, never committed.
 
 - CI run **40023081059** (23b2645: typecheck/lint/unit/guards, Playwright e2e on the production build including `viewer-status-bar.spec.ts`, gitleaks): success.
