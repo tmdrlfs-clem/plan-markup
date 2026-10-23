@@ -1,6 +1,6 @@
 "use client";
 
-import { FolderOpen, LogOut } from "lucide-react";
+import { FolderOpen, LogOut, Palette } from "lucide-react";
 import { useStore } from "zustand";
 
 import {
@@ -9,11 +9,17 @@ import {
   MenuBarContent,
   MenuBarItem,
   MenuBarMenu,
+  MenuBarRadioGroup,
+  MenuBarRadioItem,
   MenuBarSeparator,
+  MenuBarSub,
+  MenuBarSubContent,
+  MenuBarSubTrigger,
   MenuBarTrigger,
 } from "@/components/ui/menu-bar";
 import { TAB_SHORTCUTS } from "@/core/documents/tabs";
 import { hasDocument, tabsStore, viewerCommands, viewerStore, viewerTabs, type ViewerCommand } from "@/features/viewer";
+import { THEMES, THEME_LABELS, isTheme, type Theme } from "@/lib/theme";
 
 import { useLayout } from "./layout-context";
 import { LEFT_PANELS, MARKUPS_LIST } from "./panel-registry";
@@ -21,6 +27,9 @@ import { LEFT_PANELS, MARKUPS_LIST } from "./panel-registry";
 export interface WorkspaceMenuBarProps {
   onOpen: () => void;
   onSignOut: () => void;
+  /** The workspace theme (Story 3.8): Settings > Appearance shows it checked and changes it. */
+  theme?: Theme;
+  onThemeChange?: (theme: Theme) => void;
 }
 
 /** Commands that exist in the menus but need a drawing (or a later story) first. */
@@ -87,7 +96,7 @@ function PanelItems() {
   );
 }
 
-export function WorkspaceMenuBar({ onOpen, onSignOut }: WorkspaceMenuBarProps) {
+export function WorkspaceMenuBar({ onOpen, onSignOut, theme, onThemeChange }: WorkspaceMenuBarProps) {
   return (
     <MenuBar aria-label="Main menu">
       <MenuBarMenu>
@@ -171,7 +180,24 @@ export function WorkspaceMenuBar({ onOpen, onSignOut }: WorkspaceMenuBarProps) {
         <MenuBarTrigger>Settings</MenuBarTrigger>
         <MenuBarContent>
           <Disabled label="Keyboard shortcuts…" />
-          <Disabled label="Theme" />
+          {/* Story 3.8: radio items in a submenu (no dialog): one click, the current theme checked. */}
+          <MenuBarSub>
+            <MenuBarSubTrigger icon={Palette}>Appearance</MenuBarSubTrigger>
+            <MenuBarSubContent>
+              <MenuBarRadioGroup
+                value={theme}
+                onValueChange={(value) => {
+                  if (isTheme(value)) onThemeChange?.(value);
+                }}
+              >
+                {THEMES.map((t) => (
+                  <MenuBarRadioItem key={t} value={t}>
+                    {THEME_LABELS[t]}
+                  </MenuBarRadioItem>
+                ))}
+              </MenuBarRadioGroup>
+            </MenuBarSubContent>
+          </MenuBarSub>
         </MenuBarContent>
       </MenuBarMenu>
 

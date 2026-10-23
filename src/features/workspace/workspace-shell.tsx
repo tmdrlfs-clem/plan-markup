@@ -10,6 +10,7 @@ import { Toaster } from "@/components/ui/toast";
 import { toast } from "@/components/ui/toast-store";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { signOut } from "@/features/account/actions";
+import { chooseTheme, useWorkspaceTheme } from "@/features/appearance/theme-store";
 import {
   DocumentTabs,
   DocumentViewer,
@@ -41,6 +42,7 @@ import { useWorkspaceShortcuts } from "./use-workspace-shortcuts";
 import { WorkspaceMenuBar } from "./workspace-menu-bar";
 import { WorkspaceStatusBar } from "./workspace-status-bar";
 import { WorkspaceToolbar } from "./workspace-toolbar";
+import type { Theme } from "@/lib/theme";
 
 export type { WorkspaceUser } from "./account-menu";
 
@@ -48,14 +50,14 @@ export type { WorkspaceUser } from "./account-menu";
  * Workspace frame (UX-DR5): menu bar, two toolbar rows, left icon rail + panel, canvas,
  * right tool rail, bottom Markups panel and status bar. `data-region` marks the F6 stops.
  */
-export function WorkspaceShell({ user }: { user: WorkspaceUser }) {
+export function WorkspaceShell({ user, theme = null }: { user: WorkspaceUser; theme?: Theme | null }) {
   // The open drawings belong to the signed-in user: another user's workspace starts empty.
   // In render, before the canvas mounts and would reopen the previous user's tabs.
   useMemo(() => viewerTabs.setOwner(user.id), [user.id]);
   return (
     <LayoutProvider userId={user.id}>
       <TooltipProvider>
-        <ShellBody user={user} />
+        <ShellBody user={user} initialTheme={theme} />
         <Toaster />
       </TooltipProvider>
     </LayoutProvider>
@@ -74,7 +76,9 @@ function LeftPanelBody() {
   );
 }
 
-function ShellBody({ user }: { user: WorkspaceUser }) {
+function ShellBody({ user, initialTheme }: { user: WorkspaceUser; initialTheme: Theme | null }) {
+  // Story 3.8: the profile's theme is rendered by the server (no flash); a choice applies at once.
+  const theme = useWorkspaceTheme(initialTheme);
   const left = useLayout((s) => s.left);
   const bottom = useLayout((s) => s.bottom);
   const setLeftCollapsed = useLayout((s) => s.setLeftCollapsed);
@@ -148,11 +152,11 @@ function ShellBody({ user }: { user: WorkspaceUser }) {
   const panel = leftPanel(left.active);
 
   return (
-    <div className="flex h-dvh flex-col overflow-hidden bg-surface-0 text-text">
+    <div data-theme={theme} data-testid="workspace-root" className="flex h-dvh flex-col overflow-hidden bg-surface-0 text-text">
       <NarrowBanner />
       <header className="shrink-0 bg-surface-2">
         <div data-region="menu-bar" className="flex items-center border-b border-border pr-1">
-          <WorkspaceMenuBar onOpen={open} onSignOut={handleSignOut} />
+          <WorkspaceMenuBar onOpen={open} onSignOut={handleSignOut} theme={theme} onThemeChange={(next) => void chooseTheme(next, theme)} />
           <div className="ml-auto">
             <AccountMenu user={user} onSignOut={handleSignOut} />
           </div>

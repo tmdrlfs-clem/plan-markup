@@ -23,6 +23,8 @@ import { WorkspaceShell } from "./workspace-shell";
 
 const signOut = vi.fn<() => Promise<void>>(async () => {});
 vi.mock("@/features/account/actions", () => ({ signOut: () => signOut() }));
+const saveTheme = vi.fn(async (theme: string) => ({ ok: true as const, data: { theme } }));
+vi.mock("@/features/appearance/actions", () => ({ setTheme: (theme: string) => saveTheme(theme) }));
 
 // The real viewport starts a render worker (none in jsdom); its own tests cover it.
 vi.mock("@/features/viewer/canvas-viewport", () => ({
@@ -72,6 +74,42 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+});
+
+describe("Settings > Appearance (Story 3.8)", () => {
+  it("renders the profile's theme on the workspace root and <html>, lists the three themes with the current one checked, and switches at once", async () => {
+    const user = userEvent.setup();
+    const view = render(<WorkspaceShell user={USER} theme="daylight" />);
+    expect(screen.getByTestId("workspace-root")).toHaveAttribute("data-theme", "daylight");
+    expect(document.documentElement).toHaveAttribute("data-theme", "daylight");
+    await user.click(screen.getByRole("menuitem", { name: "Settings" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Appearance" }));
+    const radios = await screen.findAllByRole("menuitemradio");
+    expect(radios.map((r) => r.textContent)).toEqual(["Blueprint", "Daylight", "High contrast"]);
+    expect(screen.getByRole("menuitemradio", { name: "Daylight" })).toHaveAttribute("aria-checked", "true");
+    // (A pointer click on a submenu item does not select in jsdom; the e2e clicks it.)
+    act(() => screen.getByRole("menuitemradio", { name: "High contrast" }).focus());
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(screen.getByTestId("workspace-root")).toHaveAttribute("data-theme", "contrast"));
+    expect(document.documentElement).toHaveAttribute("data-theme", "contrast");
+    await waitFor(() => expect(saveTheme).toHaveBeenCalledWith("contrast"));
+    view.unmount();
+    expect(document.documentElement).toHaveAttribute("data-theme", "blueprint");
+  });
+
+  it("is keyboard accessible: Enter opens the submenu, arrows move, Enter picks", async () => {
+    const user = userEvent.setup();
+    render(<WorkspaceShell user={USER} theme="blueprint" />);
+    screen.getByRole("menuitem", { name: "Settings" }).focus();
+    await user.keyboard("{Enter}");
+    await screen.findByRole("menuitem", { name: /Keyboard shortcuts/ });
+    await user.keyboard("{ArrowDown}");
+    await waitFor(() => expect(document.activeElement).toHaveTextContent("Appearance"));
+    await user.keyboard("{ArrowRight}");
+    await waitFor(() => expect(document.activeElement).toHaveAttribute("role", "menuitemradio"));
+    await user.keyboard("{ArrowDown}{Enter}");
+    await waitFor(() => expect(screen.getByTestId("workspace-root")).toHaveAttribute("data-theme", "daylight"));
+  });
 });
 
 describe("WorkspaceShell layout", () => {
