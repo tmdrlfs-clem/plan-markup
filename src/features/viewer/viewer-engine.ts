@@ -1233,7 +1233,7 @@ export class ViewerEngine {
       c.setTransform(1, 0, 0, 1, 0, 0);
       c.clearRect(0, 0, layer.width, layer.height);
     }
-    if (this.page) this.drawSearchHighlights();
+    this.drawSearchHighlights();
     if (this.zoomRect) this.drawZoomRect(this.zoomRect);
     this.publishView();
     if (this.pendingPartial) {
@@ -1273,6 +1273,13 @@ export class ViewerEngine {
    */
   private drawSearchHighlights(): void {
     const marks = this.search.highlights(this.pageIndex);
+    // The highlights shown, on the canvas element (e2e, diagnostics; like data-view).
+    const data = this.canvases.active.dataset as DOMStringMap | undefined;
+    if (data) {
+      const shown = marks ? `${marks.hits.length}${marks.current ? " current" : ""}` : undefined;
+      if (shown === undefined) delete data.highlights;
+      else if (data.highlights !== shown) data.highlights = shown;
+    }
     if (!marks) return;
     const c = this.canvases.active.getContext("2d");
     if (!c) return;

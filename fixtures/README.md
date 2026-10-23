@@ -18,6 +18,7 @@ dependencies) and `python scripts/fixtures/make-wasm-images.py` (Pillow with Ope
 | `password.pdf` | One page, AES-256, user password `plan-markup-test` | "password-protected" error |
 | `wasm-images.pdf` | A JPX (JPXDecode) and a CCITT G4 image | wasm decoders under the worker CSP (ADR 0005) |
 | `multi-page.pdf` | 4 pages: A3 landscape with a title block (sheet number `S-101`, no page label); A4 portrait labelled `FP-201`; A3 portrait with /Rotate 90 labelled `FP-202 - SPRINKLER LAYOUT`; A4 landscape labelled `4` | pager, page keys, sheet labels (Story 3.3) |
+| `search.pdf` | 3 pages: A4 landscape with `CH +2700` twice, `SPRINKLER VALVE` split inside the word across two runs (two fonts), `LEVEL` + `17` as two runs, `D1` / `D10`; an image-only page; A4 portrait with /Rotate 90 with `CH +2700` and `SPRINKLER VALVE` | text search (Story 3.6): `ch +2700` gives 3 results on 2 pages |
 
 `password.pdf` is not deterministic (random salts), so the script rewrites it only when it is
 missing or with `--force`.
