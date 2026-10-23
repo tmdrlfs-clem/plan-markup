@@ -12,11 +12,10 @@ export { ThumbnailsPanel } from "./thumbnails-panel";
 export { viewerCommands, type ViewerCommand } from "./viewer-commands";
 export {
   hasDocument,
-  openDocument,
-  resetViewer,
   setTool,
   viewerStore,
   type ViewerState,
   type ViewerStatus,
   type ViewerTool,
 } from "./viewer-store";
+export { openDocument, resetViewer, tabTitle, tabsStore, viewerTabs, type DocumentTab } from "./viewer-tabs";

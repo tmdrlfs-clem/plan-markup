@@ -5,13 +5,11 @@ import { useEffect, useRef, type DragEvent } from "react";
 import { useStore } from "zustand";
 
 import { Button } from "@/components/ui/button";
-import { RenderClient } from "@/workers/rpc";
-
 import { currentSheetLabel } from "./page-pager";
-import { registerViewerEngine } from "./viewer-commands";
-import { ViewerEngine, type DeviceSize } from "./viewer-engine";
+import type { DeviceSize, ViewerEngine } from "./viewer-engine";
 import { ViewerInput } from "./viewer-input";
-import { VIEWER_ERROR_TEXT, canvasStateOf, openDocument, viewerStore, type ViewerState } from "./viewer-store";
+import { VIEWER_ERROR_TEXT, canvasStateOf, viewerStore } from "./viewer-store";
+import { viewerTabs } from "./viewer-tabs";
 
 export interface CanvasViewportProps {
   /** Opens the file picker (Open another file). */
@@ -82,18 +80,16 @@ export function CanvasViewport({ onOpen, onOpenFiles, createWorker = defaultWork
   const file = useStore(viewerStore, (s) => s.file);
   const state = canvasStateOf({ status, content, failedTiles, error });
 
-  // One engine (and render worker) per mount.
+  // The shared canvases of the document tabs (Story 3.5): each tab's engine (and render
+  // worker) lives in viewerTabs; the active one draws here and gets the input.
   useEffect(() => {
     const host = hostRef.current;
     const tiles = tilesRef.current;
     const markups = markupsRef.current;
     const active = activeRef.current;
     if (!host || !tiles || !markups || !active) return;
-    // A factory, so the client can start a new worker after a fatal failure (Try again).
-    const client = new RenderClient(createWorker);
-    const next = new ViewerEngine({ tiles, markups, active }, client, (patch: Partial<ViewerState>) =>
-      viewerStore.setState(patch),
-    );
+    let engine: ViewerEngine | null = null;
+    let input: ViewerInput | null = null;
     // The backing store must be exactly the canvas's device pixels, or the compositor
     // rescales it and blurs every hairline (AC 4). Browsers that report
     // device-pixel-content-box give that size; elsewhere the canvases' CSS size is
@@ -102,9 +98,10 @@ export function CanvasViewport({ onOpen, onOpenFiles, createWorker = defaultWork
     let deviceBox: DeviceSize | null = null;
     let exactBoxes = false;
     const measure = () => {
+      if (!engine) return;
       const dpr = window.devicePixelRatio || 1;
       const rect = host.getBoundingClientRect();
-      next.setViewport(rect.width, rect.height, dpr, measureDevice(rect, dpr, deviceBox, exactBoxes, canvases));
+      engine.setViewport(rect.width, rect.height, dpr, measureDevice(rect, dpr, deviceBox, exactBoxes, canvases));
     };
     const observer =
       typeof ResizeObserver === "undefined"
@@ -138,26 +135,29 @@ export function CanvasViewport({ onOpen, onOpenFiles, createWorker = defaultWork
       watchDpr();
     };
     watchDpr();
-    const input = new ViewerInput(active, next);
-    const unregister = registerViewerEngine(next);
-
-    // Open the current file now, and every later one (openSeq bumps on each open).
-    const openCurrent = (s: ViewerState) => {
-      if (s.file && s.status === "loading") void next.open(s.file);
-    };
-    openCurrent(viewerStore.getState());
-    const unsubscribe = viewerStore.subscribe((s, prev) => {
-      if (s.openSeq !== prev.openSeq) openCurrent(s);
+    // The active tab's engine: input on the canvas, canvases sized for it.
+    const detachHost = viewerTabs.attachHost({
+      canvases: { tiles, markups, active },
+      // A factory, so a client can start a new worker after a fatal failure (Try again).
+      createWorker,
+      activate: (next) => {
+        input?.detach();
+        input = null;
+        engine = next;
+        engineRef.current = next;
+        if (!next) return;
+        input = new ViewerInput(active, next);
+        measure();
+      },
     });
-    engineRef.current = next;
     return () => {
-      unsubscribe();
-      input.detach();
-      unregister();
       observer?.disconnect();
       window.removeEventListener("resize", measure);
       dprQuery?.removeEventListener("change", onDprChange);
-      next.destroy();
+      input?.detach();
+      input = null;
+      detachHost();
+      engine = null;
       engineRef.current = null;
     };
   }, [createWorker]);
@@ -235,7 +235,7 @@ export function CanvasViewport({ onOpen, onOpenFiles, createWorker = defaultWork
             <p className="text-ws-lg">{VIEWER_ERROR_TEXT[error]}</p>
             <div className="flex gap-2">
               {error === "render-failed" && file ? (
-                <Button size="sm" variant="secondary" onClick={() => openDocument(file)}>
+                <Button size="sm" variant="secondary" onClick={() => viewerTabs.retry()}>
                   Try again
                 </Button>
               ) : null}

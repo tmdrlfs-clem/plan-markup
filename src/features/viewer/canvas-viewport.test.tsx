@@ -9,7 +9,8 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 
 import { measureDevice } from "./canvas-viewport";
 import { DocumentViewer, IMAGE_ONLY_HINT } from "./document-viewer";
-import { openDocument, resetViewer, viewerStore } from "./viewer-store";
+import { viewerStore } from "./viewer-store";
+import { openDocument, resetViewer } from "./viewer-tabs";
 
 class FakeWorker {
   posted: { type: string; reqId: number }[] = [];

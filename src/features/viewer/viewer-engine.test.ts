@@ -945,3 +945,61 @@ describe("ViewerEngine: thumbnails (Story 3.4)", () => {
     expect(late.tile.bitmap.close).toHaveBeenCalled();
   });
 });
+
+describe("ViewerEngine: background tab (Story 3.5)", () => {
+  it("suspended, it draws nothing and cancels its tile work; resumed, it draws at once and settles", async () => {
+    const { client, engine, ops } = setupRecording();
+    await readyAtFit(client, engine);
+    paint();
+    engine.zoomBy(4);
+    vi.runAllTimers();
+    const tiles = client.all("render.tile").map((c) => c.reqId);
+    expect(tiles.length).toBeGreaterThan(0);
+    const view = engine.view;
+    engine.suspend();
+    expect(engine.isSuspended).toBe(true);
+    expect(client.cancelled).toEqual(expect.arrayContaining(tiles));
+    expect(engine.pendingTiles).toBe(0);
+    // No frames, no settles while in the background (this fake cancelFrame keeps cancelled frames).
+    frames.length = 0;
+    ops.length = 0;
+    engine.zoomBy(2);
+    expect(frames).toHaveLength(0);
+    vi.runAllTimers();
+    expect(client.all("render.tile")).toHaveLength(tiles.length);
+    engine.zoomBy(0.5);
+    // Back: the same view, drawn synchronously, and the visible tiles asked for again.
+    engine.resume();
+    expect(engine.view).toEqual(view);
+    expect(drawn(ops).length).toBeGreaterThan(0);
+    vi.runAllTimers();
+    expect(client.all("render.tile").length).toBeGreaterThan(tiles.length);
+  });
+
+  it("a document loading in the background reports ready once its preview arrives", async () => {
+    const { client, engine } = setupRecording();
+    await openToPreview(client, engine);
+    engine.suspend();
+    frames.length = 0;
+    client.last("render.preview").resolve({ tile: tilePayload(1), content: null });
+    await flush();
+    expect(state.status).toBe("ready");
+    expect(frames).toHaveLength(0);
+  });
+
+  it("a smaller tile budget evicts at once, without a memory warning", async () => {
+    const { client, engine } = setupRecording();
+    await readyAtFit(client, engine);
+    engine.zoomBy(4);
+    vi.runAllTimers();
+    resolveTiles(client.all("render.tile"));
+    await flush();
+    expect(engine.tileBytes).toBeGreaterThan(0);
+    state.memoryPressure = false;
+    engine.suspend();
+    engine.setTileBudget(0);
+    expect(engine.tileBytes).toBe(0);
+    expect(engine.tileBudget).toBe(0);
+    expect(state.memoryPressure).toBe(false);
+  });
+});

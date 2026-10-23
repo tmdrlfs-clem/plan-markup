@@ -223,6 +223,8 @@ export class ViewerEngine {
   private frame: number | null = null;
   private openedAt = 0;
   private destroyed = false;
+  /** A background document tab (Story 3.5): no drawing and no tile work until resumed. */
+  private suspended = false;
   private zoomRect: Rect | null = null;
   private shownZoom: number | null = null;
   private shownView = "";
@@ -244,6 +246,63 @@ export class ViewerEngine {
   }
 
   // ---- lifecycle ----------------------------------------------------------
+
+  /**
+   * The document's tab went to the background (Story 3.5): stop drawing (the
+   * canvases now belong to another tab) and cancel tile and thumbnail work.
+   * The parsed document, the preview, the views and the tiles within the tile
+   * budget (the tab manager shrinks it) stay, so switching back is instant.
+   * A preview still loading keeps loading.
+   */
+  suspend(): void {
+    if (this.suspended || this.destroyed) return;
+    this.rememberView();
+    this.suspended = true;
+    if (this.frame !== null) this.cancelFrame(this.frame);
+    this.frame = null;
+    if (this.settleTimer) clearTimeout(this.settleTimer);
+    this.settleTimer = null;
+    const ids = [...this.inflight.values()];
+    for (const pending of this.thumbPending.values()) if (pending.reqId !== null) ids.push(pending.reqId);
+    this.client.cancel(ids);
+    this.inflight.clear();
+    this.thumbPending.clear();
+    this.thumbs.clear();
+    // Not shown: evictions from here on are no memory warning.
+    this.needed = new Set();
+    this.zoomRect = null;
+  }
+
+  /** The tab is active again: the host has sized the canvases (setViewport); draw and settle. */
+  resume(): void {
+    if (!this.suspended || this.destroyed) return;
+    this.suspended = false;
+    // The canvases showed another document: publish this one's zoom and view again.
+    this.shownZoom = null;
+    this.shownView = "";
+    // Drawn now, not next frame: the canvases must never show the previous tab's drawing.
+    if (this.frame !== null) this.cancelFrame(this.frame);
+    this.frame = null;
+    this.draw();
+    if (this.page && this.previewFinal) this.scheduleSettle(0);
+  }
+
+  get isSuspended(): boolean {
+    return this.suspended;
+  }
+
+  /** The in-memory tile budget (bytes): the tab manager gives background tabs a small one. */
+  setTileBudget(bytes: number): void {
+    this.cache.setBudget(bytes);
+  }
+
+  get tileBudget(): number {
+    return this.cache.budget;
+  }
+
+  get tileBytes(): number {
+    return this.cache.bytes;
+  }
 
   destroy(): void {
     this.rememberView();
@@ -519,7 +578,8 @@ export class ViewerEngine {
       this.setPreview(tile);
       this.previewFinal = true;
       if (!this.firstFrameShown) this.pendingFirstFrame = true;
-      this.update({ content });
+      // A background tab draws nothing, but its document is ready to show (its tab stops loading).
+      this.update(this.suspended && !this.firstFrameShown ? { content, status: "ready" } : { content });
       this.scheduleSettle(0);
     } catch (e) {
       if (generation !== this.generation || (e instanceof WorkerRequestError && e.code === "cancelled")) return;
@@ -847,6 +907,7 @@ export class ViewerEngine {
   }
 
   private scheduleSettle(ms: number): void {
+    if (this.suspended) return;
     if (this.settleTimer) clearTimeout(this.settleTimer);
     this.settleTimer = setTimeout(() => {
       this.settleTimer = null;
@@ -859,7 +920,7 @@ export class ViewerEngine {
 
   /** Requests the visible tiles of the current bucket that the preview does not already cover. */
   requestTiles(): void {
-    if (!this.page || !this.previewFinal || this.destroyed) return;
+    if (!this.page || !this.previewFinal || this.destroyed || this.suspended) return;
     const bucket = this.targetBucket();
     const deviceZoom = this.deviceZoom();
     // Fit page whose fit box changed (resize, DPR): a new preview, not tiles.
@@ -973,7 +1034,7 @@ export class ViewerEngine {
   // ---- drawing ------------------------------------------------------------
 
   private invalidate(): void {
-    if (this.destroyed || this.frame !== null) return;
+    if (this.destroyed || this.suspended || this.frame !== null) return;
     this.frame = this.requestFrame(() => {
       this.frame = null;
       this.draw();

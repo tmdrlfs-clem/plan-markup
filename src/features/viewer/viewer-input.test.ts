@@ -11,7 +11,8 @@ import {
   wheelZoomFactor,
   type ViewerInputTarget,
 } from "./viewer-input";
-import { openDocument, resetViewer, setTempPan, setTool, viewerStore } from "./viewer-store";
+import { setTempPan, setTool, viewerStore } from "./viewer-store";
+import { openDocument, resetViewer } from "./viewer-tabs";
 
 const key = (init: Partial<KeyboardEvent>) =>
   ({ key: "", code: "", ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, isComposing: false, ...init }) as KeyboardEvent;

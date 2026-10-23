@@ -8,7 +8,8 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 
 import { PagePager, currentSheetLabel, pageAnnouncement, resolvePageEntry } from "./page-pager";
 import { registerViewerEngine } from "./viewer-commands";
-import { resetViewer, viewerStore } from "./viewer-store";
+import { viewerStore } from "./viewer-store";
+import { resetViewer } from "./viewer-tabs";
 
 function fakeEngine(pageCount: number) {
   const engine = {

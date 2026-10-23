@@ -7,7 +7,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { OVERSCAN_DELAY_MS, ThumbnailsPanel, paint, thumbnailName } from "./thumbnails-panel";
 import { registerViewerEngine } from "./viewer-commands";
 import type { ThumbnailBox, ThumbnailListener } from "./viewer-engine";
-import { resetViewer, viewerStore, type ViewerState } from "./viewer-store";
+import { viewerStore, type ViewerState } from "./viewer-store";
+import { resetViewer } from "./viewer-tabs";
 
 const SHEET = { width: 1191, height: 842, rotate: 0 };
 

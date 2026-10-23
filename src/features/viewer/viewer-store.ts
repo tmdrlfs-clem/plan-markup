@@ -65,7 +65,8 @@ export interface ViewerState {
   tempPan: boolean;
 }
 
-const INITIAL: ViewerState = {
+/** The state with no drawing (a new tab starts from it). */
+export const INITIAL_VIEWER_STATE: ViewerState = {
   status: "empty",
   file: null,
   openSeq: 0,
@@ -88,24 +89,8 @@ const INITIAL: ViewerState = {
   tempPan: false,
 };
 
-export const viewerStore = createStore<ViewerState>(() => INITIAL);
-
-/** Shows `file` in the viewer, replacing the current document (tabs arrive in Story 3.5). */
-export function openDocument(file: File): void {
-  viewerStore.setState((s) => ({
-    ...INITIAL,
-    status: "loading",
-    file,
-    fileName: file.name,
-    openSeq: s.openSeq + 1,
-    tool: s.tool,
-  }));
-}
-
-/** Back to the empty workspace (tests, and closing the last tab later). */
-export function resetViewer(): void {
-  viewerStore.setState((s) => ({ ...INITIAL, openSeq: s.openSeq + 1 }));
-}
+/** The active document tab's state (Story 3.5: viewer-tabs.ts swaps it per tab). */
+export const viewerStore = createStore<ViewerState>(() => INITIAL_VIEWER_STATE);
 
 /** Selects a tool (V, Shift+V, Z, the ToolRail). */
 export function setTool(tool: ViewerTool): void {
