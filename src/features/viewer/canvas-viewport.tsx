@@ -200,15 +200,7 @@ export function CanvasViewport({ onOpen, onOpenFiles, createWorker = defaultWork
         className={`${canvasClass} focus-ring`}
       />
 
-      {status === "loading" ? (
-        <div
-          role="progressbar"
-          aria-label="Loading drawing"
-          className="absolute inset-x-0 top-0 h-0.5 overflow-hidden bg-accent-soft"
-        >
-          <div className="h-full w-1/3 bg-accent motion-safe:animate-progress" />
-        </div>
-      ) : null}
+      {/* Loading shows as a thin progress bar in the document tab (Story 3.5, UX). */}
 
       {failedTiles > 0 && !fileError ? (
         <div

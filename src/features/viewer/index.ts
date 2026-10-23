@@ -1,4 +1,5 @@
 // Public surface of the viewer feature. Other features import from here only.
+export { DocumentTabs } from "./document-tabs";
 export { DocumentViewer, IMAGE_ONLY_HINT, MEMORY_HINT } from "./document-viewer";
 export {
   ANNOUNCE_DELAY_MS,

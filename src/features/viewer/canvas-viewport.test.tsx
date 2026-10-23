@@ -68,14 +68,14 @@ describe("measureDevice", () => {
 });
 
 describe("CanvasViewport", () => {
-  it("is a focusable, labelled canvas stack with a loading bar and no spinner", async () => {
+  it("is a focusable, labelled canvas stack with no spinner (loading shows in the document tab)", async () => {
     openDocument(new File(["%PDF"], "L17.pdf", { type: "application/pdf" }));
     setup();
     const canvas = screen.getByTestId("drawing-canvas");
     expect(canvas).toHaveAttribute("tabindex", "0");
     expect(canvas).toHaveAttribute("aria-label", "Drawing canvas");
     expect(canvas).toHaveAttribute("data-state", "loading");
-    expect(screen.getByRole("progressbar", { name: "Loading drawing" })).toBeInTheDocument();
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
     act(() => viewerStore.setState({ status: "ready", pageCount: 12, pageIndex: 2 }));
     expect(canvas).toHaveAttribute("aria-label", "Drawing canvas, page 3 of 12");
     expect(canvas).toHaveAttribute("data-state", "ready");
