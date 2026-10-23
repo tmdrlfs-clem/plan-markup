@@ -48,7 +48,7 @@ Claude Opus 5.5 (claude-opus-5-5)
 
 ### Debug Log References
 
-- CI run: _pending (recorded after the push)_.
+- CI run **39924323156** (08692bf: typecheck/lint/unit/guards, Playwright e2e on the production build including `viewer-tabs.spec.ts`, gitleaks): success.
 - Local checks: `npm run typecheck`, `npm run lint` and `npm run build` are clean. `npm test`: 1219 unit tests in 110 files.
 - Local e2e on the production build (`E2E_PROD=1`, workers 1, Docker + local Supabase): 41 passed, 2 skipped (the opt-in L17 checks). `viewer-tabs.spec.ts` passed on its first run.
 - **Founder drawings** (`PERF_L17=1 E2E_PROD=1 npx playwright test perf-tabs`, private, nothing committed): L17 and L21 open together as the tabs "A1721" and "A2121". With L17 zoomed in, six `Ctrl+PageDown` switches showed the other tab's view **8–12 ms** after the key press (a first run: 9.9–20.7 ms), with no re-parse and no new `render.open`. Longest main-thread task while switching: **0 ms** (Long Tasks API: nothing ≥ 50 ms). Worker JS heap (CDP `Runtime.getHeapUsage`): one tab 47.6 MB; two tabs 37.5 + 61.2 MB. Screenshot with both tabs, L17 active and zoomed: `fixtures/private/traces/3-5-tabs.png`, reviewed and not committed. The 3.4 thumbnail check (`perf-thumbnails`, whose sequential opens now become tabs) still reports 0 ms.
