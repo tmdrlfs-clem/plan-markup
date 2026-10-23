@@ -3,6 +3,7 @@ import {
   Images,
   Layers,
   Ruler,
+  Search,
   SlidersHorizontal,
   Wrench,
   type LucideIcon,
@@ -13,6 +14,7 @@ export const LEFT_PANEL_IDS = [
   "measurements",
   "sprinkler",
   "thumbnails",
+  "search",
   "properties",
   "layers",
 ] as const;
@@ -25,8 +27,8 @@ export interface LeftPanelInfo {
   icon: LucideIcon;
   /** Shortcut in table form; bound by use-workspace-shortcuts via `code`. */
   shortcut: string;
-  /** KeyboardEvent.code that opens the panel together with Alt. */
-  code: string;
+  /** KeyboardEvent.code that opens the panel together with Alt (none: its own key, e.g. Search's Ctrl+F). */
+  code: string | null;
   empty: string;
   hint?: string;
 }
@@ -64,6 +66,15 @@ export const LEFT_PANELS: readonly LeftPanelInfo[] = [
     icon: Images,
     shortcut: "Alt+T",
     code: "KeyT",
+    empty: "No drawing open",
+  },
+  {
+    // Story 3.6: Ctrl+F with the canvas focused (the browser keeps Ctrl+F elsewhere).
+    id: "search",
+    title: "Search",
+    icon: Search,
+    shortcut: "Ctrl+F",
+    code: null,
     empty: "No drawing open",
   },
   {

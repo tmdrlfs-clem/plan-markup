@@ -14,6 +14,8 @@ export interface LayoutActions {
   setLeftSize: (size: number) => void;
   /** Opens and activates a panel; for the panel that is already open and active it collapses instead (Revu rail). */
   showLeftPanel: (id: LeftPanelId) => void;
+  /** Opens and activates a panel (never collapses it: Ctrl+F on an open Search panel). */
+  openLeftPanel: (id: LeftPanelId) => void;
   setBottomCollapsed: (collapsed: boolean) => void;
   /** Reads the current state, so two toggles in one frame cancel out. */
   toggleBottomCollapsed: () => void;
@@ -36,6 +38,7 @@ export function createLayoutStore(initial: WorkspaceLayout = SERVER_LAYOUT): Lay
           ? { left: { ...s.left, collapsed: true } }
           : { left: { ...s.left, collapsed: false, active: id } },
       ),
+    openLeftPanel: (id) => set((s) => ({ left: { ...s.left, collapsed: false, active: id } })),
     setBottomCollapsed: (collapsed) => set((s) => ({ bottom: { ...s.bottom, collapsed } })),
     toggleBottomCollapsed: () => set((s) => ({ bottom: { ...s.bottom, collapsed: !s.bottom.collapsed } })),
     setBottomSize: (size) => set((s) => ({ bottom: { ...s.bottom, size: clampSize(size, BOTTOM_SIZE) } })),

@@ -14,7 +14,10 @@ import {
   DocumentTabs,
   DocumentViewer,
   PagePager,
+  SearchPanel,
   ThumbnailsPanel,
+  activeSearch,
+  requestSearchFocus,
   usePageAnnouncement,
   viewerStore,
   viewerTabs,
@@ -59,6 +62,7 @@ export function WorkspaceShell({ user }: { user: WorkspaceUser }) {
 function LeftPanelBody() {
   const panel = useLayout((s) => leftPanel(s.left.active));
   if (panel.id === "thumbnails") return <ThumbnailsPanel emptyText={panel.empty} />;
+  if (panel.id === "search") return <SearchPanel emptyText={panel.empty} />;
   return (
     <div className="flex flex-col gap-1 p-3 text-ws-md">
       <p>{panel.empty}</p>
@@ -73,6 +77,7 @@ function ShellBody({ user }: { user: WorkspaceUser }) {
   const setLeftCollapsed = useLayout((s) => s.setLeftCollapsed);
   const setLeftSize = useLayout((s) => s.setLeftSize);
   const showLeftPanel = useLayout((s) => s.showLeftPanel);
+  const openLeftPanel = useLayout((s) => s.openLeftPanel);
   const setBottomCollapsed = useLayout((s) => s.setBottomCollapsed);
   const toggleBottomCollapsed = useLayout((s) => s.toggleBottomCollapsed);
   const setBottomSize = useLayout((s) => s.setBottomSize);
@@ -109,7 +114,21 @@ function ShellBody({ user }: { user: WorkspaceUser }) {
 
   useRegionCycling();
   useFileDropGuard();
-  useWorkspaceShortcuts({ open, showLeftPanel, toggleMarkupsList: toggleBottomCollapsed, hideAllPanels });
+  // Ctrl+F opens Search with its field focused; F3 / Shift+F3 step through the results (Story 3.6).
+  const search = useCallback(() => {
+    openLeftPanel("search");
+    requestSearchFocus();
+  }, [openLeftPanel]);
+  const searchStep = useCallback(
+    (direction: 1 | -1) => {
+      const current = activeSearch.getState().search;
+      if (!current || current.store.getState().query.trim() === "") return;
+      openLeftPanel("search");
+      current.step(direction);
+    },
+    [openLeftPanel],
+  );
+  useWorkspaceShortcuts({ open, showLeftPanel, toggleMarkupsList: toggleBottomCollapsed, hideAllPanels, search, searchStep });
 
   const panel = leftPanel(left.active);
 

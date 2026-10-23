@@ -9,6 +9,23 @@ export interface WorkspaceShortcutHandlers {
   showLeftPanel: (id: LeftPanelId) => void;
   toggleMarkupsList: () => void;
   hideAllPanels: () => void;
+  /** Ctrl+F with the canvas focused: the Search panel, query field focused (Story 3.6). */
+  search?: () => void;
+  /** F3 / Shift+F3: next / previous search result. */
+  searchStep?: (direction: 1 | -1) => void;
+}
+
+const CANVAS = "[data-testid='drawing-canvas']";
+const SEARCH_PANEL = "[data-testid='search-panel']";
+
+function onCanvas(target: EventTarget | null): boolean {
+  return target instanceof Element && target.matches(CANVAS);
+}
+
+/** F3 acts on the canvas, in the Search panel, or with nothing focused. */
+function searchScope(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return true;
+  return target === document.body || target === document.documentElement || onCanvas(target) || target.closest(SEARCH_PANEL) !== null;
 }
 
 const EDITABLE = "input, textarea, select, [contenteditable=''], [contenteditable='true']";
@@ -30,6 +47,13 @@ function resolve(event: KeyboardEvent, handlers: WorkspaceShortcutHandlers): (()
   const ctrl = event.ctrlKey || event.metaKey;
 
   if (ctrl && !event.altKey && !event.shiftKey && isLetter(event, "o")) return handlers.open;
+  // Ctrl+F is in-app only with the canvas focused; elsewhere the browser keeps it (UX shortcut table).
+  if (ctrl && !event.altKey && !event.shiftKey && isLetter(event, "f") && onCanvas(event.target) && handlers.search) return handlers.search;
+  if (event.key === "F3" && !ctrl && !event.altKey && searchScope(event.target) && handlers.searchStep) {
+    const step = handlers.searchStep;
+    const direction = event.shiftKey ? -1 : 1;
+    return () => step(direction);
+  }
   if (inEditable(event.target)) return null;
 
   if (event.altKey && !ctrl && !event.shiftKey) {

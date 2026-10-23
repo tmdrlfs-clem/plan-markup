@@ -59,7 +59,7 @@ class StubRenderer implements TileRenderer<Bitmap> {
   async pageText(page: number): Promise<TextItem[]> {
     this.textReads++;
     if (this.textGate) await this.textGate;
-    return this.items[page] ?? this.runs.map(itemOfRun);
+    return this.items[page] ?? this.runs.map((r) => itemOfRun(r));
   }
 
   async open(bytes: Uint8Array): Promise<PageInfo[]> {

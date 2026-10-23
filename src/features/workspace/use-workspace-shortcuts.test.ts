@@ -14,6 +14,31 @@ function key(init: KeyboardEventInit, target: EventTarget = document.body): Keyb
 }
 
 describe("handleWorkspaceShortcut", () => {
+  it("Ctrl+F opens Search only with the canvas focused; elsewhere the browser keeps it (Story 3.6)", () => {
+    const h = { ...handlers(), search: vi.fn(), searchStep: vi.fn() };
+    const canvas = document.createElement("canvas");
+    canvas.dataset.testid = "drawing-canvas";
+    expect(handleWorkspaceShortcut(key({ ctrlKey: true, code: "KeyF", key: "f" }, canvas), h)).toBe(true);
+    expect(h.search).toHaveBeenCalledTimes(1);
+    expect(handleWorkspaceShortcut(key({ ctrlKey: true, code: "KeyF", key: "f" }), h)).toBe(false);
+    expect(handleWorkspaceShortcut(key({ ctrlKey: true, code: "KeyF", key: "f" }, document.createElement("input")), h)).toBe(false);
+    expect(handleWorkspaceShortcut(key({ ctrlKey: true, shiftKey: true, code: "KeyF", key: "F" }, canvas), h)).toBe(false);
+    expect(h.search).toHaveBeenCalledTimes(1);
+  });
+
+  it("F3 / Shift+F3 step through the results on the canvas, in the Search panel's field or with nothing focused", () => {
+    const h = { ...handlers(), search: vi.fn(), searchStep: vi.fn() };
+    const panel = document.createElement("div");
+    panel.dataset.testid = "search-panel";
+    const field = document.createElement("input");
+    panel.append(field);
+    expect(handleWorkspaceShortcut(key({ key: "F3", code: "F3" }, field), h)).toBe(true);
+    expect(handleWorkspaceShortcut(key({ key: "F3", code: "F3", shiftKey: true }), h)).toBe(true);
+    expect(h.searchStep.mock.calls).toEqual([[1], [-1]]);
+    // Another field (a dialog, the page number): not ours.
+    expect(handleWorkspaceShortcut(key({ key: "F3", code: "F3" }, document.createElement("input")), h)).toBe(false);
+  });
+
   it("Ctrl+O opens, also from a field; Cmd+O on macOS", () => {
     const h = handlers();
     const input = document.createElement("input");

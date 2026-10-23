@@ -9,8 +9,10 @@ export {
   pageAnnouncement,
   usePageAnnouncement,
 } from "./page-pager";
+export { SearchPanel } from "./search-panel";
+export { requestSearchFocus, searchUi } from "./search-ui";
 export { ThumbnailsPanel } from "./thumbnails-panel";
-export { viewerCommands, type ViewerCommand } from "./viewer-commands";
+export { activeSearch, viewerCommands, type ViewerCommand } from "./viewer-commands";
 export {
   hasDocument,
   setTool,
