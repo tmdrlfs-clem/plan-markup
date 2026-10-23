@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { OVERSCAN_DELAY_MS, ThumbnailsPanel, paint, thumbnailName } from "./thumbnails-panel";
+import { thumbnailScroll } from "./thumbnail-scroll";
 import { registerViewerEngine } from "./viewer-commands";
 import type { ThumbnailBox, ThumbnailListener } from "./viewer-engine";
 import { viewerStore, type ViewerState } from "./viewer-store";
@@ -233,6 +234,25 @@ describe("ThumbnailsPanel", () => {
     fireEvent.scroll(el);
     expect(option("Page 120")).toBeInTheDocument();
     expect(option("Page 121")).toHaveAttribute("aria-current", "page");
+  });
+
+  it("each document tab gets its list back where it was left (Story 3.5)", () => {
+    setup(200, { tabId: "t1" });
+    const scrolled = 90 * 215;
+    act(() => {
+      list().scrollTop = scrolled;
+      fireEvent.scroll(list());
+    });
+    // Another tab: its own list, at its current page.
+    act(() => viewerStore.setState({ tabId: "t2", documentId: "other", pageIndex: 0 }));
+    expect(list().scrollTop).toBe(0);
+    // Back to the first tab: the offset it was left at, not a reveal of its current page.
+    act(() => viewerStore.setState({ tabId: "t1", documentId: "doc", pageIndex: 0 }));
+    expect(list().scrollTop).toBe(scrolled);
+    arm();
+    expect(option("Page 92")).toBeInTheDocument();
+    thumbnailScroll.forgetTab("t1");
+    expect(thumbnailScroll.get("t1:doc")).toBeUndefined();
   });
 
   it("drops its rasters' requests when unmounted, and starts over for a new document", () => {

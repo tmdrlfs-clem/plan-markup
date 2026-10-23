@@ -10,7 +10,7 @@ import { Toaster } from "@/components/ui/toast";
 import { toast } from "@/components/ui/toast-store";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { signOut } from "@/features/account/actions";
-import { DocumentViewer, PagePager, ThumbnailsPanel, usePageAnnouncement, viewerStore } from "@/features/viewer";
+import { DocumentTabs, DocumentViewer, PagePager, ThumbnailsPanel, usePageAnnouncement, viewerStore } from "@/features/viewer";
 
 import { AccountMenu, type WorkspaceUser } from "./account-menu";
 import { EmptyWorkspace } from "./empty-workspace";
@@ -149,7 +149,9 @@ function ShellBody({ user }: { user: WorkspaceUser }) {
           {viewerStatus === "empty" ? (
             <EmptyWorkspace onOpen={open} onOpenFiles={openFiles} recent={[]} />
           ) : (
-            <DocumentViewer onOpen={open} onOpenFiles={openFiles} />
+            <DocumentTabs>
+              <DocumentViewer onOpen={open} onOpenFiles={openFiles} />
+            </DocumentTabs>
           )}
         </main>
         <aside aria-label="Tools" data-region="tool-rail" className="w-11 shrink-0 border-l border-border bg-surface-2">

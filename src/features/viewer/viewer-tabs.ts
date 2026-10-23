@@ -20,6 +20,7 @@ import { MAX_TABS, activeAfterClose, cycleTab, fileKeyOf, findDuplicate, tileBud
 import { sheetLabelOf } from "@/core/pdf/sheet-label";
 import { RenderClient } from "@/workers/rpc";
 
+import { thumbnailScroll } from "./thumbnail-scroll";
 import { registerViewerEngine } from "./viewer-commands";
 import { ViewerEngine, type ViewerCanvases } from "./viewer-engine";
 import { INITIAL_VIEWER_STATE, viewerStore, type ViewerState, type ViewerStatus } from "./viewer-store";
@@ -161,6 +162,7 @@ class ViewerTabs {
     // Terminates the tab's worker (pdf.js document and caches) and closes its bitmaps.
     entry.engine?.destroy();
     entry.engine = null;
+    thumbnailScroll.forgetTab(id);
     if (next && this.find(next)) {
       this.activate(next);
     } else if (this.entries.length === 0) {
@@ -180,6 +182,7 @@ class ViewerTabs {
   closeAll(): void {
     for (const entry of [...this.entries]) entry.engine?.destroy();
     this.entries = [];
+    thumbnailScroll.clear();
     this.activeId = null;
     this.unregister?.();
     this.unregister = null;

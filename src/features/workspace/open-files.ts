@@ -6,16 +6,17 @@ export function isPdf(file: File): boolean {
 }
 
 /**
- * Single entry point for Open…, Ctrl+O and drops. The first PDF opens in the viewer
- * (read locally, never uploaded); further files wait for tabs (Story 3.5).
+ * Single entry point for Open…, Ctrl+O and drops. Every PDF opens in its own
+ * document tab (read locally, never uploaded; Story 3.5); the last one is shown.
+ * Other files are skipped with a warning.
  */
 export function openFiles(files: readonly File[]): void {
   if (files.length === 0) return;
-  const pdf = files.find(isPdf);
-  if (!pdf) {
+  const pdfs = files.filter(isPdf);
+  if (pdfs.length === 0) {
     toast({ title: "Only PDF files can be opened.", variant: "warning" });
     return;
   }
-  openDocument(pdf);
-  if (files.length > 1) toast({ title: `Tabs arrive soon — opened ${pdf.name}`, variant: "info" });
+  for (const pdf of pdfs) openDocument(pdf);
+  if (pdfs.length < files.length) toast({ title: "Only PDF files can be opened; the others were skipped.", variant: "warning" });
 }

@@ -304,15 +304,17 @@ describe("opening files", () => {
     expect(screen.getByRole("contentinfo")).toHaveTextContent("No drawing open");
   });
 
-  it("several files open the first PDF and say tabs are coming", () => {
+  it("several files open each PDF in its own tab (the last one shown) and skip the others", () => {
     setup();
     drop([
       new File(["x"], "notes.txt", { type: "text/plain" }),
       new File(["%PDF"], "A.pdf", { type: "application/pdf" }),
       new File(["%PDF"], "B.pdf", { type: "application/pdf" }),
     ]);
-    expect(viewerStore.getState().fileName).toBe("A.pdf");
-    expect(toastStore.getState().visible.map((t) => t.title)).toEqual(["Tabs arrive soon — opened A.pdf"]);
+    expect(viewerStore.getState().fileName).toBe("B.pdf");
+    const strip = screen.getByRole("tablist", { name: "Open drawings" });
+    expect(within(strip).getAllByRole("tab").map((t) => t.textContent)).toEqual(["A.pdf, loading", "B.pdf, loading"]);
+    expect(toastStore.getState().visible.map((t) => t.title)).toEqual(["Only PDF files can be opened; the others were skipped."]);
   });
 
   it("an image-only page shows the HintBar under the toolbar; Dismiss hides it", async () => {

@@ -8,6 +8,7 @@ import { cx } from "@/components/ui/cx";
 import { sheetLabelOf } from "@/core/pdf/sheet-label";
 import type { PageInfo } from "@/workers/render-protocol";
 
+import { thumbnailScroll } from "./thumbnail-scroll";
 import { fitInBox, revealRow, rowForKey, thumbnailLayout, visibleRows, ROW_PADDING_X, type Box } from "./thumbnail-layout";
 import { viewerCommands, viewerThumbnails } from "./viewer-commands";
 import { hasDocument, viewerStore } from "./viewer-store";
@@ -26,6 +27,7 @@ export function ThumbnailsPanel({ emptyText }: { emptyText: string }) {
   const shown = useStore(viewerStore, hasDocument);
   const pages = useStore(viewerStore, (s) => s.pages);
   const documentId = useStore(viewerStore, (s) => s.documentId);
+  const tabId = useStore(viewerStore, (s) => s.tabId);
   if (!shown || pages.length === 0) {
     return (
       <div className="flex flex-col gap-1 p-3 text-ws-md">
@@ -33,8 +35,9 @@ export function ThumbnailsPanel({ emptyText }: { emptyText: string }) {
       </div>
     );
   }
-  // A new document starts a fresh list (scroll position, focus, rasters).
-  return <ThumbnailList key={documentId ?? "document"} pages={pages} />;
+  // A new document (or tab) starts a fresh list (focus, rasters); each tab's scroll position comes back.
+  const memoryKey = `${tabId ?? ""}:${documentId ?? ""}`;
+  return <ThumbnailList key={memoryKey} memoryKey={memoryKey} pages={pages} />;
 }
 
 const readDpr = () => (typeof window === "undefined" ? 1 : window.devicePixelRatio || 1);
@@ -46,13 +49,17 @@ const readDpr = () => (typeof window === "undefined" ? 1 : window.devicePixelRat
  */
 export const OVERSCAN_DELAY_MS = 150;
 
-function ThumbnailList({ pages }: { pages: PageInfo[] }) {
+function ThumbnailList({ pages, memoryKey }: { pages: PageInfo[]; memoryKey: string }) {
   const pageIndex = useStore(viewerStore, (s) => s.pageIndex);
   const pageLabels = useStore(viewerStore, (s) => s.pageLabels);
   const sheetLabels = useStore(viewerStore, (s) => s.sheetLabels);
   const listRef = useRef<HTMLDivElement>(null);
   const idBase = useId();
   const [size, setSize] = useState<Box>({ width: 280, height: 600 });
+  const [measured, setMeasured] = useState(false);
+  // The offset this tab left the list at, applied once the list is measured (AC 3 of 3.5).
+  const pendingRestore = useRef(thumbnailScroll.get(memoryKey) ?? null);
+  const skipReveal = useRef(false);
   const [dpr, setDpr] = useState(1);
   const [scrollTop, setScrollTop] = useState(0);
   // Keyboard focus within the list; it follows the current page until the keys move it.
@@ -65,6 +72,7 @@ function ThumbnailList({ pages }: { pages: PageInfo[] }) {
     const measure = () => {
       setSize({ width: el.clientWidth || 280, height: el.clientHeight || 600 });
       setDpr(readDpr());
+      setMeasured(true);
     };
     measure();
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
@@ -87,11 +95,26 @@ function ThumbnailList({ pages }: { pages: PageInfo[] }) {
   const onScreen = visibleRows(scrollTop, size.height, rowHeight, pages.length, 0);
   const rowsPerScreen = Math.max(1, Math.floor(size.height / rowHeight));
 
+  // A tab shown again: its list as it was left, without revealing the current page.
+  useLayoutEffect(() => {
+    const el = listRef.current;
+    const top = pendingRestore.current;
+    if (!el || !measured || top === null) return;
+    pendingRestore.current = null;
+    el.scrollTop = top;
+    setScrollTop(el.scrollTop);
+    skipReveal.current = true;
+  }, [measured, rowHeight]);
+
   // The current page (pager, keys, a click) stays in view (AC 3). Before paint, and the
   // window follows at once: the rows of the old scroll position never ask for anything.
   useLayoutEffect(() => {
     const el = listRef.current;
-    if (!el) return;
+    if (!el || pendingRestore.current !== null) return;
+    if (skipReveal.current) {
+      skipReveal.current = false;
+      return;
+    }
     const top = revealRow(pageIndex, el.scrollTop, el.clientHeight || size.height, rowHeight);
     if (top === null) return;
     el.scrollTop = top;
@@ -164,7 +187,11 @@ function ThumbnailList({ pages }: { pages: PageInfo[] }) {
       aria-activedescendant={`${idBase}-page-${active}`}
       data-testid="thumbnails"
       onKeyDown={onKeyDown}
-      onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
+      onScroll={(event) => {
+        const top = event.currentTarget.scrollTop;
+        setScrollTop(top);
+        thumbnailScroll.set(memoryKey, top);
+      }}
       className="group h-full overflow-y-auto outline-none focus-ring"
     >
       <div className="relative" style={{ height: pages.length * rowHeight }}>
