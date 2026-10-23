@@ -1,8 +1,10 @@
 // Story 3.5: several drawings in document tabs, on committed fixtures
 // (fixtures/pdf/multi-page.pdf: 4 pages, page 1 detected as S-101;
 // fixtures/pdf/vector-a3.pdf: one page). Two tabs, switching by click and by
-// keys, page and zoom kept per tab, a duplicate open activating the existing
-// tab, the tooltip, and closing back to the EmptyWorkspace.
+// keys (Alt+PageDown / Alt+PageUp primary, the Ctrl pair secondary), page and
+// zoom kept per tab, a duplicate open activating the existing tab, the tooltip,
+// and closing (close button, Alt+W, Ctrl+F4) back to the EmptyWorkspace.
+// Tabs are named by the file name (founder decision 2026-10-23).
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
@@ -35,15 +37,16 @@ test("two drawings in tabs: switch by click and keys, each keeps its page and zo
   await signIn(page, "admin@plan-markup.test");
   await expect(page).toHaveURL("/workspace");
 
-  // First drawing: one tab, named by its detected sheet number.
+  // First drawing: one tab, named by its file name.
   await open(page, "multi-page.pdf");
-  await expectActive(page, "S-101");
+  await expectActive(page, "multi-page.pdf");
   await expect(tabs(page)).toHaveCount(1);
   // Its state: page 2, zoomed in.
   await canvas(page).focus();
   await page.keyboard.press("PageDown");
   await expect(pageInput(page)).toHaveValue("2");
-  await expectActive(page, "FP-201");
+  // The title stays the file name on every page.
+  await expectActive(page, "multi-page.pdf");
   const fit = await zoomOf(page);
   await page.keyboard.press("+");
   await expect.poll(() => zoomOf(page)).toBeCloseTo(fit * Math.SQRT2, 6);
@@ -64,19 +67,24 @@ test("two drawings in tabs: switch by click and keys, each keeps its page and zo
 
   // A click switches back: page 2 at the zoom it was left at.
   await tabs(page).nth(0).click();
-  await expectActive(page, "FP-201");
+  await expectActive(page, "multi-page.pdf");
   await expect(pageInput(page)).toHaveValue("2");
   expect(await zoomOf(page)).toBeCloseTo(zoomedA, 6);
   await expect(page.getByRole("contentinfo")).toContainText("multi-page.pdf");
 
-  // Keys with the canvas focused: Ctrl+PageDown / Ctrl+PageUp (and Alt+… where the browser keeps Ctrl).
+  // Keys with the canvas focused: Alt+PageDown / Alt+PageUp (Chrome keeps the Ctrl pair outside an installed app).
   await canvas(page).focus();
-  await page.keyboard.press("Control+PageDown");
+  await page.keyboard.press("Alt+PageDown");
   await expectActive(page, "vector-a3.pdf");
   expect(await zoomOf(page)).toBeCloseTo(zoomB, 6);
   await page.keyboard.press("Alt+PageUp");
-  await expectActive(page, "FP-201");
+  await expectActive(page, "multi-page.pdf");
   await expect(pageInput(page)).toHaveValue("2");
+  // The Ctrl pair works too where the browser passes it on (Playwright delivers it).
+  await page.keyboard.press("Control+PageDown");
+  await expectActive(page, "vector-a3.pdf");
+  await page.keyboard.press("Control+PageUp");
+  await expectActive(page, "multi-page.pdf");
   // In the strip, the arrow keys move between tabs.
   await tabs(page).nth(0).focus();
   await page.keyboard.press("ArrowRight");
@@ -84,16 +92,25 @@ test("two drawings in tabs: switch by click and keys, each keeps its page and zo
 
   // Opening a file that is already open shows its tab instead of a duplicate.
   await open(page, "multi-page.pdf");
-  await expectActive(page, "FP-201");
+  await expectActive(page, "multi-page.pdf");
+  await expect(pageInput(page)).toHaveValue("2");
   await expect(tabs(page)).toHaveCount(2);
 
-  // Closing: the close button, then Ctrl+F4 with the canvas focused; the last one returns to the EmptyWorkspace.
-  await strip(page).getByRole("button", { name: "Close multi-page.pdf" }).click();
+  // Closing: the close button (mouse only: hidden from the accessibility tree), Alt+W with the canvas
+  // focused, Ctrl+F4; the last one returns to the EmptyWorkspace with the focus in the canvas region.
+  await strip(page).locator('[aria-label="Close multi-page.pdf"]').click();
+  await expect(tabs(page)).toHaveCount(1);
+  await expectActive(page, "vector-a3.pdf");
+  await open(page, "multi-page.pdf");
+  await expectActive(page, "multi-page.pdf");
+  await canvas(page).focus();
+  await page.keyboard.press("Alt+W");
   await expect(tabs(page)).toHaveCount(1);
   await expectActive(page, "vector-a3.pdf");
   await canvas(page).focus();
   await page.keyboard.press("Control+F4");
   await expect(strip(page)).toHaveCount(0);
+  await expect(page.locator("main[data-region='canvas']")).toBeFocused();
   await expect(page.getByTestId("drop-zone")).toBeVisible();
   await expect(page.getByRole("contentinfo")).toContainText("No drawing open");
   await context.close();

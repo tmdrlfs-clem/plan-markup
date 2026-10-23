@@ -3,7 +3,7 @@
 // (with the production build: E2E_PROD=1 after `npm run build`).
 //
 // Opens L17 and L21 in two tabs, zooms L17 in, then switches back and forth
-// with Ctrl+PageDown. Reports how long a switch takes until the canvas shows
+// with Alt+PageDown. Reports how long a switch takes until the canvas shows
 // the other tab's view, the longest main-thread task (Long Tasks API) while
 // switching, and the JS heap of every worker (CDP), to size "one render worker
 // per tab". Saves a screenshot with the two tabs to fixtures/private/traces/.
@@ -84,7 +84,7 @@ test("L17 + L21 in tabs: switching restores each view at once, no main-thread ta
   await page.waitForTimeout(2000);
   const viewL21 = await canvas(page).getAttribute("data-view");
   const strip = page.getByRole("tablist", { name: "Open drawings" });
-  await expect(strip.getByRole("tab")).toHaveText(["A1721", "A2121"]);
+  await expect(strip.getByRole("tab")).toHaveText([path.basename(L17), path.basename(L21)]);
   const heapTwo = await workerHeaps(context, page);
 
   // Switch timing: from the key press until the canvas publishes the other tab's view.
@@ -98,7 +98,7 @@ test("L17 + L21 in tabs: switching restores each view at once, no main-thread ta
     window.addEventListener(
       "keydown",
       (e) => {
-        if (e.key === "PageDown" && e.ctrlKey) w.__t0 = performance.now();
+        if (e.key === "PageDown" && e.altKey) w.__t0 = performance.now();
       },
       { capture: true },
     );
@@ -111,7 +111,7 @@ test("L17 + L21 in tabs: switching restores each view at once, no main-thread ta
   });
   await canvas(page).focus();
   for (let i = 0; i < 6; i++) {
-    await page.keyboard.press("Control+PageDown");
+    await page.keyboard.press("Alt+PageDown");
     const expected = i % 2 === 0 ? viewL17 : viewL21;
     await expect(canvas(page)).toHaveAttribute("data-view", expected!);
     await expect(canvas(page)).toHaveAttribute("data-state", "ready");
@@ -130,7 +130,7 @@ test("L17 + L21 in tabs: switching restores each view at once, no main-thread ta
   expect(switches.length).toBe(6);
 
   // Back on L17 (zoomed) with both tabs.
-  await page.keyboard.press("Control+PageDown");
+  await page.keyboard.press("Alt+PageDown");
   await expect(canvas(page)).toHaveAttribute("data-view", viewL17!);
   await page.waitForTimeout(2000);
   mkdirSync(path.join(PRIVATE, "traces"), { recursive: true });

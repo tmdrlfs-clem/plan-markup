@@ -56,4 +56,17 @@ describe("HintBar", () => {
     dismissHint("a");
     expect(hintStore.getState().hint).toBeNull();
   });
+
+  it("reports a user's Dismiss through onDismiss, but not a dismissal by code", async () => {
+    const user = userEvent.setup();
+    setup();
+    const onDismiss = vi.fn();
+    act(() => showHint({ id: "a", variant: "info", text: "A", onDismiss }));
+    act(() => dismissHint("a"));
+    expect(onDismiss).not.toHaveBeenCalled();
+    act(() => showHint({ id: "a", variant: "info", text: "A", onDismiss }));
+    await user.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+    expect(hintStore.getState().hint).toBeNull();
+  });
 });

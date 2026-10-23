@@ -17,7 +17,6 @@ import { createStore } from "zustand/vanilla";
 
 import { toast } from "@/components/ui/toast-store";
 import { MAX_TABS, activeAfterClose, cycleTab, fileKeyOf, findDuplicate, tileBudgets } from "@/core/documents/tabs";
-import { sheetLabelOf } from "@/core/pdf/sheet-label";
 import { RenderClient } from "@/workers/rpc";
 
 import { thumbnailScroll } from "./thumbnail-scroll";
@@ -29,7 +28,7 @@ import { INITIAL_VIEWER_STATE, viewerStore, type ViewerState, type ViewerStatus 
 export type DocumentTab = {
   id: string;
   fileName: string;
-  /** The shown page's sheet number, else the file name (UX: sheet labels in tabs). */
+  /** The file name (founder decision 2026-10-23: never the sheet number). */
   title: string;
   status: ViewerStatus;
   /** The document failed to open or render (the error shows in that tab only). */
@@ -58,11 +57,20 @@ type Entry = {
   engine: ViewerEngine | null;
 };
 
-/** The tab title: the shown page's sheet number, else the file name. */
-export function tabTitle(s: Pick<ViewerState, "pageIndex" | "pageLabels" | "sheetLabels" | "fileName">): string {
-  const label = sheetLabelOf(s.pageIndex + 1, s.pageLabels?.[s.pageIndex], s.sheetLabels[s.pageIndex]);
-  return label?.short ?? s.fileName ?? "";
+/**
+ * The tab title: always the file name (founder decision 2026-10-23). A sheet
+ * number would rename the tab of a set on every page, and two sets can share one.
+ */
+export function tabTitle(s: Pick<ViewerState, "fileName">): string {
+  return s.fileName ?? "";
 }
+
+/** What `open` did with a file. */
+export type OpenOutcome = "opened" | "activated" | "limit";
+
+/** Each open of a file in a tab (a retry too) gets its own `openSeq`, never reused. */
+let lastOpenSeq = 0;
+const nextOpenSeq = () => ++lastOpenSeq;
 
 const sameTab = (a: DocumentTab, b: DocumentTab) =>
   a.id === b.id && a.fileName === b.fileName && a.title === b.title && a.status === b.status && a.failed === b.failed;
@@ -73,6 +81,7 @@ class ViewerTabs {
   private host: ViewerHost | null = null;
   private unregister: (() => void) | null = null;
   private seq = 0;
+  private owner: string | null = null;
 
   constructor() {
     // The store is the active tab's state: keep its snapshot current (tool, temp pan, engine updates).
@@ -111,19 +120,17 @@ class ViewerTabs {
   /**
    * Opens `file` in a new tab and activates it (AC 1). A file already open
    * (same name, size and date; after hashing, the same sha256) activates its
-   * tab instead. Past MAX_TABS a quiet toast explains the limit (AC 6).
+   * tab instead. Past MAX_TABS nothing opens ("limit"; openDocuments explains
+   * it in one quiet toast, AC 6).
    */
-  open(file: File): void {
+  open(file: File): OpenOutcome {
     const fileKey = fileKeyOf(file);
     const duplicate = findDuplicate(this.entries, { fileKey });
     if (duplicate) {
       this.activate(duplicate.id);
-      return;
+      return "activated";
     }
-    if (this.entries.length >= MAX_TABS) {
-      toast({ title: `Up to ${MAX_TABS} drawings can be open at once. Close one to open ${file.name}.`, variant: "info" });
-      return;
-    }
+    if (this.entries.length >= MAX_TABS) return "limit";
     const id = `doc-${++this.seq}`;
     const current = viewerStore.getState();
     this.entries.push({
@@ -137,6 +144,7 @@ class ViewerTabs {
     });
     this.activate(id);
     this.startEngine(this.find(id)!);
+    return "opened";
   }
 
   /** Opens the active tab's file again (Try again after a render failure). */
@@ -148,11 +156,18 @@ class ViewerTabs {
     else this.startEngine(entry);
   }
 
-  /** Closes a tab and frees its render resources (AC 4); the neighbour (right, else left) becomes active. */
+  /**
+   * Closes a tab and frees its render resources (AC 4). Closing the active tab
+   * activates `activateInstead` when given and still open, else the neighbour
+   * (right, else left); closing a background tab never changes the active one.
+   */
   close(id: string, activateInstead?: string): void {
     const entry = this.find(id);
     if (!entry) return;
-    const next = activateInstead ?? activeAfterClose(this.entries.map((e) => e.id), this.activeId, id);
+    const ids = this.entries.map((e) => e.id);
+    const wasActive = this.activeId === id;
+    const neighbour = activeAfterClose(ids, this.activeId, id);
+    const next = wasActive && activateInstead && activateInstead !== id && this.find(activateInstead) ? activateInstead : neighbour;
     this.entries = this.entries.filter((e) => e !== entry);
     if (this.activeId === id) {
       this.activeId = null;
@@ -167,18 +182,18 @@ class ViewerTabs {
       this.activate(next);
     } else if (this.entries.length === 0) {
       this.host?.activate(null);
-      viewerStore.setState((s) => ({ ...INITIAL_VIEWER_STATE, openSeq: s.openSeq + 1, tool: s.tool }), true);
+      viewerStore.setState((s) => ({ ...INITIAL_VIEWER_STATE, openSeq: nextOpenSeq(), tool: s.tool }), true);
     }
     this.applyBudgets();
     this.publish();
   }
 
-  /** Closes the active tab (Ctrl+F4). */
+  /** Closes the active tab (Alt+W, Ctrl+F4). */
   closeActive(): void {
     if (this.activeId) this.close(this.activeId);
   }
 
-  /** Closes every tab (tests; the workspace going away). */
+  /** Closes every tab (tests; another user's workspace). */
   closeAll(): void {
     for (const entry of [...this.entries]) entry.engine?.destroy();
     this.entries = [];
@@ -188,6 +203,19 @@ class ViewerTabs {
     this.unregister = null;
     this.host?.activate(null);
     this.publish();
+  }
+
+  /**
+   * The signed-in user whose drawings the tabs hold. The tabs survive the
+   * client-side navigation of a sign-out, so a workspace mounting for another
+   * user closes them first: nobody sees the previous user's drawings.
+   */
+  setOwner(userId: string): void {
+    if (this.owner !== null && this.owner !== userId && (this.entries.length > 0 || viewerStore.getState().status !== "empty")) {
+      this.closeAll();
+      viewerStore.setState({ ...INITIAL_VIEWER_STATE, openSeq: nextOpenSeq() }, true);
+    }
+    this.owner = userId;
   }
 
   // ---- switching ----------------------------------------------------------------
@@ -249,7 +277,7 @@ class ViewerTabs {
       status: "loading",
       file,
       fileName: file.name,
-      openSeq: viewerStore.getState().openSeq + 1,
+      openSeq: nextOpenSeq(),
       tool,
       tabId,
     };
@@ -282,7 +310,11 @@ class ViewerTabs {
     this.publish();
   }
 
-  /** The worker hashed the file: a document already open in another tab activates that tab (AC 1). */
+  /**
+   * The worker hashed the file. A document already open in another tab closes
+   * this tab (AC 1); if this tab was shown, the existing one is shown instead,
+   * and a tab in the background never takes the active tab's place.
+   */
   private hashed(entry: Entry, sha256: string): void {
     entry.sha256 = sha256;
     const duplicate = findDuplicate(this.entries, { sha256 }, entry.id);
@@ -321,13 +353,25 @@ class ViewerTabs {
 /** The open drawings (one per document tab). */
 export const viewerTabs = new ViewerTabs();
 
+/**
+ * Opens each file in a new document tab (or activates the tab that already
+ * shows it); the last one opened is shown. Files past the tab cap are not
+ * opened, and one quiet toast says so (AC 6).
+ */
+export function openDocuments(files: readonly File[]): void {
+  const skipped = files.filter((file) => viewerTabs.open(file) === "limit");
+  if (skipped.length === 0) return;
+  const what = skipped.length === 1 ? skipped[0].name : `${skipped.length} files`;
+  toast({ title: `Up to ${MAX_TABS} drawings can be open at once. Close one to open ${what}.`, variant: "info" });
+}
+
 /** Opens `file` in a new document tab (or activates the tab that already shows it). */
 export function openDocument(file: File): void {
-  viewerTabs.open(file);
+  openDocuments([file]);
 }
 
 /** Closes every tab: back to the empty workspace (tests). */
 export function resetViewer(): void {
   viewerTabs.closeAll();
-  viewerStore.setState((s) => ({ ...INITIAL_VIEWER_STATE, openSeq: s.openSeq + 1 }), true);
+  viewerStore.setState({ ...INITIAL_VIEWER_STATE, openSeq: nextOpenSeq() }, true);
 }

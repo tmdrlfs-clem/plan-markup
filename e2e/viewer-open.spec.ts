@@ -103,7 +103,8 @@ test("Open… reads the PDF locally and renders it at fit page with no upload", 
   await expect(canvas(page)).toHaveAttribute("aria-label", "Drawing canvas, page 1 of 1");
   await expect(page.getByRole("contentinfo")).toContainText("vector-a3.pdf");
   await expect(page).toHaveTitle("vector-a3.pdf — Plan Markup");
-  await expect(page.getByRole("progressbar")).toHaveCount(0);
+  // The loading bar (in the document tab) is gone once the drawing is shown.
+  await expect(page.getByTestId("tab-progress")).toHaveCount(0);
   expect((await inkPixels(page)).ink).toBeGreaterThan(500);
   await canvas(page).focus();
   await expect(canvas(page)).toBeFocused();

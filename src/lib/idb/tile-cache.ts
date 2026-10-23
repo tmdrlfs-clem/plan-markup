@@ -8,7 +8,9 @@
 // opened in time, or that must close for another tab (versionchange) or was
 // terminated by the browser, disables the cache. Bounded by a byte budget with
 // least-recently-used eviction. Writes that change the byte total (put and
-// evict) run one at a time on a promise chain.
+// evict) run one at a time on a promise chain. Several render workers (one per
+// document tab) share the store: each measures the total again every few
+// seconds, so together they stay within the budget.
 //
 // Key format (built by src/workers/render.worker.ts):
 //   tiles:   `<sha256>:<page>:s<step>:<tileSize>:<col>:<row>`
@@ -33,6 +35,12 @@ const EVICT_TO = 0.9;
 const TOUCH_AFTER_MS = 60_000;
 /** On a quota error, evict down to this share of the current total, then retry once. */
 const QUOTA_EVICT_TO = 0.5;
+/**
+ * The stored total is measured again when the last measurement is older than
+ * this: every document tab has its own render worker and cache (Story 3.5), and
+ * the others' writes count against the same budget.
+ */
+export const MEASURE_EVERY_MS = 5000;
 /** openTileCache gives up (no cache) when IndexedDB has not opened by then. */
 export const OPEN_TIMEOUT_MS = 2000;
 
@@ -61,6 +69,8 @@ export class TileCache {
   private readonly now: () => number;
   /** Known total bytes, computed lazily inside the write chain (null = unknown). */
   private total: number | null = null;
+  /** When `total` was last measured (other workers write to the same store). */
+  private measuredAt = 0;
   private disabled = false;
   /** Serialises put/evict so concurrent writes never race on `total`. */
   private writes: Promise<void> = Promise.resolve();
@@ -115,7 +125,7 @@ export class TileCache {
   private async write(key: string, blob: Blob): Promise<void> {
     const size = blob.size;
     try {
-      this.total ??= await this.measure();
+      if (this.total === null || this.now() - this.measuredAt >= MEASURE_EVERY_MS) this.total = await this.measure();
       const old = await this.backend.getTile(key);
       const record = { key, blob, size, lastAccess: this.now() };
       try {
@@ -135,6 +145,7 @@ export class TileCache {
   }
 
   private async measure(): Promise<number> {
+    this.measuredAt = this.now();
     return (await this.backend.tilesByAge()).reduce((n, t) => n + t.size, 0);
   }
 

@@ -13,6 +13,8 @@ export interface Hint {
   variant: HintVariant;
   text: string;
   action?: HintAction;
+  /** Called when the user dismisses the notice (Dismiss), not when the code hides it. */
+  onDismiss?: () => void;
 }
 
 export interface HintState {

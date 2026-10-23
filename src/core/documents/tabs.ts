@@ -72,6 +72,8 @@ export function tileBudgets(count: number): { active: number; background: number
 
 export type TabKeyEvent = {
   key: string;
+  /** The physical key ("KeyW"); Alt+letter uses it, as macOS turns Option+W into "∑". */
+  code?: string;
   ctrlKey: boolean;
   metaKey: boolean;
   altKey: boolean;
@@ -80,11 +82,19 @@ export type TabKeyEvent = {
 
 export type TabKeyAction = { type: "cycle"; direction: 1 | -1 } | { type: "close" };
 
+/** The tab keys in the UX shortcut table form (tooltips, menus, aria-keyshortcuts). */
+export const TAB_SHORTCUTS = {
+  next: "Alt+PageDown Ctrl+PageDown",
+  previous: "Alt+PageUp Ctrl+PageUp",
+  close: "Alt+W Ctrl+F4",
+} as const;
+
 /**
- * The tab action of a key press with the canvas or the tab strip focused (AC 2,
- * AC 4). Ctrl+Tab and Ctrl+W are the browser's. Ctrl+PageDown / Ctrl+PageUp
- * (Chrome keeps them too, outside an installed app) have Alt+PageDown /
- * Alt+PageUp as the pair every browser delivers. Ctrl+F4 closes.
+ * The tab action of a key press (AC 2, AC 4; founder decision 2026-10-23).
+ * Ctrl+Tab and Ctrl+W are the browser's, and Chrome also keeps Ctrl+PageDown /
+ * Ctrl+PageUp / Ctrl+F4 unless the app is installed or full screen. So
+ * Alt+PageDown / Alt+PageUp (next / previous) and Alt+W (close) are the
+ * primary keys. The Ctrl keys stay as secondary ones wherever they reach the page.
  */
 export function resolveTabKey(event: TabKeyEvent): TabKeyAction | null {
   const ctrl = event.ctrlKey || event.metaKey;
@@ -93,6 +103,7 @@ export function resolveTabKey(event: TabKeyEvent): TabKeyAction | null {
     if (event.key === "PageDown") return { type: "cycle", direction: 1 };
     if (event.key === "PageUp") return { type: "cycle", direction: -1 };
   }
+  if (event.altKey && !ctrl && (event.code === "KeyW" || event.key.toLowerCase() === "w")) return { type: "close" };
   if (ctrl && !event.altKey && event.key === "F4") return { type: "close" };
   return null;
 }

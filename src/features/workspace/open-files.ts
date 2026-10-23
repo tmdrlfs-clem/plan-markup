@@ -1,5 +1,5 @@
 import { toast } from "@/components/ui/toast-store";
-import { openDocument } from "@/features/viewer";
+import { openDocuments } from "@/features/viewer";
 
 export function isPdf(file: File): boolean {
   return file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
@@ -17,6 +17,6 @@ export function openFiles(files: readonly File[]): void {
     toast({ title: "Only PDF files can be opened.", variant: "warning" });
     return;
   }
-  for (const pdf of pdfs) openDocument(pdf);
+  openDocuments(pdfs);
   if (pdfs.length < files.length) toast({ title: "Only PDF files can be opened; the others were skipped.", variant: "warning" });
 }

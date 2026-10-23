@@ -37,7 +37,14 @@ export function HintBar() {
           {hint.action.label}
         </Button>
       ) : null}
-      <IconButton label="Dismiss" icon={X} onClick={() => dismissHint(hint.id)} />
+      <IconButton
+        label="Dismiss"
+        icon={X}
+        onClick={() => {
+          dismissHint(hint.id);
+          hint.onDismiss?.();
+        }}
+      />
     </div>
   );
 }

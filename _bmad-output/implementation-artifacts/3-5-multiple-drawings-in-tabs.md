@@ -1,6 +1,6 @@
 # Story 3.5: Multiple drawings in tabs
 
-Status: review
+Status: done
 
 ## Story
 
@@ -25,6 +25,21 @@ so that I can compare and switch between sheets quickly.
 - [x] **Task 3: DocumentTabs UI** — tab strip above the canvas with Story 1.7 `Tabs`, close buttons (`IconButton` X), tooltips, loading bar, error marker; keyboard per AC 2/4; EmptyWorkspace when none.
 - [x] **Task 4: Wiring** — open/drop/recent paths create tabs; status bar, pager, thumbnails panel and HintBar follow the active tab; per-tab memory budget and cap.
 - [x] **Task 5: Tests** — unit (store transitions, duplicate detection, close neighbour rule, resource release, budget split) and `e2e/viewer-tabs.spec.ts` using committed fixtures (`fixtures/pdf/multi-page.pdf` plus one other committed PDF). Local check with L17 + L21 open together (private, never commit): switching shows the cached view instantly, no main-thread task ≥ 50 ms; screenshot to `fixtures/private/traces/3-5-tabs.png`.
+
+### Review Follow-ups (AI)
+
+Adversarial review, 2026-10-23 (Claude Opus 5.5), of 521a709..babdc50. Founder decisions of 2026-10-23 are folded in (F1–F3).
+
+- [x] [AI-Review][High] **A duplicate found by sha256 steals the active tab, and can leave no tab active.** `hashed()` closes the new tab with `close(id, duplicate.id)`, and `close()` activates `activateInstead` even when the closing tab is in the background. Dropping `A.pdf`, `A-copy.pdf`, `C.pdf` shows C, then jumps to A when the copy is hashed. If the duplicate is gone by the time the microtask runs, `next` is not found, `activeId` stays null with tabs still open, and the strip disappears (`DocumentTabs` falls back to the bare panel). Fix: activate the duplicate only when the closing tab was active; fall back to the neighbour rule otherwise. [viewer-tabs.ts `hashed`, `close`]
+- [x] [AI-Review][Medium] **Another user signing in sees the previous user's drawings.** The tab list is module state. Signing out is a client navigation, so the tabs (the `File`s) survive it, and `attachHost` reopens them when the next user's workspace mounts. Fix: the tabs belong to the signed-in user; a workspace for another user id closes them all first. [viewer-tabs.ts, workspace-shell.tsx]
+- [x] [AI-Review][Medium] **Per-tab workers break the IndexedDB budget (512 MB).** Each worker has its own `TileCache`, which measures the stored total once and then adds only its own writes. With N tabs, each one evicts only past its own estimate, so the store can grow to about N × 512 MB. Fix: measure the total again when the last measurement is older than a few seconds, so the other workers' writes are counted. [src/lib/idb/tile-cache.ts]
+- [x] [AI-Review][Medium] **Dismissed notices come back on every tab switch** (the known issue, plus the memory notice). The notices are keyed by `openSeq` and their effects dismiss and re-show them whenever the store swaps to another tab. Also, `openSeq` is "store + 1", so two tabs can share a value (A=1, B=2, back to A, C=2), and a dismissal could carry over between them. Fix: a monotonic `openSeq` per tab open, and the dismissed notices kept in the tab's own state; HintBar's Dismiss reports a user dismissal through `Hint.onDismiss`. [document-viewer.tsx, viewer-store.ts, viewer-tabs.ts, hint-store.ts, hint-bar.tsx]
+- [x] [AI-Review][Medium] **F1 — tab keys Chrome keeps for itself.** Chrome reserves `Ctrl+PageDown` / `Ctrl+PageUp` / `Ctrl+F4` outside an installed app or full screen. Fix: `Alt+PageDown` / `Alt+PageUp` become the primary pair and `Alt+W` closes the active tab. The Ctrl keys stay as secondary, and `Delete` still closes in the strip. Show the keys in the close button's tooltip and in the menus (File > Close drawing, Window > Next / Previous drawing), add them to the UX shortcut table, and update the tests. [tabs.ts, document-tabs.tsx, workspace-menu-bar.tsx, ux-design-specification.md]
+- [x] [AI-Review][Medium] **F3 — the tab title is the file name.** Today the title is the sheet number, which changes with the page: the tab of a multi-page set renames itself as you page through it, and two sets can both read "S-101". The tooltip keeps the full name, and the title is truncated as now. [viewer-tabs.ts `tabTitle`, document-tabs.tsx, e2e]
+- [x] [AI-Review][Low] **The tablist owns elements that are not tabs.** The close `button` and the `progressbar` are children of `role="tablist"`, which breaks ARIA's required owned elements (axe `aria-required-children`), and screen readers announce them as stray list items. The trigger already says ", loading", and `Delete` / `Alt+W` close from the keyboard. Fix: keep both as mouse-only visuals, hidden from the accessibility tree (`aria-hidden`, not focusable), and give the trigger `aria-keyshortcuts`. [document-tabs.tsx]
+- [x] [AI-Review][Low] **A tab switched by key can sit outside the visible strip.** The strip scrolls horizontally (8 × 220 px is wider than many canvases), and `Alt+PageDown` from the canvas does not scroll the new active tab into view. Fix: scroll the active tab into view (`nearest`) whenever it changes. [document-tabs.tsx]
+- [x] [AI-Review][Low] **Closing the last tab drops the focus on `body`, and the tab keys then do nothing.** The keys need the canvas or the strip focused, and closing the last tab unmounts both. Fix: after a keyboard or close-button close that leaves no tab, move the focus to the canvas region (`main`). The tab keys also act when nothing has the focus (`body`). [document-tabs.tsx]
+- [x] [AI-Review][Low] **One cap toast per extra file.** Dropping 12 PDFs with 8 tabs free shows four identical toasts. Fix: `open()` reports the outcome, and `openFiles` shows a single toast naming how many files were not opened. [viewer-tabs.ts, open-files.ts]
 
 ## Dev Notes
 
@@ -52,6 +67,8 @@ Claude Opus 5.5 (claude-opus-5-5)
 - Local checks: `npm run typecheck`, `npm run lint` and `npm run build` are clean. `npm test`: 1219 unit tests in 110 files.
 - Local e2e on the production build (`E2E_PROD=1`, workers 1, Docker + local Supabase): 41 passed, 2 skipped (the opt-in L17 checks). `viewer-tabs.spec.ts` passed on its first run.
 - **Founder drawings** (`PERF_L17=1 E2E_PROD=1 npx playwright test perf-tabs`, private, nothing committed): L17 and L21 open together as the tabs "A1721" and "A2121". With L17 zoomed in, six `Ctrl+PageDown` switches showed the other tab's view **8–12 ms** after the key press (a first run: 9.9–20.7 ms), with no re-parse and no new `render.open`. Longest main-thread task while switching: **0 ms** (Long Tasks API: nothing ≥ 50 ms). Worker JS heap (CDP `Runtime.getHeapUsage`): one tab 47.6 MB; two tabs 37.5 + 61.2 MB. Screenshot with both tabs, L17 active and zoomed: `fixtures/private/traces/3-5-tabs.png`, reviewed and not committed. The 3.4 thumbnail check (`perf-thumbnails`, whose sequential opens now become tabs) still reports 0 ms.
+- **Review fixes (2026-10-23):** `npm run typecheck`, `npm run lint` and `npm run build` are clean. `npm test`: 1233 unit tests in 110 files. Local e2e on the production build (`E2E_PROD=1`, workers 1): 41 passed, 3 skipped (the opt-in L17 checks). CI run: **REVIEW_CI_RUN**.
+- **Founder drawings after the review fixes** (`perf-tabs`, now with `Alt+PageDown`; tabs named by file name): switches show the other tab's view in **6.6–19.5 ms**. Longest main-thread task: **0 ms** on two runs. One earlier run, right after the full e2e suite on a freshly started server, logged one 438 ms task. It did not happen again, and the first switches in the passing runs took 7.2 and 7.6 ms. Worker heaps: one tab 52.6–60 MB, two tabs 38.8–62.4 MB each. The screenshot `fixtures/private/traces/3-5-tabs.png` was refreshed and is not committed.
 
 ### Completion Notes List
 
@@ -85,18 +102,24 @@ Claude Opus 5.5 (claude-opus-5-5)
    - Per-tab workers keep the protocol and the 3.1–3.4 engine unchanged, and they render tabs in parallel.
    - A worker that crashes affects only its own tab, and closing a tab frees everything with one `terminate()`.
    - A shared worker would need document ids in every request and its own priorities across documents.
-2. **Keys.** The UX shortcut table names no tab keys, so the story's `Ctrl+PageDown` / `Ctrl+PageUp` and `Ctrl+F4` are used.
+2. **Keys** (superseded by founder decision F1 in the review: `Alt+PageDown` / `Alt+PageUp` / `Alt+W` are primary). The UX shortcut table named no tab keys, so the story's `Ctrl+PageDown` / `Ctrl+PageUp` and `Ctrl+F4` were used.
    - Chrome keeps these keys for its own tabs unless the app is installed or in full screen. The e2e still passes because Playwright delivers them to the page.
    - So `Alt+PageDown` / `Alt+PageUp` also cycle the tabs, and `Delete` on a focused tab closes it. See the questions.
 3. **The loading bar moved into the tab** (UX: "thin progress bar in the tab"). The canvas no longer has its own, so only one bar shows.
-4. **Tab title.** The shown page's sheet number (as the pager shows it), else the file name. For a multi-page set the title follows the page.
+4. **Tab title** (superseded by F3 in the review: always the file name). It was the shown page's sheet number, else the file name.
 5. **Duplicates.** Before hashing, a file with the same name, size and date activates the open tab at once. A copy under another name opens in a new tab. As soon as the worker's sha256 matches an open tab, that new tab closes and the existing one is shown.
 6. **Memory.** A background tab keeps a 16 MB tile budget. The active tab gets 256 MB minus 16 MB per background tab, at least 144 MB with 8 tabs. The preview is held outside that budget, so switching back always shows the page at once while the tiles come back (from IndexedDB or rendered).
 7. **Several files at once** all open as tabs (the last one shown), not only the first.
 8. **Host re-attach.** If the workspace unmounts with tabs open (the sign-out flow, a dev double mount), the engines are destroyed. The files are reopened when it mounts again, which IndexedDB makes fast.
-9. **Known minor issue:** a dismissed image-only HintBar notice shows again when its tab is shown again, because notices are per open, not per tab.
+9. **Known minor issue** (fixed in the review): a dismissed image-only HintBar notice showed again when its tab was shown again.
+10. **Review decisions:**
+    - The tab keys also act when nothing has the focus (`body`). They still do nothing in fields, panels, menus and dialogs.
+    - The close button and the loading bar are hidden from the accessibility tree. They are mouse-only visuals, and the trigger names its keys in `aria-keyshortcuts`.
+    - Menus: File > Close drawing (`Alt+W`) and Window > Next / Previous drawing (`Alt+PageDown` / `Alt+PageUp`).
+    - The tabs belong to the signed-in user (`viewerTabs.setOwner`, called in render before the canvas mounts).
+    - The IndexedDB total is measured again every 5 s (`MEASURE_EVERY_MS`), so the budget can be exceeded by at most what the other workers write within 5 s.
 
-**Questions for the founder:**
+**Questions for the founder** (answered 2026-10-23: `Alt+PageDown` / `Alt+PageUp` primary plus `Alt+W` close; the 8-tab cap stays; the tab title is always the file name):
 
 - Chrome reserves `Ctrl+PageDown` / `Ctrl+PageUp` and `Ctrl+F4` for its own tabs unless the app is installed (PWA) or in full screen. There, `Ctrl+F4` closes the whole browser tab.
   - Should `Alt+PageDown` / `Alt+PageUp` be the everyday pair?
@@ -113,6 +136,7 @@ Claude Opus 5.5 (claude-opus-5-5)
 - `src/features/viewer/viewer-engine.ts`, `viewer-engine.test.ts`, `viewer-store.ts`, `canvas-viewport.tsx`, `canvas-viewport.test.tsx`, `thumbnails-panel.tsx`, `thumbnails-panel.test.tsx`, `index.ts`, `viewer-input.test.ts`, `page-pager.test.tsx` (modified)
 - `src/features/workspace/workspace-shell.tsx`, `workspace-shell.test.tsx`, `open-files.ts` (modified)
 - `e2e/viewer-tabs.spec.ts`, `e2e/perf-tabs.spec.ts` (new)
+- Review fixes: `src/components/ui/hint-store.ts`, `hint-bar.tsx`, `hint-bar.test.tsx`, `src/lib/idb/tile-cache.ts`, `tile-cache.test.ts`, `src/features/viewer/document-viewer.tsx`, `src/features/workspace/workspace-menu-bar.tsx`, `e2e/viewer-open.spec.ts`, `_bmad-output/planning-artifacts/ux-design-specification.md` (modified), plus the 3.5 files above
 
 ### Change Log
 
@@ -121,3 +145,4 @@ Claude Opus 5.5 (claude-opus-5-5)
   - The DocumentTabs strip, its keys, duplicate detection, the tab cap and per-tab thumbnail scroll.
   - Unit tests and e2e.
   - Commits 521a709, b814000, b355358, d1ed93b, bc719d7.
+- 2026-10-23: Code review (Claude Opus 5.5). Ten findings fixed, including founder decisions F1 (Alt tab keys, `Alt+W`) and F3 (file-name titles), and the dismissed-notice issue. Status → done.

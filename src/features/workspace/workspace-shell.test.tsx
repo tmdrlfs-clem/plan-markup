@@ -11,8 +11,10 @@ import {
   ANNOUNCE_LABEL_WAIT_MS,
   openDocument,
   resetViewer,
+  tabsStore,
   viewerCommands,
   viewerStore,
+  viewerTabs,
 } from "@/features/viewer";
 
 import { storageKey } from "./layout-persistence";
@@ -330,6 +332,49 @@ describe("opening files", () => {
     expect(screen.queryByTestId("hint-bar")).not.toBeInTheDocument();
   });
 
+  it("a dismissed image-only notice stays dismissed when its tab is shown again (per tab)", async () => {
+    const { user } = setup();
+    drop([new File(["%PDF"], "scan.pdf", { type: "application/pdf" }), new File(["%PDF"], "plan.pdf", { type: "application/pdf" })]);
+    const [scan, plan] = tabsStore.getState().tabs.map((t) => t.id);
+    act(() => viewerTabs.activate(scan));
+    act(() => viewerStore.setState({ status: "ready", content: { hasVector: false, hasText: false, imageOnly: true } }));
+    const hint = await screen.findByTestId("hint-bar");
+    await user.click(within(hint).getByRole("button", { name: "Dismiss" }));
+    expect(screen.queryByTestId("hint-bar")).not.toBeInTheDocument();
+    act(() => viewerTabs.activate(plan));
+    act(() => viewerStore.setState({ status: "ready", content: { hasVector: false, hasText: false, imageOnly: true } }));
+    // Another image-only drawing still gets its notice.
+    expect(await screen.findByTestId("hint-bar")).toBeInTheDocument();
+    act(() => viewerTabs.activate(scan));
+    expect(screen.queryByTestId("hint-bar")).not.toBeInTheDocument();
+    act(() => viewerTabs.activate(plan));
+    expect(screen.getByTestId("hint-bar")).toBeInTheDocument();
+  });
+
+  it("another user's workspace does not show the previous user's drawings", () => {
+    const first = setup();
+    drop([new File(["%PDF"], "private.pdf", { type: "application/pdf" })]);
+    expect(viewerStore.getState().fileName).toBe("private.pdf");
+    first.unmount();
+    render(<WorkspaceShell user={{ ...USER, id: "user-2", email: "kim@example.com" }} />);
+    expect(screen.queryByRole("tablist", { name: "Open drawings" })).not.toBeInTheDocument();
+    expect(screen.getByRole("contentinfo")).toHaveTextContent("No drawing open");
+    expect(viewerStore.getState().fileName).toBeNull();
+  });
+  it("File › Close drawing and Window › Next / Previous drawing name the Alt keys and drive the tabs", async () => {
+    const { user } = setup();
+    drop([new File(["%PDF"], "a.pdf", { type: "application/pdf" }), new File(["%PDF"], "b.pdf", { type: "application/pdf" })]);
+    await user.click(screen.getByRole("menuitem", { name: "Window" }));
+    const next = await screen.findByRole("menuitem", { name: /Next drawing/ });
+    expect(next).toHaveTextContent("Alt+PageDown");
+    await user.click(next);
+    expect(viewerStore.getState().fileName).toBe("a.pdf");
+    await user.click(screen.getByRole("menuitem", { name: "File" }));
+    const close = await screen.findByRole("menuitem", { name: /Close drawing/ });
+    expect(close).toHaveTextContent("Alt+W");
+    await user.click(close);
+    expect(tabsStore.getState().tabs.map((t) => t.fileName)).toEqual(["b.pdf"]);
+  });
   it("a file error clears the title and status bar name", () => {
     setup();
     drop([new File(["junk"], "bad.pdf", { type: "application/pdf" })]);

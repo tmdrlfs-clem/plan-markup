@@ -176,7 +176,7 @@ Delight is secondary and reserved for the 4541 moment.
 
 **Navigation**
 - Revu panel layout (top toolbar rows, right tool rail, left panel rail, bottom Markups List, status bar) — adopt structure.
-- Procore/PlanGrid-style **sheet labels** in tabs, thumbnails and Markups List ("A1721 — Level 17 RCP" from page label / title block text when available, page index as fallback).
+- Procore/PlanGrid-style **sheet labels** in thumbnails, the pager and Markups List ("A1721 — Level 17 RCP" from page label / title block text when available, page index as fallback). Document tabs show the **file name** (truncated; full name in the tooltip). Founder decision 2026-10-23: a sheet label would rename the tab on every page of a set.
 
 **Interaction**
 - Revu measure flow: choose tool → live value → finish → caption; calibrate dialog with detected-scale suggestion.
@@ -738,6 +738,8 @@ Founder: users come from Revu with "no complaints", so the MVP basic set **uses 
 | | Print | `Ctrl+P` | Our print dialog, browser print suppressed |
 | | Flatten / Unflatten | `Ctrl+Shift+M` / `Ctrl+Shift+U` | |
 | | Search text | `Ctrl+F` | In-app search when canvas focused |
+| | Next / previous drawing (document tab) | `Alt+PageDown` / `Alt+PageUp` (also `Ctrl+PageDown` / `Ctrl+PageUp`) | Founder 2026-10-23: Chrome keeps the Ctrl pair (and `Ctrl+Tab`) unless the app is installed or full screen. With the canvas, the tab strip or nothing focused. Window menu |
+| | Close drawing (document tab) | `Alt+W` (also `Ctrl+F4`; `Del` on a focused tab) | `Ctrl+W` is the browser's. File menu; middle click or × on a tab |
 | Panels | Tool Chest / Properties / Thumbnails | `Alt+X` / `Alt+P` / `Alt+T` | |
 | | Measurements / Layers | `Alt+U` / `Alt+Y` | |
 | | 4541 panel / Markups List | `Alt+4` / `Alt+L` | Ours |

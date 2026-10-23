@@ -30,8 +30,9 @@ export type ViewerTimings = {
  */
 export interface ViewerState {
   status: ViewerStatus;
-  /** The file being shown (or that failed); bumping `openSeq` asks the viewport to open it. */
+  /** The file being shown (or that failed). */
   file: File | null;
+  /** Unique per open of a file in a tab (a retry too): document-level effects (notices) restart on a new value. */
   openSeq: number;
   fileName: string | null;
   pageCount: number;
@@ -63,6 +64,8 @@ export interface ViewerState {
   tool: ViewerTool;
   /** Space or the middle button is held: pan without leaving `tool`. */
   tempPan: boolean;
+  /** HintBar notices the user dismissed for this document (they stay hidden when its tab is shown again). */
+  dismissedNotices: readonly string[];
 }
 
 /** The state with no drawing (a new tab starts from it). */
@@ -87,6 +90,7 @@ export const INITIAL_VIEWER_STATE: ViewerState = {
   memoryPressure: false,
   tool: "select",
   tempPan: false,
+  dismissedNotices: [],
 };
 
 /** The active document tab's state (Story 3.5: viewer-tabs.ts swaps it per tab). */
@@ -95,6 +99,12 @@ export const viewerStore = createStore<ViewerState>(() => INITIAL_VIEWER_STATE);
 /** Selects a tool (V, Shift+V, Z, the ToolRail). */
 export function setTool(tool: ViewerTool): void {
   viewerStore.setState({ tool });
+}
+
+/** The user dismissed notice `id` for the shown document (kept per tab). */
+export function dismissNotice(id: string): void {
+  const { dismissedNotices } = viewerStore.getState();
+  if (!dismissedNotices.includes(id)) viewerStore.setState({ dismissedNotices: [...dismissedNotices, id] });
 }
 
 /** Space / middle button: temporary pan on or off. */

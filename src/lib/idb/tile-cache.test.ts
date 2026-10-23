@@ -1,5 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
-import { TileCache, memoryTileBackend, openTileCache, type OpenTileCacheOptions, type TileCacheBackend } from "./tile-cache";
+import {
+  MEASURE_EVERY_MS,
+  TileCache,
+  memoryTileBackend,
+  openTileCache,
+  type OpenTileCacheOptions,
+  type TileCacheBackend,
+} from "./tile-cache";
 
 const blob = (bytes: number) => new Blob([new Uint8Array(bytes)]);
 
@@ -71,6 +78,31 @@ describe("TileCache", () => {
     expect(left.map((x) => x.key)).toEqual(["c", "d", "e"]);
     await cache.putTile("f", blob(30)); // 120 -> 90: exact total, so exactly one more eviction
     expect((await backend.tilesByAge()).map((x) => x.key)).toEqual(["d", "e", "f"]);
+  });
+
+  it("two caches on one store (two render workers) keep it within the budget: the total is measured again", async () => {
+    let t = 0;
+    const now = () => t;
+    const backend = memoryTileBackend();
+    const a = new TileCache(backend, { budgetBytes: 100, now });
+    const b = new TileCache(backend, { budgetBytes: 100, now });
+    const total = async () => (await backend.tilesByAge()).reduce((n, x) => n + x.size, 0);
+    t = 1;
+    await a.putTile("a1", blob(40)); // a measures 0: 40
+    await b.putTile("b1", blob(40)); // b measures 40: 80
+    t = 2;
+    await a.putTile("a2", blob(40)); // within MEASURE_EVERY_MS a counts only its own writes (80): over for a moment
+    expect(await total()).toBe(120);
+    // The next write after the interval measures the real total and evicts.
+    t = 2 + MEASURE_EVERY_MS;
+    await a.putTile("a3", blob(20));
+    expect(await total()).toBeLessThanOrEqual(100);
+    // Many writes from both, each past the interval: the store never ends far over the budget.
+    for (let i = 0; i < 10; i++) {
+      t += MEASURE_EVERY_MS;
+      await (i % 2 ? a : b).putTile(`x${i}`, blob(30));
+      expect(await total()).toBeLessThanOrEqual(100);
+    }
   });
 
   it("on a quota error evicts old tiles and retries the write once", async () => {

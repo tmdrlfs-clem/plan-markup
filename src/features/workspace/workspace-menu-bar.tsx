@@ -12,7 +12,8 @@ import {
   MenuBarSeparator,
   MenuBarTrigger,
 } from "@/components/ui/menu-bar";
-import { hasDocument, viewerCommands, viewerStore, type ViewerCommand } from "@/features/viewer";
+import { TAB_SHORTCUTS } from "@/core/documents/tabs";
+import { hasDocument, tabsStore, viewerCommands, viewerStore, viewerTabs, type ViewerCommand } from "@/features/viewer";
 
 import { useLayout } from "./layout-context";
 import { LEFT_PANELS, MARKUPS_LIST } from "./panel-registry";
@@ -36,6 +37,16 @@ function ViewItem({ label, shortcut, command }: { label: string; shortcut?: stri
   const open = useStore(viewerStore, hasDocument);
   return (
     <MenuBarItem disabled={!open} shortcut={shortcut} onSelect={() => viewerCommands[command]()}>
+      {label}
+    </MenuBarItem>
+  );
+}
+
+/** Document tab commands (Story 3.5): the menu names the keys (Alt first; Chrome keeps the Ctrl ones). */
+function TabItem({ label, shortcut, run, minTabs }: { label: string; shortcut: string; run: () => void; minTabs: number }) {
+  const count = useStore(tabsStore, (s) => s.tabs.length);
+  return (
+    <MenuBarItem disabled={count < minTabs} shortcut={shortcut} onSelect={run}>
       {label}
     </MenuBarItem>
   );
@@ -85,6 +96,7 @@ export function WorkspaceMenuBar({ onOpen, onSignOut }: WorkspaceMenuBarProps) {
           <MenuBarItem icon={FolderOpen} shortcut="Ctrl+O" onSelect={onOpen}>
             Open…
           </MenuBarItem>
+          <TabItem label="Close drawing" shortcut={TAB_SHORTCUTS.close} run={() => viewerTabs.closeActive()} minTabs={1} />
           <Disabled label="Save" shortcut="Ctrl+S" />
           <Disabled label="Save as…" shortcut="Ctrl+Shift+S" />
           <Disabled label="Print…" shortcut="Ctrl+P" />
@@ -148,6 +160,9 @@ export function WorkspaceMenuBar({ onOpen, onSignOut }: WorkspaceMenuBarProps) {
       <MenuBarMenu>
         <MenuBarTrigger>Window</MenuBarTrigger>
         <MenuBarContent>
+          <TabItem label="Next drawing" shortcut={TAB_SHORTCUTS.next} run={() => viewerTabs.cycle(1)} minTabs={2} />
+          <TabItem label="Previous drawing" shortcut={TAB_SHORTCUTS.previous} run={() => viewerTabs.cycle(-1)} minTabs={2} />
+          <MenuBarSeparator />
           <PanelItems />
         </MenuBarContent>
       </MenuBarMenu>

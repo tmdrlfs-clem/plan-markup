@@ -5,8 +5,8 @@ import { BACKGROUND_TILE_BUDGET, MAX_TABS, TOTAL_TILE_BUDGET } from "@/core/docu
 
 import { viewerCommands } from "./viewer-commands";
 import type { ViewerCanvases, ViewerEngine } from "./viewer-engine";
-import { setTool, viewerStore } from "./viewer-store";
-import { openDocument, resetViewer, tabsStore, viewerTabs, type ViewerHost } from "./viewer-tabs";
+import { dismissNotice, setTool, viewerStore } from "./viewer-store";
+import { openDocument, openDocuments, resetViewer, tabsStore, viewerTabs, type ViewerHost } from "./viewer-tabs";
 
 type Msg = { type: string; reqId: number; payload: unknown };
 
@@ -171,12 +171,83 @@ describe("viewerTabs", () => {
     expect(copy.terminated).toBe(true);
   });
 
-  it(`caps the open drawings at ${MAX_TABS} with a quiet toast`, async () => {
+  it(`caps the open drawings at ${MAX_TABS} with one quiet toast, however many files are over`, async () => {
     for (let i = 0; i < MAX_TABS; i++) await openFile(`d${i}.pdf`, `sha-${i}`);
     openDocument(file("one-more.pdf"));
     expect(tabsStore.getState().tabs).toHaveLength(MAX_TABS);
     expect(toastStore.getState().visible.at(-1)).toMatchObject({ variant: "info" });
-    expect(toastStore.getState().visible.at(-1)?.title).toContain(`Up to ${MAX_TABS} drawings`);
+    expect(toastStore.getState().visible.at(-1)?.title).toBe(`Up to ${MAX_TABS} drawings can be open at once. Close one to open one-more.pdf.`);
+    toastStore.setState({ visible: [], queue: [] });
+    openDocuments([file("x.pdf"), file("y.pdf"), file("z.pdf"), file("d0.pdf")]);
+    expect(tabsStore.getState().tabs).toHaveLength(MAX_TABS);
+    const all = [...toastStore.getState().visible, ...toastStore.getState().queue];
+    expect(all.map((t) => t.title)).toEqual([`Up to ${MAX_TABS} drawings can be open at once. Close one to open 3 files.`]);
+    // d0.pdf was open already: its tab is shown.
+    expect(viewerStore.getState().fileName).toBe("d0.pdf");
+  });
+
+  it("a copy hashed in the background closes without taking the shown tab's place", async () => {
+    await openFile("a.pdf", "sha-a");
+    // The copy and another drawing open together (one drop): the other one is shown.
+    openDocuments([file("a copy.pdf"), file("c.pdf")]);
+    await flush();
+    const [, copyWorker, cWorker] = workers;
+    const shown = tabsStore.getState().activeId;
+    expect(viewerStore.getState().fileName).toBe("c.pdf");
+    copyWorker.reply(copyWorker.last("render.open"), { sha256: "sha-a", pageCount: 1, pages: [PAGE], pageLabels: null, fromCache: false });
+    await flush();
+    expect(copyWorker.terminated).toBe(true);
+    expect(tabsStore.getState().tabs.map((t) => t.fileName)).toEqual(["a.pdf", "c.pdf"]);
+    expect(tabsStore.getState().activeId).toBe(shown);
+    expect(viewerStore.getState().fileName).toBe("c.pdf");
+    expect(cWorker.terminated).toBe(false);
+  });
+
+  it("closing the shown tab with a target that is gone falls back to the neighbour: a tab is always active", async () => {
+    await openFile("a.pdf", "sha-a");
+    await openFile("b.pdf", "sha-b");
+    await openFile("c.pdf", "sha-c");
+    const [a, b, c] = tabsStore.getState().tabs.map((t) => t.id);
+    viewerTabs.activate(b);
+    viewerTabs.close(b, "doc-gone");
+    expect(tabsStore.getState().activeId).toBe(c);
+    // A background tab closing with a target never changes the shown tab.
+    viewerTabs.close(a, c);
+    expect(tabsStore.getState().activeId).toBe(c);
+    expect(viewerStore.getState().fileName).toBe("c.pdf");
+  });
+
+  it("each open gets its own openSeq, never reused across tabs", async () => {
+    await openFile("a.pdf", "sha-a");
+    const seqA = viewerStore.getState().openSeq;
+    await openFile("b.pdf", "sha-b");
+    const seqB = viewerStore.getState().openSeq;
+    viewerTabs.activate(tabsStore.getState().tabs[0].id);
+    expect(viewerStore.getState().openSeq).toBe(seqA);
+    await openFile("c.pdf", "sha-c");
+    const seqC = viewerStore.getState().openSeq;
+    expect(new Set([seqA, seqB, seqC]).size).toBe(3);
+  });
+
+  it("a dismissed notice stays dismissed in its tab only", async () => {
+    await openFile("a.pdf", "sha-a");
+    dismissNotice("image-only");
+    const [a] = tabsStore.getState().tabs.map((t) => t.id);
+    await openFile("b.pdf", "sha-b");
+    expect(viewerStore.getState().dismissedNotices).toEqual([]);
+    viewerTabs.activate(a);
+    expect(viewerStore.getState().dismissedNotices).toEqual(["image-only"]);
+  });
+
+  it("another user's workspace starts empty: the previous user's tabs are closed", async () => {
+    viewerTabs.setOwner("user-1");
+    const w1 = await openFile("a.pdf", "sha-a");
+    viewerTabs.setOwner("user-1");
+    expect(tabsStore.getState().tabs).toHaveLength(1);
+    viewerTabs.setOwner("user-2");
+    expect(w1.terminated).toBe(true);
+    expect(tabsStore.getState().tabs).toEqual([]);
+    expect(viewerStore.getState()).toMatchObject({ status: "empty", fileName: null, file: null });
   });
 
   it("closing frees the tab's worker; the right neighbour, else the left, becomes active; the last returns to empty", async () => {
@@ -199,12 +270,12 @@ describe("viewerTabs", () => {
     expect(activations.at(-1)).toBeNull();
   });
 
-  it("the tab title is the shown page's sheet number, else the file name; a failure marks only its tab", async () => {
+  it("the tab title is always the file name (not the sheet number); a failure marks only its tab", async () => {
     await openFile("A1721-L17.pdf", "sha-17");
     const w2 = await openFile("broken.pdf", "sha-x");
     expect(tabsStore.getState().tabs[0].title).toBe("A1721-L17.pdf");
     viewerStore.setState({ sheetLabels: { 0: "S-101" } });
-    expect(tabsStore.getState().tabs[1].title).toBe("S-101");
+    expect(tabsStore.getState().tabs[1].title).toBe("broken.pdf");
     w2.posted.length = 0;
     // Retry opens the active tab's file again in the same tab.
     viewerTabs.retry();

@@ -6,7 +6,7 @@ import { useStore } from "zustand";
 import { dismissHint, showHint } from "@/components/ui/hint-store";
 
 import { CanvasViewport, type CanvasViewportProps } from "./canvas-viewport";
-import { viewerStore } from "./viewer-store";
+import { dismissNotice, viewerStore } from "./viewer-store";
 
 export const IMAGE_ONLY_HINT_ID = "image-only";
 export const IMAGE_ONLY_HINT =
@@ -35,17 +35,24 @@ export function DocumentViewer(props: CanvasViewportProps) {
   }, [shown, fileName]);
 
   // Image-only page notice (UX-DR11, UX-DR31): shown once per document; a new
-  // document clears it, Dismiss keeps it hidden for this one.
+  // document clears it. Dismiss keeps it hidden for this one, also when its tab
+  // is shown again (the dismissal is kept in the tab's state, Story 3.5).
+  const imageOnlyDismissed = useStore(viewerStore, (s) => s.dismissedNotices.includes(IMAGE_ONLY_HINT_ID));
   useEffect(() => {
-    if (imageOnly) showHint({ id: IMAGE_ONLY_HINT_ID, variant: "info", text: IMAGE_ONLY_HINT });
+    if (imageOnly && !imageOnlyDismissed) {
+      showHint({ id: IMAGE_ONLY_HINT_ID, variant: "info", text: IMAGE_ONLY_HINT, onDismiss: () => dismissNotice(IMAGE_ONLY_HINT_ID) });
+    }
     return () => dismissHint(IMAGE_ONLY_HINT_ID);
-  }, [imageOnly, openSeq]);
+  }, [imageOnly, imageOnlyDismissed, openSeq]);
 
   // Memory warning (AC 5, UX-DR31): once per document, when the tile budget ran out.
+  const memoryDismissed = useStore(viewerStore, (s) => s.dismissedNotices.includes(MEMORY_HINT_ID));
   useEffect(() => {
-    if (memoryPressure) showHint({ id: MEMORY_HINT_ID, variant: "warning", text: MEMORY_HINT });
+    if (memoryPressure && !memoryDismissed) {
+      showHint({ id: MEMORY_HINT_ID, variant: "warning", text: MEMORY_HINT, onDismiss: () => dismissNotice(MEMORY_HINT_ID) });
+    }
     return () => dismissHint(MEMORY_HINT_ID);
-  }, [memoryPressure, openSeq]);
+  }, [memoryPressure, memoryDismissed, openSeq]);
 
   return <CanvasViewport {...props} />;
 }

@@ -19,4 +19,4 @@ export {
   type ViewerStatus,
   type ViewerTool,
 } from "./viewer-store";
-export { openDocument, resetViewer, tabTitle, tabsStore, viewerTabs, type DocumentTab } from "./viewer-tabs";
+export { openDocument, openDocuments, resetViewer, tabTitle, tabsStore, viewerTabs, type DocumentTab } from "./viewer-tabs";

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useTransition, type RefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, useTransition, type RefObject } from "react";
 import { unstable_rethrow } from "next/navigation";
 import { useStore } from "zustand";
 
@@ -10,7 +10,15 @@ import { Toaster } from "@/components/ui/toast";
 import { toast } from "@/components/ui/toast-store";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { signOut } from "@/features/account/actions";
-import { DocumentTabs, DocumentViewer, PagePager, ThumbnailsPanel, usePageAnnouncement, viewerStore } from "@/features/viewer";
+import {
+  DocumentTabs,
+  DocumentViewer,
+  PagePager,
+  ThumbnailsPanel,
+  usePageAnnouncement,
+  viewerStore,
+  viewerTabs,
+} from "@/features/viewer";
 
 import { AccountMenu, type WorkspaceUser } from "./account-menu";
 import { EmptyWorkspace } from "./empty-workspace";
@@ -35,6 +43,9 @@ export type { WorkspaceUser } from "./account-menu";
  * right tool rail, bottom Markups panel and status bar. `data-region` marks the F6 stops.
  */
 export function WorkspaceShell({ user }: { user: WorkspaceUser }) {
+  // The open drawings belong to the signed-in user: another user's workspace starts empty.
+  // In render, before the canvas mounts and would reopen the previous user's tabs.
+  useMemo(() => viewerTabs.setOwner(user.id), [user.id]);
   return (
     <LayoutProvider userId={user.id}>
       <TooltipProvider>

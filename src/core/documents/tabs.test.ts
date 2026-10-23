@@ -8,6 +8,7 @@ import {
   cycleTab,
   fileKeyOf,
   findDuplicate,
+  TAB_SHORTCUTS,
   resolveTabKey,
   tileBudgets,
 } from "./tabs";
@@ -57,7 +58,16 @@ describe("document tabs", () => {
     expect(full.active).toBeGreaterThan(TOTAL_TILE_BUDGET / 2);
   });
 
-  it("maps the tab keys: Ctrl / Alt + PageDown / PageUp cycle, Ctrl+F4 closes", () => {
+  it("maps the tab keys: Alt (primary) / Ctrl + PageDown / PageUp cycle, Alt+W and Ctrl+F4 close", () => {
+    expect(resolveTabKey(key({ key: "w", code: "KeyW", altKey: true }))).toEqual({ type: "close" });
+    // macOS: Option+W prints "∑"; the physical key decides.
+    expect(resolveTabKey(key({ key: "∑", code: "KeyW", altKey: true }))).toEqual({ type: "close" });
+    expect(resolveTabKey(key({ key: "W", altKey: true }))).toEqual({ type: "close" });
+    // Plain W, Ctrl+W (the browser's), Ctrl+Alt+W and Shift+Alt+W (White-out is Shift+W) are not ours.
+    expect(resolveTabKey(key({ key: "w", code: "KeyW" }))).toBeNull();
+    expect(resolveTabKey(key({ key: "w", code: "KeyW", ctrlKey: true }))).toBeNull();
+    expect(resolveTabKey(key({ key: "w", code: "KeyW", ctrlKey: true, altKey: true }))).toBeNull();
+    expect(resolveTabKey(key({ key: "W", code: "KeyW", altKey: true, shiftKey: true }))).toBeNull();
     expect(resolveTabKey(key({ key: "PageDown", ctrlKey: true }))).toEqual({ type: "cycle", direction: 1 });
     expect(resolveTabKey(key({ key: "PageUp", ctrlKey: true }))).toEqual({ type: "cycle", direction: -1 });
     expect(resolveTabKey(key({ key: "PageDown", altKey: true }))).toEqual({ type: "cycle", direction: 1 });
@@ -68,5 +78,23 @@ describe("document tabs", () => {
     expect(resolveTabKey(key({ key: "PageDown", ctrlKey: true, altKey: true }))).toBeNull();
     expect(resolveTabKey(key({ key: "PageDown", ctrlKey: true, shiftKey: true }))).toBeNull();
     expect(resolveTabKey(key({ key: "F4", altKey: true }))).toBeNull();
+  });
+
+  it("lists the Alt keys first in the shortcut strings, and every listed key resolves to its action", () => {
+    const press = (s: string) => {
+      const parts = s.split("+");
+      const k = parts.at(-1)!;
+      return resolveTabKey(
+        key({ key: k === "W" ? "w" : k, code: k === "W" ? "KeyW" : undefined, altKey: parts.includes("Alt"), ctrlKey: parts.includes("Ctrl") }),
+      );
+    };
+    for (const [action, keys] of Object.entries(TAB_SHORTCUTS)) {
+      expect(keys.split(" ")[0]).toMatch(/^Alt\+/);
+      for (const shortcut of keys.split(" ")) {
+        expect(press(shortcut)).toEqual(
+          action === "close" ? { type: "close" } : { type: "cycle", direction: action === "next" ? 1 : -1 },
+        );
+      }
+    }
   });
 });
