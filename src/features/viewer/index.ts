@@ -10,6 +10,17 @@ export {
   usePageAnnouncement,
 } from "./page-pager";
 export { SearchPanel } from "./search-panel";
+export { cursorStore, setCursor, type CursorPoint } from "./status/cursor-store";
+export { SCALE_NOT_SET, scaleStateOf, type ScaleState } from "./status/scale-state";
+export {
+  DEFAULT_SNAP,
+  setSnap,
+  snapSettings,
+  useSnapSettingsPersistence,
+  type SnapKind,
+  type SnapSettings,
+} from "./status/snap-settings";
+export { CursorReadout, PageSizeItem, ScaleIndicator, SnapToggles, ZoomItem } from "./status/status-items";
 export { requestSearchFocus, searchUi } from "./search-ui";
 export { ThumbnailsPanel } from "./thumbnails-panel";
 export { activeSearch, viewerCommands, type ViewerCommand } from "./viewer-commands";

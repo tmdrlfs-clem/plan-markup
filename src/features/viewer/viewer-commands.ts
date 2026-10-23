@@ -9,6 +9,8 @@ import type { ThumbnailBox, ThumbnailListener } from "./viewer-engine";
 
 export interface ViewerCommandTarget {
   zoomStep(direction: 1 | -1): void;
+  /** Story 3.7 (absent on test doubles): zoom to a percentage, 100 % = actual size. */
+  zoomToPercent?(percent: number): void;
   fitPage(): void;
   fitWidth(): void;
   rotate(delta: 90 | -90): void;
@@ -43,6 +45,8 @@ export const activeSearch = createStore<{ search: DocumentSearch | null }>(() =>
 export const viewerCommands = {
   zoomIn: () => target?.zoomStep(1),
   zoomOut: () => target?.zoomStep(-1),
+  /** The status bar's zoom menu (Story 3.7): 50 / 100 / 200 / 400 %. */
+  zoomTo: (percent: number) => target?.zoomToPercent?.(percent),
   fitPage: () => target?.fitPage(),
   fitWidth: () => target?.fitWidth(),
   rotateClockwise: () => target?.rotate(90),
@@ -66,4 +70,4 @@ export const viewerThumbnails = {
 };
 
 /** The commands without arguments (toolbar buttons and menu items). */
-export type ViewerCommand = Exclude<keyof typeof viewerCommands, "goToPage">;
+export type ViewerCommand = Exclude<keyof typeof viewerCommands, "goToPage" | "zoomTo">;

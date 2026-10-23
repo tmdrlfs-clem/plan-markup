@@ -1171,6 +1171,18 @@ describe("ViewerEngine: search (Story 3.6)", () => {
       expect(cursor()!.y).toBeCloseTo(120, 6);
     });
 
+    it("zooms to a percentage of actual size about the centre (the zoom menu)", async () => {
+      const { client, engine } = setup();
+      await readyAtFit(client, engine);
+      const { centerX, centerY } = engine.view;
+      engine.zoomToPercent(200);
+      expect(engine.view.zoom).toBeCloseTo((2 * 96) / 72, 9);
+      expect(engine.view.centerX).toBeCloseTo(centerX, 6);
+      expect(engine.view.centerY).toBeCloseTo(centerY, 6);
+      engine.zoomToPercent(0);
+      expect(engine.view.zoom).toBeCloseTo((2 * 96) / 72, 9);
+    });
+
     it("a background tab clears the readout and publishes nothing", async () => {
       const { client, engine } = setup();
       await readyAtFit(client, engine);

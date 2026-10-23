@@ -7,14 +7,16 @@ import { cx } from "./cx";
 import { toAriaKeyShortcuts } from "./shortcut";
 import { Tooltip } from "./tooltip";
 
-export type IconButtonSize = "sm" | "md";
+/** `xs` (24 px) fits the 24 px status bar (Story 3.7's snap toggles). */
+export type IconButtonSize = "xs" | "sm" | "md";
 
 const SIZE_CLASS: Record<IconButtonSize, string> = {
+  xs: "h-6 w-6",
   sm: "h-7 w-7",
   md: "h-8 w-8",
 };
 
-const ICON_PX: Record<IconButtonSize, number> = { sm: 16, md: 18 };
+const ICON_PX: Record<IconButtonSize, number> = { xs: 14, sm: 16, md: 18 };
 
 /** Shared look of IconButton, ToggleButton and toggle-group items. */
 export function iconButtonClasses(size: IconButtonSize, extra?: string): string {

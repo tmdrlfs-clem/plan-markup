@@ -37,10 +37,12 @@ export interface ToggleButtonProps
   shortcut?: string;
   disabledReason?: string;
   size?: IconButtonSize;
+  /** Tooltip text when it says more than the label (Story 3.7's snap toggles); the label by default. */
+  tooltip?: string;
 }
 
 export const ToggleButton = forwardRef<HTMLButtonElement, ToggleButtonProps>(function ToggleButton(
-  { label, icon: Icon, shortcut, disabledReason, size = "sm", disabled, className, onClick, ...props },
+  { label, icon: Icon, shortcut, disabledReason, size = "sm", tooltip, disabled, className, onClick, ...props },
   ref,
 ) {
   function handleClick(event: MouseEvent<HTMLButtonElement>) {
@@ -53,7 +55,7 @@ export const ToggleButton = forwardRef<HTMLButtonElement, ToggleButtonProps>(fun
   }
 
   return (
-    <Tooltip content={disabled && disabledReason ? disabledReason : label} shortcut={disabled ? undefined : shortcut}>
+    <Tooltip content={disabled && disabledReason ? disabledReason : (tooltip ?? label)} shortcut={disabled ? undefined : shortcut}>
       <TogglePrimitive.Root
         ref={ref}
         aria-label={label}

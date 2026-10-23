@@ -54,6 +54,7 @@ import {
   type TileRef,
 } from "@/core/render/tiles";
 import {
+  ACTUAL_SIZE,
   clampView,
   clampZoom,
   fitPageView,
@@ -896,6 +897,12 @@ export class ViewerEngine {
   zoomBy(factor: number, at?: Point): void {
     const point = at ?? { x: this.viewport.width / 2, y: this.viewport.height / 2 };
     this.setView(zoomAt(this.view, this.viewport, point, factor));
+  }
+
+  /** Zoom to `percent` (Revu-style: 100 % = actual size) about the viewport centre (the status bar's zoom menu). */
+  zoomToPercent(percent: number): void {
+    if (!this.page || !(percent > 0)) return;
+    this.zoomBy(((percent / 100) * ACTUAL_SIZE) / this.view.zoom);
   }
 
   /** One √2 step in (1) or out (-1). */

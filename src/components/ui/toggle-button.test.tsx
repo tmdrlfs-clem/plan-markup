@@ -10,6 +10,16 @@ import { ToggleButton } from "./toggle-button";
 import { ToggleGroup, ToggleGroupItem } from "./toggle-group";
 
 describe("ToggleButton", () => {
+  it("xs size fits the 24 px status bar; a tooltip can say more than the label (Story 3.7)", async () => {
+    const user = userEvent.setup();
+    render(<ToggleButton label="Snap to grid" icon={Grid3x3} size="xs" tooltip="Snap to grid: tools will snap to the grid" />);
+    const button = screen.getByRole("button", { name: "Snap to grid" });
+    expect(button).toHaveClass("h-6", "w-6");
+    expect(button.querySelector("svg")).toHaveAttribute("width", "14");
+    await user.hover(button);
+    expect(await screen.findByRole("tooltip", {}, { timeout: 2000 })).toHaveTextContent("Snap to grid: tools will snap to the grid");
+  });
+
   it("toggles with Space and Enter and reports aria-pressed", async () => {
     const user = userEvent.setup();
     const onPressedChange = vi.fn();

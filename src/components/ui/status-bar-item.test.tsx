@@ -49,4 +49,15 @@ describe("StatusBarItem", () => {
     await user.hover(screen.getByRole("button"));
     expect(await screen.findByRole("tooltip", {}, { timeout: 2000 })).toHaveTextContent("Set zoom");
   });
+
+  it("forwards a ref and extra props; asButton makes a button for a menu trigger; iconOnly keeps the label for assistive technology (Story 3.7)", () => {
+    const ref = { current: null as HTMLElement | null };
+    const { rerender } = render(<StatusBarItem ref={ref} label="106%" asButton data-testid="zoom" aria-haspopup="menu" />);
+    const button = screen.getByRole("button", { name: "106%" });
+    expect(ref.current).toBe(button);
+    expect(button).toHaveAttribute("data-testid", "zoom");
+    expect(button).toHaveAttribute("aria-haspopup", "menu");
+    rerender(<StatusBarItem label="A1 841 × 594 mm" icon={Ruler} iconOnly />);
+    expect(screen.getByText("A1 841 × 594 mm")).toHaveClass("sr-only");
+  });
 });
