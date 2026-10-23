@@ -2,6 +2,9 @@
 // CanvasViewport registers its engine; with no document the commands do nothing
 // (and the workspace shows them disabled).
 
+import { createStore } from "zustand/vanilla";
+
+import type { DocumentSearch } from "./document-search";
 import type { ThumbnailBox, ThumbnailListener } from "./viewer-engine";
 
 export interface ViewerCommandTarget {
@@ -17,6 +20,8 @@ export interface ViewerCommandTarget {
   /** Story 3.4 (absent on test doubles): see ViewerEngine.thumbnail / sheetLabel. */
   thumbnail?(index: number, box: ThumbnailBox, listener: ThumbnailListener): () => void;
   sheetLabel?(index: number): () => void;
+  /** Story 3.6 (absent on test doubles): the document's text search. */
+  readonly search?: DocumentSearch;
 }
 
 let target: ViewerCommandTarget | null = null;
@@ -24,10 +29,16 @@ let target: ViewerCommandTarget | null = null;
 /** Makes `engine` the target of the view commands; returns the unregister function. */
 export function registerViewerEngine(engine: ViewerCommandTarget): () => void {
   target = engine;
+  activeSearch.setState({ search: engine.search ?? null });
   return () => {
-    if (target === engine) target = null;
+    if (target !== engine) return;
+    target = null;
+    activeSearch.setState({ search: null });
   };
 }
+
+/** The search of the active document tab (Story 3.6): the Search panel and F3 follow it. */
+export const activeSearch = createStore<{ search: DocumentSearch | null }>(() => ({ search: null }));
 
 export const viewerCommands = {
   zoomIn: () => target?.zoomStep(1),

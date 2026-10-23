@@ -59,6 +59,7 @@ import {
   fitPageView,
   fitWidthView,
   panBy,
+  pageToScreen,
   pageToScreenMatrix,
   rotateView,
   rotatedSize,
@@ -73,9 +74,13 @@ import {
   type Rect,
   type ViewState,
 } from "@/core/render/view";
+import { readCanvasTokens } from "@/components/ui/tokens";
+import type { Quad } from "@/core/search/page-text";
 import type { ContentFlags, PageInfo, TilePayload } from "@/workers/render-protocol";
 import { WorkerRequestError, type RenderClient } from "@/workers/rpc";
 
+import { DocumentSearch } from "./document-search";
+import { searchUi } from "./search-ui";
 import type { ViewerErrorCode, ViewerState } from "./viewer-store";
 
 /** CSS px kept free around the page at fit. */
@@ -89,6 +94,13 @@ const ONE_TO_ONE = 1e-9;
 const BACKDROP = "#e5e7eb";
 const PAGE = "#ffffff";
 const ZOOM_RECT = "#e8620c";
+/** Search highlights (Story 3.6) in the accent colour: every hit, and the current one stronger. */
+const HIT_ALPHA = 0.3;
+const CURRENT_ALPHA = 0.55;
+/** A hit smaller than this on screen (CSS px) is zoomed in to it when shown (3.6 AC 3). */
+export const MIN_HIT_PX = 24;
+/** Space kept around a hit brought into view (CSS px). */
+const HIT_MARGIN = 32;
 
 export type ViewerCanvases = { tiles: HTMLCanvasElement; markups: HTMLCanvasElement; active: HTMLCanvasElement };
 
@@ -243,7 +255,36 @@ export class ViewerEngine {
     this.now = options.now ?? (() => performance.now());
     this.requestFrame = options.requestFrame ?? ((cb) => requestAnimationFrame(cb));
     this.cancelFrame = options.cancelFrame ?? ((id) => cancelAnimationFrame(id));
+    // eslint-disable-next-line @typescript-eslint/no-this-alias -- the search host's getters read this engine.
+    const engine = this;
+    this.search = new DocumentSearch(
+      {
+        get pageCount() {
+          return engine.pages.length;
+        },
+        get currentPage() {
+          return engine.pageIndex;
+        },
+        requestText: (page) => {
+          const call = this.client.request("render.text", { page: page + 1 });
+          return { promise: call.promise, cancel: () => this.client.cancel([call.reqId]) };
+        },
+        revealHit: (page, bounds, textHeight) => this.revealHit(page, bounds, textHeight),
+        changed: () => this.invalidate(),
+        highlightsAllowed: () => searchUi.getState().panelOpen,
+      },
+      this.now,
+    );
+    this.unsubscribeSearchUi = searchUi.subscribe((s, prev) => {
+      if (s.panelOpen !== prev.panelOpen) this.invalidate();
+    });
   }
+
+  /** Text search in this document (Story 3.6): per engine, so per document tab. */
+  readonly search: DocumentSearch;
+  private readonly unsubscribeSearchUi: () => void;
+  /** The accent colour for search highlights (read once from the theme). */
+  private highlightColor: string | null = null;
 
   // ---- lifecycle ----------------------------------------------------------
 
@@ -271,6 +312,7 @@ export class ViewerEngine {
     // Not shown: evictions from here on are no memory warning.
     this.needed = new Set();
     this.zoomRect = null;
+    this.search.pause();
   }
 
   /** The tab is active again: the host has sized the canvases (setViewport); draw and settle. */
@@ -285,6 +327,7 @@ export class ViewerEngine {
     this.frame = null;
     this.draw();
     if (this.page && this.previewFinal) this.scheduleSettle(0);
+    this.search.resume();
   }
 
   get isSuspended(): boolean {
@@ -310,6 +353,8 @@ export class ViewerEngine {
     if (this.frame !== null) this.cancelFrame(this.frame);
     if (this.settleTimer) clearTimeout(this.settleTimer);
     this.resetDocument();
+    this.search.destroy();
+    this.unsubscribeSearchUi();
     this.client.terminate();
   }
 
@@ -392,6 +437,7 @@ export class ViewerEngine {
       pageLabels: this.pageLabels,
       sheetLabels: {},
     });
+    this.search.reset(this.pages.length);
     this.invalidate();
     await this.loadPreview(generation);
   }
@@ -766,6 +812,8 @@ export class ViewerEngine {
     this.shownZoom = null;
     if (this.settleTimer) clearTimeout(this.settleTimer);
     this.settleTimer = null;
+    // Texts and hits belong to the document (the query stays). Not after destroy: the search is gone.
+    if (!this.destroyed) this.search.reset(0);
     this.invalidate();
   }
 
@@ -1185,6 +1233,7 @@ export class ViewerEngine {
       c.setTransform(1, 0, 0, 1, 0, 0);
       c.clearRect(0, 0, layer.width, layer.height);
     }
+    if (this.page) this.drawSearchHighlights();
     if (this.zoomRect) this.drawZoomRect(this.zoomRect);
     this.publishView();
     if (this.pendingPartial) {
@@ -1214,6 +1263,89 @@ export class ViewerEngine {
     c.setLineDash([4 * k, 3 * k]);
     c.strokeRect(Math.round(r.x * k) + 0.5, Math.round(r.y * k) + 0.5, Math.round(r.width * k), Math.round(r.height * k));
     c.restore();
+  }
+
+  /**
+   * Search highlights on the active layer (Story 3.6 AC 3): vector quads in
+   * page space under the view transform, so they stay crisp at every zoom and
+   * follow the view rotation. Every hit is a translucent accent fill; the
+   * current hit is stronger and outlined.
+   */
+  private drawSearchHighlights(): void {
+    const marks = this.search.highlights(this.pageIndex);
+    if (!marks) return;
+    const c = this.canvases.active.getContext("2d");
+    if (!c) return;
+    this.highlightColor ??= this.readHighlightColor();
+    const m = this.deviceMatrix();
+    const path = (quads: readonly Quad[]) => {
+      for (const q of quads) {
+        c.moveTo(m[0] * q[0] + m[2] * q[1] + m[4], m[1] * q[0] + m[3] * q[1] + m[5]);
+        for (let i = 2; i < 8; i += 2) c.lineTo(m[0] * q[i] + m[2] * q[i + 1] + m[4], m[1] * q[i] + m[3] * q[i + 1] + m[5]);
+        c.closePath();
+      }
+    };
+    c.save();
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.fillStyle = this.highlightColor;
+    c.strokeStyle = this.highlightColor;
+    c.globalAlpha = HIT_ALPHA;
+    c.beginPath();
+    for (const quads of marks.hits) if (quads !== marks.current) path(quads);
+    c.fill();
+    if (marks.current) {
+      c.globalAlpha = CURRENT_ALPHA;
+      c.beginPath();
+      path(marks.current);
+      c.fill();
+      c.globalAlpha = 1;
+      c.lineWidth = Math.max(1, Math.round(1.5 * this.dpr));
+      c.stroke();
+    }
+    c.restore();
+  }
+
+  private readHighlightColor(): string {
+    try {
+      return readCanvasTokens(this.canvases.active).selection || ZOOM_RECT;
+    } catch {
+      return ZOOM_RECT;
+    }
+  }
+
+  /** Shows page `page` (0-based) and brings a page-space rectangle into view (a search hit of text `textHeight` points tall). */
+  revealHit(page: number, bounds: Rect, textHeight?: number): void {
+    if (page !== this.pageIndex) this.goToPage(page);
+    this.revealRect(bounds, textHeight);
+  }
+
+  /**
+   * Brings a page-space rectangle into view with HIT_MARGIN around it. The zoom
+   * only increases, and only when the text (`textHeight` points tall; without
+   * it, the rectangle's smaller side on screen) would be under MIN_HIT_PX on
+   * screen; otherwise the view pans only when the rectangle is not already
+   * fully in view (centred on it).
+   */
+  revealRect(rect: Rect, textHeight?: number): void {
+    if (!this.page) return;
+    const corners = [
+      { x: rect.x, y: rect.y },
+      { x: rect.x + rect.width, y: rect.y },
+      { x: rect.x + rect.width, y: rect.y + rect.height },
+      { x: rect.x, y: rect.y + rect.height },
+    ].map((p) => pageToScreen(this.view, this.viewport, p));
+    const xs = corners.map((p) => p.x);
+    const ys = corners.map((p) => p.y);
+    const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+    const size = textHeight !== undefined && textHeight > 0 ? textHeight * this.view.zoom : Math.min(x1 - x0, y1 - y0);
+    const zoom = size > 0 && size < MIN_HIT_PX ? clampZoom((this.view.zoom * MIN_HIT_PX) / size) : this.view.zoom;
+    const { width, height } = this.viewport;
+    const inView = x0 >= HIT_MARGIN && y0 >= HIT_MARGIN && x1 <= width - HIT_MARGIN && y1 <= height - HIT_MARGIN;
+    if (zoom === this.view.zoom && inView) {
+      this.invalidate();
+      return;
+    }
+    this.setView({ ...this.view, zoom, centerX: rect.x + rect.width / 2, centerY: rect.y + rect.height / 2 });
   }
 
   /** Zoom % to the store (only when it changes) and the view to `data-view` (e2e, diagnostics). */

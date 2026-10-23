@@ -3,7 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RenderPayloadMap, RenderVerb } from "@/workers/render-protocol";
 import { WorkerRequestError, type RenderClient } from "@/workers/rpc";
 
-import { ViewerEngine, clearDocumentViews, type ViewerCanvases } from "./viewer-engine";
+import { buildPageText } from "@/core/search/page-text";
+
+import { searchUi } from "./search-ui";
+import { MIN_HIT_PX, ViewerEngine, clearDocumentViews, type ViewerCanvases } from "./viewer-engine";
 import { canvasStateOf, type ViewerState } from "./viewer-store";
 
 type Call = {
@@ -1001,5 +1004,100 @@ describe("ViewerEngine: background tab (Story 3.5)", () => {
     expect(engine.tileBytes).toBe(0);
     expect(engine.tileBudget).toBe(0);
     expect(state.memoryPressure).toBe(false);
+  });
+});
+
+describe("ViewerEngine: search (Story 3.6)", () => {
+  async function openTwoPages(client: FakeClient, engine: ViewerEngine) {
+    void engine.open(file());
+    await flush();
+    client.last("render.open").resolve({ sha256: "s", pageCount: 2, pages: [PAGE, PAGE], fromCache: false });
+    await flush();
+    client.last("render.preview").resolve({ tile: tilePayload(1), content: null });
+    await flush();
+    paint();
+  }
+
+  const text = (str: string, x: number, y: number) => {
+    const items = [{ str, x, y, width: str.length * 6, fontSize: 10, quad: [x, y + 2, x + str.length * 6, y + 2, x + str.length * 6, y - 8, x, y - 8] as const, eol: false }];
+    return { items, index: buildPageText(items) };
+  };
+
+  afterEach(() => searchUi.setState({ panelOpen: false }));
+
+  it("reveals a small rectangle: zooms in to MIN_HIT_PX and centres it; one already in view is left alone", async () => {
+    const { client, engine } = setup();
+    await openTwoPages(client, engine);
+    const before = engine.view;
+    // 40 x 30 pt in the middle of the page at zoom 1: in view and large enough.
+    engine.revealRect({ x: 400, y: 200, width: 40, height: 30 });
+    expect(engine.view).toEqual(before);
+    // A long phrase of 10 pt text: its text height decides (10 px < 24), not its box.
+    engine.revealRect({ x: 400, y: 200, width: 200, height: 30 }, 30);
+    expect(engine.view).toEqual(before);
+    // 5 pt tall at zoom 1 is 5 px: zoom x 24 / 5, centred on it.
+    engine.revealRect({ x: 900, y: 450, width: 30, height: 5 });
+    expect(engine.view.zoom).toBeCloseTo((before.zoom * MIN_HIT_PX) / 5, 6);
+    expect(engine.currentFitMode).toBeNull();
+    // Out of view at the new zoom: centred without zooming further.
+    const zoom = engine.view.zoom;
+    engine.revealRect({ x: 10, y: 10, width: 30, height: 10 });
+    expect(engine.view.zoom).toBe(zoom);
+    expect(engine.view.centerX).toBeGreaterThan(10); // clamped to the page edge area, not beyond
+  });
+
+  it("searches the document's text through render.text, moves to hits across pages, and draws highlights while the panel is open", async () => {
+    const fills: number[] = [];
+    const ctx = {
+      setTransform: vi.fn(),
+      clearRect: vi.fn(),
+      save: vi.fn(),
+      restore: vi.fn(),
+      beginPath: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      closePath: vi.fn(),
+      fill: () => fills.push(1),
+      stroke: vi.fn(),
+      strokeRect: vi.fn(),
+      setLineDash: vi.fn(),
+    };
+    const { client, engine, canvases } = setup();
+    (canvases.active as unknown as { getContext: () => unknown }).getContext = () => ctx;
+    await openTwoPages(client, engine);
+    searchUi.setState({ panelOpen: true });
+    engine.search.setQuery("valve");
+    engine.search.flush();
+    const texts = client.all("render.text");
+    expect(texts.map((c) => c.payload)).toEqual([{ page: 1 }, { page: 2 }]);
+    texts[0].resolve(text("NOTES", 100, 100));
+    texts[1].resolve(text("VALVE", 500, 300));
+    await flush();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(engine.search.store.getState().hits).toHaveLength(1);
+    engine.search.step(1);
+    expect(engine.currentPage).toBe(1);
+    paint();
+    expect(fills.length).toBeGreaterThanOrEqual(1);
+    // Panel closed: no highlights.
+    fills.length = 0;
+    searchUi.setState({ panelOpen: false });
+    paint();
+    expect(fills).toHaveLength(0);
+  });
+
+  it("a background tab cancels its text requests; a new document drops the texts but keeps the query", async () => {
+    const { client, engine } = setup();
+    await openTwoPages(client, engine);
+    engine.search.setQuery("x");
+    engine.search.flush();
+    const ids = client.all("render.text").map((c) => c.reqId);
+    engine.suspend();
+    expect(client.cancelled).toEqual(expect.arrayContaining(ids));
+    engine.resume();
+    expect(client.all("render.text")).toHaveLength(4);
+    void engine.open(file("b.pdf"));
+    await flush();
+    expect(engine.search.store.getState()).toMatchObject({ query: "x", hits: [], pageCount: 0 });
   });
 });
