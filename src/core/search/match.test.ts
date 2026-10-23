@@ -83,6 +83,17 @@ describe("matchQuads", () => {
     expect(boundsOf([])).toBeNull();
   });
 
+  it("covers an astral character whole (two code units), not half of it (review R12)", () => {
+    // "A😀B" is 4 code units; the match "😀" is units 1..3 of the item.
+    const items = [item("A\u{1F600}B", 0, 100, 40)];
+    const page = buildPageText(items);
+    const [m] = findMatches(page, normalizeQuery("\u{1F600}"), ANY);
+    expect(m).toBeDefined();
+    const [q] = matchQuads(items, page, m);
+    expect(q[0]).toBeCloseTo(10);
+    expect(q[2]).toBeCloseTo(30);
+  });
+
   it("slices rotated quads along their own baseline", () => {
     // A quad running down the page.
     const q = [0, 0, 0, 100, -10, 100, -10, 0] as const;

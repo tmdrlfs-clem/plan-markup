@@ -14,6 +14,7 @@
 
 import { createStore } from "zustand/vanilla";
 
+import { nearbyText, sortByPosition } from "@/core/search/context";
 import { boundsOf, findMatches, matchQuads, snippetOf, type SearchOptions } from "@/core/search/match";
 import { normalizeQuery, type Quad } from "@/core/search/page-text";
 import type { Rect } from "@/core/render/view";
@@ -26,8 +27,20 @@ export const SLICE_MS = 8;
 
 export type SearchSnippet = { before: string; match: string; after: string };
 
-/** One result: its page (0-based), an excerpt, its quads in page space, their box and the text height (points). */
-export type SearchHit = { page: number; snippet: SearchSnippet; quads: Quad[]; bounds: Rect; textHeight: number };
+/**
+ * One result: its page (0-based), its place in the page's normalised text
+ * ([start, end)), an excerpt (the fallback description), its quads in page
+ * space, their box and the text height (points).
+ */
+export type SearchHit = {
+  page: number;
+  start: number;
+  end: number;
+  snippet: SearchSnippet;
+  quads: Quad[];
+  bounds: Rect;
+  textHeight: number;
+};
 
 export type SearchState = {
   query: string;
@@ -36,7 +49,7 @@ export type SearchState = {
   /** Pages whose text has been searched for the current query, of `pageCount`. */
   pagesDone: number;
   pageCount: number;
-  /** Results in page order. */
+  /** Results in page order; within a page by position (top to bottom, left to right). */
   hits: SearchHit[];
   /** Index of the current hit in `hits`, or -1. */
   current: number;
@@ -102,6 +115,10 @@ export class DocumentSearch {
   /** Hits per page for the current query (null: not searched yet). */
   private perPage: (SearchHit[] | null)[] = [];
   private currentKey: Key | null = null;
+  /** Next / previous asked for before the results were in (Enter right after typing): done on the first results. */
+  private pendingStep: 1 | -1 | null = null;
+  /** The nearby text of each hit, worked out when its row is shown. */
+  private nearby = new WeakMap<SearchHit, string[]>();
   private debounce: ReturnType<typeof setTimeout> | null = null;
   private slice: ReturnType<typeof setTimeout> | null = null;
   /** Bumped per document and per run: late text or slices for an older one are dropped. */
@@ -129,6 +146,7 @@ export class DocumentSearch {
     this.failed = new Set();
     this.perPage = [];
     this.currentKey = null;
+    this.pendingStep = null;
     this.documentGeneration++;
     this.generation++;
     this.store.setState({ pageCount, pagesDone: 0, hits: [], current: -1, noText: [], failedPages: 0 });
@@ -164,6 +182,7 @@ export class DocumentSearch {
   /** The query as typed: shown at once, searched after DEBOUNCE_MS. */
   setQuery(query: string): void {
     if (query === this.state.query) return;
+    this.pendingStep = null;
     this.store.setState({ query, visible: true });
     if (this.debounce) clearTimeout(this.debounce);
     this.debounce = setTimeout(() => {
@@ -207,7 +226,14 @@ export class DocumentSearch {
   /** Next (1) or previous (-1) hit, wrapping around; from the shown page when none is current. */
   step(direction: 1 | -1): void {
     if (this.debounce) this.flush();
+    if (!this.active()) return;
     const { hits, current } = this.state;
+    if (current < 0 && !this.readyToStep(direction)) {
+      // The results are not in yet (Enter right after typing): move once they are.
+      this.pendingStep = direction;
+      return;
+    }
+    this.pendingStep = null;
     if (hits.length === 0) return;
     let index: number;
     let wrapped = false;
@@ -255,6 +281,20 @@ export class DocumentSearch {
     this.host.changed();
   }
 
+  /**
+   * The text nearest to a hit on the sheet (src/core/search/context.ts), to
+   * tell hits with the same text apart; worked out once per hit, when asked.
+   */
+  nearbyOf(hit: SearchHit): string[] {
+    let near = this.nearby.get(hit);
+    if (near) return near;
+    const text = this.texts.get(hit.page);
+    if (!text) return [];
+    near = nearbyText(text.items, text.index, { start: hit.start, end: hit.end }, hit.bounds, hit.textHeight);
+    this.nearby.set(hit, near);
+    return near;
+  }
+
   // ---- highlights -------------------------------------------------------------
 
   /** The highlights of page `page` (0-based), or null when none show. */
@@ -274,6 +314,25 @@ export class DocumentSearch {
 
   private active(): boolean {
     return normalizeQuery(this.state.query).text !== "";
+  }
+
+  /**
+   * Whether next / previous from the shown page can be decided yet: every page
+   * is matched, or the pages from the shown one to the nearest hit in that
+   * direction are (a page not matched yet could hold a nearer hit).
+   */
+  private readyToStep(direction: 1 | -1): boolean {
+    if (this.debounce) return false;
+    const pageCount = this.perPage.length;
+    if (pageCount === 0) return false;
+    if (this.perPage.every((p) => p !== null)) return true;
+    const shown = Math.min(Math.max(0, this.host.currentPage), pageCount - 1);
+    for (let page = shown; page >= 0 && page < pageCount; page += direction) {
+      const onPage = this.perPage[page];
+      if (onPage === null) return false;
+      if (onPage.length > 0) return true;
+    }
+    return false;
   }
 
   private clearTimers(): void {
@@ -296,8 +355,10 @@ export class DocumentSearch {
     this.slice = null;
     const { pageCount } = this.state;
     this.perPage = Array.from({ length: pageCount }, () => null);
+    // A new query or new options: the old current hit means nothing in the new results.
+    this.currentKey = null;
     if (!this.active() || pageCount === 0) {
-      this.currentKey = null;
+      this.pendingStep = null;
       this.store.setState({ hits: [], current: -1, pagesDone: 0 });
       this.host.changed();
       return;
@@ -373,11 +434,13 @@ export class DocumentSearch {
         break;
       }
       matched++;
-      this.perPage[page] = findMatches(text.index, needle, options).map((m) => {
-        const quads = matchQuads(text.items, text.index, m);
-        const bounds = boundsOf(quads) ?? { x: 0, y: 0, width: 0, height: 0 };
-        return { page, snippet: snippetOf(text.index, m), quads, bounds, textHeight: textHeightOf(quads) };
-      });
+      this.perPage[page] = sortByPosition(
+        findMatches(text.index, needle, options).map((m): SearchHit => {
+          const quads = matchQuads(text.items, text.index, m);
+          const bounds = boundsOf(quads) ?? { x: 0, y: 0, width: 0, height: 0 };
+          return { page, start: m.start, end: m.end, snippet: snippetOf(text.index, m), quads, bounds, textHeight: textHeightOf(quads) };
+        }),
+      );
       changed = true;
     }
     if (changed) this.publish();
@@ -400,5 +463,11 @@ export class DocumentSearch {
     }
     this.store.setState({ hits, pagesDone, current });
     this.host.changed();
+    // Enter / F3 pressed before the results were in.
+    if (this.pendingStep !== null && this.readyToStep(this.pendingStep)) {
+      const direction = this.pendingStep;
+      this.pendingStep = null;
+      if (hits.length > 0 && this.state.current < 0) this.step(direction);
+    }
   }
 }

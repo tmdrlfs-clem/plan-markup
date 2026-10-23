@@ -52,4 +52,5 @@ export const CONTRAST_PAIRS: ContrastPair[] = [
   { kind: "ui", fg: "--info", bg: "--surface-1", label: "info icon on surface-1" },
   { kind: "ui", fg: "--canvas-snap", bg: CANVAS_SHEET, label: "canvas snap glyph on sheet" },
   { kind: "ui", fg: "--canvas-danger", bg: CANVAS_SHEET, label: "canvas rule-break marker on sheet" },
+  { kind: "ui", fg: "--canvas-search-outline", bg: CANVAS_SHEET, label: "current search hit outline on sheet" },
 ];

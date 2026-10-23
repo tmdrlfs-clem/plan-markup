@@ -108,6 +108,20 @@ export function tileCacheKey(sha256: string, req: TileRequestPayload): string {
   return `${sha256}:${req.page}:s${scaleStep(req.scale)}:${req.tileSize}:${req.col}:${req.row}`;
 }
 
+/**
+ * Pages whose text items the worker holds in memory (least recently used
+ * first out); the rest come back from IndexedDB. The main thread's search
+ * keeps its own copy of what it searches.
+ */
+export const TEXT_PAGES_IN_MEMORY = 32;
+
+/** Keeps a page's text items in memory as the most recently used, dropping the oldest past TEXT_PAGES_IN_MEMORY. */
+export function holdText(doc: { text: Map<number, TextItem[]> }, page: number, items: TextItem[]): void {
+  doc.text.delete(page);
+  doc.text.set(page, items);
+  while (doc.text.size > TEXT_PAGES_IN_MEMORY) doc.text.delete(doc.text.keys().next().value!);
+}
+
 /** IndexedDB key of a page's text items (v1: the TextItem shape of src/core/search/page-text.ts). */
 export function textCacheKey(sha256: string, page: number): string {
   return `${sha256}:${page}:text:v1`;
@@ -495,12 +509,15 @@ export class RenderWorkerHost<B> {
    */
   private async readText(doc: Doc, pageNo: number, signal: AbortSignal, wait: boolean): Promise<TextItem[] | null> {
     const held = doc.text.get(pageNo);
-    if (held) return held;
+    if (held) {
+      holdText(doc, pageNo, held);
+      return held;
+    }
     const key = textCacheKey(doc.sha256, pageNo);
     const stored = (await this.cache?.getText?.(key).catch(() => null)) ?? null;
     if (signal.aborted) throw CANCELLED();
     if (stored) {
-      doc.text.set(pageNo, stored);
+      holdText(doc, pageNo, stored);
       return stored;
     }
     if (!doc.parsed && !wait) return null;
@@ -508,7 +525,7 @@ export class RenderWorkerHost<B> {
     if (signal.aborted) throw CANCELLED();
     const items = this.renderer.pageText ? await this.renderer.pageText(pageNo, signal) : [];
     if (signal.aborted) throw CANCELLED();
-    doc.text.set(pageNo, items);
+    holdText(doc, pageNo, items);
     void this.cache?.putText?.(key, items).catch(() => undefined);
     return items;
   }

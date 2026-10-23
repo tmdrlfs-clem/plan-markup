@@ -681,6 +681,8 @@ So that I can find room names, notes and tags fast.
 **And** an image-only page reports "No searchable text on this page"
 **And** text extraction runs in a worker and never blocks the canvas
 
+**Follow-up (post-3.x, founder 2026-10-24, not scheduled):** "Search all open drawings" — a Search panel option that searches every open document tab (Revu's "all open documents"), results grouped by drawing then page. Deferred from the 3.6 review; the per-tab `DocumentSearch` engines can be queried together when it is picked up.
+
 ### Story 3.7: Status bar with page size, scale, snap, cursor and zoom
 
 As a drafter,

@@ -109,12 +109,14 @@ export function matchQuads(items: readonly TextItem[], page: PageTextIndex, matc
     const item = page.charItem[k];
     if (item < 0) continue;
     const offset = page.charOffset[k];
+    // The source character's whole length: an astral character is two code units.
+    const end = offset + ((items[item]?.str.codePointAt(offset) ?? 0) > 0xffff ? 2 : 1);
     const span = spans.get(item);
     if (span) {
       span.lo = Math.min(span.lo, offset);
-      span.hi = Math.max(span.hi, offset + 1);
+      span.hi = Math.max(span.hi, end);
     } else {
-      spans.set(item, { lo: offset, hi: offset + 1 });
+      spans.set(item, { lo: offset, hi: end });
     }
   }
   const quads: Quad[] = [];

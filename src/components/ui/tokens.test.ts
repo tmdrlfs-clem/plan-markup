@@ -33,6 +33,9 @@ describe("readCanvasTokens", () => {
       "--canvas-coverage-fill": "rgba(108, 168, 255, 0.18)",
       "--canvas-coverage-outline": "#6ca8ff",
       "--canvas-zone": "#8b7fd1",
+      "--canvas-search-hit": "rgba(255, 214, 0, 0.4)",
+      "--canvas-search-current": "rgba(255, 170, 0, 0.6)",
+      "--canvas-search-outline": "#8a5a00",
       "--surface-0": "#10151c",
       "--canvas-handle-size": "8px",
     };
@@ -48,6 +51,9 @@ describe("readCanvasTokens", () => {
     expect(tokens.coverageFill).toBe("rgba(108, 168, 255, 0.18)");
     expect(tokens.coverageOutline).toBe("#6ca8ff");
     expect(tokens.zoneOutline).toBe("#8b7fd1");
+    expect(tokens.searchHit).toBe("rgba(255, 214, 0, 0.4)");
+    expect(tokens.searchCurrent).toBe("rgba(255, 170, 0, 0.6)");
+    expect(tokens.searchOutline).toBe("#8a5a00");
     expect(tokens.surround).toBe("#10151c");
     expect(tokens.handleSize).toBe(8);
   });

@@ -10,7 +10,7 @@ import { TextField } from "@/components/ui/text-field";
 import { ToggleButton } from "@/components/ui/toggle-button";
 import { sheetLabelOf } from "@/core/pdf/sheet-label";
 
-import type { DocumentSearch, SearchState } from "./document-search";
+import type { DocumentSearch, SearchHit, SearchState } from "./document-search";
 import { searchUi } from "./search-ui";
 import { activeSearch, viewerCommands } from "./viewer-commands";
 import { hasDocument, viewerStore } from "./viewer-store";
@@ -26,6 +26,25 @@ export const SEARCH_SHORTCUTS = { next: "Enter F3", previous: "Shift+Enter Shift
 type Row = { kind: "page"; page: number; count: number } | { kind: "hit"; hit: number } | { kind: "note"; page: number };
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+/**
+ * How a result row describes its hit (review decision 2026-10-24): the matched
+ * text and the text nearest to it on the sheet ("CH +2700 · CT.02 · D1"); the
+ * matched text alone when nothing is near (the row's locator still places it).
+ */
+export function hitDescription(hit: SearchHit, nearby: readonly string[]): { match: string; context: string } {
+  return { match: hit.snippet.match, context: nearby.join(" · ") };
+}
+
+/** Where a hit sits on its page, as shares of the page's width and height (the row's locator). */
+export function hitPlace(hit: SearchHit, page: { width: number; height: number } | undefined): { x: number; y: number } | null {
+  if (!page || page.width <= 0 || page.height <= 0) return null;
+  const clamp = (v: number) => Math.min(1, Math.max(0, v));
+  return {
+    x: clamp((hit.bounds.x + hit.bounds.width / 2) / page.width),
+    y: clamp((hit.bounds.y + hit.bounds.height / 2) / page.height),
+  };
+}
 
 /** The status line under the field (AC 1, 2, 4). */
 export function searchStatus(s: Pick<SearchState, "query" | "hits" | "pagesDone" | "pageCount" | "noText">): string {
@@ -86,13 +105,18 @@ function SearchBody({ search }: { search: DocumentSearch }) {
   const state = useStore(search.store);
   const pageLabels = useStore(viewerStore, (s) => s.pageLabels);
   const sheetLabels = useStore(viewerStore, (s) => s.sheetLabels);
+  const pages = useStore(viewerStore, (s) => s.pages);
   const focusRequest = useStore(searchUi, (s) => s.focusRequest);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const idBase = useId();
   const [height, setHeight] = useState(400);
   const [scrollTop, setScrollTop] = useState(0);
-  const [active, setActive] = useState<number | null>(null);
+  const [activeRow, setActiveRow] = useState<{ hit: number; run: string } | null>(null);
+  // The keyboard's row belongs to one set of results: a new query or new options start over.
+  const run = JSON.stringify([state.query, state.matchCase, state.wholeWord]);
+  const active = activeRow && activeRow.run === run && activeRow.hit < state.hits.length ? activeRow.hit : null;
+  const setActive = (hit: number) => setActiveRow({ hit, run });
   /** The last wrap whose "Search wrapped" has faded. */
   const [fadedWrap, setFadedWrap] = useState(0);
 
@@ -300,29 +324,43 @@ function SearchBody({ search }: { search: DocumentSearch }) {
                 );
               }
               const hit = state.hits[row.hit];
+              const { match, context } = hitDescription(hit, search.nearbyOf(hit));
+              const place = hitPlace(hit, pages[hit.page]);
               return (
                 <div
                   key={`h${row.hit}`}
                   id={`${idBase}-hit-${row.hit}`}
                   role="option"
                   aria-selected={row.hit === state.current}
-                  aria-label={`${pageName(hit.page)}: ${hit.snippet.before}${hit.snippet.match}${hit.snippet.after}`}
+                  aria-label={`${pageName(hit.page)}: ${match}${context ? `, near ${context}` : ""}`}
                   data-testid="search-hit"
                   data-current={row.hit === state.current ? "true" : undefined}
                   onMouseDown={(event) => event.preventDefault()}
                   onClick={() => go(row.hit)}
                   className={cx(
-                    "absolute inset-x-0 flex cursor-default items-center px-3 text-ws-md",
+                    "absolute inset-x-0 flex cursor-default items-center gap-2 px-3 text-ws-md",
                     row.hit === state.current ? "bg-accent-soft text-text" : "hover:bg-surface-3",
                     row.hit === focusedHit && "group-focus-visible:ring-2",
                   )}
                   style={{ top, height: RESULT_ROW }}
                 >
-                  <span className="min-w-0 truncate">
-                    <span className="text-muted">{hit.snippet.before.slice(-24)}</span>
-                    <mark className="bg-transparent font-semibold text-text">{hit.snippet.match}</mark>
-                    <span className="text-muted">{hit.snippet.after}</span>
+                  <span className="min-w-0 flex-1 truncate">
+                    <mark className="bg-transparent font-semibold text-text">{match}</mark>
+                    {context ? <span className="text-muted" data-testid="search-hit-context">{` · ${context}`}</span> : null}
                   </span>
+                  {place ? (
+                    // Where the hit is on the sheet: a dot in a page outline.
+                    <span
+                      aria-hidden="true"
+                      data-testid="search-hit-place"
+                      className="relative h-3 w-4 shrink-0 rounded-sm border border-strong"
+                    >
+                      <span
+                        className="absolute size-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-text"
+                        style={{ left: `${place.x * 100}%`, top: `${place.y * 100}%` }}
+                      />
+                    </span>
+                  ) : null}
                 </div>
               );
             })}

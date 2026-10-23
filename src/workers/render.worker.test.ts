@@ -8,7 +8,9 @@ import { RenderError, renderOpenMessage, type ContentFlags, type PageInfo, type 
 import {
   RenderWorkerHost,
   deferredRasterCache,
+  holdText,
   previewCacheKey,
+  TEXT_PAGES_IN_MEMORY,
   textCacheKey,
   thumbnailCacheKey,
   tileCacheKey,
@@ -680,6 +682,18 @@ describe("RenderWorkerHost: render.text (Story 3.6)", () => {
     parsed();
     await second.host.idle();
     expect((resultOf(second.replies, 2) as Text).index.text).toBe("ROOM 101 CH +2700");
+  });
+
+  it("holds at most TEXT_PAGES_IN_MEMORY pages of text in memory, least recently used out (review R7)", () => {
+    const doc = { text: new Map<number, TextItem[]>() };
+    for (let page = 1; page <= TEXT_PAGES_IN_MEMORY + 5; page++) {
+      holdText(doc, page, ROOM);
+      if (page === 10) holdText(doc, 1, ROOM); // page 1 used again: it stays
+    }
+    expect(doc.text.size).toBe(TEXT_PAGES_IN_MEMORY);
+    expect(doc.text.has(1)).toBe(true);
+    expect(doc.text.has(2)).toBe(false);
+    expect(doc.text.has(TEXT_PAGES_IN_MEMORY + 5)).toBe(true);
   });
 
   it("rejects stored text of another shape (a miss: read again)", async () => {

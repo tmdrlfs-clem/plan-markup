@@ -33,10 +33,14 @@ test("search: Ctrl+F, counts, next / previous across pages with wrap, highlights
   await page.goto("/sign-in");
   await signIn(page, "admin@plan-markup.test");
   await expect(page).toHaveURL("/workspace");
+  // No drawing open: Ctrl+F is the browser's (the Search panel does not open).
+  await page.keyboard.press("Control+f");
+  await expect(panel(page)).toHaveCount(0);
   await open(page, "search.pdf");
 
-  // Ctrl+F with the canvas focused opens Search with the field focused.
-  await canvas(page).focus();
+  // Ctrl+F opens Search with the field focused, from anywhere in the workspace (founder 2026-10-24):
+  // the page number field here.
+  await pageInput(page).focus();
   await page.keyboard.press("Control+f");
   await expect(panel(page)).toBeVisible();
   await expect(field(page)).toBeFocused();
@@ -47,8 +51,24 @@ test("search: Ctrl+F, counts, next / previous across pages with wrap, highlights
   await page.keyboard.type("ch +2700");
   await expect(status(page)).toHaveText("3 results on 2 pages");
   await expect(panel(page).getByTestId("search-hit")).toHaveCount(3);
-  // All hits of the shown page are highlighted on the canvas.
+  // All hits of the shown page are highlighted on the canvas, in yellow (not the accent).
   await expect(canvas(page)).toHaveAttribute("data-highlights", "2");
+  const colours = await page.evaluate(() => {
+    const active = document.querySelector<HTMLCanvasElement>("[data-testid='drawing-canvas']")!;
+    const data = active.getContext("2d")!.getImageData(0, 0, active.width, active.height).data;
+    let yellow = 0;
+    let other = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      if (data[i + 3] < 40) continue; // antialiased edges round their colour
+      if (data[i] > 200 && data[i + 1] > 150 && data[i + 2] < 80) yellow++;
+      else other++;
+    }
+    return { yellow, other };
+  });
+  expect(colours.yellow).toBeGreaterThan(50);
+  expect(colours.other).toBe(0);
+  // Each row places its hit on the sheet.
+  await expect(panel(page).getByTestId("search-hit-place")).toHaveCount(3);
 
   // Enter: next, from the shown page; the current hit is emphasised.
   await page.keyboard.press("Enter");
@@ -73,6 +93,14 @@ test("search: Ctrl+F, counts, next / previous across pages with wrap, highlights
   await expect(status(page)).toHaveText("2 results on 2 pages");
   await field(page).fill("level 17");
   await expect(status(page)).toHaveText("2 results on 1 page");
+  // Enter straight after typing (inside the debounce) still moves, once the results are in.
+  await field(page).fill("ch +2700");
+  await page.keyboard.press("Enter");
+  await expect(canvas(page)).toHaveAttribute("data-highlights", "1 current");
+  await expect(pageInput(page)).toHaveValue("3");
+  // Ctrl+F in the Search field itself selects the query (not the browser's find).
+  await page.keyboard.press("Control+f");
+  await expect(field(page)).toBeFocused();
   // Whole word: D1 but not D10; Match case.
   await field(page).fill("d1");
   await expect(status(page)).toHaveText("2 results on 1 page");

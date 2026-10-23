@@ -14,29 +14,49 @@ function key(init: KeyboardEventInit, target: EventTarget = document.body): Keyb
 }
 
 describe("handleWorkspaceShortcut", () => {
-  it("Ctrl+F opens Search only with the canvas focused; elsewhere the browser keeps it (Story 3.6)", () => {
+  it("Ctrl+F opens Search anywhere in the workspace while a drawing is open; dialog and form fields and no drawing keep the browser's (review R3)", () => {
     const h = { ...handlers(), search: vi.fn(), searchStep: vi.fn() };
+    const ctrlF = (target?: EventTarget) => key({ ctrlKey: true, code: "KeyF", key: "f" }, target);
     const canvas = document.createElement("canvas");
-    canvas.dataset.testid = "drawing-canvas";
-    expect(handleWorkspaceShortcut(key({ ctrlKey: true, code: "KeyF", key: "f" }, canvas), h)).toBe(true);
-    expect(h.search).toHaveBeenCalledTimes(1);
-    expect(handleWorkspaceShortcut(key({ ctrlKey: true, code: "KeyF", key: "f" }), h)).toBe(false);
-    expect(handleWorkspaceShortcut(key({ ctrlKey: true, code: "KeyF", key: "f" }, document.createElement("input")), h)).toBe(false);
+    const searchField = document.createElement("input");
+    const pageNumber = document.createElement("input");
+    const toolbarButton = document.createElement("button");
+    for (const target of [canvas, searchField, pageNumber, toolbarButton, document.body]) {
+      expect(handleWorkspaceShortcut(ctrlF(target), h)).toBe(true);
+    }
+    expect(h.search).toHaveBeenCalledTimes(5);
+    // A text field in a dialog or a form: the browser's find.
+    const dialog = document.createElement("div");
+    dialog.setAttribute("role", "dialog");
+    const dialogField = document.createElement("input");
+    dialog.append(dialogField);
+    const form = document.createElement("form");
+    const formField = document.createElement("textarea");
+    form.append(formField);
+    expect(handleWorkspaceShortcut(ctrlF(dialogField), h)).toBe(false);
+    expect(handleWorkspaceShortcut(ctrlF(formField), h)).toBe(false);
+    // A button in a dialog is not a text field: in-app.
+    const dialogButton = document.createElement("button");
+    dialog.append(dialogButton);
+    expect(handleWorkspaceShortcut(ctrlF(dialogButton), h)).toBe(true);
+    // Shift+Ctrl+F is not ours; without a drawing (no handler) neither is Ctrl+F.
     expect(handleWorkspaceShortcut(key({ ctrlKey: true, shiftKey: true, code: "KeyF", key: "F" }, canvas), h)).toBe(false);
-    expect(h.search).toHaveBeenCalledTimes(1);
+    expect(handleWorkspaceShortcut(ctrlF(canvas), handlers())).toBe(false);
+    expect(h.search).toHaveBeenCalledTimes(6);
   });
 
-  it("F3 / Shift+F3 step through the results on the canvas, in the Search panel's field or with nothing focused", () => {
+  it("F3 / Shift+F3 step through the results anywhere in the workspace, also in its fields; not in a dialog's field (review R9)", () => {
     const h = { ...handlers(), search: vi.fn(), searchStep: vi.fn() };
-    const panel = document.createElement("div");
-    panel.dataset.testid = "search-panel";
     const field = document.createElement("input");
-    panel.append(field);
     expect(handleWorkspaceShortcut(key({ key: "F3", code: "F3" }, field), h)).toBe(true);
     expect(handleWorkspaceShortcut(key({ key: "F3", code: "F3", shiftKey: true }), h)).toBe(true);
     expect(h.searchStep.mock.calls).toEqual([[1], [-1]]);
-    // Another field (a dialog, the page number): not ours.
-    expect(handleWorkspaceShortcut(key({ key: "F3", code: "F3" }, document.createElement("input")), h)).toBe(false);
+    const dialog = document.createElement("div");
+    dialog.setAttribute("role", "alertdialog");
+    const dialogField = document.createElement("input");
+    dialog.append(dialogField);
+    expect(handleWorkspaceShortcut(key({ key: "F3", code: "F3" }, dialogField), h)).toBe(false);
+    expect(handleWorkspaceShortcut(key({ key: "F3", code: "F3" }), handlers())).toBe(false);
   });
 
   it("Ctrl+O opens, also from a field; Cmd+O on macOS", () => {

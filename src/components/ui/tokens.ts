@@ -17,6 +17,10 @@ export interface CanvasTokens {
   coverageFill: string;
   coverageOutline: string;
   zoneOutline: string;
+  /** Search highlights (Story 3.6): every hit, the current hit, and its outline. */
+  searchHit: string;
+  searchCurrent: string;
+  searchOutline: string;
   /** Canvas surround (surface-0). */
   surround: string;
   /** Handle size in px. */
@@ -47,6 +51,9 @@ export function readCanvasTokens(
     coverageFill: readVar(style, "--canvas-coverage-fill"),
     coverageOutline: readVar(style, "--canvas-coverage-outline"),
     zoneOutline: readVar(style, "--canvas-zone"),
+    searchHit: readVar(style, "--canvas-search-hit"),
+    searchCurrent: readVar(style, "--canvas-search-current"),
+    searchOutline: readVar(style, "--canvas-search-outline"),
     surround: readVar(style, "--surface-0"),
     handleSize: Number.isFinite(handle) ? handle : DEFAULT_HANDLE_SIZE,
     fontFamily: readVar(style, "--font-inter") || getComputedStyle(el).fontFamily,
@@ -73,7 +80,8 @@ const listeners = new Set<Listener>();
 let observer: MutationObserver | null = null;
 
 function ensureObserver(): void {
-  if (observer) return;
+  // Outside a DOM (workers, node tests) there is no theme to follow.
+  if (observer || typeof MutationObserver === "undefined" || typeof document === "undefined") return;
   observer = new MutationObserver(() => {
     const tokens = readCanvasTokens();
     for (const cb of [...listeners]) cb(tokens);

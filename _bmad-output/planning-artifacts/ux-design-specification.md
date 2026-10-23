@@ -737,7 +737,7 @@ Founder: users come from Revu with "no complaints", so the MVP basic set **uses 
 | Document | Open / Save / Save as | `Ctrl+O` / `Ctrl+S` / `Ctrl+Shift+S` | Save = sync now + save local copy (browser default suppressed) |
 | | Print | `Ctrl+P` | Our print dialog, browser print suppressed |
 | | Flatten / Unflatten | `Ctrl+Shift+M` / `Ctrl+Shift+U` | |
-| | Search text | `Ctrl+F` | In-app search when canvas focused |
+| | Search text / next / previous result | `Ctrl+F` / `Enter` or `F3` / `Shift+Enter` or `Shift+F3` | Founder 2026-10-24: in-app Search anywhere in the workspace while a drawing is open (canvas, panels, toolbar, the workspace's own fields such as the page number and the Search field). The browser keeps `Ctrl+F` and `F3` when no drawing is open and in a text field of a dialog or form |
 | | Next / previous drawing (document tab) | `Alt+PageDown` / `Alt+PageUp` (also `Ctrl+PageDown` / `Ctrl+PageUp`) | Founder 2026-10-23: Chrome keeps the Ctrl pair (and `Ctrl+Tab`) unless the app is installed or full screen. With the canvas, the tab strip or nothing focused. Window menu |
 | | Close drawing (document tab) | `Alt+W` (also `Ctrl+F4`; `Del` on a focused tab) | `Ctrl+W` is the browser's. File menu; middle click or × on a tab |
 | Panels | Tool Chest / Properties / Thumbnails | `Alt+X` / `Alt+P` / `Alt+T` | |
@@ -766,7 +766,7 @@ Founder: users come from Revu with "no complaints", so the MVP basic set **uses 
 **Search and filtering**
 - Markups List: column filters + quick text filter; active filters shown as removable chips; "Showing 24 of 312" count.
 - Tool Chest: instant search across sets by name and subject.
-- Text search (Ctrl+F): hit list in a panel, hits highlighted on canvas, Enter / Shift+Enter next / previous.
+- Text search (Ctrl+F): hit list in a panel, hits highlighted on canvas in Revu/Acrobat-style yellow (the current hit amber with a dark outline; `--canvas-search-*` tokens, never the accent), Enter / Shift+Enter next / previous. Each row names the matched text, the text nearest to it on the sheet and a small locator of its position; a page's hits are listed top to bottom, left to right (founder 2026-10-24).
 
 **Selection and editing (canvas)**
 - Click selects, Shift+click adds, drag on empty space marquee-selects; selection syncs with Markups List and Properties.

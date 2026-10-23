@@ -27,6 +27,9 @@ export const REQUIRED_THEME_VARS = [
   "--canvas-coverage-fill",
   "--canvas-coverage-outline",
   "--canvas-zone",
+  "--canvas-search-hit",
+  "--canvas-search-current",
+  "--canvas-search-outline",
   "--canvas-handle-size",
 ] as const;
 

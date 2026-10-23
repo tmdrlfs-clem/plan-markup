@@ -9,7 +9,7 @@ import { buildPageText, type TextItem } from "@/core/search/page-text";
 import type { TextResult } from "@/workers/render-protocol";
 
 import { DocumentSearch, type SearchHost } from "./document-search";
-import { SearchPanel, resultRows, searchStatus } from "./search-panel";
+import { SearchPanel, hitDescription, hitPlace, resultRows, searchStatus } from "./search-panel";
 import { requestSearchFocus, searchUi } from "./search-ui";
 import { activeSearch, viewerCommands } from "./viewer-commands";
 import { INITIAL_VIEWER_STATE, viewerStore } from "./viewer-store";
@@ -47,7 +47,15 @@ async function settle() {
 
 function setup(pageCount = 3) {
   const search = makeSearch(pageCount);
-  viewerStore.setState({ ...INITIAL_VIEWER_STATE, status: "ready", fileName: "a.pdf", pageCount, pageLabels: ["S-101", "S-102", "S-103"] });
+  const size = { width: 600, height: 400, rotate: 0 };
+  viewerStore.setState({
+    ...INITIAL_VIEWER_STATE,
+    status: "ready",
+    fileName: "a.pdf",
+    pageCount,
+    pages: Array.from({ length: pageCount }, () => size),
+    pageLabels: ["S-101", "S-102", "S-103"],
+  });
   render(
     <TooltipProvider delayDuration={0}>
       <SearchPanel emptyText="No drawing open" />
@@ -89,9 +97,12 @@ describe("SearchPanel", () => {
     expect(status()).toHaveTextContent("2 results on 2 pages");
     const list = screen.getByRole("listbox", { name: "Search results" });
     expect(within(list).getAllByRole("option").map((o) => o.getAttribute("aria-label"))).toEqual([
-      "Page 1 · S-101: CH +2700 ROOM 1",
-      "Page 3 · S-103: ch +2700 again",
+      "Page 1 · S-101: CH +2700, near ROOM 1",
+      "Page 3 · S-103: ch +2700",
     ]);
+    // Rows tell hits apart by the text near them and where they sit on the sheet (review R5).
+    expect(screen.getAllByTestId("search-hit-context").map((e) => e.textContent)).toEqual([" · ROOM 1"]);
+    expect(screen.getAllByTestId("search-hit-place")).toHaveLength(2);
     expect(screen.getByTestId("search-no-text")).toHaveTextContent("1 page has no searchable text");
   });
 
@@ -145,6 +156,23 @@ describe("SearchPanel", () => {
     expect(revealed).toEqual([2, 0]);
   });
 
+  it("the keyboard's row starts over with a new query: Enter in the list never goes to a hit of the old results (review R8)", async () => {
+    vi.spyOn(viewerCommands, "focusCanvas").mockImplementation(() => undefined);
+    const { user } = setup();
+    await user.type(field(), "+2700");
+    await settle();
+    const list = screen.getByRole("listbox", { name: "Search results" });
+    act(() => list.focus());
+    fireEvent.keyDown(list, { key: "End" });
+    expect(list.getAttribute("aria-activedescendant")).toMatch(/hit-1$/);
+    await user.clear(field());
+    await user.type(field(), "room");
+    await settle();
+    expect(list.getAttribute("aria-activedescendant")).toMatch(/hit-0$/);
+    fireEvent.keyDown(list, { key: "Enter" });
+    expect(revealed).toEqual([0]);
+  });
+
   it("an image-only drawing lists 'No searchable text on this page'", async () => {
     pages = [text([])];
     setup(1);
@@ -166,7 +194,15 @@ describe("SearchPanel", () => {
 describe("search panel helpers", () => {
   it("status text and rows", () => {
     expect(searchStatus({ query: "x", hits: [], pagesDone: 1, pageCount: 3, noText: [] })).toBe("No results so far · searching 1 of 3 pages");
-    const hit = (page: number) => ({ page, snippet: { before: "", match: "x", after: "" }, quads: [], bounds: { x: 0, y: 0, width: 0, height: 0 }, textHeight: 0 });
+    const hit = (page: number) => ({
+      page,
+      start: 0,
+      end: 1,
+      snippet: { before: "", match: "x", after: "" },
+      quads: [],
+      bounds: { x: 0, y: 0, width: 0, height: 0 },
+      textHeight: 0,
+    });
     expect(resultRows({ hits: [hit(0), hit(0), hit(2)], noText: [], pageCount: 3, pagesDone: 3 })).toEqual([
       { kind: "page", page: 0, count: 2 },
       { kind: "hit", hit: 0 },
@@ -180,5 +216,29 @@ describe("search panel helpers", () => {
       { kind: "page", page: 1, count: 0 },
       { kind: "note", page: 1 },
     ]);
+  });
+});
+
+describe("result row description (review R5)", () => {
+  const hit = {
+    page: 0,
+    start: 0,
+    end: 8,
+    snippet: { before: "60 60 ", match: "CH +2700", after: " CH +2700" },
+    quads: [],
+    bounds: { x: 100, y: 50, width: 40, height: 10 },
+    textHeight: 10,
+  };
+
+  it("names the nearby text, not the drawing-order excerpt", () => {
+    expect(hitDescription(hit, ["CT.02", "D1"])).toEqual({ match: "CH +2700", context: "CT.02 · D1" });
+    expect(hitDescription(hit, [])).toEqual({ match: "CH +2700", context: "" });
+  });
+
+  it("places the hit on its page as shares of the page size", () => {
+    expect(hitPlace(hit, { width: 240, height: 110 })).toEqual({ x: 0.5, y: 0.5 });
+    expect(hitPlace(hit, { width: 0, height: 100 })).toBeNull();
+    expect(hitPlace(hit, undefined)).toBeNull();
+    expect(hitPlace({ ...hit, bounds: { x: 500, y: -50, width: 0, height: 0 } }, { width: 100, height: 100 })).toEqual({ x: 1, y: 0 });
   });
 });

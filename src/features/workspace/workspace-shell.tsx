@@ -17,6 +17,7 @@ import {
   SearchPanel,
   ThumbnailsPanel,
   activeSearch,
+  hasDocument,
   requestSearchFocus,
   usePageAnnouncement,
   viewerStore,
@@ -128,7 +129,16 @@ function ShellBody({ user }: { user: WorkspaceUser }) {
     },
     [openLeftPanel],
   );
-  useWorkspaceShortcuts({ open, showLeftPanel, toggleMarkupsList: toggleBottomCollapsed, hideAllPanels, search, searchStep });
+  // Without a drawing the browser keeps Ctrl+F and F3 (founder decision 2026-10-24).
+  const drawingOpen = useStore(viewerStore, hasDocument);
+  useWorkspaceShortcuts({
+    open,
+    showLeftPanel,
+    toggleMarkupsList: toggleBottomCollapsed,
+    hideAllPanels,
+    search: drawingOpen ? search : undefined,
+    searchStep: drawingOpen ? searchStep : undefined,
+  });
 
   const panel = leftPanel(left.active);
 

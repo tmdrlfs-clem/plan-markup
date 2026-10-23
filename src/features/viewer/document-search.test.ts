@@ -226,4 +226,82 @@ describe("DocumentSearch", () => {
     await vi.advanceTimersByTimeAsync(DEBOUNCE_MS * 2);
     expect(search.store.getState().hits).toEqual([]);
   });
+
+  it("a new query or new options start without a current hit: the old one's page and number mean nothing now (review R1)", async () => {
+    const search = makeSearch();
+    search.reset(3);
+    search.setQuery("+2700");
+    search.flush();
+    await answerAll();
+    search.goTo(2);
+    expect(search.store.getState().current).toBe(2);
+    search.setQuery("ch");
+    search.flush();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(search.store.getState().hits.length).toBeGreaterThan(2);
+    expect(search.store.getState().current).toBe(-1);
+    expect(search.highlights(2)?.current).toBeNull();
+    search.goTo(1);
+    search.setOptions({ wholeWord: true });
+    await vi.advanceTimersByTimeAsync(1);
+    expect(search.store.getState().current).toBe(-1);
+  });
+
+  it("Enter right after typing moves to the first hit once the results are in (review R2)", async () => {
+    const search = makeSearch();
+    search.reset(3);
+    search.setQuery("+2700");
+    search.step(1); // inside the debounce: nothing to move to yet
+    expect(revealed).toEqual([]);
+    await answerAll();
+    expect(revealed.map((r) => r.page)).toEqual([0]);
+    expect(search.store.getState().current).toBe(0);
+  });
+
+  it("a pending move waits only for the pages between the shown one and the nearest hit; typing drops it (review R2)", async () => {
+    currentPage = 1;
+    const search = makeSearch();
+    search.reset(3);
+    search.setQuery("+2700");
+    search.flush();
+    search.step(1);
+    const answer = async (page: number) => {
+      requests.find((r) => r.page === page && !r.cancelled)!.resolve(PAGES[page]);
+      await vi.advanceTimersByTimeAsync(1);
+    };
+    await answer(1); // the shown page: no text, no hit; page 2 is not read yet
+    expect(revealed).toEqual([]);
+    await answer(2);
+    expect(revealed.map((r) => r.page)).toEqual([2]);
+    expect(search.store.getState().hits[search.store.getState().current].page).toBe(2);
+
+    // Typing after Enter: the move is dropped.
+    search.setQuery("room");
+    search.step(1);
+    search.setQuery("room 1");
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS + 1);
+    await answer(0);
+    expect(revealed).toHaveLength(1);
+  });
+
+  it("lists a page's hits by position, top to bottom and left to right, not in the PDF's drawing order (review R6)", async () => {
+    pageCount = 1;
+    const search = makeSearch();
+    search.reset(1);
+    search.setQuery("d1");
+    search.flush();
+    // Drawn bottom-right first.
+    requests[0].resolve(text([item("D1", 300, 400), item("D1", 10, 400), item("D1", 200, 100), item("D1", 20, 101)]));
+    await vi.advanceTimersByTimeAsync(1);
+    expect(search.store.getState().hits.map((h) => [h.bounds.x, h.bounds.y + 8])).toEqual([
+      [20, 101],
+      [200, 100],
+      [10, 400],
+      [300, 400],
+    ]);
+    search.step(1);
+    expect(search.store.getState().current).toBe(0);
+    // Other copies of the matched text are not "nearby".
+    expect(search.nearbyOf(search.store.getState().hits[0])).toEqual([]);
+  });
 });

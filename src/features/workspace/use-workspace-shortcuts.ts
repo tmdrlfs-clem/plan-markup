@@ -9,23 +9,26 @@ export interface WorkspaceShortcutHandlers {
   showLeftPanel: (id: LeftPanelId) => void;
   toggleMarkupsList: () => void;
   hideAllPanels: () => void;
-  /** Ctrl+F with the canvas focused: the Search panel, query field focused (Story 3.6). */
+  /**
+   * Ctrl+F: the Search panel with its query field focused (Story 3.6). Only
+   * passed while a drawing is open: without one the browser keeps Ctrl+F.
+   */
   search?: () => void;
-  /** F3 / Shift+F3: next / previous search result. */
+  /** F3 / Shift+F3: next / previous search result (passed while a drawing is open). */
   searchStep?: (direction: 1 | -1) => void;
 }
 
-const CANVAS = "[data-testid='drawing-canvas']";
-const SEARCH_PANEL = "[data-testid='search-panel']";
+/** Dialogs and forms that are not the workspace: their text fields keep the browser's Ctrl+F and F3. */
+const FOREIGN = "[role='dialog'], [role='alertdialog'], dialog, form";
 
-function onCanvas(target: EventTarget | null): boolean {
-  return target instanceof Element && target.matches(CANVAS);
-}
-
-/** F3 acts on the canvas, in the Search panel, or with nothing focused. */
+/**
+ * Ctrl+F and F3 are the workspace's anywhere in it (founder decision
+ * 2026-10-24), also in its own fields (the Search field, the page number),
+ * except in a text field of a dialog or form.
+ */
 function searchScope(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return true;
-  return target === document.body || target === document.documentElement || onCanvas(target) || target.closest(SEARCH_PANEL) !== null;
+  return !(inEditable(target) && target.closest(FOREIGN) !== null);
 }
 
 const EDITABLE = "input, textarea, select, [contenteditable=''], [contenteditable='true']";
@@ -47,8 +50,8 @@ function resolve(event: KeyboardEvent, handlers: WorkspaceShortcutHandlers): (()
   const ctrl = event.ctrlKey || event.metaKey;
 
   if (ctrl && !event.altKey && !event.shiftKey && isLetter(event, "o")) return handlers.open;
-  // Ctrl+F is in-app only with the canvas focused; elsewhere the browser keeps it (UX shortcut table).
-  if (ctrl && !event.altKey && !event.shiftKey && isLetter(event, "f") && onCanvas(event.target) && handlers.search) return handlers.search;
+  // Ctrl+F: in-app Search anywhere in the workspace while a drawing is open (UX shortcut table).
+  if (ctrl && !event.altKey && !event.shiftKey && isLetter(event, "f") && handlers.search && searchScope(event.target)) return handlers.search;
   if (event.key === "F3" && !ctrl && !event.altKey && searchScope(event.target) && handlers.searchStep) {
     const step = handlers.searchStep;
     const direction = event.shiftKey ? -1 : 1;
@@ -67,7 +70,7 @@ function resolve(event: KeyboardEvent, handlers: WorkspaceShortcutHandlers): (()
 
 /**
  * Handles one key event; returns true when it was a workspace shortcut. Alt combinations use
- * `code` because macOS turns Alt+X into "≈" in `key`. Only Ctrl+O works inside fields.
+ * `code` because macOS turns Alt+X into "≈" in `key`. Ctrl+O, Ctrl+F and F3 also work inside fields (not in dialogs and forms for Ctrl+F and F3).
  * A held key (auto-repeat) is still claimed but runs the action only once.
  */
 export function handleWorkspaceShortcut(event: KeyboardEvent, handlers: WorkspaceShortcutHandlers): boolean {

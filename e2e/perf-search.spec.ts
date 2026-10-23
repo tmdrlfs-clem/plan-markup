@@ -31,6 +31,19 @@ async function openFile(page: Page, file: string) {
 }
 
 /**
+ * Waits until the view has every tile it asked for (data-pending-tiles, review R11).
+ * Returns the tiles still pending 1.5 s after `from` (the old fixed wait) and the time from `from` until settled.
+ */
+async function settled(page: Page, from = Date.now()) {
+  await page.waitForTimeout(300); // the settle delay before tiles are requested
+  const left = 1500 - (Date.now() - from);
+  if (left > 0) await page.waitForTimeout(left);
+  const pendingAt1500 = Number(await canvas(page).getAttribute("data-pending-tiles"));
+  await expect(canvas(page)).toHaveAttribute("data-pending-tiles", "0", { timeout: 60_000 });
+  return { pendingAt1500, ms: Date.now() - from };
+}
+
+/**
  * Pixels in a box at the canvas centre (device px): dark ink on the tiles
  * layer, and highlight pixels (any opaque pixel) on the active layer.
  */
@@ -67,11 +80,17 @@ test("L17 + L21: search finds the expected hits, the highlight sits on the text,
   await openFile(page, L17);
 
   await page.evaluate(() => {
-    const w = window as unknown as { __longTasks: number[]; __observer: PerformanceObserver };
+    const w = window as unknown as { __longTasks: { start: number; duration: number }[]; __observer: PerformanceObserver };
     w.__longTasks = [];
-    w.__observer = new PerformanceObserver((list) => list.getEntries().forEach((e) => w.__longTasks.push(e.duration)));
+    w.__observer = new PerformanceObserver((list) =>
+      list.getEntries().forEach((e) => w.__longTasks.push({ start: e.startTime, duration: e.duration })),
+    );
     w.__observer.observe({ type: "longtask" });
   });
+  // Phase marks, so a long task can be told to its step.
+  const phases: { name: string; t: number }[] = [];
+  const phase = async (name: string) => phases.push({ name, t: await page.evaluate(() => performance.now()) });
+  await phase("type");
 
   // L17: Ctrl+F, type, count.
   await canvas(page).focus();
@@ -88,10 +107,13 @@ test("L17 + L21: search finds the expected hits, the highlight sits on the text,
 
   // Move through the hits: each is revealed (zoomed so the text is at least 24 px, centred).
   const centres: { ink: number; marked: number; total: number }[] = [];
+  const reveals: { pendingAt1500: number; ms: number }[] = [];
   for (let i = 0; i < 4; i++) {
+    await phase(`hit ${i + 1}`);
+    const pressed = Date.now();
     await page.keyboard.press("Enter");
     await expect(canvas(page)).toHaveAttribute("data-highlights", `${l17Hits} current`);
-    await page.waitForTimeout(1500); // tiles of the new view
+    reveals.push(await settled(page, pressed)); // tiles of the new view
     centres.push(await centrePixels(page, 20, 8));
   }
   // The highlight covers the canvas centre and there is drawing ink under it (the label's glyphs).
@@ -101,6 +123,7 @@ test("L17 + L21: search finds the expected hits, the highlight sits on the text,
   }
 
   // Whole word "D1" on L17.
+  await phase("d1");
   await field(page).fill("D1");
   await panel(page).getByRole("button", { name: "Whole word" }).click();
   await expect(status(page)).toHaveText(/^\d+ results? on 1 page$/, { timeout: 20_000 });
@@ -108,6 +131,7 @@ test("L17 + L21: search finds the expected hits, the highlight sits on the text,
   expect(d1).toBeGreaterThanOrEqual(31);
 
   // L21 in the other tab: its own search.
+  await phase("l21");
   await canvas(page).focus();
   await page.keyboard.press("Alt+PageUp");
   await expect(field(page)).toHaveValue("");
@@ -116,22 +140,33 @@ test("L17 + L21: search finds the expected hits, the highlight sits on the text,
   const l21Text = (await status(page).textContent()) ?? "";
 
   // Back on L17: the search is still there; show its first hit for the screenshot.
+  await phase("back to l17");
   await canvas(page).focus();
   await page.keyboard.press("Alt+PageDown");
   await expect(field(page)).toHaveValue("D1");
   await field(page).fill("CH +2700");
   await expect(status(page)).toHaveText(`${l17Hits} results on 1 page`);
   await field(page).press("Enter");
+  // Review R11: the 3.6 screenshot was taken on a fixed 2 s wait. How many tiles are still
+  // being rendered at 2 s, and how long until the view has every tile?
+  const shownAt = Date.now();
   await page.waitForTimeout(2000);
+  const pendingAt2s = Number(await canvas(page).getAttribute("data-pending-tiles"));
+  await settled(page);
+  const settledMs = Date.now() - shownAt;
 
-  const longest = await page.evaluate(() => {
-    const w = window as unknown as { __longTasks: number[]; __observer: PerformanceObserver };
+  const tasks = await page.evaluate(() => {
+    const w = window as unknown as { __longTasks: { start: number; duration: number }[]; __observer: PerformanceObserver };
     w.__observer.disconnect();
-    return Math.max(0, ...w.__longTasks);
+    return w.__longTasks;
   });
+  const longest = Math.max(0, ...tasks.map((t) => t.duration));
+  const during = tasks.map((t) => `${Math.round(t.duration)} ms in "${[...phases].reverse().find((p) => p.t <= t.start)?.name ?? "before"}"`);
   process.stdout.write(
     `search: L17 "CH +2700" ${l17Hits} hits (typed to results ${typedToResultsMs} ms), whole-word "D1" ${d1}; L21 "CH +2700": ${l21Text}; ` +
-      `centre pixels ${JSON.stringify(centres)}; longest main-thread task ${longest} ms\n`,
+      `centre pixels ${JSON.stringify(centres)}; longest main-thread task ${longest} ms [${during.join(", ")}]; ` +
+      `reveals (tiles pending at 1.5 s, ms until every tile is in): ${JSON.stringify(reveals)}; ` +
+      `last hit: ${pendingAt2s} tiles pending at 2 s, all tiles in after ${settledMs} ms\n`,
   );
   expect(longest).toBeLessThan(50);
   mkdirSync(path.join(PRIVATE, "traces"), { recursive: true });

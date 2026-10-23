@@ -74,7 +74,7 @@ import {
   type Rect,
   type ViewState,
 } from "@/core/render/view";
-import { readCanvasTokens } from "@/components/ui/tokens";
+import { readCanvasTokens, subscribeCanvasTokens, type CanvasTokens } from "@/components/ui/tokens";
 import type { Quad } from "@/core/search/page-text";
 import type { ContentFlags, PageInfo, TilePayload } from "@/workers/render-protocol";
 import { WorkerRequestError, type RenderClient } from "@/workers/rpc";
@@ -94,13 +94,24 @@ const ONE_TO_ONE = 1e-9;
 const BACKDROP = "#e5e7eb";
 const PAGE = "#ffffff";
 const ZOOM_RECT = "#e8620c";
-/** Search highlights (Story 3.6) in the accent colour: every hit, and the current one stronger. */
-const HIT_ALPHA = 0.3;
-const CURRENT_ALPHA = 0.55;
+/**
+ * Search highlights (Story 3.6), Revu/Acrobat-style yellow: the theme's
+ * --canvas-search-* tokens; these when a token cannot be read (tests).
+ */
+const SEARCH_COLORS = { hit: "rgba(255, 214, 0, 0.4)", current: "rgba(255, 170, 0, 0.6)", outline: "#8a5a00" };
 /** A hit smaller than this on screen (CSS px) is zoomed in to it when shown (3.6 AC 3). */
 export const MIN_HIT_PX = 24;
 /** Space kept around a hit brought into view (CSS px). */
 const HIT_MARGIN = 32;
+
+/** The search highlight colours of a theme (the defaults where a token is missing). */
+function searchColorsOf(tokens: CanvasTokens): typeof SEARCH_COLORS {
+  return {
+    hit: tokens.searchHit || SEARCH_COLORS.hit,
+    current: tokens.searchCurrent || SEARCH_COLORS.current,
+    outline: tokens.searchOutline || SEARCH_COLORS.outline,
+  };
+}
 
 export type ViewerCanvases = { tiles: HTMLCanvasElement; markups: HTMLCanvasElement; active: HTMLCanvasElement };
 
@@ -240,6 +251,7 @@ export class ViewerEngine {
   private zoomRect: Rect | null = null;
   private shownZoom: number | null = null;
   private shownView = "";
+  private shownPending = "";
 
   constructor(
     private readonly canvases: ViewerCanvases,
@@ -278,13 +290,19 @@ export class ViewerEngine {
     this.unsubscribeSearchUi = searchUi.subscribe((s, prev) => {
       if (s.panelOpen !== prev.panelOpen) this.invalidate();
     });
+    // A theme change recolours the highlights.
+    this.unsubscribeTokens = subscribeCanvasTokens((tokens) => {
+      this.searchColors = searchColorsOf(tokens);
+      this.invalidate();
+    });
   }
 
   /** Text search in this document (Story 3.6): per engine, so per document tab. */
   readonly search: DocumentSearch;
   private readonly unsubscribeSearchUi: () => void;
-  /** The accent colour for search highlights (read once from the theme). */
-  private highlightColor: string | null = null;
+  private readonly unsubscribeTokens: () => void;
+  /** The search highlight colours (read from the theme on first use and on every theme change). */
+  private searchColors: typeof SEARCH_COLORS | null = null;
 
   // ---- lifecycle ----------------------------------------------------------
 
@@ -322,6 +340,7 @@ export class ViewerEngine {
     // The canvases showed another document: publish this one's zoom and view again.
     this.shownZoom = null;
     this.shownView = "";
+    this.shownPending = "";
     // Drawn now, not next frame: the canvases must never show the previous tab's drawing.
     if (this.frame !== null) this.cancelFrame(this.frame);
     this.frame = null;
@@ -355,6 +374,7 @@ export class ViewerEngine {
     this.resetDocument();
     this.search.destroy();
     this.unsubscribeSearchUi();
+    this.unsubscribeTokens();
     this.client.terminate();
   }
 
@@ -1283,7 +1303,7 @@ export class ViewerEngine {
     if (!marks) return;
     const c = this.canvases.active.getContext("2d");
     if (!c) return;
-    this.highlightColor ??= this.readHighlightColor();
+    const colors = (this.searchColors ??= this.readSearchColors());
     const m = this.deviceMatrix();
     const path = (quads: readonly Quad[]) => {
       for (const q of quads) {
@@ -1294,29 +1314,27 @@ export class ViewerEngine {
     };
     c.save();
     c.setTransform(1, 0, 0, 1, 0, 0);
-    c.fillStyle = this.highlightColor;
-    c.strokeStyle = this.highlightColor;
-    c.globalAlpha = HIT_ALPHA;
+    c.fillStyle = colors.hit;
     c.beginPath();
     for (const quads of marks.hits) if (quads !== marks.current) path(quads);
     c.fill();
     if (marks.current) {
-      c.globalAlpha = CURRENT_ALPHA;
+      c.fillStyle = colors.current;
+      c.strokeStyle = colors.outline;
       c.beginPath();
       path(marks.current);
       c.fill();
-      c.globalAlpha = 1;
       c.lineWidth = Math.max(1, Math.round(1.5 * this.dpr));
       c.stroke();
     }
     c.restore();
   }
 
-  private readHighlightColor(): string {
+  private readSearchColors(): typeof SEARCH_COLORS {
     try {
-      return readCanvasTokens(this.canvases.active).selection || ZOOM_RECT;
+      return searchColorsOf(readCanvasTokens(this.canvases.active));
     } catch {
-      return ZOOM_RECT;
+      return SEARCH_COLORS;
     }
   }
 
@@ -1368,6 +1386,12 @@ export class ViewerEngine {
     if (text !== this.shownView && this.canvases.active.dataset) {
       this.shownView = text;
       this.canvases.active.dataset.view = text;
+    }
+    // Tiles still being rendered for this view (e2e and diagnostics: "has the view settled?").
+    const pending = String(this.inflight.size + (this.previewFinal ? 0 : 1));
+    if (pending !== this.shownPending && this.canvases.active.dataset) {
+      this.shownPending = pending;
+      this.canvases.active.dataset.pendingTiles = pending;
     }
   }
 }

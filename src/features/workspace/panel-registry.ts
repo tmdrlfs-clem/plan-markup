@@ -69,7 +69,7 @@ export const LEFT_PANELS: readonly LeftPanelInfo[] = [
     empty: "No drawing open",
   },
   {
-    // Story 3.6: Ctrl+F with the canvas focused (the browser keeps Ctrl+F elsewhere).
+    // Story 3.6: Ctrl+F anywhere in the workspace while a drawing is open (not in dialog / form fields).
     id: "search",
     title: "Search",
     icon: Search,

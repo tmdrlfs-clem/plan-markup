@@ -1,6 +1,6 @@
 # Story 3.6: Search text in the drawing
 
-Status: review
+Status: done
 
 ## Story
 
@@ -10,7 +10,7 @@ so that I can find room names, notes and tags fast.
 
 ## Acceptance Criteria
 
-1. **Given** a drawing with a text layer, **when** I press `Ctrl+F` with canvas focus (in-app search; with focus elsewhere the browser keeps `Ctrl+F`) and type a query, **then** a Search panel opens in the left panel area with a query field (focused) and a hit list; results update as I type (debounced ~150 ms) (FR21, UX "Search and filtering").
+1. **Given** a drawing with a text layer, **when** I press `Ctrl+F` with canvas focus (in-app search; with focus elsewhere the browser keeps `Ctrl+F`; *amended by the founder 2026-10-24: anywhere in the workspace while a drawing is open, the browser keeps it only with no drawing open and in text fields of dialogs/forms; see Review Follow-ups R3*) and type a query, **then** a Search panel opens in the left panel area with a query field (focused) and a hit list; results update as I type (debounced ~150 ms) (FR21, UX "Search and filtering").
 2. Hits cover all pages of the active tab's document: the list is grouped by page (page number + sheet label) with a short text snippet around each hit and a total count ("24 results on 3 pages"); matching is case-insensitive and whitespace-tolerant (runs of spaces/line breaks in the PDF text match a single space), with an option toggle for "Match case" and "Whole word".
 3. Hits are highlighted on the canvas (accent outline/fill on a separate overlay layer above tiles, crisp at every zoom, follow rotation); the current hit is emphasised. `Enter` / `Shift+Enter` in the query field (and `F3` / `Shift+F3`) move to next / previous across pages, wrapping with a quiet "Search wrapped" status; moving to a hit switches page if needed and pans/zooms so the hit is visible with margin (zoom only increases when the hit would be smaller than ~24 CSS px tall). Clicking a hit in the list does the same and moves focus to the canvas (Revu behaviour, founder decision 2026-10-23).
 4. An image-only page (no text content — reuse Story 3.1 content flags) is listed as "No searchable text on this page" when the whole document has no text, or summarised ("2 pages have no searchable text") otherwise.
@@ -25,6 +25,23 @@ so that I can find room names, notes and tags fast.
 - [x] **Task 3: Search panel UI** — left-panel registry entry "Search" (Story 1.7 components: TextField, ToggleButtons for options, list rows), hit list grouped by page, counts, empty/no-text states, keyboard (`Enter`/`Shift+Enter`/`F3`, list roving focus).
 - [x] **Task 4: Canvas highlight + navigation** — overlay layer for hit quads (no React state per hit; reuse view transform), go-to-hit with page switch and minimal pan/zoom, per-tab state.
 - [x] **Task 5: Tests** — unit (core search, quads, worker handler with stubbed pdf.js, panel), e2e `e2e/viewer-search.spec.ts`. Local check on L17/L21 (private, never commit): search "CH +2700" or "D1" finds expected hits, highlight positions match the drawing, no long tasks; screenshot `fixtures/private/traces/3-6-search.png`.
+
+### Review Follow-ups (AI)
+
+Adversarial review 2026-10-24 (Claude Opus 5.5) of 221b77d..626784a, with the founder decisions of 2026-10-24 applied. All fixed with tests unless marked otherwise.
+
+- [x] **[High] R1: Stale current hit after a new query or new options.** `run()` kept `currentKey` (page + number), so `publish()` re-selected hit *n* of the old current page in the new results: a hit the user never chose was emphasised and Enter continued from it (visible in the first 3-6 screenshot: row 5 current right after re-typing "CH +2700"). Fix: `run()` clears the current hit (`document-search.ts`); test "a new query or new options start without a current hit".
+- [x] **[High] R2: Enter / F3 right after typing did nothing.** `step()` flushed the debounce, which empties the hits, then returned because nothing was matched yet; the same while pages were still being read. Fix: a pending step, run on the first publish that can decide it (every page matched, or the pages from the shown one to the nearest hit in that direction are); typing drops it. Tests in `document-search.test.ts` and the e2e (`fill` + immediate Enter).
+- [x] **[Medium] R3: Ctrl+F scope (founder decision 2).** Ctrl+F was in-app only with the canvas focused, so Ctrl+F in the Search field itself, the page number or a panel opened the browser's find bar. Now: in-app anywhere in the workspace while a drawing is open; the browser keeps it with no drawing open and in a text field of a dialog (`role=dialog/alertdialog`, `<dialog>`) or a `<form>`. `use-workspace-shortcuts.ts` (`searchScope`), `workspace-shell.tsx` (handlers only while `hasDocument`); UX spec keyboard table updated; unit tests and e2e (Ctrl+F from the page number field, from the Search field, and with no drawing).
+- [x] **[Medium] R4: Highlight colour (founder decision 1) and theme changes.** Highlights used the accent orange, read once per engine, so a theme switch never recoloured them. Now theme tokens `--canvas-search-hit` (yellow fill), `--canvas-search-current` (amber fill) and `--canvas-search-outline` (dark amber outline, contrast pair at least 3:1 on the sheet) in all three themes, read through `readCanvasTokens` and re-read on every theme change (`subscribeCanvasTokens`). The engine test asserts the colours; the e2e asserts the canvas highlight pixels are yellow.
+- [x] **[Medium] R5: Hit rows could not be told apart (founder decision 4).** The drawing-order snippet gave rows like "60 60 CH +2700 CH +2700 ...". Design: each row shows the matched text, then up to two texts nearest to it on the sheet (`src/core/search/context.ts` `nearbyText`: other items within 8 text heights, nearest first, not blank, not another copy of the matched text, cut at 20 characters, listed once), then a small locator (a dot in a page outline at the hit's position). Nearby text is worked out lazily per shown row and cached per hit (`DocumentSearch.nearbyOf`). On L17 the 14 "CH +2700" rows now read "CT.03 · A1", "D1 · CT.03", "CT.02 · 245", and so on. Unit tests (core, panel) and e2e (a locator per row).
+- [x] **[Medium] R6: Hits within a page were in PDF drawing order**, so next / previous jumped around the sheet. Now sorted by position: top to bottom, and left to right within a line (centres within half a text height share a line); `sortByPosition` in `src/core/search/context.ts`, applied per page in `DocumentSearch`.
+- [x] **[Medium] R7: Worker text memory was unbounded.** Every page's text items read for sheet labels or search stayed in the worker for the document's lifetime (and the main thread keeps its own copy for search). Now at most `TEXT_PAGES_IN_MEMORY` (32) pages, least recently used out; the rest come back from IndexedDB (`holdText`, unit-tested).
+- [x] **[Low] R8: The results list's keyboard row survived a new query**, so Enter in the list could go to a hit index of the old results. The row now belongs to one query + options; test added.
+- [x] **[Low] R9: F3 in the workspace's own fields or on a toolbar button fell through to the browser's Find next.** F3 / Shift+F3 now use the same scope as Ctrl+F (R3).
+- [x] **[Low] R10: Blurry lower band in the founder-reviewed screenshot (investigation).** Finding: **tiles were still loading; not a request bug.** `perf-search` waited a fixed 1.5 s after each go-to-hit and 2 s before the screenshot, but on L17 at 188 % (bucket 2, about 35 tiles in and around the view) a reveal needs 2.3 to 10.3 s until every tile is in: 35, 3, 7 and 16 tiles were still pending 1.5 s after the four reveals, and every reveal reached zero pending (no tile left un-requested or stale, no memory-budget cut-off). Tiles are requested visible-first and centre-first, so the corners and the edge row come last: exactly the blurry band (the preview raster scaled up) in the screenshot. Fix: the engine publishes `data-pending-tiles` on the canvas (tiles in flight, plus 1 while the page preview is loading; unit-tested) and `perf-search` waits for it to reach 0 before measuring and before the screenshot. The re-taken screenshot is sharp everywhere. (Tile render speed on L17 is a 3.2 concern and is not changed here.)
+- [x] **[Low] R11: An astral character in a match got half a glyph of quad** (`matchQuads` took `offset + 1` code units). Now the source character's full length; test added.
+- [ ] **[Deferred] R12: "Search all open drawings" (founder decision 3).** Not implemented. Backlog note here and in `epics.md` (post-3.x follow-up after Story 3.6): an option in the Search panel to search every open tab, results grouped by drawing then page; the per-tab `DocumentSearch` engines can be queried together.
 
 ## Dev Notes
 
@@ -55,6 +72,9 @@ Claude Opus 5.5 (claude-opus-5-5)
   - From the first key typed (40 ms per key) to the results: 558 ms, including the 150 ms debounce and the first text read (pdf.js `getTextContent` on L17: 826 items, 4,618 characters, about 275 ms in the worker).
   - Highlight positions: four hits in a row were each revealed: zoomed until the text is at least 24 px tall, and centred. In a 40 × 16 px box at the canvas centre, 640 of 640 px are highlighted and 46–159 px of dark drawing ink lie under them (the label's glyphs). The screenshot `fixtures/private/traces/3-6-search.png` shows every "CH +2700" label on screen boxed exactly, the current one stronger. It was reviewed and is not committed.
   - Longest main-thread task while typing, matching and moving between hits: **0 ms** (Long Tasks API: nothing ≥ 50 ms).
+- **Review fixes (2026-10-24):** `npm run typecheck`, `npm run lint`, `npm run build` clean; `npm test` 1291 tests in 115 files (Docker stopped). Local e2e on the production build (`E2E_PROD=1`, workers 1): 42 passed, 4 skipped. Locally Supabase ran on remapped ports 583xx (Windows had reserved 55956-57055 this boot; `supabase/config.toml` changed only locally, never committed).
+  - Founder drawings (`PERF_L17=1`): L17 "CH +2700" 14 results (typed to results 553-727 ms), whole-word "D1" 31, L21 "CH +2700" 15. Highlight over the label's ink at the canvas centre for all four reveals (640 of 640 px). Reveals at 188 %: 35, 3, 7 and 16 tiles pending at 1.5 s; every tile in after 10.3, 2.3, 3.3 and 5.3 s (R10). Longest main-thread task 0 ms in four runs; the very first run after a fresh build (cold IndexedDB and code cache, before the per-phase instrumentation) logged one 219 ms task that did not recur.
+  - Screenshot re-taken after the tiles settled: `fixtures/private/traces/3-6-search.png` (yellow highlights, the current hit amber, rows "CH +2700 · CT.03 · A1" with locators; not committed).
 
 ### Completion Notes List
 
@@ -107,11 +127,15 @@ Claude Opus 5.5 (claude-opus-5-5)
 10. **The search is lost when the workspace remounts.** If the workspace unmounts with tabs open, the engines are rebuilt, as in 3.5 decision 8.
 11. **Task 4 was committed before Task 3**, because the panel needs the search model.
 
-**Questions for the founder:**
+**Questions for the founder:** answered 2026-10-24 (yellow highlights, Ctrl+F anywhere in the workspace, "Search all open drawings" deferred, distinguishable hit rows); see Review Follow-ups.
 
-- Highlight colour: the theme accent (now), or a Revu/Acrobat-style yellow?
-- Should Ctrl+F also open Search when the focus is elsewhere in the workspace (a panel, the toolbar), not only on the canvas? The browser keeps it there today, as the UX table says.
-- Revu can search all open documents. Should the panel get a "Search all open drawings" option (a later story)?
+**Review decisions (2026-10-24):**
+
+12. **Hit rows:** matched text · up to two nearest texts on the sheet · a position locator (R5); a page's hits in reading order of their position (R6). Decision 9 (snippets in drawing order) is superseded.
+13. **Highlight colours** are theme tokens (`--canvas-search-hit/-current/-outline`): the same yellow and amber in Blueprint and Daylight (the sheet is always white), stronger in Contrast. Decision 5 (accent) is superseded.
+14. **Ctrl+F / F3 scope** (R3, R9): the workspace while a drawing is open; text fields of dialogs and forms, and "no drawing", keep the browser's.
+15. **A pending Enter / F3** (R2) waits only for the pages between the shown one and the nearest hit in that direction; typing drops it.
+16. **`data-pending-tiles`** on the canvas is a diagnostics attribute like `data-view` (R10).
 
 ### File List
 
@@ -123,6 +147,7 @@ Claude Opus 5.5 (claude-opus-5-5)
 - `src/features/workspace/panel-registry.ts`, `layout-store.ts`, `use-workspace-shortcuts.ts`, `use-workspace-shortcuts.test.ts`, `workspace-shell.tsx` (modified)
 - `scripts/fixtures/make-viewer-fixtures.mjs`, `fixtures/README.md` (modified); `fixtures/pdf/search.pdf` (new)
 - `e2e/viewer-search.spec.ts`, `e2e/perf-search.spec.ts` (new)
+- Review fixes: `src/core/search/context.ts`, `context.test.ts` (new); `src/core/search/match.ts`, `match.test.ts`; `src/features/viewer/document-search.ts`, `document-search.test.ts`, `search-panel.tsx`, `search-panel.test.tsx`, `viewer-engine.ts`, `viewer-engine.test.ts`; `src/features/workspace/use-workspace-shortcuts.ts`, `use-workspace-shortcuts.test.ts`, `workspace-shell.tsx`, `panel-registry.ts`; `src/workers/render.worker.ts`, `render.worker.test.ts`; `src/app/globals.css`, `src/components/ui/tokens.ts`, `tokens.test.ts`, `token-names.ts`, `contrast-pairs.ts`; `e2e/viewer-search.spec.ts`, `e2e/perf-search.spec.ts`; `_bmad-output/planning-artifacts/ux-design-specification.md`, `epics.md` (modified)
 
 ### Change Log
 
@@ -130,3 +155,4 @@ Claude Opus 5.5 (claude-opus-5-5)
   - Worker text extraction with quads and a normalised index, cached per page; the search core; a per-tab search with canvas highlights and go-to-hit; the Search panel with Ctrl+F and F3.
   - Unit tests, e2e and the local L17/L21 check.
   - Commits 221b77d, ccf935c, c51481e, e33705e, 5b5aa92.
+- 2026-10-24: Code review (Claude Opus 5.5): 11 findings fixed (2 High, 5 Medium, 4 Low), 1 deferred to the backlog by the founder; founder decisions applied (yellow highlights, Ctrl+F in the workspace, distinguishable hit rows). Status → done.

@@ -572,6 +572,11 @@ describe("ViewerEngine: gestures (Story 3.2)", () => {
     paint();
     expect(state.zoom).toBe(106);
     expect(canvases.active.dataset.view).toMatch(/^1\.414213562 /);
+    // The tiles still being rendered for the view, for e2e waits (review R11).
+    vi.advanceTimersByTime(200);
+    paint();
+    expect(Number(canvases.active.dataset.pendingTiles)).toBe(engine.pendingTiles);
+    expect(engine.pendingTiles).toBeGreaterThan(0);
     vi.runAllTimers();
     // Reopen the same document (same sha256): the view comes back.
     void engine.open(file());
@@ -1047,8 +1052,12 @@ describe("ViewerEngine: search (Story 3.6)", () => {
   });
 
   it("searches the document's text through render.text, moves to hits across pages, and draws highlights while the panel is open", async () => {
-    const fills: number[] = [];
+    const fills: string[] = [];
+    const strokes: string[] = [];
     const ctx = {
+      fillStyle: "",
+      strokeStyle: "",
+      lineWidth: 1,
       setTransform: vi.fn(),
       clearRect: vi.fn(),
       save: vi.fn(),
@@ -1057,8 +1066,8 @@ describe("ViewerEngine: search (Story 3.6)", () => {
       moveTo: vi.fn(),
       lineTo: vi.fn(),
       closePath: vi.fn(),
-      fill: () => fills.push(1),
-      stroke: vi.fn(),
+      fill: () => fills.push(String(ctx.fillStyle)),
+      stroke: () => strokes.push(String(ctx.strokeStyle)),
       strokeRect: vi.fn(),
       setLineDash: vi.fn(),
     };
@@ -1078,7 +1087,9 @@ describe("ViewerEngine: search (Story 3.6)", () => {
     engine.search.step(1);
     expect(engine.currentPage).toBe(1);
     paint();
-    expect(fills.length).toBeGreaterThanOrEqual(1);
+    // Revu/Acrobat-style yellow, the current hit amber with a dark outline; never the accent (review R4).
+    expect(fills).toEqual(["rgba(255, 214, 0, 0.4)", "rgba(255, 170, 0, 0.6)"]);
+    expect(strokes).toEqual(["#8a5a00"]);
     // Panel closed: no highlights.
     fills.length = 0;
     searchUi.setState({ panelOpen: false });

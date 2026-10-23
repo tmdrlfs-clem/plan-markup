@@ -33,6 +33,11 @@
   --canvas-coverage-fill: rgba(108, 168, 255, 0.18);
   --canvas-coverage-outline: #6ca8ff;
   --canvas-zone: #8b7fd1;
+  /* Search highlights (Story 3.6 review): Revu/Acrobat-style yellow on the white sheet,
+     the current hit amber with a dark outline; never the accent. */
+  --canvas-search-hit: rgba(255, 214, 0, 0.4);
+  --canvas-search-current: rgba(255, 170, 0, 0.6);
+  --canvas-search-outline: #8a5a00;
   --canvas-handle-size: 8px;
 }
 
@@ -62,6 +67,11 @@
   --canvas-coverage-fill: rgba(37, 99, 201, 0.18);
   --canvas-coverage-outline: #2563c9;
   --canvas-zone: #6a5bc2;
+  /* Search highlights (Story 3.6 review): Revu/Acrobat-style yellow on the white sheet,
+     the current hit amber with a dark outline; never the accent. */
+  --canvas-search-hit: rgba(255, 214, 0, 0.4);
+  --canvas-search-current: rgba(255, 170, 0, 0.6);
+  --canvas-search-outline: #8a5a00;
   --canvas-handle-size: 8px;
 }
 
@@ -91,6 +101,11 @@
   --canvas-coverage-fill: rgba(125, 182, 255, 0.22);
   --canvas-coverage-outline: #7db6ff;
   --canvas-zone: #8b7fd1;
+  /* Search highlights (Story 3.6 review): Revu/Acrobat-style yellow on the white sheet,
+     the current hit amber with a dark outline; never the accent. */
+  --canvas-search-hit: rgba(255, 221, 0, 0.5);
+  --canvas-search-current: rgba(255, 160, 0, 0.7);
+  --canvas-search-outline: #5c3b00;
   --canvas-handle-size: 8px;
 }
 
