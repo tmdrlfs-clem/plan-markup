@@ -1,6 +1,6 @@
 # Story 3.7: Status bar with page size, scale, snap, cursor and zoom
 
-Status: ready-for-dev
+Status: in-progress
 
 ## Story
 
