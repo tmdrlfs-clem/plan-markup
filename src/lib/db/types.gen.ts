@@ -41,14 +41,14 @@ export type Database = {
           Tables: {
             "profiles": {
                   Row: {
-                    "created_at": string,"email": string,"id": string,"is_platform_admin": boolean,"name": string,"status": string,"updated_at": string
+                    "created_at": string,"email": string,"id": string,"is_platform_admin": boolean,"name": string,"status": string,"theme": string,"updated_at": string
                   }
                   ComputedFields: never
                   Insert: {
-                    "created_at"?: string,"email": string,"id": string,"is_platform_admin"?: boolean,"name"?: string,"status"?: string,"updated_at"?: string
+                    "created_at"?: string,"email": string,"id": string,"is_platform_admin"?: boolean,"name"?: string,"status"?: string,"theme"?: string,"updated_at"?: string
                   }
                   Update: {
-                    "created_at"?: string,"email"?: string,"id"?: string,"is_platform_admin"?: boolean,"name"?: string,"status"?: string,"updated_at"?: string
+                    "created_at"?: string,"email"?: string,"id"?: string,"is_platform_admin"?: boolean,"name"?: string,"status"?: string,"theme"?: string,"updated_at"?: string
                   }
                   Relationships: [
 

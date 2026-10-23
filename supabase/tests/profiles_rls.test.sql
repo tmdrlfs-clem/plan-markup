@@ -58,8 +58,11 @@ select ok(
   not has_column_privilege('authenticated', 'public.profiles', 'status', 'update')
   and not has_column_privilege('authenticated', 'public.profiles', 'is_platform_admin', 'update')
   and not has_column_privilege('authenticated', 'public.profiles', 'email', 'update')
-  and has_column_privilege('authenticated', 'public.profiles', 'name', 'update'),
-  'authenticated can update name only'
+  and not has_column_privilege('authenticated', 'public.profiles', 'id', 'update')
+  and not has_column_privilege('authenticated', 'public.profiles', 'created_at', 'update')
+  and has_column_privilege('authenticated', 'public.profiles', 'name', 'update')
+  and has_column_privilege('authenticated', 'public.profiles', 'theme', 'update'),
+  'authenticated can update name and theme only (Story 3.8)'
 );
 
 -- ---------------------------------------------------------------------------

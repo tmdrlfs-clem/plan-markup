@@ -54,6 +54,7 @@ function profile(status: string, extra: Record<string, unknown> = {}) {
     email: "user@plan-markup.test",
     status,
     is_platform_admin: false,
+    theme: "daylight",
     ...extra,
   };
 }
@@ -83,8 +84,14 @@ describe("readAuthState / getAuthUser", () => {
     fake.profile = profile("active");
     await expect(readAuthState()).resolves.toEqual({
       kind: "active",
-      user: { id: ID, email: "user@plan-markup.test", name: "Dev User", isPlatformAdmin: false },
+      user: { id: ID, email: "user@plan-markup.test", name: "Dev User", isPlatformAdmin: false, theme: "daylight" },
     });
+  });
+
+  it("an unknown stored theme reads as the default (Story 3.8)", async () => {
+    fake.user = EVIL_USER;
+    fake.profile = profile("active", { theme: "neon" });
+    await expect(getAuthUser()).resolves.toMatchObject({ theme: "blueprint" });
   });
 
   it("is inactive/pending for a pending profile, and getAuthUser() is null", async () => {

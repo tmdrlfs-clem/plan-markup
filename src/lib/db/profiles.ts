@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { DEFAULT_THEME, isTheme, type Theme } from "@/lib/theme";
 import type { Database } from "./types.gen";
 
 export type ProfileStatus = "pending" | "active" | "deactivated";
@@ -9,6 +10,8 @@ export type Profile = {
   email: string;
   status: ProfileStatus;
   isPlatformAdmin: boolean;
+  /** The workspace theme (Story 3.8); the default for a value the app does not know. */
+  theme: Theme;
 };
 
 const STATUSES: readonly ProfileStatus[] = ["pending", "active", "deactivated"];
@@ -23,7 +26,7 @@ export async function getOwnProfile(
 ): Promise<Profile | null> {
   const { data, error } = await client
     .from("profiles")
-    .select("id, name, email, status, is_platform_admin")
+    .select("id, name, email, status, is_platform_admin, theme")
     .eq("id", userId)
     .maybeSingle();
   if (error) throw new Error(`Could not read the profile: ${error.code ?? "unknown"}`);
@@ -37,5 +40,6 @@ export async function getOwnProfile(
     email: data.email,
     status: data.status as ProfileStatus,
     isPlatformAdmin: data.is_platform_admin,
+    theme: isTheme(data.theme) ? data.theme : DEFAULT_THEME,
   };
 }

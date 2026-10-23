@@ -190,8 +190,10 @@ CREATE TABLE IF NOT EXISTS "public"."profiles" (
     "is_platform_admin" boolean DEFAULT false NOT NULL,
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "theme" "text" DEFAULT 'blueprint'::"text" NOT NULL,
     CONSTRAINT "profiles_name_length" CHECK (("char_length"("name") <= 100)),
-    CONSTRAINT "profiles_status_check" CHECK (("status" = ANY (ARRAY['pending'::"text", 'active'::"text", 'deactivated'::"text"])))
+    CONSTRAINT "profiles_status_check" CHECK (("status" = ANY (ARRAY['pending'::"text", 'active'::"text", 'deactivated'::"text"]))),
+    CONSTRAINT "profiles_theme_check" CHECK (("theme" = ANY (ARRAY['blueprint'::"text", 'daylight'::"text", 'contrast'::"text"])))
 );
 
 
@@ -203,6 +205,10 @@ COMMENT ON TABLE "public"."profiles" IS 'One row per auth user. Created by app.f
 
 
 COMMENT ON COLUMN "public"."profiles"."is_platform_admin" IS 'Server-controlled. Never writable by authenticated users.';
+
+
+
+COMMENT ON COLUMN "public"."profiles"."theme" IS 'Workspace theme: blueprint (default), daylight or contrast. Writable by the user for their own row.';
 
 
 
@@ -283,6 +289,10 @@ GRANT SELECT ON TABLE "public"."profiles" TO "authenticated";
 
 
 GRANT UPDATE("name") ON TABLE "public"."profiles" TO "authenticated";
+
+
+
+GRANT UPDATE("theme") ON TABLE "public"."profiles" TO "authenticated";
 
 
 

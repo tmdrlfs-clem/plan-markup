@@ -5,7 +5,9 @@ import { getOwnProfile } from "@/lib/db/profiles";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { sanitizeNextPath } from "./redirect";
 
-export type AuthUser = { id: string; email: string; name: string; isPlatformAdmin: boolean };
+import type { Theme } from "@/lib/theme";
+
+export type AuthUser = { id: string; email: string; name: string; isPlatformAdmin: boolean; theme: Theme };
 
 export type AuthState =
   | { kind: "anonymous" }
@@ -40,6 +42,7 @@ export async function readAuthState(): Promise<AuthState> {
       email: profile.email,
       name: profile.name,
       isPlatformAdmin: profile.isPlatformAdmin,
+      theme: profile.theme,
     },
   };
 }

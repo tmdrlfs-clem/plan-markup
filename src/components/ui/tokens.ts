@@ -1,9 +1,9 @@
 // Client-only bridge between the CSS theme variables and the canvas renderer.
 // Never import this from src/core (it touches `document`).
 
-export const THEMES = ["blueprint", "daylight", "contrast"] as const;
-export type Theme = (typeof THEMES)[number];
-export const DEFAULT_THEME: Theme = "blueprint";
+import { DEFAULT_THEME, isTheme, type Theme } from "@/lib/theme";
+
+export { DEFAULT_THEME, THEMES, isTheme, type Theme } from "@/lib/theme";
 
 export interface CanvasTokens {
   /** Selection colour (accent) and its dark companion outline. */
@@ -60,16 +60,12 @@ export function readCanvasTokens(
   };
 }
 
-export function isTheme(value: unknown): value is Theme {
-  return typeof value === "string" && (THEMES as readonly string[]).includes(value);
-}
-
 export function getTheme(root: HTMLElement = document.documentElement): Theme {
   const value = root.getAttribute("data-theme");
   return isTheme(value) ? value : DEFAULT_THEME;
 }
 
-/** Sets `data-theme` on <html>. Persistence arrives with profiles.theme (Epic 3). */
+/** Sets `data-theme` on <html> (the workspace's theme store does this with persistence, Story 3.8). */
 export function setTheme(theme: Theme): void {
   document.documentElement.setAttribute("data-theme", theme);
 }
