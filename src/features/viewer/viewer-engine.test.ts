@@ -168,6 +168,27 @@ describe("ViewerEngine", () => {
     expect(client.all("render.tile").length).toBeGreaterThan(before);
   });
 
+  it("logs tile timings only when a local perf check asked for it (window.__pmTilePerf)", async () => {
+    const g = globalThis as { __pmTilePerf?: unknown[] };
+    const { client, engine } = setup();
+    await openToPreview(client, engine);
+    client.last("render.preview").resolve({ tile: tilePayload(1), content: null });
+    await flush();
+    engine.zoomBy(2);
+    vi.runAllTimers();
+    const [first, second] = client.all("render.tile");
+    first.resolve({ tile: { ...tilePayload(2), bucket: 1, width: 512, height: 512, renderMs: 17, waitMs: 3 } });
+    await flush();
+    g.__pmTilePerf = [];
+    try {
+      second.resolve({ tile: { ...tilePayload(2), bucket: 1, col: 1, width: 512, height: 512, renderMs: 21, waitMs: 40, fromCache: true } });
+      await flush();
+      expect(g.__pmTilePerf).toEqual([expect.objectContaining({ page: 1, bucket: 1, inView: true, fromCache: true, renderMs: 21, waitMs: 40 })]);
+    } finally {
+      delete g.__pmTilePerf;
+    }
+  });
+
   it("a resize at the same zoom keeps every tile: buckets are absolute (2^k device px per point)", async () => {
     const { client, engine } = setup();
     await openToPreview(client, engine);

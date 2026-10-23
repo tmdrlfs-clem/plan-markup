@@ -169,6 +169,18 @@ type PageView = { view: ViewState; fitMode: FitMode };
 /** A device-px box: left, top, right, bottom. */
 type Box = { l: number; t: number; r: number; b: number };
 
+/** One tile's timings for the opt-in local perf checks (e2e/perf-tiles.spec.ts). */
+export type TilePerfEntry = { at: number; page: number; bucket: number; inView: boolean; fromCache: boolean; renderMs: number; waitMs: number };
+
+/**
+ * The tile timing log, only when a local perf check has set `window.__pmTilePerf`
+ * to an array (never in normal use: no cost, nothing grows).
+ */
+function tilePerfLog(): TilePerfEntry[] | null {
+  const log = (globalThis as { __pmTilePerf?: unknown }).__pmTilePerf;
+  return Array.isArray(log) ? (log as TilePerfEntry[]) : null;
+}
+
 const closeBitmap = (b: ImageBitmap) => {
   try {
     b.close();
@@ -1055,7 +1067,7 @@ export class ViewerEngine {
         continue;
       }
       if (this.inflight.has(key) || this.failed.has(key)) continue;
-      this.requestTile(key, { page: this.pageNo, bucket, scale: bucketScale(bucket), col: t.col, row: t.row, tileSize: this.tileSize });
+      this.requestTile(key, { page: this.pageNo, bucket, scale: bucketScale(bucket), col: t.col, row: t.row, tileSize: this.tileSize }, t.inView);
     }
     this.invalidate();
   }
@@ -1067,7 +1079,11 @@ export class ViewerEngine {
     this.update({ memoryPressure: true });
   }
 
-  private requestTile(key: string, payload: { page: number; bucket: number; scale: number; col: number; row: number; tileSize: number }): void {
+  private requestTile(
+    key: string,
+    payload: { page: number; bucket: number; scale: number; col: number; row: number; tileSize: number },
+    inView = true,
+  ): void {
     const generation = this.generation;
     const call = this.client.request("render.tile", payload);
     this.inflight.set(key, call.reqId);
@@ -1075,6 +1091,15 @@ export class ViewerEngine {
       ({ tile }) => {
         if (generation !== this.generation || this.inflight.get(key) !== call.reqId) return closeBitmap(tile.bitmap);
         this.inflight.delete(key);
+        tilePerfLog()?.push({
+          at: this.now(),
+          page: payload.page,
+          bucket: payload.bucket,
+          inView,
+          fromCache: tile.fromCache,
+          renderMs: tile.renderMs,
+          waitMs: tile.waitMs,
+        });
         // Counted before set: set's onEvict (replacement or over-budget) uncounts it.
         this.countTile(payload.page, payload.bucket, 1);
         const evicted = this.cache.set(

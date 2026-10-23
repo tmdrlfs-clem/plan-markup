@@ -174,3 +174,45 @@ these holds:
 
 The proxy skips the session only behind the same gate, so a default production deployment still
 redirects `/spike` to sign-in. Unit tests cover the guard, the proxy, the routes and the page.
+
+## Addendum 2026-10-24: tile culling by recorded operation boxes (Story 3.7 review)
+
+The founder saw tiles take up to 10 s to fill after a go-to-hit jump on L17 at ~190 %. The
+recommendation above ("pdf.js runs the whole operator list for every tile, with no culling")
+was the cause.
+
+**Measured** with `e2e/perf-tiles.spec.ts` (local, private drawing): L17, production build,
+Playwright Chromium, DPR 1, 1920 x 1080, a fresh browser context (empty raster cache), search
+"CH +2700" and four go-to-hit jumps at 188 % (bucket 2, 4 device px per point).
+
+| First jump (40 tiles, 18 in view) | Before | After |
+| --- | --- | --- |
+| Worker time per 512 px tile, p50 / p95 | 244 / 362 ms | 17 / 55 ms |
+| All in-view tiles in | 5.0 s | 1.3 s |
+| Every requested tile in (incl. the margin ring) | 10.1 s | 1.7 s |
+| Later jumps (8-21 new tiles), every tile in | 2.0-5.1 s | 0.3-0.6 s |
+
+The time was all rendering: no duplicate or stale requests, in-view and centre-first order,
+other buckets' tiles already drawn underneath while loading.
+
+**Change** (`src/workers/render-pdfjs.ts`, `src/core/render/op-culling.ts`): pdf.js 6.4 can record
+a box per operator during a full-page render (`recordOperations` → `page.recordedBBoxes`,
+shares of the page in 1/256 steps; state operators carry the boxes of the drawing they affect)
+and skip operators with `operationsFilter`. Its own viewer uses this for the zoomed "detail view"
+(`enableOptimizedPartialRendering`). The worker records once per page on a 1024 px canvas when
+the first tile of the page is asked for (~0.5 s on L17, about one tile's old cost), then each
+tile runs only the operators whose box meets the tile, widened by two 1/256 steps. A cancelled
+or failed recording is discarded (pdf.js keeps partial boxes on the page) and the tile runs
+every operator.
+
+**Correctness:** in Node (pdf.js legacy build on @napi-rs/canvas), every 512 px tile of L17 and
+L21 at 2 px/pt (70 each) and 72 more tiles at 1, 2 and 4 px/pt match the full render within an
+anti-aliasing channel delta of 4 (one L17 tile differs at all, max delta 2). The committed
+fixtures are checked the same way in CI (`src/core/render/op-culling.test.ts`, incl. /Rotate 90).
+The 188 % screenshot after the change was reviewed (complete, sharp).
+
+**A0 (synthetic, 159 k operators of very long paths):** tiles keep ~15 % of the operators, 2.5 s
+→ 1.3 s per tile in Node, pixel-identical; the recording pass costs about one full render.
+
+**Not done (follow-up idea):** record the boxes in idle time right after the preview, so even the
+first jump into a page does not pay the recording pass.

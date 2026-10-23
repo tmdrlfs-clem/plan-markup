@@ -26,6 +26,7 @@ import {
 } from "pdfjs-dist";
 import { textItemOf, type TextItem } from "@/core/search/page-text";
 import { contentFlags, type OpsTable } from "@/core/render/content-flags";
+import { operationsFilterFor, tileFraction, type OperationBoxes } from "@/core/render/op-culling";
 import { RenderError, type ContentFlags, type PageInfo } from "./render-protocol";
 import type { RenderedTile, TileJob, TileRenderer } from "./render.worker";
 
@@ -73,6 +74,15 @@ class NoFilterFactory {
 }
 
 type FontScope = { fonts?: unknown };
+
+/**
+ * Long side (device px) of the canvas a page's operator boxes are recorded on
+ * (op-culling.ts). The boxes are shares of the page in 1/256 steps, so the
+ * recording does not need more; its cost is the operator list, not the pixels.
+ */
+const RECORD_PX = 1024;
+
+type RecordingPage = PDFPageProxy & { recordedBBoxes?: OperationBoxes | null };
 
 /** Progressive preview snapshots: first after this long, then at this interval (ms). */
 const PARTIAL_FIRST_MS = 300;
@@ -143,6 +153,11 @@ export class PdfjsTileRenderer implements TileRenderer<ImageBitmap> {
   private task: PDFDocumentLoadingTask | null = null;
   private doc: PDFDocumentProxy | null = null;
   private pages = new Map<number, PDFPageProxy>();
+  /**
+   * Per page, its operators' boxes once a recording pass has completed
+   * (op-culling.ts): tiles then run only the operators that can touch them.
+   */
+  private boxes = new Map<number, OperationBoxes>();
   /** Rejects when the parser worker of the open document fails. */
   private parserFailed: Promise<never> | null = null;
 
@@ -187,6 +202,7 @@ export class PdfjsTileRenderer implements TileRenderer<ImageBitmap> {
       if (this.task !== task) throw new RenderError("cancelled", "Superseded by another open or a close");
       this.doc = doc;
       this.pages = pages;
+      this.boxes = new Map();
       return out;
     } catch (e) {
       if (this.task === task) await this.close();
@@ -199,6 +215,11 @@ export class PdfjsTileRenderer implements TileRenderer<ImageBitmap> {
   async render(job: TileJob, signal: AbortSignal, onPartial?: (bitmap: ImageBitmap) => void): Promise<RenderedTile<ImageBitmap>> {
     const page = this.pages.get(job.page);
     if (!page) throw new RenderError("out-of-range", "Page not loaded");
+    const viewport = page.getViewport({ scale: job.scale });
+    // A tile (not the whole page): run only the operators that can touch it.
+    const whole = job.x <= 0 && job.y <= 0 && job.x + job.width >= Math.floor(viewport.width) && job.y + job.height >= Math.floor(viewport.height);
+    const boxes = whole || job.content ? null : await this.operationBoxes(job.page, page, signal);
+    const operationsFilter = boxes ? operationsFilterFor(boxes, tileFraction(job, viewport.width, viewport.height)) : undefined;
     const canvas = new OffscreenCanvas(job.width, job.height);
     // willReadFrequently forces a CPU (software) canvas. A GPU-backed worker canvas
     // sends every pdf.js path to the GPU process, which then starves the page's
@@ -207,7 +228,6 @@ export class PdfjsTileRenderer implements TileRenderer<ImageBitmap> {
     if (!ctx) throw new Error("No 2D context");
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, job.width, job.height);
-    const viewport = page.getViewport({ scale: job.scale });
     const task = page.render({
       canvas: canvas as unknown as HTMLCanvasElement,
       canvasContext: ctx as unknown as CanvasRenderingContext2D,
@@ -217,6 +237,7 @@ export class PdfjsTileRenderer implements TileRenderer<ImageBitmap> {
       // widgets are drawn as their appearance, never as live fields.
       annotationMode: AnnotationMode.ENABLE,
       background: "#ffffff",
+      operationsFilter,
     });
     if (onPartial) {
       // pdf.js calls onContinue between execution slices: snapshot the canvas
@@ -243,6 +264,55 @@ export class PdfjsTileRenderer implements TileRenderer<ImageBitmap> {
     // convertToBlob copies the pixels synchronously, so the canvas can be handed over next.
     const encoded = job.encode ? canvas.convertToBlob({ type: "image/png" }) : null;
     return { bitmap: canvas.transferToImageBitmap(), encoded, content };
+  }
+
+  /**
+   * The page's operator boxes: recorded once by a whole-page pass on a small
+   * canvas (pdf.js `recordOperations`; about one tile's cost), then kept. Null
+   * when they cannot be recorded (the tile then runs every operator). A
+   * cancelled pass rejects and leaves nothing behind, so the next tile records again.
+   */
+  private async operationBoxes(pageNo: number, page: PDFPageProxy, signal: AbortSignal): Promise<OperationBoxes | null> {
+    const known = this.boxes.get(pageNo);
+    if (known) return known;
+    const recording = page as RecordingPage;
+    const unit = page.getViewport({ scale: 1 });
+    const scale = RECORD_PX / Math.max(unit.width, unit.height, 1);
+    const viewport = page.getViewport({ scale });
+    const width = Math.max(1, Math.ceil(viewport.width));
+    const height = Math.max(1, Math.ceil(viewport.height));
+    const canvas = new OffscreenCanvas(width, height);
+    const ctx = canvas.getContext("2d", { alpha: false, willReadFrequently: true });
+    if (!ctx) return null;
+    // pdf.js records only when the page holds no boxes yet: drop any left by an unfinished pass.
+    recording.recordedBBoxes = null;
+    const task = page.render({
+      canvas: canvas as unknown as HTMLCanvasElement,
+      canvasContext: ctx as unknown as CanvasRenderingContext2D,
+      viewport,
+      annotationMode: AnnotationMode.ENABLE,
+      background: "#ffffff",
+      recordOperations: true,
+    });
+    const onAbort = () => task.cancel();
+    signal.addEventListener("abort", onAbort, { once: true });
+    try {
+      if (signal.aborted) task.cancel();
+      await (this.parserFailed ? Promise.race([task.promise, this.parserFailed]) : task.promise);
+    } catch (e) {
+      // A cancelled or failed pass may leave partial boxes on the page (pdf.js keeps
+      // what it recorded): never use them.
+      recording.recordedBBoxes = null;
+      if (signal.aborted) throw e;
+      return null;
+    } finally {
+      signal.removeEventListener("abort", onAbort);
+      canvas.width = canvas.height = 0;
+    }
+    const boxes = recording.recordedBBoxes ?? null;
+    if (!boxes || this.pages.get(pageNo) !== page) return null;
+    this.boxes.set(pageNo, boxes);
+    return boxes;
   }
 
   release(bitmap: ImageBitmap): void {
@@ -282,6 +352,7 @@ export class PdfjsTileRenderer implements TileRenderer<ImageBitmap> {
 
   async close(): Promise<void> {
     this.pages = new Map();
+    this.boxes = new Map();
     const task = this.task;
     this.task = null;
     this.doc = null;
