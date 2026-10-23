@@ -26,7 +26,8 @@ describe("PageSizeItem", () => {
     wrap(<PageSizeItem page={{ width: 841 * MM, height: 594 * MM }} />);
     const wide = screen.getByTestId("status-page-size");
     expect(wide).toHaveTextContent("A1 841 × 594 mm");
-    expect(wide).toHaveClass("hidden", "ws-md:inline-flex");
+    expect(wide.parentElement).toHaveClass("hidden", "ws-md:contents");
+    expect(screen.getByTestId("status-page-size-icon").parentElement).toHaveClass("contents", "ws-md:hidden");
     const narrow = screen.getAllByText("A1 841 × 594 mm")[1];
     expect(narrow).toHaveClass("sr-only");
     await user.hover(wide);

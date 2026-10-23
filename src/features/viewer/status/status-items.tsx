@@ -32,8 +32,12 @@ export function PageSizeItem({ page }: { page: { width: number; height: number }
   const icon = size.orientation === "portrait" ? RectangleVertical : RectangleHorizontal;
   return (
     <>
-      <StatusBarItem label={size.label} icon={icon} tooltip={tooltip} data-testid="status-page-size" className="hidden ws-md:inline-flex" />
-      <StatusBarItem label={size.label} icon={icon} iconOnly tooltip={tooltip} className="ws-md:hidden" />
+      <span className="hidden ws-md:contents">
+        <StatusBarItem label={size.label} icon={icon} tooltip={tooltip} data-testid="status-page-size" />
+      </span>
+      <span className="contents ws-md:hidden">
+        <StatusBarItem label={size.label} icon={icon} iconOnly tooltip={tooltip} data-testid="status-page-size-icon" />
+      </span>
     </>
   );
 }
