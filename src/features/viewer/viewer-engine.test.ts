@@ -5,7 +5,10 @@ import { WorkerRequestError, type RenderClient } from "@/workers/rpc";
 
 import { buildPageText } from "@/core/search/page-text";
 
+import { applyMatrix, pageToScreen, pdfToPageMatrix } from "@/core/render/view";
+
 import { searchUi } from "./search-ui";
+import { cursorStore } from "./status/cursor-store";
 import { MIN_HIT_PX, ViewerEngine, clearDocumentViews, type ViewerCanvases } from "./viewer-engine";
 import { canvasStateOf, type ViewerState } from "./viewer-store";
 
@@ -1110,5 +1113,75 @@ describe("ViewerEngine: search (Story 3.6)", () => {
     void engine.open(file("b.pdf"));
     await flush();
     expect(engine.search.store.getState()).toMatchObject({ query: "x", hits: [], pageCount: 0 });
+  });
+
+  describe("status bar cursor (Story 3.7)", () => {
+    const cursor = () => cursorStore.getState().point;
+
+    it("publishes the point under the pointer in PDF units (origin bottom-left), once per frame; null off the page", async () => {
+      const { client, engine } = setup();
+      await readyAtFit(client, engine);
+      paint();
+      // Fit: page (0, 0) is at screen (16, 16), 1 CSS px per point.
+      engine.pointerAt({ x: 116, y: 116 });
+      engine.pointerAt({ x: 117, y: 116 });
+      expect(frames).toHaveLength(1); // one frame for both moves
+      paint();
+      expect(cursor()).toEqual({ x: 101, y: 400 });
+      engine.pointerAt({ x: 5, y: 5 });
+      paint();
+      expect(cursor()).toBeNull();
+      engine.pointerAt({ x: 116, y: 116 });
+      paint();
+      engine.pointerAt(null);
+      paint();
+      expect(cursor()).toBeNull();
+    });
+
+    it("is independent of the view's zoom and rotation, and follows a pan under a still pointer", async () => {
+      const { client, engine } = setup();
+      await readyAtFit(client, engine);
+      engine.rotate(90);
+      engine.zoomBy(2);
+      const at = pageToScreen(engine.view, engine.viewportSize, { x: 300, y: 200 });
+      engine.pointerAt(at);
+      paint();
+      expect(cursor()!.x).toBeCloseTo(300, 6);
+      expect(cursor()!.y).toBeCloseTo(300, 6); // 500 - 200
+      engine.panBy(10, 0);
+      paint();
+      expect(cursor()!.y).not.toBeCloseTo(300, 3);
+    });
+
+    it("uses the page's /Rotate: PDF user space of the unrotated page", async () => {
+      const { client, engine } = setup();
+      const rotated = { width: 500, height: 1000, rotate: 90 };
+      void engine.open(file());
+      await flush();
+      client.last("render.open").resolve({ sha256: "r", pageCount: 1, pages: [rotated], fromCache: false });
+      await flush();
+      client.last("render.preview").resolve({ tile: tilePayload(1), content: null });
+      await flush();
+      vi.runAllTimers();
+      const user = { x: 700, y: 120 };
+      const pagePoint = applyMatrix(pdfToPageMatrix(rotated), user);
+      engine.pointerAt(pageToScreen(engine.view, engine.viewportSize, pagePoint));
+      paint();
+      expect(cursor()!.x).toBeCloseTo(700, 6);
+      expect(cursor()!.y).toBeCloseTo(120, 6);
+    });
+
+    it("a background tab clears the readout and publishes nothing", async () => {
+      const { client, engine } = setup();
+      await readyAtFit(client, engine);
+      engine.pointerAt({ x: 116, y: 116 });
+      paint();
+      expect(cursor()).not.toBeNull();
+      engine.suspend();
+      expect(cursor()).toBeNull();
+      engine.pointerAt({ x: 116, y: 116 });
+      expect(frames).toHaveLength(0);
+      expect(cursor()).toBeNull();
+    });
   });
 });

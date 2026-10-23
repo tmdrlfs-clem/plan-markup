@@ -58,11 +58,15 @@ import {
   clampZoom,
   fitPageView,
   fitWidthView,
+  applyMatrix,
+  invertMatrix,
   panBy,
   pageToScreen,
   pageToScreenMatrix,
+  pdfToPageMatrix,
   rotateView,
   rotatedSize,
+  screenToPage,
   stepZoom,
   visibleBounds,
   zoomAt,
@@ -80,6 +84,7 @@ import type { ContentFlags, PageInfo, TilePayload } from "@/workers/render-proto
 import { WorkerRequestError, type RenderClient } from "@/workers/rpc";
 
 import { DocumentSearch } from "./document-search";
+import { setCursor } from "./status/cursor-store";
 import { searchUi } from "./search-ui";
 import type { ViewerErrorCode, ViewerState } from "./viewer-store";
 
@@ -252,6 +257,9 @@ export class ViewerEngine {
   private shownZoom: number | null = null;
   private shownView = "";
   private shownPending = "";
+  /** The pointer over the canvas (viewport CSS px), for the status bar's X/Y (Story 3.7). */
+  private pointerScreen: Point | null = null;
+  private cursorFrame: number | null = null;
 
   constructor(
     private readonly canvases: ViewerCanvases,
@@ -330,6 +338,11 @@ export class ViewerEngine {
     // Not shown: evictions from here on are no memory warning.
     this.needed = new Set();
     this.zoomRect = null;
+    // The status bar's X/Y belongs to the shown tab.
+    if (this.cursorFrame !== null) this.cancelFrame(this.cursorFrame);
+    this.cursorFrame = null;
+    this.pointerScreen = null;
+    setCursor(null);
     this.search.pause();
   }
 
@@ -370,6 +383,7 @@ export class ViewerEngine {
     this.rememberView();
     this.destroyed = true;
     if (this.frame !== null) this.cancelFrame(this.frame);
+    if (this.cursorFrame !== null) this.cancelFrame(this.cursorFrame);
     if (this.settleTimer) clearTimeout(this.settleTimer);
     this.resetDocument();
     this.search.destroy();
@@ -791,6 +805,7 @@ export class ViewerEngine {
 
   /** Drops everything of the current document (worker work, bitmaps, timers). */
   private resetDocument(): void {
+    if (!this.suspended) setCursor(null);
     const ids = [...this.inflight.values()];
     for (const pending of this.thumbPending.values()) if (pending.reqId !== null) ids.push(pending.reqId);
     for (const call of this.sheetCalls.values()) ids.push(call.reqId);
@@ -1256,6 +1271,8 @@ export class ViewerEngine {
     this.drawSearchHighlights();
     if (this.zoomRect) this.drawZoomRect(this.zoomRect);
     this.publishView();
+    // The view moved under a still pointer: the page point under it changed.
+    if (this.pointerScreen) this.publishCursor();
     if (this.pendingPartial) {
       this.pendingPartial = false;
       this.update({ timings: { firstPartialMs: this.timingsPartial, firstFrameMs: null } });
@@ -1371,6 +1388,37 @@ export class ViewerEngine {
       return;
     }
     this.setView({ ...this.view, zoom, centerX: rect.x + rect.width / 2, centerY: rect.y + rect.height / 2 });
+  }
+
+  /**
+   * The pointer moved over the canvas (viewport CSS px), or left it (null).
+   * The status bar's X/Y follows at most once per animation frame (Story 3.7 AC 5).
+   */
+  pointerAt(point: Point | null): void {
+    this.pointerScreen = point;
+    if (this.cursorFrame !== null || this.suspended || this.destroyed) return;
+    this.cursorFrame = this.requestFrame(() => {
+      this.cursorFrame = null;
+      this.publishCursor();
+    });
+  }
+
+  /**
+   * The point under the pointer in PDF units: points, origin at the bottom-left
+   * corner of the unrotated page, whatever the view; null off the page.
+   */
+  cursorPoint(): Point | null {
+    const page = this.page;
+    const at = this.pointerScreen;
+    if (!page || !at) return null;
+    const p = screenToPage(this.view, this.viewport, at);
+    if (!(p.x >= 0 && p.y >= 0 && p.x <= page.width && p.y <= page.height)) return null;
+    return applyMatrix(invertMatrix(pdfToPageMatrix(page)), p);
+  }
+
+  private publishCursor(): void {
+    if (this.suspended || this.destroyed) return;
+    setCursor(this.cursorPoint());
   }
 
   /** Zoom % to the store (only when it changes) and the view to `data-view` (e2e, diagnostics). */

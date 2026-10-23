@@ -118,6 +118,8 @@ export interface ViewerInputTarget {
   goToPage(index: number): void;
   readonly currentPage: number;
   readonly pageCount: number;
+  /** The pointer over the canvas (viewport CSS px) or off it (null): the status bar's X/Y (Story 3.7). */
+  pointerAt?(point: Point | null): void;
 }
 
 type Drag =
@@ -150,6 +152,7 @@ export class ViewerInput {
     this.on(canvas, "lostpointercapture", (e) => this.cancelDrag(e as PointerEvent));
     this.on(canvas, "pointerleave", () => {
       if (!this.drag) this.pointer = null;
+      this.target.pointerAt?.(null);
     });
     // Middle button: no autoscroll, no paste-on-middle-click.
     this.on(canvas, "mousedown", (e) => {
@@ -237,6 +240,7 @@ export class ViewerInput {
   private onPointerMove(e: PointerEvent): void {
     const p = this.point(e);
     this.pointer = p;
+    this.target.pointerAt?.(p);
     const drag = this.drag;
     if (!drag || drag.pointerId !== e.pointerId) return;
     if (drag.kind === "pan") {

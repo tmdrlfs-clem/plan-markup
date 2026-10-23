@@ -113,6 +113,7 @@ function target() {
     fitPage: vi.fn(),
     fitWidth: vi.fn(),
     goToPage: vi.fn(),
+    pointerAt: vi.fn(),
   };
   return Object.assign(fns, { currentPage: 0, pageCount: 1 });
 }
@@ -154,6 +155,13 @@ describe("ViewerInput", () => {
     expect(t.panBy).toHaveBeenLastCalledWith(-50, -0);
     wheel({ deltaY: -100, ctrlKey: true });
     expect(t.zoomBy).toHaveBeenCalledWith(expect.closeTo(Math.SQRT2, 9), { x: 30, y: 40 });
+  });
+
+  it("tells the target where the pointer is over the canvas, and when it leaves (status bar X/Y, Story 3.7)", () => {
+    canvas.dispatchEvent(pointer("pointermove", { x: 25, y: 4 }));
+    expect(t.pointerAt).toHaveBeenLastCalledWith({ x: 25, y: 4 });
+    canvas.dispatchEvent(new MouseEvent("pointerleave"));
+    expect(t.pointerAt).toHaveBeenLastCalledWith(null);
   });
 
   it("does nothing without a document", () => {
