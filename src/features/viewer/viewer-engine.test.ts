@@ -1419,6 +1419,29 @@ describe("snapping (Story 4.1)", () => {
     expect(active.filter((o) => o.op === "stroke")).toHaveLength(0);
   });
 
+  it("Story 4.3 review R1: a Shift-held second point is placed where the cursor shows it, not at the raw pointer", async () => {
+    const { engine, active } = await ready();
+    let result: unknown = "pending";
+    engine.startCalibrationPick({ step: () => undefined, done: (pick) => (result = pick) });
+    engine.pointerAt(screenOf(101, 101));
+    paint();
+    engine.snapClick();
+    // Alt (no snap) and Shift: nearly horizontal is held horizontal; the rubber band ends there too.
+    engine.pointerAt(screenOf(180, 110), { alt: true, shift: true });
+    paint();
+    expect(cursor()!.y).toBeCloseTo(100, 9);
+    expect(engine.getSnappedPoint()).toMatchObject({ y: expect.closeTo(100, 9), type: null });
+    active.length = 0;
+    engine.pointerAt(screenOf(180, 110), { alt: true, shift: true });
+    paint();
+    engine.snapClick();
+    expect(result).toMatchObject({ a: { x: 100, y: 100 } });
+    const pick = result as { b: { x: number; y: number }; distancePt: number };
+    expect(pick.b.x).toBeCloseTo(180, 6);
+    expect(pick.b.y).toBeCloseTo(100, 9);
+    expect(pick.distancePt).toBeCloseTo(80, 6);
+  });
+
   it("Story 4.3: Esc, another tool or another page cancels a pick (done with null) and restores the tool", async () => {
     const { engine } = await ready();
     const done: unknown[] = [];

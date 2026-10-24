@@ -257,7 +257,7 @@ function ShellBody({ user, initialTheme }: { user: WorkspaceUser; initialTheme: 
           pager={<PagePager />}
           announcement={announcement}
           page={shownPage}
-          scale={shownPage ? scaleStateOf(shownScales, shownCalibration) : null}
+          scale={shownPage ? scaleStateOf(shownScales, shownCalibration, shownPage.rotate) : null}
           calibration={shownCalibration}
           onCalibrate={openCalibrate}
         />

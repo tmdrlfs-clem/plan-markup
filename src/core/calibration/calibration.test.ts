@@ -68,7 +68,7 @@ describe("calibration model", () => {
       label: "Calibrated",
       tooltip: "Calibrated from two points: 1 pt = 3 mm",
     });
-    expect(calibrationLabel(cal({ yFactor: factorForRatio(50), yRatio: 50 }))).toMatchObject({ label: "Scale 1:100 / 1:50", tooltip: "Calibrated from a ratio: X 1:100, Y 1:50" });
+    expect(calibrationLabel(cal({ yFactor: factorForRatio(50), yRatio: 50 }))).toMatchObject({ label: "Scale 1:100 / 1:50", tooltip: "Calibrated from a ratio: horizontal 1:100, vertical 1:50" });
     expect(calibrationLabel(cal({ source: "points", yFactor: 3 })).label).toBe("Calibrated (X ≠ Y)");
     // A typed ratio shows as typed, round or not.
     expect(calibrationLabel(cal({ xFactor: factorForRatio(33.3), yFactor: factorForRatio(33.3) })).label).toBe("Scale 1:33.3");
@@ -99,6 +99,9 @@ describe("typed distances (mm, m, in, ft, ft-in)", () => {
     [`6 1/2"`, "ft-in", 6.5 * 25.4],
     [`12'-6"`, "mm", 12 * 304.8 + 6 * 25.4],
     ["1.5 m", "ft-in", 1500],
+    // Review R8: inches typed as a mixed number or a fraction without the inch mark.
+    ["6 1/2", "in", 6.5 * 25.4],
+    ["3/4", "in", 0.75 * 25.4],
   ])("%j in %s", (text, unit, mm) => {
     expect(parseDistance(text, unit as never)).toEqual({ ok: true, mm: expect.closeTo(mm, 9) });
   });
@@ -188,6 +191,18 @@ describe("calibrations for a range", () => {
     expect(m.get(1)!.xFactor).toBe(3);
     expect(m.get(1)!.yFactor).toBeCloseTo(factorForRatio(50), 9);
     expect(m.get(1)!.ratio).toBeUndefined();
+  });
+  it("review R2: on a /Rotate 90 or 270 page the vertical ratio is the page's vertical as it reads (user space x)", () => {
+    const turned = [{ index: 0, size: { ...A1, rotate: 90 } }, { index: 1, size: { ...A1, rotate: 270 } }, { index: 2, size: { ...A1, rotate: 180 } }];
+    const m = calibrationsFor({ kind: "ratio", ratio: 100, sheet: null, yRatio: 50 }, turned, display);
+    for (const i of [0, 1]) {
+      expect(m.get(i)!.xFactor).toBeCloseTo(factorForRatio(50), 9);
+      expect(m.get(i)!.yFactor).toBeCloseTo(factorForRatio(100), 9);
+      // Named as the page reads.
+      expect(calibrationLabel(m.get(i)!, i === 0 ? 90 : 270)).toMatchObject({ label: "Scale 1:100 / 1:50", tooltip: "Calibrated from a ratio: horizontal 1:100, vertical 1:50" });
+    }
+    expect(m.get(2)!.xFactor).toBeCloseTo(factorForRatio(100), 9);
+    expect(m.get(2)!.yFactor).toBeCloseTo(factorForRatio(50), 9);
   });
   it("mixed sizes: either orientation of one sheet is the same size", () => {
     expect(mixedSizes([A1, { width: A1.height, height: A1.width }])).toBe(false);

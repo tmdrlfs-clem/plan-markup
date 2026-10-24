@@ -310,6 +310,11 @@ export class ViewerEngine {
   /** Story 4.3: the picked dimension line, shown while the dialog asks for its real distance. */
   private pickLine: { a: Point; b: Point } | null = null;
   private snapShown: SnapResult | null = null;
+  /**
+   * The point the tools place (4.3 review R1): snapped, else held to the Shift
+   * direction, else raw; what the status bar shows. null off the page.
+   */
+  private toolPoint: Point | null = null;
   private snapLabel: SnapType | null = null;
   private snapPartialShown = false;
 
@@ -421,6 +426,7 @@ export class ViewerEngine {
     setCursor(null);
     this.snap.cancel();
     this.snapShown = null;
+    this.toolPoint = null;
     this.cancelCalibrationPick();
     this.pickLine = null;
     // The canvas element is shared by the tabs: its snap attributes belong to the shown one.
@@ -618,6 +624,7 @@ export class ViewerEngine {
     this.pickLine = null;
     this.snapFrom = null;
     this.snapShown = null;
+    this.toolPoint = null;
     this.clearSnapData();
     if (this.snapPartialShown) {
       this.snapPartialShown = false;
@@ -946,6 +953,7 @@ export class ViewerEngine {
     this.pickLine = null;
     this.snapFrom = null;
     this.snapShown = null;
+    this.toolPoint = null;
     if (!this.suspended) this.clearSnapData();
     this.openReq = null;
     this.previewReq = null;
@@ -1586,6 +1594,7 @@ export class ViewerEngine {
       }
     }
     setCursor(point);
+    this.toolPoint = point ? { x: point.x, y: point.y } : null;
     const before = this.snapShown;
     this.snapShown = shown;
     if (shown && (!before || before.type !== shown.type)) {
@@ -1624,7 +1633,8 @@ export class ViewerEngine {
   snapClick(): void {
     if (!isSnappingTool(viewerStore.getState().tool) || !this.pointerScreen || !this.page) return;
     this.updateCursor();
-    const point = this.snapShown ?? this.cursorPoint();
+    // The snapped point, else the Shift-held one (review R1: never the raw pointer while Shift holds a direction).
+    const point = this.toolPoint;
     this.snapFrom = point ? { x: point.x, y: point.y } : null;
     if (this.pick && point) this.pickPoint({ x: point.x, y: point.y });
     this.paintOverlay();
@@ -1706,8 +1716,8 @@ export class ViewerEngine {
   getSnappedPoint(): (Point & { type: SnapType | null }) | null {
     const shown = this.snapShown;
     if (shown) return { x: shown.x, y: shown.y, type: shown.type };
-    const raw = this.cursorPoint();
-    return raw ? { ...raw, type: null } : null;
+    const point = this.toolPoint;
+    return point ? { ...point, type: null } : null;
   }
 
   /**
@@ -1787,7 +1797,7 @@ export class ViewerEngine {
    * ticks across it, in the snap colour over a halo.
    */
   private drawPickLine(c: CanvasRenderingContext2D): void {
-    const pending = this.pick?.points.length === 1 ? { a: this.pick.points[0], b: this.snapShown ?? this.cursorPoint() } : null;
+    const pending = this.pick?.points.length === 1 ? { a: this.pick.points[0], b: this.toolPoint } : null;
     const ends = this.pickLine ?? pending;
     if (!ends || !ends.b) return;
     const palette = this.colors();

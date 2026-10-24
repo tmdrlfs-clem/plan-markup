@@ -69,3 +69,13 @@ tabsStore.subscribe((tabs) => {
   for (const k of stale) delete next[k];
   undoStore.setState({ histories: next });
 });
+
+// Review R5: a tab that opens its file again (Try again) starts with no calibrations, so its
+// history is dropped too (an "Undo Calibrate page 1" would otherwise name a step that is gone).
+viewerStore.subscribe((s, prev) => {
+  if (!s.tabId || s.tabId !== prev.tabId || s.openSeq === prev.openSeq) return;
+  if (!undoStore.getState().histories[s.tabId]) return;
+  const next = { ...undoStore.getState().histories };
+  delete next[s.tabId];
+  undoStore.setState({ histories: next });
+});

@@ -37,4 +37,14 @@ describe("undo per tab (Story 4.3 AC 7)", () => {
     tabsStore.setState({ tabs: [], activeId: null });
     expect(undoStore.getState().histories).toEqual({});
   });
+
+  it("review R5: a tab that opens its file again drops its history; a tab switch keeps it", () => {
+    viewerStore.setState({ tabId: "doc-1", openSeq: 1 });
+    executeCommand(command("A"));
+    viewerStore.setState({ tabId: "doc-2", openSeq: 2 });
+    viewerStore.setState({ tabId: "doc-1", openSeq: 1 });
+    expect(activeUndoLabels(undoStore.getState(), "doc-1").undo).toBe("A");
+    viewerStore.setState({ openSeq: 3 }); // Try again in doc-1
+    expect(activeUndoLabels(undoStore.getState(), "doc-1").undo).toBeNull();
+  });
 });

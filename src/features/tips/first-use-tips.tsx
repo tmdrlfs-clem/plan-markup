@@ -72,29 +72,45 @@ export function useFirstUseTipsPersistence(userId: string): void {
       window.removeEventListener("storage", onStorage);
       unsubscribe();
       tipsStore.setState({ seen: [], loaded: false }, true);
+      shownIn.clear();
     };
   }, [userId]);
 }
 
+/** The session (a dialog's opening) each tip was first shown in: it stays for that whole session (4.3 review R6). */
+const shownIn = new Map<string, string | number>();
+
 /**
  * Whether tip `id` shows in the component calling it: the first time the
- * user meets it, for as long as that component stays mounted (it is marked
- * seen at once, so it never shows again), until dismissed.
+ * user meets it (it is marked seen at once, so it never shows in a later
+ * session), until dismissed. With `session` (e.g. a dialog's opening count)
+ * it stays for that whole session even when the component remounts (the
+ * Calibrate dialog collapses while picking points); without one, for as
+ * long as the component stays mounted.
  */
-export function useFirstUseTip(id: string): { show: boolean; dismiss: () => void } {
+export function useFirstUseTip(id: string, session?: string | number): { show: boolean; dismiss: () => void } {
   const [show, setShow] = useState(() => {
     const { seen, loaded } = tipsStore.getState();
-    return loaded && !seen.includes(id);
+    if (!loaded) return false;
+    return !seen.includes(id) || (session !== undefined && shownIn.get(id) === session);
   });
   useLayoutEffect(() => {
-    if (show) markTipSeen(id);
-  }, [id, show]);
-  return { show, dismiss: () => setShow(false) };
+    if (!show) return;
+    if (session !== undefined) shownIn.set(id, session);
+    markTipSeen(id);
+  }, [id, show, session]);
+  return {
+    show,
+    dismiss: () => {
+      shownIn.delete(id);
+      setShow(false);
+    },
+  };
 }
 
 /** The inline tip: info icon, text and Dismiss; announced politely. */
-export function FirstUseTip({ id, children }: { id: string; children: ReactNode }) {
-  const { show, dismiss } = useFirstUseTip(id);
+export function FirstUseTip({ id, session, children }: { id: string; session?: string | number; children: ReactNode }) {
+  const { show, dismiss } = useFirstUseTip(id, session);
   if (!show) return null;
   return (
     <div

@@ -1,6 +1,6 @@
 # Story 4.3: Calibrate a page
 
-Status: review
+Status: done
 
 ## Story
 
@@ -28,6 +28,22 @@ so that every measurement is in real units.
 - [x] **Task 3: CalibrateDialog + picking mode** — dialog, collapsed instruction bar, two-point picking with snap/overlay, distance entry, options, first-use tip helper.
 - [x] **Task 4: Wiring** — ScaleIndicator opens dialog; Document → Calibrate menu item; per-tab calibration state; status-bar success state; cursor real units; conflicting-scale warning (uses the fixed 4.2 detection data).
 - [x] **Task 5: Tests** — unit + `e2e/calibrate.spec.ts`; local L17/L21 check (calibrate L21 from detected 1:75 @ A1 and by two points on a known dimension, e.g. a "1905" dimension on L17 → cursor/readout consistent); screenshots `fixtures/private/traces/4-3-calibrate-dialog.png` and `4-3-calibrated.png` (never commit private files).
+
+### Review Follow-ups (AI)
+
+Adversarial review 2026-10-25 (Claude Opus 5.5) of db23977..cbd0f04. Checked: coordinate spaces of the pick and the readout (user space points, MediaBox / CropBox origin through `fromPageCorner`, UserUnit on the pick distance and on the ratio factor, /Rotate, view rotation); unit conversion and parsing (mm, m, in, ft, ft-in, fractions, rounding of the shown lengths); the ratio and range parsers; `calibrationsFor` on mixed sizes; the undo stack and its per-tab store (tab switch, close, retry); the dialog's state across sessions, picks, page and tab changes; the first-use tip; keyboard (Enter, Esc, undo keys in fields and dialogs); AC coverage of the tests. Founder decisions 2026-10-25 applied: (1) a separate vertical scale stays tied to the page's axes when the view is rotated (current behaviour; see R2 for the page's own /Rotate); (2) Calibrate… stays in both the Document and Tools menus; (3) the L17 / L21 set is 1:75 — the "1:200 @ A3" label is a drafting error and the mismatch warning is right.
+
+- [x] **[High] R1: A Shift-held point is placed at the raw pointer.** With Shift and no snap hit (or Alt + Shift) the cursor and the status bar show the point held to the 0 / 45 / 90° direction, but `snapClick` (and the rubber band, and 4.5's `getSnappedPoint`) used the raw `cursorPoint()`: the second calibration point was off the constrained line, so the picked distance was wrong (AC 2). Fix: the engine keeps the point the tools place (`toolPoint`: snapped, else Shift-held, else raw), set with the status bar's point; the click, the rubber band and `getSnappedPoint` use it.
+- [x] **[Medium] R2: A separate vertical scale lands on the drawing's horizontal on a /Rotate 90 / 270 page.** X / Y were PDF user space axes, which on a page turned by its own /Rotate are the other way round from the page as it reads (at view rotation 0). Fix: `calibrationsFor` puts the vertical ratio on the page's vertical as it reads (/Rotate applied, view rotation not: founder decision 1), and `calibrationLabel` / `scaleStateOf` name the factors "horizontal" / "vertical" as the page reads. Stored factors stay along user space x / y (the cursor readout's axes, 3.7).
+- [x] **[Medium] R3: Opening Calibrate while picking leaves the engine picking.** The ScaleIndicator and the menus stay reachable while the dialog is collapsed; opening the dialog again reset its state but the engine kept the `calibrate` tool and its pick, and the old pick's late `done(null)` collapsed the next pick's bar. Fix: each pick has a token; opening, closing, cancelling or starting another pick abandons the one in progress (the engine cancels it, its callbacks are ignored).
+- [x] **[Medium] R4: Paging while picking calibrates a page that is not shown.** PageDown or a thumbnail during the pick cancels it and brings the dialog back for the page it was opened on, while another page is shown: "This page (1)" then applied to the hidden page and a new pick measured the shown page for the other. Fix: while the dialog is open it follows the shown page; a pick from the previous page is dropped.
+- [x] **[Low] R5: Try again keeps the tab's undo history.** Re-opening the tab's file starts without calibrations but Edit still offered "Undo Calibrate page 1". Fix: a new open in the same tab (`openSeq`) drops its history.
+- [x] **[Low] R6: The first-use tip vanished after the first pick.** The dialog remounts after the collapse and the tip, already marked seen, did not show again within the same first session. Fix: `useFirstUseTip(id, session)` keeps a tip for the whole session it first showed in (until dismissed); without a session it behaves as before.
+- [x] **[Low] R7: With metres as the display unit the distance unit defaulted to mm.** Fix: the distance is typed in the display unit (m → m).
+- [x] **[Low] R8: Inches typed without the mark (`6 1/2`, `3/4`) were refused** with the distance unit "in". Fix: a bare mixed number or fraction in inches gets its inch mark.
+- [x] **[Low] R9: A vertical ratio silently takes the ratio's sheet.** With "1:100 @ A1" and a vertical "1:50" the vertical is converted for A1 too (on A3 it is 1:100). Kept (one view is stated for one sheet) and now said under the field: "Stated for A1 like the ratio: 1:100 on this page".
+
+Not defects (checked): pick distance and ratio factors on UserUnit pages (both in points with UserUnit applied, like the readout); the cursor readout on boxes not at the origin (L17, `fromPageCorner`); a zero-length pick (refused by the 10 px rule before `factorFromPoints`); undo keys in text fields and dialogs (inactive); the history of a closed tab (dropped); `parseRatioInput` connector words ("on A1", "at A3", "for ANSI D"); the Select listbox above dialogs (1.7 fix).
 
 ## Dev Notes
 
@@ -79,7 +95,9 @@ Claude Opus 5.5 (claude-opus-5-5)
 9. **Viewport-level calibration** is not done (follow-up for a later story: the 4.2 quads per detected scale are kept for it).
 10. **Default display unit**: mm, precision 0 (until the user picks others).
 
-**Questions for the founder:**
+**Questions for the founder (answered 2026-10-25):** (1) the vertical scale stays with the page's axes when the view is rotated; (2) Calibrate… stays in both menus; (3) the set is 1:75, the "1:200 @ A3" label is a drafting error.
+
+**Original questions for the founder:**
 
 - X/Y follow the PDF page axes (decision 1). Should a separate vertical scale instead follow the view as shown when the view is rotated?
 - Keep Calibrate… in both Document and Tools menus, or only one?
@@ -98,7 +116,9 @@ Claude Opus 5.5 (claude-opus-5-5)
 - `src/components/ui/select.tsx`, `src/app/globals.css` (modified)
 - `e2e/calibrate.spec.ts`, `e2e/perf-calibrate.spec.ts` (new)
 - `_bmad-output/implementation-artifacts/4-3-calibrate-a-page.md`, `sprint-status.yaml` (modified)
+- Review: `src/features/viewer/viewer-engine.ts`, `viewer-engine.test.ts`, `src/core/calibration/calibration.ts`, `units.ts`, `calibration.test.ts`, `src/features/viewer/status/scale-state.ts`, `src/features/workspace/workspace-shell.tsx`, `src/features/calibration/calibrate-store.ts`, `calibrate-dialog.tsx`, `calibrate-dialog.test.tsx`, `src/features/editor/undo-store.ts`, `undo-store.test.ts`, `src/features/tips/first-use-tips.tsx` (modified)
 
 ### Change Log
 
 - 2026-10-24: Story 4.3 implemented (Claude Opus 5.5): calibration core, undo stack, CalibrateDialog with two-point picking, wiring, e2e and the L17/L21 check. Status → review. Commits 932ea97 (in progress), db23977 (Task 1), 3444d3d (Task 2), 37fe1c1 (Task 3), 0ec223d (Task 4), 80b9ad1 (Task 5) and this record.
+- 2026-10-25: Adversarial review (Claude Opus 5.5): R1-R9 fixed with tests (`npm test` 1604 unit tests in 139 files; calibrate / scale / snap e2e on the production build passed), founder decisions 1-3 recorded. Status → done.

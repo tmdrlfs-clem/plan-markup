@@ -27,8 +27,9 @@ export const SCALE_PENDING: ScaleState = { kind: "not-set", pending: true };
  * differs, AC 2), or "conflict" when its sheet statements disagree; several
  * are "N scales on page". A calibration (Story 4.3) comes first.
  */
-export function scaleStateOf(scales?: PageScales | null, calibration?: Calibration | null): ScaleState {
-  if (calibration) return { kind: "set", ...calibrationLabel(calibration) };
+export function scaleStateOf(scales?: PageScales | null, calibration?: Calibration | null, rotate = 0): ScaleState {
+  // `rotate`: the page's /Rotate, so a separate vertical scale is named as the page reads (4.3 review R2).
+  if (calibration) return { kind: "set", ...calibrationLabel(calibration, rotate) };
   if (!scales) return SCALE_PENDING;
   const list = scales.scales;
   if (list.length === 0) return SCALE_NOT_SET;

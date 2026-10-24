@@ -20,6 +20,8 @@ export const MM_PER_FOOT = MM_PER_INCH * 12;
 export type ParseDistanceResult = { ok: true; mm: number } | { ok: false; message: string };
 
 const BARE = /^(?:\d+(?:\.\d*)?|\.\d+)$/;
+/** Inches typed without their mark: `6 1/2`, `3/4` (review R8). */
+const BARE_INCHES = /^(?:\d+\s+)?\d+\s*\/\s*\d+$/;
 
 /** A typed real distance in millimetres; zero, negative and unreadable text are errors with a message. */
 export function parseDistance(text: string, unit: InputUnit): ParseDistanceResult {
@@ -29,7 +31,8 @@ export function parseDistance(text: string, unit: InputUnit): ParseDistanceResul
   if (BARE.test(t) && (unit === "in" || unit === "ft")) {
     mm = Number(t) * (unit === "in" ? MM_PER_INCH : MM_PER_FOOT);
   } else {
-    const r = parseLength(t, unit === "in" || unit === "ft" ? "ft-in" : unit);
+    const typed = unit === "in" && BARE_INCHES.test(t) ? `${t}"` : t;
+    const r = parseLength(typed, unit === "in" || unit === "ft" ? "ft-in" : unit);
     if (!r.ok) {
       return { ok: false, message: r.reason === "negative" ? "The distance must be more than 0" : `Enter a distance like 4.6 m or 12'-6"` };
     }

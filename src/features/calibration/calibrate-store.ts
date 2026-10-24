@@ -75,10 +75,26 @@ export function calibrationOf(state: { documentId: string | null; calibrations: 
   return state.documentId ? (state.calibrations[pageIdOf(state.documentId, index)] ?? null) : null;
 }
 
-/** Opens the dialog for the shown page (nothing without a drawing). */
+/**
+ * The pick the dialog is waiting for (review R3): each startPicking gets a new
+ * token, and a pick's callbacks are ignored once another pick started or the
+ * dialog was opened again or closed.
+ */
+let pickToken = 0;
+
+/** Ends the engine's pick in progress, if any, without its callbacks reaching the dialog. */
+function abandonPick(): void {
+  if (!calibrateStore.getState().picking) return;
+  pickToken++;
+  viewerCalibration.cancelPick();
+}
+
+/** Opens the dialog for the shown page (nothing without a drawing); a pick in progress is abandoned (review R3). */
 export function openCalibrate(): void {
   const viewer = viewerStore.getState();
   if (!hasDocument(viewer)) return;
+  abandonPick();
+  viewerCalibration.clearLine();
   const prefs = calibrationPrefs.getState();
   const current = calibrationOf(viewer, viewer.pageIndex);
   calibrateStore.setState(
@@ -90,32 +106,40 @@ export function openCalibrate(): void {
       ratioText: current?.ratio ? `1:${current.ratio}${current.sheet ? ` @ ${current.sheet}` : ""}` : "",
       unit: current?.unit ?? prefs.unit,
       precision: current?.precision ?? prefs.precision,
-      distanceUnit: (current?.unit ?? prefs.unit) === "ft-in" ? "ft-in" : (current?.unit ?? prefs.unit) === "in" ? "in" : "mm",
+      // The distance is typed in the display unit's family (review R7: metres in m).
+      distanceUnit: distanceUnitFor(current?.unit ?? prefs.unit),
     },
     true,
   );
 }
 
+/** The unit a known distance is typed in for a display unit. */
+export function distanceUnitFor(unit: DisplayUnit): InputUnit {
+  return unit;
+}
+
 /** Closes the dialog (Cancel, Esc, after Apply); a pick in progress is cancelled and its line cleared. */
 export function closeCalibrate(): void {
-  const wasPicking = calibrateStore.getState().picking;
+  abandonPick();
   calibrateStore.setState({ open: false, picking: false });
-  if (wasPicking) viewerCalibration.cancelPick();
   viewerCalibration.clearLine();
 }
 
 /** Collapses the dialog and picks two points on the drawing (AC 2). */
 export function startPicking(): void {
+  abandonPick();
+  const token = ++pickToken;
+  const current = () => token === pickToken && calibrateStore.getState().picking;
   calibrateStore.setState({ picking: true, pickStep: 1, pick: null, pickError: null, method: "points" });
   viewerCalibration.clearLine();
   viewerCommands.focusCanvas();
   viewerCalibration.startPick({
     step: (next) => {
-      if (calibrateStore.getState().picking) calibrateStore.setState({ pickStep: next });
+      if (current()) calibrateStore.setState({ pickStep: next });
     },
     done: (pick) => {
-      // Closing the dialog cancels the pick too: then nothing comes back.
-      if (!calibrateStore.getState().picking) return;
+      // Closing or reopening the dialog, or another pick, abandons this one: then nothing comes back.
+      if (!current()) return;
       if (pick && pick.screenPx < MIN_PICK_PX) {
         viewerCalibration.clearLine();
         calibrateStore.setState({
@@ -133,7 +157,7 @@ export function startPicking(): void {
 /** Esc in the instruction bar: stop picking, the dialog comes back as it was. */
 export function cancelPicking(): void {
   if (!calibrateStore.getState().picking) return;
-  viewerCalibration.cancelPick();
+  abandonPick();
   calibrateStore.setState({ picking: false });
 }
 
@@ -174,4 +198,13 @@ export function applyCalibration(input: CalibrationInput, pages: readonly number
 // Another drawing shown (tab switch, close) ends the dialog: it belongs to its page.
 tabsStore.subscribe((s, prev) => {
   if (s.activeId !== prev.activeId && calibrateStore.getState().open) closeCalibrate();
+});
+
+// Review R4: another page shown while the dialog is open (paging during a pick cancels the pick
+// and brings the dialog back) moves the dialog to that page; a pick made on the other page is dropped.
+viewerStore.subscribe((s) => {
+  const ui = calibrateStore.getState();
+  if (!ui.open || s.pageIndex === ui.pageIndex || !hasDocument(s)) return;
+  if (ui.pick) viewerCalibration.clearLine();
+  calibrateStore.setState({ pageIndex: s.pageIndex, pick: null, pickError: null });
 });

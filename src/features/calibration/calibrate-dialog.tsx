@@ -167,6 +167,13 @@ function CalibrateBody() {
     apply({ kind: "points", factor: factorFromPoints(ui.pick.distancePt, distance.mm) });
   };
 
+  // Review R9: a vertical ratio is stated for the same sheet as the ratio (converted the same way): say so.
+  const yDraft = yRatio();
+  const verticalNote =
+    ui.method === "ratio" && ratioDraft.ok && ratioDraft.value.sheet && yDraft.ok && yDraft.value
+      ? `Stated for ${ratioDraft.value.sheet} like the ratio: 1:${niceRatio(ratioForPage(yDraft.value, ratioDraft.value.sheet, page))} on this page`
+      : null;
+
   const unitOptions = DISPLAY_UNITS.map((u) => ({ value: u, label: UNIT_LABEL[u] }));
   const precisionOptions = precisionsFor(ui.unit).map((p) => ({ value: p, label: precisionLabel(p) }));
   const pickedDistance = ui.pick ? `${formatReal(ui.pick.distancePt * MM_PER_POINT, "mm", "0.0")} on paper (${ui.pick.distancePt.toFixed(1)} pt)` : null;
@@ -191,7 +198,7 @@ function CalibrateBody() {
         />
       }
     >
-      <FirstUseTip id="calibrate">
+      <FirstUseTip id="calibrate" session={ui.session}>
         Use a printed scale when the drawing has one. Otherwise pick the two ends of a long dimension you know (they snap to the
         linework) and type its length.
       </FirstUseTip>
@@ -309,6 +316,11 @@ function CalibrateBody() {
           onChange={(e) => setCalibrateDraft({ yRatioText: e.target.value })}
           data-testid="calibrate-y-ratio"
         />
+        {verticalNote ? (
+          <p className="num pl-[104px] text-ws-sm text-muted" data-testid="calibrate-y-note">
+            {verticalNote}
+          </p>
+        ) : null}
       </Collapsible>
     </Dialog>
   );

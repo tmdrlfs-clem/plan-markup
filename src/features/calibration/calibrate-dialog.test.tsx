@@ -184,4 +184,73 @@ describe("CalibrateDialog (Story 4.3)", () => {
     expect(c.yFactor).toBeCloseTo(factorForRatio(50), 9);
     expect(c.yRatio).toBe(50);
   });
+
+  it("review R3: opening Calibrate again while picking abandons the pick; a stale pick's answer is ignored", async () => {
+    const user = userEvent.setup();
+    wrap();
+    act(() => openCalibrate());
+    const dialog = await screen.findByRole("dialog", { name: "Calibrate" });
+    await user.click(within(dialog).getByRole("tab", { name: "By two points" }));
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Pick two points" }));
+    const first = listener!;
+    // The ScaleIndicator (or a menu) is still reachable while picking.
+    act(() => openCalibrate());
+    expect(listener).toBeNull(); // the engine's pick was cancelled
+    expect(calibrateStore.getState()).toMatchObject({ open: true, picking: false });
+    await user.click(within(await screen.findByRole("dialog")).getByRole("tab", { name: "By two points" }));
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Pick two points" }));
+    // The first pick answering late changes nothing.
+    act(() => first.done(null));
+    act(() => first.done({ a: { x: 0, y: 0 }, b: { x: 72, y: 0 }, distancePt: 72, screenPx: 100 }));
+    expect(calibrateStore.getState()).toMatchObject({ picking: true, pick: null });
+    expect(screen.getByRole("status")).toHaveTextContent("Click the first point");
+  });
+
+  it("review R4: another page shown while the dialog is open moves it to that page and drops the pick", async () => {
+    const user = userEvent.setup();
+    wrap();
+    act(() => openCalibrate());
+    const dialog = await screen.findByRole("dialog", { name: "Calibrate" });
+    await user.click(within(dialog).getByRole("tab", { name: "By two points" }));
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Pick two points" }));
+    act(() => listener!.done({ a: { x: 0, y: 0 }, b: { x: 72, y: 0 }, distancePt: 72, screenPx: 100 }));
+    expect(calibrateStore.getState().pick).not.toBeNull();
+    act(() => viewerStore.setState({ pageIndex: 1 }));
+    const moved = await screen.findByRole("dialog", { name: "Calibrate" });
+    expect(moved).toHaveAccessibleDescription(/^Page 2 of 3/);
+    expect(calibrateStore.getState()).toMatchObject({ pageIndex: 1, pick: null });
+    expect(within(moved).getByRole("combobox", { name: "Apply to" })).toHaveTextContent("This page (2)");
+  });
+
+  it("review R6: the first-use tip stays for the whole first session, also after a pick", async () => {
+    const user = userEvent.setup();
+    wrap();
+    act(() => openCalibrate());
+    let dialog = await screen.findByRole("dialog", { name: "Calibrate" });
+    expect(within(dialog).getByTestId("tip-calibrate")).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("tab", { name: "By two points" }));
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Pick two points" }));
+    act(() => listener!.done({ a: { x: 0, y: 0 }, b: { x: 72, y: 0 }, distancePt: 72, screenPx: 100 }));
+    dialog = await screen.findByRole("dialog", { name: "Calibrate" });
+    expect(within(dialog).getByTestId("tip-calibrate")).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Dismiss tip" }));
+    expect(within(dialog).queryByTestId("tip-calibrate")).toBeNull();
+    act(() => closeCalibrate());
+    act(() => openCalibrate());
+    expect(within(await screen.findByRole("dialog")).queryByTestId("tip-calibrate")).toBeNull();
+  });
+
+  it("review R7 and R9: metres type the distance in m; a vertical ratio names the sheet it is stated for", async () => {
+    const user = userEvent.setup();
+    calibrationPrefs.setState({ unit: "m", precision: "0.00" }, true);
+    wrap();
+    act(() => openCalibrate());
+    expect(calibrateStore.getState().distanceUnit).toBe("m");
+    const dialog = await screen.findByRole("dialog", { name: "Calibrate" });
+    act(() => viewerStore.setState({ pageIndex: 0 }));
+    await user.type(within(dialog).getByTestId("calibrate-ratio"), "1:100 @ A3");
+    await user.click(within(dialog).getByRole("button", { name: "Different vertical scale" }));
+    await user.type(within(dialog).getByTestId("calibrate-y-ratio"), "1:50");
+    expect(within(dialog).getByTestId("calibrate-y-note")).toHaveTextContent("Stated for A3 like the ratio: 1:25 on this page");
+  });
 });

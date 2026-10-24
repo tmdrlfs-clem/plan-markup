@@ -29,7 +29,11 @@ export type CalibrationSource = (typeof CALIBRATION_SOURCES)[number];
 const factor = z.number().finite().positive();
 
 export const calibrationSchema = z.object({
-  /** Real millimetres per page point along x, and along y (equal unless a separate vertical scale was set). */
+  /**
+   * Real millimetres per page point along PDF user space x, and along y (equal unless a separate
+   * vertical scale was set). On a page whose /Rotate is 90 or 270 the drawing's vertical is user
+   * space x (4.3 review R2): see calibrationsFor and calibrationLabel.
+   */
   xFactor: factor,
   yFactor: factor,
   unit: z.enum(DISPLAY_UNITS),
@@ -59,8 +63,8 @@ export function factorForRatio(ratio: number): number {
   return ratio * MM_PER_POINT;
 }
 
-/** The page size a ratio is converted for (points, as shown). */
-export type PageSize = { width: number; height: number };
+/** The page size a ratio is converted for (points, as shown), and its /Rotate (the vertical scale follows the page as it reads). */
+export type PageSize = { width: number; height: number; rotate?: number };
 
 /**
  * The ratio a printed or typed 1:`ratio` stated for `sheet` (null: none) has
@@ -95,22 +99,29 @@ export function realLengthMm(dx: number, dy: number, calibration: Pick<Calibrati
 }
 
 /** What the ScaleIndicator shows for a calibrated page: the label and its tooltip. */
-export function calibrationLabel(c: Calibration): { label: string; tooltip: string } {
+export function calibrationLabel(c: Calibration, rotate = 0): { label: string; tooltip: string } {
   // A ratio typed or printed is shown as it is (1:33.3); two points only when they make a usual ratio.
   const ratioOf = (f: number) => (c.source === "points" ? roundRatioOf(f) : Number((f / MM_PER_POINT).toFixed(2)));
-  const x = ratioOf(c.xFactor);
-  const y = ratioOf(c.yFactor);
+  // X / Y as the page reads (review R2): on a page turned by /Rotate 90 or 270, its horizontal is user space y.
+  const [hFactor, vFactor] = sideways(rotate) ? [c.yFactor, c.xFactor] : [c.xFactor, c.yFactor];
+  const x = ratioOf(hFactor);
+  const y = ratioOf(vFactor);
   const how = c.source === "points" ? "two points" : c.source === "detected" ? "the printed scale" : "a ratio";
   const per = (f: number) => `1 pt = ${trim(f, 4)} mm`;
-  if (c.xFactor === c.yFactor || (x !== null && x === y)) {
-    if (x !== null) return { label: `Scale 1:${x}`, tooltip: `Calibrated from ${how}: 1:${x} (${per(c.xFactor)})` };
-    return { label: "Calibrated", tooltip: `Calibrated from ${how}: ${per(c.xFactor)}` };
+  if (hFactor === vFactor || (x !== null && x === y)) {
+    if (x !== null) return { label: `Scale 1:${x}`, tooltip: `Calibrated from ${how}: 1:${x} (${per(hFactor)})` };
+    return { label: "Calibrated", tooltip: `Calibrated from ${how}: ${per(hFactor)}` };
   }
   const name = (r: number | null, f: number) => (r !== null ? `1:${r}` : per(f));
-  if (x !== null && y !== null) {
-    return { label: `Scale 1:${x} / 1:${y}`, tooltip: `Calibrated from ${how}: X ${name(x, c.xFactor)}, Y ${name(y, c.yFactor)}` };
-  }
-  return { label: "Calibrated (X ≠ Y)", tooltip: `Calibrated from ${how}: X ${name(x, c.xFactor)}, Y ${name(y, c.yFactor)}` };
+  const both = `horizontal ${name(x, hFactor)}, vertical ${name(y, vFactor)}`;
+  if (x !== null && y !== null) return { label: `Scale 1:${x} / 1:${y}`, tooltip: `Calibrated from ${how}: ${both}` };
+  return { label: "Calibrated (X ≠ Y)", tooltip: `Calibrated from ${how}: ${both}` };
+}
+
+/** A page turned a quarter by its /Rotate: its horizontal and vertical are user space y and x. */
+export function sideways(rotate: number | undefined): boolean {
+  const r = (((rotate ?? 0) % 360) + 360) % 360;
+  return r === 90 || r === 270;
 }
 
 function trim(value: number, digits: number): string {
@@ -126,7 +137,10 @@ export type CalibrationInput =
  * The calibration of each page of a range (AC 3): a ratio applies to each
  * page as a ratio (one stated for a sheet is converted per page, like 4.2);
  * a two-point factor applies as the same mm per point to every page. A
- * separate vertical ratio follows the same rule as a ratio.
+ * separate vertical ratio follows the same rule as a ratio; it is the page's
+ * vertical as the page reads (its /Rotate applied, the view rotation not:
+ * founder decision 2026-10-25), so on a /Rotate 90 or 270 page it lands on
+ * user space x (review R2).
  */
 export function calibrationsFor(
   input: CalibrationInput,
@@ -136,8 +150,9 @@ export function calibrationsFor(
   const out = new Map<number, Calibration>();
   for (const { index, size } of pages) {
     const sheet = input.kind === "points" ? null : input.sheet;
-    const xFactor = input.kind === "points" ? input.factor : factorForRatio(ratioForPage(input.ratio, sheet, size));
-    const yFactor = input.yRatio ? factorForRatio(ratioForPage(input.yRatio, sheet, size)) : xFactor;
+    const hFactor = input.kind === "points" ? input.factor : factorForRatio(ratioForPage(input.ratio, sheet, size));
+    const vFactor = input.yRatio ? factorForRatio(ratioForPage(input.yRatio, sheet, size)) : hFactor;
+    const [xFactor, yFactor] = sideways(size.rotate) ? [vFactor, hFactor] : [hFactor, vFactor];
     const c: Calibration = { xFactor, yFactor, unit: display.unit, precision: display.precision, source: input.kind === "detected" ? "detected" : input.kind };
     if (input.kind !== "points") {
       c.ratio = input.ratio;
