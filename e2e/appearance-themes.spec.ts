@@ -17,6 +17,8 @@ const THEME_USER = "theme@plan-markup.test";
 // globals.css: each theme's --canvas-backdrop and Blueprint's --surface-0.
 const BACKDROP = { blueprint: [229, 231, 235], daylight: [217, 219, 223], contrast: [0, 0, 0] } as const;
 const BLUEPRINT_SURFACE_0 = "rgb(16, 21, 28)";
+// Each theme's --surface-2: menus (portals, outside the workspace root) must follow the theme (review T4).
+const SURFACE_2 = { blueprint: "rgb(29, 38, 49)", daylight: "rgb(255, 255, 255)", contrast: "rgb(18, 18, 20)" } as const;
 const LABEL = { blueprint: "Blueprint", daylight: "Daylight", contrast: "High contrast" } as const;
 type Theme = keyof typeof LABEL;
 
@@ -66,6 +68,10 @@ test("themes: switch all three from Settings > Appearance, canvas follows, axe c
     if (theme !== "blueprint") await choose(page, theme);
     await expect.poll(() => backdropPixel(page)).toEqual([...BACKDROP[theme]]);
     violations[theme] = await seriousViolations(page);
+    // A portal: the Settings menu is rendered outside the workspace root, under <html>.
+    await page.getByRole("menubar", { name: "Main menu" }).getByRole("menuitem", { name: "Settings" }).click();
+    await expect(page.getByRole("menu")).toHaveCSS("background-color", SURFACE_2[theme]);
+    await page.keyboard.press("Escape");
   }
   expect(violations).toEqual({ blueprint: [], daylight: [], contrast: [] });
 

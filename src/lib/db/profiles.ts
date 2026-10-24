@@ -26,7 +26,10 @@ export async function getOwnProfile(
 ): Promise<Profile | null> {
   const { data, error } = await client
     .from("profiles")
-    .select("id, name, email, status, is_platform_admin, theme")
+    // "*" rather than naming theme (Story 3.8 review T2): a database without the
+    // column (code deployed before its migration) still answers, and the theme
+    // falls back to the default instead of failing every sign-in closed.
+    .select("*")
     .eq("id", userId)
     .maybeSingle();
   if (error) throw new Error(`Could not read the profile: ${error.code ?? "unknown"}`);
@@ -40,6 +43,6 @@ export async function getOwnProfile(
     email: data.email,
     status: data.status as ProfileStatus,
     isPlatformAdmin: data.is_platform_admin,
-    theme: isTheme(data.theme) ? data.theme : DEFAULT_THEME,
+    theme: isTheme((data as { theme?: unknown }).theme) ? (data as { theme: Theme }).theme : DEFAULT_THEME,
   };
 }

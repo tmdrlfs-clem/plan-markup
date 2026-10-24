@@ -1,6 +1,6 @@
 # Story 3.8: Appearance themes
 
-Status: review
+Status: done
 
 ## Story
 
@@ -26,6 +26,16 @@ so that the workspace suits my eyes and my room.
 - [x] **Task 4: Canvas/overlay tokens** — route all canvas and overlay colours through tokens, re-read on change, redraw overlays (not tiles) on theme switch.
 - [x] **Task 5: Contrast + tests** — token values finalised for Daylight and High contrast (Blueprint already tuned), contrast unit tests, axe per theme, e2e `e2e/appearance-themes.spec.ts`; screenshots of L17 in all three themes to `fixtures/private/traces/3-8-theme-<name>.png` (never commit private files).
 
+### Review Follow-ups (AI)
+
+Adversarial review 2026-10-24 (Claude Opus 5.5) of its own diff 1fbec72..5f89519. Checked: RLS and the column-limited update, the server action boundary, CSP (no pre-paint script was added), the no-flash SSR path, contrast pairs (including ones not yet listed: input boundaries on surface-2 pass at 3.09 / 3.32 / 4.27), the canvas token re-read and background tabs, portals, StrictMode effects, and AC coverage.
+
+- [x] **[Medium] T1: Pending and deactivated users can still write their profile (now the theme).** `profiles_update_self` predates the Story 1.5 rule that every data policy ANDs `app.fn_is_active_user()` (FR5); the new column grant makes one more column writable through it, so a deactivated account can PATCH `/rest/v1/profiles` for its theme (and name). The app never offers it, but RLS is the boundary. Fix: a new migration recreates the policy with `(select app.fn_is_active_user())` in USING and WITH CHECK; `profiles_select_self` stays (pending users read their status). pgTAP: a pending and a deactivated user each update 0 rows; an active one still can.
+- [x] **[Medium] T2: Shipping the code before the migration would lock everyone out.** `getOwnProfile` now names `theme` in its select; against a database without the column every profile read errors, `readAuthState` fails closed, and no one can open the workspace (the remote database is deliberately not migrated yet). A cosmetic column must not be able to do that. Fix: the theme is read tolerantly (an absent or unknown value is Blueprint) without touching the fail-closed status read; unit test with a profile row that has no theme. Deployment note added: migrate before deploying.
+- [x] **[Low] T3: Another open workspace tab of the same user keeps the old theme.** The choice reaches only the tab it was made in until a reload. Fix: the workspace follows `storage` events of `pm.theme.v1` (the copy written on every choice), like the snap toggles (3.7 R6).
+- [x] **[Low] T4: Portals were not proven to follow the theme.** Menus, tooltips and toasts render outside the workspace root and rely on `<html data-theme>`; the e2e only checked the attribute. Fix: the e2e opens the Appearance submenu in each theme and checks the menu's computed background is that theme's surface.
+- Accepted, not changed: before hydration `<html>` (and so the body behind the full-screen workspace root, and the document's color-scheme) is Blueprint for a few frames; nothing of it is visible because the root covers the viewport and sets its own color-scheme. Setting it on the server would need the root layout to know the route.
+
 ## Dev Notes
 
 - Tokens already exist under `[data-theme="blueprint" | "daylight" | "contrast"]` in `src/app/globals.css`; `src/components/ui/{tokens,theme-css,contrast,contrast-pairs}.ts` exist from Story 1.7. `src/app/(auth)/layout.tsx` pins Blueprint (690965c). Profiles/RLS from Story 1.3 (`supabase/migrations/20261017024840_profiles_and_app_helpers.sql`); follow its patterns (`fn_is_active_user`, JWT helpers) and the Postgres 17.6.1.155 pin (ADR 0002).
@@ -46,6 +56,9 @@ so that the workspace suits my eyes and my room.
 Claude Opus 5.5 (claude-opus-5-5)
 
 ### Debug Log References
+
+- CI for the implementation (5f89519): CI run **40031313793** success, Database run **40031313791** success.
+- Review fixes (T1-T4), local: typecheck, lint, build clean; `npm test` 1417 unit tests in 126 files; `supabase test db` PASS (new: pending and deactivated users update 0 rows; `profiles_name_length.test.sql` now activates its user first); `check:rls` OK; e2e on the production build 44 passed, 7 skipped (private opt-in). Review CI run: see Change Log.
 
 - Local: `npm run typecheck`, `npm run lint`, `npm run build` clean; `npm test` (all unit tests, Docker running); `supabase test db` incl. the new `profiles_theme.test.sql`; `npm run check:rls` OK; `npm run db:types` / `db:schema` regenerated (`types.gen.ts`, `schema.sql`).
 - e2e on the production build (`E2E_PROD=1`, workers 1, local Supabase after `npm run db:reset` for the new seeded user): all passed, opt-in private checks skipped. `appearance-themes.spec.ts` passed on its first run; axe-core (`@axe-core/playwright` 4.13.0) found no serious or critical violation in any theme. (`security-headers` failed once only because `NEXT_PUBLIC_SUPABASE_URL` was not exported for the remapped local ports; passes with it.)
@@ -85,3 +98,4 @@ Claude Opus 5.5 (claude-opus-5-5)
 ### Change Log
 
 - 2026-10-24: Story 3.8 implemented (Claude Opus 5.5): profile theme with column-limited RLS, Settings > Appearance, canvas palette from tokens, contrast pairs, axe per theme. Status → review. Commits 1fbec72, 5526a10, e7f6e2c and the Task 5 commit.
+- 2026-10-24: Review (Claude Opus 5.5) T1-T4 fixed with tests: migration `20261024100000_profiles_update_active_only.sql` (profile updates only by active users, FR5), tolerant theme read (no lockout if code ships before the migration; deploy note: migrate first), theme followed across tabs, portals checked per theme in the e2e. Status → done.

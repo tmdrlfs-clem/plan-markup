@@ -88,6 +88,14 @@ describe("readAuthState / getAuthUser", () => {
     });
   });
 
+  it("a profile row without the theme column (code deployed before the migration) still signs in, as Blueprint (review T2)", async () => {
+    fake.user = EVIL_USER;
+    const row: Record<string, unknown> = profile("active");
+    delete row.theme;
+    fake.profile = row as ReturnType<typeof profile>;
+    await expect(getAuthUser()).resolves.toMatchObject({ id: ID, theme: "blueprint" });
+  });
+
   it("an unknown stored theme reads as the default (Story 3.8)", async () => {
     fake.user = EVIL_USER;
     fake.profile = profile("active", { theme: "neon" });

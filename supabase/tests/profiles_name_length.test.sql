@@ -13,6 +13,9 @@ select is(
   'sign-up metadata name is trimmed and truncated to 100 characters'
 );
 
+-- Only active users may update their profile (Story 3.8 review T1).
+update public.profiles set status = 'active' where id = '33333333-3333-4333-8333-333333333333';
+
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"33333333-3333-4333-8333-333333333333","role":"authenticated"}';
 

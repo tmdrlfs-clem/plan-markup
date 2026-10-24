@@ -69,6 +69,16 @@ export function useWorkspaceTheme(initial: Theme | null): Theme {
   useLayoutEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
   }, [theme]);
+  useLayoutEffect(() => {
+    // A choice made in another tab of this browser (review T3): it already saved it on the profile.
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === THEME_STORAGE_KEY && isTheme(event.newValue) && event.newValue !== themeStore.getState().theme) {
+        themeStore.setState({ theme: event.newValue });
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
   useLayoutEffect(
     () => () => {
       // The next user (or the sign-in page) starts from their own profile, never this choice.

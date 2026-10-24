@@ -43,6 +43,21 @@ describe("useWorkspaceTheme", () => {
   });
 });
 
+describe("other tabs (review T3)", () => {
+  it("follows a theme chosen in another tab of this browser, ignores other keys and unknown values", () => {
+    const { result, unmount } = renderHook(() => useWorkspaceTheme("blueprint"));
+    act(() => window.dispatchEvent(new StorageEvent("storage", { key: "other", newValue: "daylight" })));
+    act(() => window.dispatchEvent(new StorageEvent("storage", { key: THEME_STORAGE_KEY, newValue: "neon" })));
+    expect(result.current).toBe("blueprint");
+    act(() => window.dispatchEvent(new StorageEvent("storage", { key: THEME_STORAGE_KEY, newValue: "daylight" })));
+    expect(result.current).toBe("daylight");
+    expect(html()).toBe("daylight");
+    unmount();
+    act(() => window.dispatchEvent(new StorageEvent("storage", { key: THEME_STORAGE_KEY, newValue: "contrast" })));
+    expect(themeStore.getState().theme).toBeNull(); // no listener left
+  });
+});
+
 describe("theme storage", () => {
   it("reads only a known theme and survives blocked storage", () => {
     localStorage.setItem(THEME_STORAGE_KEY, "neon");
