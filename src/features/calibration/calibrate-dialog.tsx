@@ -7,13 +7,12 @@
 // separate vertical scale; display unit and precision. Story 1.7 parts only.
 
 import { TriangleAlert } from "lucide-react";
-import { useEffect, useId, useRef, useState, type InputHTMLAttributes } from "react";
+import { useState } from "react";
 import { useStore } from "zustand";
 
 import { Button } from "@/components/ui/button";
 import { Collapsible } from "@/components/ui/collapsible";
 import { Dialog, DialogFooter, DialogPrimary } from "@/components/ui/dialog";
-import { FieldShell, fieldControlClasses } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -34,42 +33,11 @@ import { canonicalSheet, niceRatio } from "@/core/scale/sheet";
 import { FirstUseTip } from "@/features/tips";
 import { viewerStore } from "@/features/viewer";
 
+import { PickBar, TextInput } from "./calibration-fields";
 import { applyCalibration, calibrateStore, cancelPicking, closeCalibrate, setCalibrateDraft, startPicking, type CalibrateScope } from "./calibrate-store";
 
 const UNIT_LABEL: Record<DisplayUnit, string> = { mm: "Millimetres (mm)", m: "Metres (m)", in: "Inches (in)", "ft-in": "Feet-inches (ft-in)" };
 const INPUT_UNIT_LABEL: Record<InputUnit, string> = { mm: "mm", m: "m", in: "in", ft: "ft", "ft-in": "ft-in" };
-
-/** A workspace text field (Story 1.7 FieldShell + control classes) with tabular figures. */
-function TextInput({
-  label,
-  error,
-  focusOnMount = false,
-  ...props
-}: { label: string; error?: string; focusOnMount?: boolean } & InputHTMLAttributes<HTMLInputElement>) {
-  const id = useId();
-  const ref = useRef<HTMLInputElement>(null);
-  // After the dialog's own first-field focus (the method tabs come first in the body).
-  useEffect(() => {
-    if (!focusOnMount) return;
-    const frame = requestAnimationFrame(() => ref.current?.focus());
-    return () => cancelAnimationFrame(frame);
-  }, [focusOnMount]);
-  return (
-    <FieldShell layout="workspace" label={label} htmlFor={id} error={error} errorId={`${id}-error`}>
-      <input
-        ref={ref}
-        id={id}
-        type="text"
-        autoComplete="off"
-        spellCheck={false}
-        aria-invalid={error ? true : undefined}
-        aria-describedby={error ? `${id}-error` : undefined}
-        className={`${fieldControlClasses("workspace", Boolean(error))} num`}
-        {...props}
-      />
-    </FieldShell>
-  );
-}
 
 /** "Use detected 1:200 (1:100 @ A1)": the ratio on this page first when the sheet converts it. */
 function detectedLabel(r: ScaleReading, imperial: boolean, text: string): string {
@@ -122,7 +90,7 @@ function CalibrateBody() {
   const pageCount = pages.length;
 
   if (!ui.open) return null;
-  if (ui.picking) return <PickBar step={ui.pickStep} />;
+  if (ui.picking) return <PickBar step={ui.pickStep} onCancel={cancelPicking} />;
   if (!page) return null;
 
   const size = sheetSize(page.width, page.height);
@@ -323,22 +291,5 @@ function CalibrateBody() {
         ) : null}
       </Collapsible>
     </Dialog>
-  );
-}
-
-/** The collapsed dialog while picking (AC 2): announced politely; Esc or Cancel brings the dialog back. */
-function PickBar({ step }: { step: 1 | 2 }) {
-  return (
-    <div
-      data-testid="calibrate-pick-bar"
-      className="fixed left-1/2 top-24 z-popover flex -translate-x-1/2 items-center gap-3 rounded-sm border border-strong bg-surface-1 py-1 pl-3 pr-1 text-ws-md text-text shadow-2"
-    >
-      <span role="status" aria-live="polite">
-        {step === 1 ? "Click the first point · Esc to cancel" : "Click the second point · Esc to cancel"}
-      </span>
-      <Button variant="secondary" size="sm" onClick={cancelPicking}>
-        Cancel
-      </Button>
-    </div>
   );
 }

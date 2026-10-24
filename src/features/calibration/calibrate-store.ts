@@ -8,15 +8,15 @@ import { createStore } from "zustand/vanilla";
 import { calibrationsFor, pageIdOf, type Calibration, type CalibrationInput, type DisplayUnit, type Precision } from "@/core/calibration/calibration";
 import type { InputUnit } from "@/core/calibration/units";
 import { executeCommand } from "@/features/editor";
-import { hasDocument, tabsStore, viewerCalibration, viewerCommands, viewerStore, type CalibrationPick } from "@/features/viewer";
+import { hasDocument, tabsStore, viewerCalibration, viewerStore, type CalibrationPick } from "@/features/viewer";
 
 import { calibrationPrefs, setCalibrationPrefs } from "./calibration-prefs";
+import { abandonPick, beginPick, tooClose } from "./picking";
 
 export type CalibrateMethod = "ratio" | "points";
 export type CalibrateScope = "page" | "range" | "all";
 
-/** A pick shorter than this on screen (CSS px) is refused (AC 2). */
-export const MIN_PICK_PX = 10;
+export { MIN_PICK_PX } from "./picking";
 
 export type CalibrateState = {
   /** Counts the openings: each one starts with fresh fields and messages. */
@@ -75,26 +75,28 @@ export function calibrationOf(state: { documentId: string | null; calibrations: 
   return state.documentId ? (state.calibrations[pageIdOf(state.documentId, index)] ?? null) : null;
 }
 
-/**
- * The pick the dialog is waiting for (review R3): each startPicking gets a new
- * token, and a pick's callbacks are ignored once another pick started or the
- * dialog was opened again or closed.
- */
-let pickToken = 0;
+/** What Verify's Recalibrate… hands the dialog (Story 4.4 AC 4): its pick and the known distance. */
+export type CalibratePrefill = { pick: CalibrationPick; distanceText: string; distanceUnit: InputUnit };
 
-/** Ends the engine's pick in progress, if any, without its callbacks reaching the dialog. */
-function abandonPick(): void {
-  if (!calibrateStore.getState().picking) return;
-  pickToken++;
-  viewerCalibration.cancelPick();
+/**
+ * Opens the dialog for the shown page (nothing without a drawing); a pick in
+ * progress is abandoned (review R3). Takes no arguments: menu items and
+ * buttons hand it their events.
+ */
+export function openCalibrate(): void {
+  openDialog(null);
 }
 
-/** Opens the dialog for the shown page (nothing without a drawing); a pick in progress is abandoned (review R3). */
-export function openCalibrate(): void {
+/** Story 4.4 AC 4: opens the dialog on "By two points" with Verify's pick (its line stays drawn) and known distance. */
+export function openCalibrateWith(prefill: CalibratePrefill): void {
+  openDialog(prefill);
+}
+
+function openDialog(prefill: CalibratePrefill | null): void {
   const viewer = viewerStore.getState();
   if (!hasDocument(viewer)) return;
   abandonPick();
-  viewerCalibration.clearLine();
+  if (!prefill) viewerCalibration.clearLine();
   const prefs = calibrationPrefs.getState();
   const current = calibrationOf(viewer, viewer.pageIndex);
   calibrateStore.setState(
@@ -108,6 +110,7 @@ export function openCalibrate(): void {
       precision: current?.precision ?? prefs.precision,
       // The distance is typed in the display unit's family (review R7: metres in m).
       distanceUnit: distanceUnitFor(current?.unit ?? prefs.unit),
+      ...(prefill ? { method: "points" as const, pick: prefill.pick, distanceText: prefill.distanceText, distanceUnit: prefill.distanceUnit } : {}),
     },
     true,
   );
@@ -120,33 +123,22 @@ export function distanceUnitFor(unit: DisplayUnit): InputUnit {
 
 /** Closes the dialog (Cancel, Esc, after Apply); a pick in progress is cancelled and its line cleared. */
 export function closeCalibrate(): void {
-  abandonPick();
+  if (!calibrateStore.getState().open) return;
+  if (calibrateStore.getState().picking) abandonPick();
   calibrateStore.setState({ open: false, picking: false });
   viewerCalibration.clearLine();
 }
 
 /** Collapses the dialog and picks two points on the drawing (AC 2). */
 export function startPicking(): void {
-  abandonPick();
-  const token = ++pickToken;
-  const current = () => token === pickToken && calibrateStore.getState().picking;
   calibrateStore.setState({ picking: true, pickStep: 1, pick: null, pickError: null, method: "points" });
-  viewerCalibration.clearLine();
-  viewerCommands.focusCanvas();
-  viewerCalibration.startPick({
-    step: (next) => {
-      if (current()) calibrateStore.setState({ pickStep: next });
-    },
+  beginPick({
+    step: (next) => calibrateStore.setState({ pickStep: next }),
     done: (pick) => {
-      // Closing or reopening the dialog, or another pick, abandons this one: then nothing comes back.
-      if (!current()) return;
-      if (pick && pick.screenPx < MIN_PICK_PX) {
+      const refused = pick ? tooClose(pick) : null;
+      if (refused) {
         viewerCalibration.clearLine();
-        calibrateStore.setState({
-          picking: false,
-          pick: null,
-          pickError: `The two points are too close (${pick.screenPx.toFixed(0)} px). Pick points at least ${MIN_PICK_PX} px apart.`,
-        });
+        calibrateStore.setState({ picking: false, pick: null, pickError: refused });
         return;
       }
       calibrateStore.setState({ picking: false, ...(pick ? { pick, pickError: null } : {}) });
