@@ -1,6 +1,6 @@
 # Story 4.3: Calibrate a page
 
-Status: in-progress
+Status: review
 
 ## Story
 
@@ -23,11 +23,11 @@ so that every measurement is in real units.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Core calibration** — `src/core/calibration/` model, Zod schema, conversions, unit/ft-in parsing and formatting, range parsing; unit tests.
-- [ ] **Task 2: Undo stack** (if absent) — minimal command stack per AC 7; keyboard bindings with canvas/workspace focus rules from 3.x.
-- [ ] **Task 3: CalibrateDialog + picking mode** — dialog, collapsed instruction bar, two-point picking with snap/overlay, distance entry, options, first-use tip helper.
-- [ ] **Task 4: Wiring** — ScaleIndicator opens dialog; Document → Calibrate menu item; per-tab calibration state; status-bar success state; cursor real units; conflicting-scale warning (uses the fixed 4.2 detection data).
-- [ ] **Task 5: Tests** — unit + `e2e/calibrate.spec.ts`; local L17/L21 check (calibrate L21 from detected 1:75 @ A1 and by two points on a known dimension, e.g. a "1905" dimension on L17 → cursor/readout consistent); screenshots `fixtures/private/traces/4-3-calibrate-dialog.png` and `4-3-calibrated.png` (never commit private files).
+- [x] **Task 1: Core calibration** — `src/core/calibration/` model, Zod schema, conversions, unit/ft-in parsing and formatting, range parsing; unit tests.
+- [x] **Task 2: Undo stack** (if absent) — minimal command stack per AC 7; keyboard bindings with canvas/workspace focus rules from 3.x.
+- [x] **Task 3: CalibrateDialog + picking mode** — dialog, collapsed instruction bar, two-point picking with snap/overlay, distance entry, options, first-use tip helper.
+- [x] **Task 4: Wiring** — ScaleIndicator opens dialog; Document → Calibrate menu item; per-tab calibration state; status-bar success state; cursor real units; conflicting-scale warning (uses the fixed 4.2 detection data).
+- [x] **Task 5: Tests** — unit + `e2e/calibrate.spec.ts`; local L17/L21 check (calibrate L21 from detected 1:75 @ A1 and by two points on a known dimension, e.g. a "1905" dimension on L17 → cursor/readout consistent); screenshots `fixtures/private/traces/4-3-calibrate-dialog.png` and `4-3-calibrated.png` (never commit private files).
 
 ## Dev Notes
 
@@ -46,10 +46,59 @@ so that every measurement is in real units.
 
 ### Agent Model Used
 
+Claude Opus 5.5 (claude-opus-5-5)
+
 ### Debug Log References
+
+- Local: `npm run typecheck`, `npm run lint`, `npm run build` clean; `npm test` 1595 unit tests in 139 files; e2e on the production build (`E2E_PROD=1`, workers 1): 48 passed, 10 skipped (opt-in private checks), `calibrate.spec.ts` 2 passed.
+- First e2e run found a Story 1.7 defect: a `Select`'s listbox opened inside a `Dialog` sat under the dialog's overlay (`z-popover` 40 < `z-dialog` 50) and could not be clicked. Fixed with a `--z-dialog-popover` layer (55) for the listbox.
+- Supabase on its default local ports (no Windows reservation this time); Docker Desktop started with `docker desktop start`.
+- **Founder drawings** (`PERF_L17=1 E2E_PROD=1 npx playwright test perf-calibrate`; private, nothing committed):
+  - **L21**: the ScaleIndicator reads "Scales disagree — Verify"; the dialog shows "Printed scales disagree: 1:75 @ A1 = 1:150 @ A3, but 1:200 @ A3 is printed" with "Use 1:75 @ A1 (1:75 on this page)" and "Use 1:200 @ A3 (1:100 on this page)"; the first gives "Scale 1:75". Screenshot `fixtures/private/traces/4-3-calibrate-dialog.png`.
+  - **L17** (title block "As indicated", no printed scale): the "1905" dimension (text at user (-141.4, 100.7)) has its dimension line from (-169.01, 98.57) to (-97.01, 98.57): 72.0 pt = 25.4 mm of paper, so 1905 mm is 1:75. Two points snapped to its ends ("Picked: 25.4 mm on paper (72.0 pt)"), distance 1905 mm → "Scale 1:75"; the cursor readout at the two ends: X 27063 and X 28968 mm, **difference 1905 mm** (consistent). Screenshot `fixtures/private/traces/4-3-calibrated.png` (status bar: ✓ Scale 1:75, X 28968 Y 24881 mm).
+- CI: run **40082428504** success (Tasks 1-5, 80b9ad1).
 
 ### Completion Notes List
 
+- **Task 1 (core, `src/core/calibration/`)**: `calibration.ts`: the model `{ xFactor, yFactor, unit, precision, source, ratio?, sheet?, yRatio? }` (xFactor / yFactor = real millimetres per page point, UserUnit applied) and its Zod schema `calibrationSchema` (for Epic 6 persistence); `pageIdOf(sha256, index)` with the A2 / Epic 12 TODO; `factorForRatio`, `ratioForPage` (4.2's sheet conversion), `factorFromPoints`, `roundRatioOf` (usual metric and imperial ratios within 0.5 %), `realLengthMm`, `calibrationLabel` (Scale 1:100 / Calibrated / Scale 1:100 / 1:50 / Calibrated (X ≠ Y), with the factor in the tooltip), `calibrationsFor` (a range: a ratio per page as a ratio, a sheet-stated one converted per page; two points: the same factor), `mixedSizes`. `units.ts`: `parseDistance` (mm, m, in, ft, ft-in on top of `core/geometry/length.ts`; zero and negatives refused), `formatReal` / `formatRealValue` (decimals or 1/8" / 1/16"; `12'-6 1/2"`), `formatCursorReal`, `precisionsFor`. `range.ts`: `parsePageRange` ("1-3, 5", "4-", "-2"; out of range is an error), `parseRatioInput` ("100", "1:100", "1/100", "1:100 @ A1", "1:50 at a3", "1/200 ANSI D"). `src/core/scale/sheet.ts` gains `ratioOnSheet`, `detect.ts` `conflictWarning`.
+- **Task 2 (undo)**: `src/core/undo/stack.ts`: immutable history of command objects `{ label, do, undo }` (execute / undo / redo, limit 200, labels). `src/features/editor/undo-store.ts`: one history per document tab in a zustand vanilla store (keyed by tab id; a closed tab's history is dropped); `executeCommand`, `undoActive`, `redoActive`. Keys: Ctrl+Z, Ctrl+Y, Ctrl+Shift+Z (Cmd on macOS) through the workspace shortcuts, only with a drawing open, never in a text field (the browser's text undo) or inside a dialog. Edit > Undo / Redo name the step ("Undo Calibrate page 1").
+- **Task 3 (dialog, picking)**: `src/features/calibration/`: `CalibrateDialog` (Story 1.7 Dialog, Tabs, Select, Collapsible, Button, FieldShell): detected scales as "Use detected …" buttons (the ratio on this page first: "Use detected 1:200 (1:100 @ A1)"), the conflict warning with one button per reading (AC 6); "By ratio" (optional "@ sheet", the conversion shown under the field); "By two points": the dialog collapses to the instruction bar ("Click the first point · Esc to cancel", then the second; `role=status`, polite), picks use the snapping tool rules (glyph, Shift 45°, Alt off) through a new `calibrate` viewer tool and draw a dimension line with end ticks on the active overlay; back in the dialog the picked paper distance, the real distance and its unit (mm, m, in, ft, ft-in); picks under 10 CSS px are refused inline. Options: apply to this page / pages (range) / all pages, the mixed-sizes note, display units and precision (remembered per user, `calibration-prefs.ts`), "Different vertical scale" (a vertical ratio). Enter applies, Esc cancels; numbers use tabular figures. `src/features/tips/`: the reusable first-use tip (`FirstUseTip`, `useFirstUseTip`, per user in localStorage, `pm.tips.v1.<user>`): shown the first time the dialog opens, then never again; Dismiss hides it.
+- **Task 4 (wiring)**: calibrations live in the viewer state by stable page id (`calibrations`, per tab through the tab snapshot: kept across tab switches, not reloads; Epic 6 persists them). The ScaleIndicator is a button opening the dialog in every state; calibrated it shows "Scale 1:100" in the success colour with its icon; `scaleStateOf(scales, calibration)` puts a calibration first. Document > Calibrate… and Tools > Calibrate…. The cursor readout switches to the page's unit and precision. Another tab shown closes the dialog.
+- **Task 5 (tests)**: unit tests for the core, the undo stack and store, the shortcuts, the engine pick (snapped points, page and screen distances, rubber band, restore, cancel on Esc / tool / tab), the dialog (detected, conflict, ratio on a mixed range by Enter, errors, two-point flow with Esc / too close / ft-in, vertical scale, prefs), the tips, the status items; `e2e/calibrate.spec.ts` (two tests, AC 10's list); `e2e/perf-calibrate.spec.ts` (local, private).
+
+**Decisions and deviations (for review):**
+
+1. **X and Y are the PDF user space axes** of the page (the axes of the status bar's X/Y readout, unrotated by /Rotate or the view rotation), so a separate vertical scale stays with the drawing whatever the view rotation.
+2. **The separate vertical scale is a ratio** (in both modes). A two-point pick sets X and Y alike (a diagonal pick cannot tell them apart); with a vertical ratio, Y follows the ratio.
+3. **Calibrate… is in Document and in Tools** (AC names Document; the menu already listed it under Tools, as Revu does).
+4. **Undo history in memory per tab**, not serialised to sessionStorage (UX-DR36 is Story 4.5's editor foundation: command objects with closures are not serialisable as they are). Undo keys are inactive in text fields and dialogs.
+5. **A new viewer tool `calibrate`** (a snapping tool, never on the ToolRail) carries the pick; the previous tool comes back afterwards. Another tool, page or tab cancels the pick (the dialog comes back, or closes with the tab).
+6. **First-use tip is marked seen when first shown** (not only on Dismiss), so it shows exactly once.
+7. **Story 1.7 fix**: a Select's listbox now stacks above dialogs (`--z-dialog-popover`).
+8. **Two-point labels** use a usual-ratio set (1:1 … 1:10000, metric and imperial) within 0.5 %; a typed ratio is shown as typed (1:33.3).
+9. **Viewport-level calibration** is not done (follow-up for a later story: the 4.2 quads per detected scale are kept for it).
+10. **Default display unit**: mm, precision 0 (until the user picks others).
+
+**Questions for the founder:**
+
+- X/Y follow the PDF page axes (decision 1). Should a separate vertical scale instead follow the view as shown when the view is rotated?
+- Keep Calibrate… in both Document and Tools menus, or only one?
+- L17 measures 1:75 (its 1905 dimension is 25.4 mm of paper), like L21's A1 statement: is 1:75 the scale the founder expects for this set?
+
 ### File List
 
+- `src/core/calibration/calibration.ts`, `units.ts`, `range.ts`, `calibration.test.ts` (new)
+- `src/core/scale/sheet.ts`, `detect.ts`, `detect.test.ts` (modified)
+- `src/core/undo/stack.ts`, `stack.test.ts` (new)
+- `src/features/editor/undo-store.ts`, `undo-store.test.ts`, `index.ts` (new)
+- `src/features/calibration/calibrate-dialog.tsx`, `calibrate-dialog.test.tsx`, `calibrate-store.ts`, `calibration-prefs.ts`, `calibration-prefs.test.ts`, `index.ts` (new)
+- `src/features/tips/first-use-tips.tsx`, `first-use-tips.test.tsx`, `index.ts` (new)
+- `src/features/viewer/viewer-engine.ts`, `viewer-engine.test.ts`, `viewer-store.ts`, `viewer-input.ts`, `viewer-commands.ts`, `snap-controller.ts`, `index.ts`, `status/scale-state.ts`, `status/scale-state.test.ts`, `status/status-items.tsx`, `status/status-items.test.tsx` (modified)
+- `src/features/workspace/workspace-shell.tsx`, `workspace-status-bar.tsx`, `workspace-menu-bar.tsx`, `use-workspace-shortcuts.ts`, `use-workspace-shortcuts.test.ts` (modified)
+- `src/components/ui/select.tsx`, `src/app/globals.css` (modified)
+- `e2e/calibrate.spec.ts`, `e2e/perf-calibrate.spec.ts` (new)
+- `_bmad-output/implementation-artifacts/4-3-calibrate-a-page.md`, `sprint-status.yaml` (modified)
+
 ### Change Log
+
+- 2026-10-24: Story 4.3 implemented (Claude Opus 5.5): calibration core, undo stack, CalibrateDialog with two-point picking, wiring, e2e and the L17/L21 check. Status → review. Commits 932ea97 (in progress), db23977 (Task 1), 3444d3d (Task 2), 37fe1c1 (Task 3), 0ec223d (Task 4), 80b9ad1 (Task 5) and this record.
