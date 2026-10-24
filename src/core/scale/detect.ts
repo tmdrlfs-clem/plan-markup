@@ -114,12 +114,19 @@ export function textLines(items: readonly TextItem[]): TextItem[][] {
 export function detectScales(items: readonly TextItem[], widthPt: number, heightPt: number): PageScales {
   type Found = { ratio: number; sheet: string | null; imperial: boolean; text: string; quads: Quad[] };
   const found: Found[] = [];
+  const here = pageSheet(widthPt, heightPt).name;
   for (const line of textLines(items)) {
     const index = buildPageText(line);
+    let inLine: Found[] = [];
     for (const m of findRatios(index.text)) {
       const sheet = m.sheet ? canonicalSheet(m.sheet) : null;
-      found.push({ ratio: m.ratio, sheet, imperial: m.imperial, text: m.text.replace(/^scale\W*/i, ""), quads: matchQuads(line, index, m) });
+      inLine.push({ ratio: m.ratio, sheet, imperial: m.imperial, text: m.text, quads: matchQuads(line, index, m) });
     }
+    // "1:100 @ A1  1:200 @ A3" on one line (a view title giving the scale for two sheet
+    // sizes) is one view: keep the statement for this page's sheet, not a second scale.
+    const sheets = new Set(inLine.map((f) => f.sheet).filter((x) => x !== null));
+    if (sheets.size > 1 && here && sheets.has(here)) inLine = inLine.filter((f) => f.sheet === null || f.sheet === here);
+    found.push(...inLine);
   }
   // "1:50" elsewhere on a sheet that also says "1:50 @ A1" is the same statement with the sheet left off.
   const qualified = new Map<number, string>();

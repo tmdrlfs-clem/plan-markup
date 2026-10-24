@@ -128,10 +128,10 @@ describe("detectScales", () => {
   it("joins runs drawn out of order on one baseline (a Revit view title: '1 : 75', '1 : 200', '@ A1', '@ A3 PLAN VIEW')", () => {
     const items = [run("1 : 75", 795, 1403, { size: 8, width: 22 }), run("1 : 200", 857, 1403, { size: 8, width: 25 }), run("@ A1", 824, 1403, { size: 8, width: 16 }), run("@ A3 PLAN VIEW", 884, 1403, { size: 8, width: 60 })];
     expect(textLines(items)).toHaveLength(1);
-    expect(detect(items).scales.map((s) => [scaleLabel(s), s.effective])).toEqual([
-      ["1:75 @ A1", 75],
-      ["1:200 @ A3", 100],
-    ]);
+    // One view's scale for two sheet sizes: on an A1 page the A1 statement counts, once.
+    expect(detect(items).scales.map((s) => [scaleLabel(s), s.effective])).toEqual([["1:75 @ A1", 75]]);
+    // On an A3 page, the A3 one.
+    expect(detect(items, A3).scales.map((s) => [scaleLabel(s), s.effective])).toEqual([["1:200 @ A3", 200]]);
   });
 
   it("two viewport scales count twice; the same scale repeated (and a bare one next to the qualified) counts once", () => {

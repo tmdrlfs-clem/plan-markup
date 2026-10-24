@@ -82,7 +82,19 @@ export function scaleItem(state: ScaleState): { label: string; tone: "warning" |
  */
 export function ScaleIndicator({ state }: { state: ScaleState }) {
   const { label, tone, tooltip } = scaleItem(state);
-  return <StatusBarItem label={label} tone={tone} tooltip={tooltip} data-testid="status-scale" data-scale={state.kind} />;
+  // Story 4.2: a detected scale's tooltip carries information (the conversion, the list): reachable by keyboard.
+  const informative = state.kind === "detected" || state.kind === "mixed";
+  return (
+    <StatusBarItem
+      label={label}
+      tone={tone}
+      tooltip={tooltip}
+      data-testid="status-scale"
+      data-scale={state.kind}
+      tabIndex={informative ? 0 : undefined}
+      className={informative ? "rounded-sm focus-ring" : undefined}
+    />
+  );
 }
 
 // ---- snap toggles ----------------------------------------------------------------------

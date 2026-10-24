@@ -22,6 +22,8 @@ dependencies) and `python scripts/fixtures/make-wasm-images.py` (Pillow with Ope
 
 | `snap.pdf` | Story 4.1, from `node scripts/fixtures/make-snap-fixture.mjs` (deterministic): page 1 A4 landscape with a stroked rectangle (100, 100)-(300, 250), two lines crossing at (500, 200), a circle (700, 200) r 50, a white-filled and a clip-only rectangle and the text "SNAP" (not snap targets), a form XObject's line (600, 400)-(650, 400); page 2 A4 portrait, /Rotate 90, MediaBox [-100 -50 495 792], a line and a rectangle | snap extraction and resolution unit tests, `viewer-snap` e2e |
 
+| `scales.pdf` | Story 4.2, from `node scripts/fixtures/make-scales-fixture.mjs` (deterministic): A1 page "SCALE 1:100 @ A1"; the same on an A3 page; an A1 page with viewport labels 1:50, 1:100, 1:100; an A3 page with "As indicated", "FALLS 1:40", a date and time, "1:100 YEAR FLOOD" | `viewer-scale-detect` e2e: detected, converted (1:200), "2 scales on page", "Scale not set" |
+
 `password.pdf` is not deterministic (random salts), so the script rewrites it only when it is
 missing or with `--force`.
 

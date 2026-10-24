@@ -159,3 +159,17 @@ describe("ZoomItem", () => {
     expect(fitPage).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("ScaleIndicator keyboard access (Story 4.2)", () => {
+  it("a detected scale is a tab stop whose tooltip (with the conversion) opens on focus; Scale not set is not", async () => {
+    const { unmount } = wrap(<ScaleIndicator state={{ kind: "detected", label: "1:200 (1:100 @ A1)", note: "1:100 @ A1 → 1:200 on this A3 page" }} />);
+    const item = screen.getByTestId("status-scale");
+    expect(item).toHaveAttribute("tabindex", "0");
+    act(() => item.focus());
+    expect(await screen.findByRole("tooltip", {}, { timeout: 2000 })).toHaveTextContent("1:100 @ A1 → 1:200 on this A3 page");
+    unmount();
+    wrap(<ScaleIndicator state={{ kind: "not-set" }} />);
+    expect(screen.getByTestId("status-scale")).not.toHaveAttribute("tabindex");
+  });
+});
+

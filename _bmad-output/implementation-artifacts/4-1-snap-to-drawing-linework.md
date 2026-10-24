@@ -62,7 +62,7 @@ Claude Opus 5.5 (claude-opus-5-5)
 ### Debug Log References
 
 - CI for the implementation (a72e447): run **40054870092** success.
-- Review fixes S1-S6, local: typecheck, lint, build clean; `npm test` 1464 unit tests in 131 files; e2e on the production build 45 passed, 8 skipped (private opt-in); `viewer-snap` now also snaps on the /Rotate 90, off-origin page 2. Review CI run: see Change Log.
+- Review fixes S1-S6, local: typecheck, lint, build clean; `npm test` 1464 unit tests in 131 files; e2e on the production build 45 passed, 8 skipped (private opt-in); `viewer-snap` now also snaps on the /Rotate 90, off-origin page 2. Review commit e1adeef: CI run **40055405771** success.
 
 - Local: `npm run typecheck`, `npm run lint`, `npm run build` clean; `npm test` 1459 unit tests in 131 files; e2e on the production build (`E2E_PROD=1`, workers 1): 45 passed, 8 skipped (opt-in private checks). `viewer-snap` failed once in the full run: the HintBar that arming Length shows moved the canvas after the test had read its position; the spec now waits for a stable canvas (3 × 2 consecutive green runs since).
 - Supabase on locally remapped ports 583xx (Windows reservation), restored afterwards, never committed.
