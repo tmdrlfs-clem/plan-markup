@@ -1,6 +1,6 @@
 # Story 4.2: Detect printed scales
 
-Status: ready-for-dev
+Status: in-progress
 
 ## Story
 
