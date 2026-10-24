@@ -49,6 +49,20 @@ export function ratioOnPage(ratio: number, statedSheet: string | null, widthPt: 
   return (ratio * stated) / here.longMm;
 }
 
+/**
+ * The ratio a 1:`ratio` stated for sheet `from` is on sheet `to` (Story 4.3's
+ * conflict warning: 1:75 @ A1 is 1:150 @ A3). Unknown sheets: unchanged.
+ */
+export function ratioOnSheet(ratio: number, from: string, to: string): number {
+  if (from === to) return ratio;
+  const a = /^([AB])([0-9])$/.exec(from);
+  const b = /^([AB])([0-9])$/.exec(to);
+  if (a && b && a[1] === b[1]) return ratio * 2 ** ((Number(b[2]) - Number(a[2])) / 2);
+  const long = sheetLongEdgeMm(from);
+  const other = sheetLongEdgeMm(to);
+  return long && other ? (ratio * long) / other : ratio;
+}
+
 const NICE = [2, 5, 10, 20, 25, 40, 50, 75, 100, 125, 150, 200, 250, 300, 400, 500, 750, 1000, 1250, 1500, 2000, 2500, 5000, 10000];
 
 /** A converted ratio rounded to the nearest usual one when within 2 % (prototype niceRatio), else to 2 decimals. */
