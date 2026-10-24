@@ -76,7 +76,7 @@ development_status:
   # Epic 4: Calibrate and Measure
   epic-4: in-progress
   4-1-snap-to-drawing-linework: done
-  4-2-detect-printed-scales: backlog
+  4-2-detect-printed-scales: ready-for-dev
   4-3-calibrate-a-page: backlog
   4-4-verify-a-calibration: backlog
   4-5-draw-a-length-measurement-editor-foundation: backlog
