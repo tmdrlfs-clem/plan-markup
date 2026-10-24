@@ -18,6 +18,7 @@ import {
   MenuBarTrigger,
 } from "@/components/ui/menu-bar";
 import { TAB_SHORTCUTS } from "@/core/documents/tabs";
+import { activeUndoLabels, redoActive, undoActive, undoStore } from "@/features/editor";
 import { hasDocument, tabsStore, viewerCommands, viewerStore, viewerTabs, type ViewerCommand } from "@/features/viewer";
 import { THEMES, THEME_LABELS, isTheme, type Theme } from "@/lib/theme";
 
@@ -96,6 +97,24 @@ function PanelItems() {
   );
 }
 
+/** Edit > Undo / Redo (Story 4.3): the active drawing's next step, named ("Undo Calibrate page 1"). */
+function UndoItems() {
+  const tabId = useStore(viewerStore, (s) => s.tabId);
+  const open = useStore(viewerStore, hasDocument);
+  const undoLabel = useStore(undoStore, (s) => activeUndoLabels(s, tabId).undo);
+  const redoLabel = useStore(undoStore, (s) => activeUndoLabels(s, tabId).redo);
+  return (
+    <>
+      <MenuBarItem disabled={!open || !undoLabel} shortcut="Ctrl+Z" onSelect={() => undoActive()}>
+        {undoLabel && open ? `Undo ${undoLabel}` : "Undo"}
+      </MenuBarItem>
+      <MenuBarItem disabled={!open || !redoLabel} shortcut="Ctrl+Y" onSelect={() => redoActive()}>
+        {redoLabel && open ? `Redo ${redoLabel}` : "Redo"}
+      </MenuBarItem>
+    </>
+  );
+}
+
 export function WorkspaceMenuBar({ onOpen, onSignOut, theme, onThemeChange }: WorkspaceMenuBarProps) {
   return (
     <MenuBar aria-label="Main menu">
@@ -122,8 +141,7 @@ export function WorkspaceMenuBar({ onOpen, onSignOut, theme, onThemeChange }: Wo
       <MenuBarMenu>
         <MenuBarTrigger>Edit</MenuBarTrigger>
         <MenuBarContent>
-          <Disabled label="Undo" shortcut="Ctrl+Z" />
-          <Disabled label="Redo" shortcut="Ctrl+Y" />
+          <UndoItems />
           <MenuBarSeparator />
           <Disabled label="Copy" shortcut="Ctrl+C" />
           <Disabled label="Paste" shortcut="Ctrl+V" />

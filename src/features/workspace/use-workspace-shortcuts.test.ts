@@ -59,6 +59,26 @@ describe("handleWorkspaceShortcut", () => {
     expect(handleWorkspaceShortcut(key({ key: "F3", code: "F3" }), handlers())).toBe(false);
   });
 
+  it("Story 4.3: Ctrl+Z undoes, Ctrl+Y and Ctrl+Shift+Z redo; not in a text field or a dialog, nor without a drawing", () => {
+    const h = { ...handlers(), undo: vi.fn(), redo: vi.fn() };
+    const canvas = document.createElement("canvas");
+    expect(handleWorkspaceShortcut(key({ ctrlKey: true, code: "KeyZ", key: "z" }, canvas), h)).toBe(true);
+    expect(handleWorkspaceShortcut(key({ ctrlKey: true, code: "KeyY", key: "y" }), h)).toBe(true);
+    expect(handleWorkspaceShortcut(key({ ctrlKey: true, shiftKey: true, code: "KeyZ", key: "Z" }), h)).toBe(true);
+    expect(handleWorkspaceShortcut(key({ metaKey: true, code: "KeyZ", key: "z" }), h)).toBe(true);
+    expect(h.undo).toHaveBeenCalledTimes(2);
+    expect(h.redo).toHaveBeenCalledTimes(2);
+    const field = document.createElement("input");
+    expect(handleWorkspaceShortcut(key({ ctrlKey: true, code: "KeyZ", key: "z" }, field), h)).toBe(false);
+    const dialog = document.createElement("div");
+    dialog.setAttribute("role", "dialog");
+    const button = document.createElement("button");
+    dialog.append(button);
+    expect(handleWorkspaceShortcut(key({ ctrlKey: true, code: "KeyZ", key: "z" }, button), h)).toBe(false);
+    expect(handleWorkspaceShortcut(key({ ctrlKey: true, code: "KeyZ", key: "z" }), handlers())).toBe(false);
+    expect(handleWorkspaceShortcut(key({ ctrlKey: true, altKey: true, code: "KeyZ", key: "z" }), h)).toBe(false);
+  });
+
   it("Ctrl+O opens, also from a field; Cmd+O on macOS", () => {
     const h = handlers();
     const input = document.createElement("input");

@@ -10,6 +10,7 @@ import { Toaster } from "@/components/ui/toast";
 import { toast } from "@/components/ui/toast-store";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { signOut } from "@/features/account/actions";
+import { redoActive, undoActive } from "@/features/editor";
 import { chooseTheme, useWorkspaceTheme } from "@/features/appearance/theme-store";
 import {
   DocumentTabs,
@@ -149,6 +150,9 @@ function ShellBody({ user, initialTheme }: { user: WorkspaceUser; initialTheme: 
     hideAllPanels,
     search: drawingOpen ? search : undefined,
     searchStep: drawingOpen ? searchStep : undefined,
+    // Story 4.3: the active drawing's undo history.
+    undo: drawingOpen ? undoActive : undefined,
+    redo: drawingOpen ? redoActive : undefined,
   });
 
   const panel = leftPanel(left.active);

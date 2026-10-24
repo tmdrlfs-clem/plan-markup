@@ -16,6 +16,12 @@ export interface WorkspaceShortcutHandlers {
   search?: () => void;
   /** F3 / Shift+F3: next / previous search result (passed while a drawing is open). */
   searchStep?: (direction: 1 | -1) => void;
+  /**
+   * Story 4.3: Ctrl+Z undo, Ctrl+Y / Ctrl+Shift+Z redo in the active drawing (passed while one
+   * is open). Not in text fields (the browser's own text undo) and not inside a dialog.
+   */
+  undo?: () => void;
+  redo?: () => void;
 }
 
 /** Dialogs and forms that are not the workspace: their text fields keep the browser's Ctrl+F and F3. */
@@ -32,6 +38,11 @@ function searchScope(target: EventTarget | null): boolean {
 }
 
 const EDITABLE = "input, textarea, select, [contenteditable=''], [contenteditable='true']";
+
+/** Inside a dialog (Calibrate): undo there would change the drawing behind it. */
+function inDialog(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest("[role='dialog'], [role='alertdialog']") !== null;
+}
 
 function inEditable(target: EventTarget | null): boolean {
   return target instanceof Element && target.closest(EDITABLE) !== null;
@@ -58,6 +69,10 @@ function resolve(event: KeyboardEvent, handlers: WorkspaceShortcutHandlers): (()
     return () => step(direction);
   }
   if (inEditable(event.target)) return null;
+  if (ctrl && !event.altKey && !inDialog(event.target)) {
+    if (isLetter(event, "z") && handlers.undo && handlers.redo) return event.shiftKey ? handlers.redo : handlers.undo;
+    if (isLetter(event, "y") && !event.shiftKey && handlers.redo) return handlers.redo;
+  }
 
   if (event.altKey && !ctrl && !event.shiftKey) {
     const panel = LEFT_PANELS.find((p) => p.code === event.code);
