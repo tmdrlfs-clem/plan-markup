@@ -195,7 +195,7 @@ Then: `@supabase/supabase-js @supabase/ssr zod pdfjs-dist` (+ PDF writer chosen 
 
 - **Rendering:** custom Canvas2D scene graph. Layer stack: (1) PDF raster tiles from pdf.js in a worker → `ImageBitmap`, (2) static markups canvas, (3) active/selection canvas, (4) DOM overlays (text edit, handles' tooltips).
 - **Editor store:** `zustand` 5.0.15 vanilla store outside React (tools, selection, undo stack as command objects); the undo history is serialised per browser tab to `sessionStorage` so it survives a reload until the tab closes (UX-DR36); React subscribes with selectors. Server state (lists, admin) via plain fetch + React cache, no TanStack Query.
-- **Workers:** `render.worker` (pdf.js), `engine.worker` (hash, vector extraction, snap index build, dynamic fill, 4541), `export.worker` (PDF writing with `@cantoo/pdf-lib`). Comlink-style typed messages.
+- **Workers:** `render.worker` (pdf.js), `engine.worker` (hash, vector extraction, snap index build, dynamic fill, 4541), `export.worker` (PDF writing with `@cantoo/pdf-lib`). Comlink-style typed messages. (AR14 note: snap indexing and scale detection run in `render.worker` for now; see `docs/decisions/0006-snap-and-scale-in-render-worker.md`.)
 - **Spatial index:** `flatbush` 4.6.2 (static, fast) for vector snap segments per page; `rbush` 4.0.1 (dynamic) for markup hit-testing.
 - **Routing:** route groups `(marketing)` static, `(workspace)` client-heavy, `(admin)`.
 - **Bundle:** workspace code dynamically imported; marketing pages ship no canvas code.
