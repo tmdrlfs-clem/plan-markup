@@ -125,7 +125,7 @@ test("an over-limit email shows the rate-limited message without calling Auth", 
   }
 
   await page.goto("/sign-in");
-  await signIn(page, email, "whatever-password");
+  await signIn(page, email, "whatever-password", { keepRateLimits: true });
   // An Auth call would have produced the generic message instead.
   await expect(formAlert(page)).toHaveText(
     "Too many sign-in attempts. Try again in 15 minutes.",
