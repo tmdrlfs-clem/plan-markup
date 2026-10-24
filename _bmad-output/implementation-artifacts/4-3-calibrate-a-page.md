@@ -1,6 +1,6 @@
 # Story 4.3: Calibrate a page
 
-Status: ready-for-dev
+Status: in-progress
 
 ## Story
 
