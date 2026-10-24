@@ -935,3 +935,45 @@ describe("RenderWorkerHost: snap.buildIndex (Story 4.1)", () => {
     expect(codeOf(replies, 3)).toBe("render-failed");
   });
 });
+
+describe("RenderWorkerHost: scale.detect (Story 4.2)", () => {
+  const scale = (reqId: number, page = 1) => ({ type: "scale.detect", reqId, payload: { page } });
+  const runOf = (str: string, x: number, y: number) => itemOfRun({ str, x, y, width: 6 * str.length, fontSize: 12 }, true);
+
+  it("detects from the page text the worker already reads for search (read once, shared with render.text)", async () => {
+    const { host, replies, renderer } = setup();
+    renderer.items[1] = [runOf("PLAN 1:50", 100, 100), runOf("SCALE As indicated", 100, 300), runOf("slope 1:40", 100, 500)];
+    host.handle(open(1));
+    await host.idle();
+    host.handle(scale(2));
+    host.handle({ type: "render.text", reqId: 3, payload: { page: 1 } });
+    await host.idle();
+    const r = resultOf(replies, 2) as unknown as { scales: { ratio: number; effective: number; count: number }[]; pageSheet: string | null };
+    expect(r.scales).toMatchObject([{ ratio: 50, effective: 50, count: 1 }]);
+    expect(r.pageSheet).toBeNull(); // 1000 x 600 pt is no standard sheet
+    expect(renderer.textReads).toBe(1);
+  });
+
+  it("runs after tiles; cancellable; a page out of range is an error", async () => {
+    const { host, replies, renderer } = setup();
+    host.handle(open(1));
+    await host.idle();
+    let release!: () => void;
+    renderer.gate = new Promise((r) => (release = r));
+    host.handle(tile(10)); // the worker is busy
+    host.handle(scale(2));
+    host.handle(tile(3));
+    release();
+    await host.idle();
+    const order = replies.filter((x) => x.type === "result").map((x) => x.reqId);
+    expect(order.indexOf(3)).toBeLessThan(order.indexOf(2));
+    host.handle(scale(4, 7));
+    await host.idle();
+    expect(codeOf(replies, 4)).toBe("out-of-range");
+    host.handle(scale(5));
+    host.handle({ type: "render.cancel", reqId: 6, payload: { reqIds: [5] } });
+    await host.idle();
+    expect(codeOf(replies, 5)).toBe("cancelled");
+  });
+});
+

@@ -17,6 +17,7 @@ import { quantizeScale, scaleStep, tileGrid, tileRect } from "@/core/render/tile
 import { serializeWorkerError } from "@/core/worker/error";
 import { extractSegments, type SnapOps } from "@/core/snap/extract";
 import { buildSnapIndex, snapIndexTransfer } from "@/core/snap/index";
+import { detectScales } from "@/core/scale/detect";
 import {
   RenderError,
   renderRequestSchema,
@@ -29,6 +30,7 @@ import {
   type SheetLabelPayload,
   type SnapIndexResult,
   type SnapPayload,
+  type ScalePayload,
   type TextPayload,
   type TextResult,
   type ThumbnailPayload,
@@ -155,6 +157,8 @@ type Job =
   | { kind: "sheetLabel"; reqId: number; payload: SheetLabelPayload; queuedAt: number }
   // missed: no cached text and pdf.js is still parsing (as for thumbnails).
   | { kind: "text"; reqId: number; payload: TextPayload; queuedAt: number; missed?: boolean }
+  // Story 4.2: like text (it reads the same items), so the same priority and the same wait.
+  | { kind: "scale"; reqId: number; payload: ScalePayload; queuedAt: number; missed?: boolean }
   // `missed`: the raster cache had no copy and pdf.js is still parsing (it waits off the queue's head).
   | { kind: "thumbnail"; reqId: number; payload: ThumbnailPayload; queuedAt: number; missed?: boolean }
   // Story 4.1. `list`: pdf.js is reading the operator list (in its parser worker); the job
@@ -259,6 +263,9 @@ export class RenderWorkerHost<B> {
         break;
       case "snap.buildIndex":
         this.queue.push({ kind: "snap", reqId: msg.reqId, payload: msg.payload, queuedAt });
+        break;
+      case "scale.detect":
+        this.queue.push({ kind: "scale", reqId: msg.reqId, payload: msg.payload, queuedAt });
         break;
     }
     void this.pump();
@@ -366,7 +373,7 @@ export class RenderWorkerHost<B> {
         if (snap < 0 && (!job.list || job.list.state !== "reading") && (!this.doc || this.doc.parsed)) snap = i;
       } else if (job.kind === "sheetLabel") {
         if (label < 0 && this.sheetLabelRunnable(job)) label = i;
-      } else if (job.kind === "text") {
+      } else if (job.kind === "text" || job.kind === "scale") {
         if (label < 0 && (!job.missed || !this.doc || this.doc.parsed)) label = i;
       } else if (job.kind === "thumbnail") {
         if (thumb < 0 && (!job.missed || !this.doc || this.doc.parsed)) thumb = i;
@@ -394,6 +401,7 @@ export class RenderWorkerHost<B> {
     if (job.kind === "text") return this.text(job, doc, signal);
     if (job.kind === "thumbnail") return this.thumbnail(job, doc, page, signal);
     if (job.kind === "snap") return this.snap(job, signal);
+    if (job.kind === "scale") return this.scale(job, doc, page, signal);
     return this.tile(job, doc, page, signal);
   }
 
@@ -552,6 +560,21 @@ export class RenderWorkerHost<B> {
     holdText(doc, pageNo, items);
     void this.cache?.putText?.(key, items).catch(() => undefined);
     return items;
+  }
+
+  /** Story 4.2: the page's printed scales, from the text items search and sheet labels share. */
+  private async scale(job: Extract<Job, { kind: "scale" }>, doc: Doc, page: PageInfo, signal: AbortSignal): Promise<void> {
+    const items = await this.readText(doc, job.payload.page, signal, job.missed === true);
+    if (items === null) {
+      // Wait for pdf.js off the queue's head (nextJob skips it until the parse settles).
+      job.missed = true;
+      this.queue.push(job);
+      return;
+    }
+    if (signal.aborted) throw CANCELLED();
+    const scales = detectScales(items, page.width, page.height);
+    if (signal.aborted) throw CANCELLED();
+    this.result(job.reqId, scales);
   }
 
   /** The page's text items and its normalised search text (Story 3.6). */
