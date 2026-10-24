@@ -9,8 +9,12 @@ import { applyMatrix, pageToScreen, pdfToPageMatrix, userToPageMatrix } from "@/
 
 import { searchUi } from "./search-ui";
 import { cursorStore } from "./status/cursor-store";
-import { MIN_HIT_PX, ViewerEngine, clearDocumentViews, type ViewerCanvases } from "./viewer-engine";
-import { canvasStateOf, type ViewerState } from "./viewer-store";
+import { MIN_HIT_PX, ViewerEngine, clearDocumentViews, resetSnapLabels, type ViewerCanvases } from "./viewer-engine";
+import { canvasStateOf, setTool, type ViewerState } from "./viewer-store";
+import { buildSnapIndex } from "@/core/snap/index";
+import { SEG_END_POINT, SEG_START_POINT, SEG_STRAIGHT } from "@/core/snap/extract";
+import { clearSnapCache } from "./snap-controller";
+import { DEFAULT_SNAP, setSnap, snapSettings } from "./status/snap-settings";
 
 type Call = {
   type: RenderVerb;
@@ -1238,5 +1242,133 @@ describe("ViewerEngine: search (Story 3.6)", () => {
       expect(frames).toHaveLength(0);
       expect(cursor()).toBeNull();
     });
+  });
+});
+
+describe("snapping (Story 4.1)", () => {
+  // PAGE is 1000 x 500 pt with no box: user (x, y) is page (x, 500 - y); at fit page (0, 0) is screen (16, 16).
+  const LINE = SEG_START_POINT | SEG_END_POINT | SEG_STRAIGHT;
+  const rect = () =>
+    buildSnapIndex({
+      coords: new Float64Array([100, 100, 300, 100, 300, 100, 300, 250, 300, 250, 100, 250, 100, 250, 100, 100]),
+      flags: new Uint8Array([LINE, LINE, LINE, LINE]),
+      count: 4,
+      truncated: false,
+    });
+  const screenOf = (x: number, y: number) => ({ x: 16 + x, y: 16 + (500 - y) });
+  const cursor = () => cursorStore.getState().point;
+
+  beforeEach(() => {
+    clearSnapCache();
+    resetSnapLabels();
+    snapSettings.setState(DEFAULT_SNAP, true);
+  });
+  afterEach(() => setTool("select"));
+
+  async function ready() {
+    const r = setupRecording();
+    await readyAtFit(r.client, r.engine);
+    const build = r.client.last("snap.buildIndex");
+    expect(build.payload).toEqual({ page: 1 });
+    build.resolve({ ...rect(), opListMs: 5, extractMs: 1, buildMs: 1 });
+    await flush();
+    return r;
+  }
+
+  it("asks the worker for the page's index once the page has settled, then the next page", async () => {
+    const r = setupRecording();
+    await readyAtFit(r.client, r.engine);
+    expect(r.client.all("snap.buildIndex")).toHaveLength(1);
+    r.client.last("snap.buildIndex").resolve({ ...rect(), opListMs: 5, extractMs: 1, buildMs: 1 });
+    await flush();
+    // The document has one page: no neighbour to build (snap-controller.test covers neighbours).
+    expect(r.client.all("snap.buildIndex")).toHaveLength(1);
+    expect(r.engine.snap.has(0)).toBe(true);
+    expect(r.canvases.active.dataset.snapIndex).toBe("4");
+  });
+
+  it("with Length the cursor snaps (endpoint first) and the glyph is drawn; Select never snaps", async () => {
+    const { engine, active, canvases } = await ready();
+    engine.pointerAt(screenOf(102, 103));
+    paint();
+    expect(cursor()!.x).toBeCloseTo(102, 6); // Select: raw
+    expect(canvases.active.dataset.snap).toBeUndefined();
+    setTool("length");
+    active.length = 0;
+    engine.pointerAt(screenOf(102, 103));
+    paint();
+    expect(cursor()).toEqual({ x: 100, y: 100 });
+    expect(canvases.active.dataset.snap).toBe("endpoint 100.00 100.00");
+    expect(active.some((o) => o.op === "rect")).toBe(true); // the endpoint square
+    // Midpoint of the bottom edge, on-line elsewhere.
+    engine.pointerAt(screenOf(201, 104));
+    paint();
+    expect(canvases.active.dataset.snap).toBe("midpoint 200.00 100.00");
+    engine.pointerAt(screenOf(150, 104));
+    paint();
+    expect(canvases.active.dataset.snap).toBe("on-line 150.00 100.00");
+    expect(engine.getSnappedPoint()).toEqual({ x: 150, y: 100, type: "on-line" });
+  });
+
+  it("shows each type's name only the first time this session", async () => {
+    const { engine, active } = await ready();
+    setTool("length");
+    const labels = () => active.filter((o) => o.op === "fillText").map((o) => o.args[0]);
+    engine.pointerAt(screenOf(102, 103));
+    paint();
+    expect(labels()).toEqual(["Endpoint"]);
+    engine.pointerAt(screenOf(150, 160));
+    paint();
+    engine.pointerAt(screenOf(298, 248));
+    paint();
+    expect(labels()).toEqual(["Endpoint"]); // the second endpoint: no name
+  });
+
+  it("Alt suspends snapping; the content toggle off disables it", async () => {
+    const { engine } = await ready();
+    setTool("length");
+    engine.pointerAt(screenOf(102, 103), { alt: true, shift: false });
+    paint();
+    expect(cursor()!.x).toBeCloseTo(102, 6);
+    engine.setSnapModifiers({ alt: false, shift: false });
+    paint();
+    expect(cursor()).toEqual({ x: 100, y: 100 });
+    setSnap("content", false);
+    engine.pointerAt(screenOf(102, 104));
+    paint();
+    expect(cursor()!.y).toBeCloseTo(104, 6);
+  });
+
+  it("a click sets the 'from' point; Shift holds the direction to 45° steps and gives perpendicular snaps; Esc clears", async () => {
+    const { engine, canvases } = await ready();
+    setTool("length");
+    engine.pointerAt(screenOf(101, 101));
+    paint();
+    engine.snapClick();
+    expect(engine.snapFromPoint).toEqual({ x: 100, y: 100 });
+    // Nearly horizontal to the right with Shift: exactly horizontal.
+    engine.pointerAt(screenOf(180, 110), { alt: false, shift: true });
+    paint();
+    expect(cursor()!.y).toBeCloseTo(100, 9);
+    engine.clearSnapFrom();
+    expect(engine.snapFromPoint).toBeNull();
+    // From a point on the left side, the perpendicular onto the right side beats the on-line snap.
+    engine.pointerAt(screenOf(101, 211), { alt: false, shift: false });
+    paint();
+    engine.snapClick();
+    expect(engine.snapFromPoint).toEqual({ x: 100, y: 211 });
+    engine.pointerAt(screenOf(297, 213));
+    paint();
+    expect(canvases.active.dataset.snap).toBe("perpendicular 300.00 211.00");
+    setTool("select");
+    expect(engine.snapFromPoint).toBeNull();
+  });
+
+  it("a background tab cancels the build in flight", async () => {
+    const r = setupRecording();
+    await readyAtFit(r.client, r.engine);
+    const build = r.client.last("snap.buildIndex");
+    r.engine.suspend();
+    expect(r.client.cancelled).toContain(build.reqId);
   });
 });

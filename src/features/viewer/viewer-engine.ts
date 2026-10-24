@@ -62,8 +62,10 @@ import {
   panBy,
   pageToScreen,
   pageToScreenMatrix,
+  applyMatrix,
   pageToUser,
   rotateView,
+  userToPageMatrix,
   rotatedSize,
   screenToPage,
   stepZoom,
@@ -83,9 +85,13 @@ import type { ContentFlags, PageInfo, TilePayload } from "@/workers/render-proto
 import { WorkerRequestError, type RenderClient } from "@/workers/rpc";
 
 import { DocumentSearch } from "./document-search";
+import { SNAP_TOLERANCE_PX, SnapController, isSnappingTool } from "./snap-controller";
+import { constraintFor, projectOnto } from "@/core/snap/constrain";
+import type { SnapResult, SnapType } from "@/core/snap/resolve";
+import type { SnapModifiers } from "./viewer-input";
 import { setCursor } from "./status/cursor-store";
 import { searchUi } from "./search-ui";
-import type { ViewerErrorCode, ViewerState } from "./viewer-store";
+import { viewerStore, type ViewerErrorCode, type ViewerState } from "./viewer-store";
 
 /** CSS px kept free around the page at fit. */
 export const FIT_PADDING = 16;
@@ -162,6 +168,20 @@ export type TilePerfEntry = { at: number; page: number; bucket: number; inView: 
 function tilePerfLog(): TilePerfEntry[] | null {
   const log = (globalThis as { __pmTilePerf?: unknown }).__pmTilePerf;
   return Array.isArray(log) ? (log as TilePerfEntry[]) : null;
+}
+
+/** Snap types whose name was already shown next to the glyph this session (UX-DR14: first use only). */
+const snapLabelsShown = new Set<SnapType>();
+export const SNAP_LABELS: Readonly<Record<SnapType, string>> = {
+  endpoint: "Endpoint",
+  intersection: "Intersection",
+  midpoint: "Midpoint",
+  perpendicular: "Perpendicular",
+  "on-line": "On line",
+};
+/** Forgets which snap names were shown (tests). */
+export function resetSnapLabels(): void {
+  snapLabelsShown.clear();
 }
 
 const closeBitmap = (b: ImageBitmap) => {
@@ -256,6 +276,11 @@ export class ViewerEngine {
   /** The pointer over the canvas (viewport CSS px), for the status bar's X/Y (Story 3.7). */
   private pointerScreen: Point | null = null;
   private cursorFrame: number | null = null;
+  /** Story 4.1: Alt / Shift as last seen, the tool's "from" point (user space), the snap shown and its first-use label. */
+  private snapMods: SnapModifiers = { alt: false, shift: false };
+  private snapFrom: Point | null = null;
+  private snapShown: SnapResult | null = null;
+  private snapLabel: SnapType | null = null;
 
   constructor(
     private readonly canvases: ViewerCanvases,
@@ -294,6 +319,20 @@ export class ViewerEngine {
     this.unsubscribeSearchUi = searchUi.subscribe((s, prev) => {
       if (s.panelOpen !== prev.panelOpen) this.invalidate();
     });
+    this.snap = new SnapController(
+      (page) => {
+        const call = this.client.request("snap.buildIndex", { page });
+        return { promise: call.promise, cancel: () => this.client.cancel([call.reqId]) };
+      },
+      (page) => {
+        if (page === this.pageIndex && this.pointerScreen) this.pointerAt(this.pointerScreen, this.snapMods);
+        this.publishSnapStats();
+      },
+    );
+    // Leaving a snapping tool drops its "from" point and glyph.
+    this.unsubscribeTool = viewerStore.subscribe((s, prev) => {
+      if (s.tool !== prev.tool && !isSnappingTool(s.tool)) this.clearSnapFrom();
+    });
     // A theme change (Story 3.8) recolours the canvas: backdrop, highlights, rubber band,
     // failed tiles. Re-read from the canvas (the workspace root carries the theme) and redraw
     // from the bitmaps in memory; no tile is rendered again.
@@ -306,6 +345,9 @@ export class ViewerEngine {
   /** Text search in this document (Story 3.6): per engine, so per document tab. */
   readonly search: DocumentSearch;
   private readonly unsubscribeSearchUi: () => void;
+  private readonly unsubscribeTool: () => void;
+  /** Story 4.1: this document's snapping (indices built in the worker, queried here). */
+  readonly snap: SnapController;
   private readonly unsubscribeTokens: () => void;
   /** The theme's canvas colours (read on first use and again after every theme change). */
   private palette: ViewerPalette | null = null;
@@ -341,6 +383,8 @@ export class ViewerEngine {
     this.cursorFrame = null;
     this.pointerScreen = null;
     setCursor(null);
+    this.snap.cancel();
+    this.snapShown = null;
     this.search.pause();
   }
 
@@ -383,6 +427,7 @@ export class ViewerEngine {
     if (this.frame !== null) this.cancelFrame(this.frame);
     if (this.cursorFrame !== null) this.cancelFrame(this.cursorFrame);
     if (this.settleTimer) clearTimeout(this.settleTimer);
+    this.unsubscribeTool();
     this.resetDocument();
     this.search.destroy();
     this.unsubscribeSearchUi();
@@ -454,6 +499,7 @@ export class ViewerEngine {
     this.contents = opened.pages.map(() => null);
     this.pageLabels = opened.pageLabels ?? null;
     this.sha256 = opened.sha256;
+    this.snap.setDocument(opened.sha256);
     // A document seen before in this session comes back to the page and views it was left at.
     const saved = documentViews.get(opened.sha256);
     this.pageViews = new Map(saved?.views);
@@ -524,6 +570,9 @@ export class ViewerEngine {
     } else if (this.preview) {
       closeBitmap(this.preview.bitmap);
     }
+    this.snap.cancel();
+    this.snapFrom = null;
+    this.snapShown = null;
     this.pageIndex = index;
     this.page = this.pages[index];
     this.preview = this.cache.take(previewKey(this.pageNo)) ?? null;
@@ -839,6 +888,9 @@ export class ViewerEngine {
     this.firstFrameShown = false;
     this.previewFailed = false;
     this.sha256 = null;
+    this.snap.setDocument(null);
+    this.snapFrom = null;
+    this.snapShown = null;
     this.openReq = null;
     this.previewReq = null;
     this.zoomRect = null;
@@ -1002,6 +1054,8 @@ export class ViewerEngine {
       this.requestTiles();
       // After the tiles: text extraction is never urgent (the worker also runs it last).
       if (this.page && this.previewFinal) this.requestSheetLabel(this.pageIndex);
+      // Story 4.1: the page's snap index, then its neighbours (last in the worker's queue).
+      if (this.page && this.previewFinal) this.snap.ensure(this.pageIndex, this.pages.length);
     }, ms);
   }
 
@@ -1279,18 +1333,17 @@ export class ViewerEngine {
         }
       }
     }
-    // Layer 2 stays empty until markups arrive (Epic 5); layer 3 holds the Zoom tool's rubber band.
-    for (const layer of [this.canvases.markups, this.canvases.active]) {
-      const c = layer.getContext("2d");
-      if (!c) continue;
-      c.setTransform(1, 0, 0, 1, 0, 0);
-      c.clearRect(0, 0, layer.width, layer.height);
+    // Layer 2 stays empty until markups arrive (Epic 5); layer 3 (paintOverlay) holds the
+    // search highlights, the Zoom tool's rubber band and the snap glyph.
+    const markups = this.canvases.markups.getContext("2d");
+    if (markups) {
+      markups.setTransform(1, 0, 0, 1, 0, 0);
+      markups.clearRect(0, 0, this.canvases.markups.width, this.canvases.markups.height);
     }
-    this.drawSearchHighlights();
-    if (this.zoomRect) this.drawZoomRect(this.zoomRect);
     this.publishView();
     // The view moved under a still pointer: the page point under it changed.
-    if (this.pointerScreen) this.publishCursor();
+    if (this.pointerScreen) this.updateCursor();
+    this.paintOverlay();
     if (this.pendingPartial) {
       this.pendingPartial = false;
       this.update({ timings: { firstPartialMs: this.timingsPartial, firstFrameMs: null } });
@@ -1417,8 +1470,9 @@ export class ViewerEngine {
    * The pointer moved over the canvas (viewport CSS px), or left it (null).
    * The status bar's X/Y follows at most once per animation frame (Story 3.7 AC 5).
    */
-  pointerAt(point: Point | null): void {
+  pointerAt(point: Point | null, modifiers?: SnapModifiers): void {
     this.pointerScreen = point;
+    if (modifiers) this.snapMods = modifiers;
     if (this.cursorFrame !== null || this.suspended || this.destroyed) return;
     this.cursorFrame = this.requestFrame(() => {
       this.cursorFrame = null;
@@ -1442,7 +1496,201 @@ export class ViewerEngine {
 
   private publishCursor(): void {
     if (this.suspended || this.destroyed) return;
-    setCursor(this.cursorPoint());
+    if (this.updateCursor()) this.paintOverlay();
+  }
+
+  /**
+   * The cursor for the status bar and the tools (Story 4.1): the raw point, or
+   * with a snapping tool the snapped one (Alt held: not snapped; Shift with a
+   * "from" point: held to 45° steps on screen, snap candidates projected onto
+   * that line). Returns true when the overlay must be painted again.
+   */
+  private updateCursor(): boolean {
+    const raw = this.cursorPoint();
+    let point = raw;
+    let shown: SnapResult | null = null;
+    if (raw && this.page && isSnappingTool(viewerStore.getState().tool)) {
+      const linear = this.userToScreenLinear();
+      const constraint = this.snapMods.shift && this.snapFrom ? constraintFor(this.snapFrom, raw, linear) : null;
+      if (constraint) point = projectOnto(constraint, raw);
+      if (!this.snapMods.alt) {
+        const scale = Math.hypot(linear[0], linear[1]) || 1; // CSS px per user unit
+        const hit = this.snap.resolve(this.pageIndex, point ?? raw, SNAP_TOLERANCE_PX / scale, this.snapFrom);
+        if (hit) {
+          const at = constraint ? projectOnto(constraint, hit) : hit;
+          shown = { ...hit, x: at.x, y: at.y };
+          point = { x: at.x, y: at.y };
+        }
+      }
+    }
+    setCursor(point);
+    const before = this.snapShown;
+    this.snapShown = shown;
+    if (shown && (!before || before.type !== shown.type)) {
+      // The name shows the first time each type appears this session, while that snap lasts.
+      this.snapLabel = snapLabelsShown.has(shown.type) ? null : shown.type;
+      snapLabelsShown.add(shown.type);
+    } else if (!shown) {
+      this.snapLabel = null;
+    }
+    const data = this.canvases.active.dataset as DOMStringMap | undefined;
+    if (data) {
+      const text = shown ? `${shown.type} ${shown.x.toFixed(2)} ${shown.y.toFixed(2)}` : "";
+      if ((data.snap ?? "") !== text) {
+        if (text) data.snap = text;
+        else delete data.snap;
+      }
+    }
+    return before?.type !== shown?.type || before?.x !== shown?.x || before?.y !== shown?.y;
+  }
+
+  /** The linear part of user space → screen (CSS px): the page box, UserUnit, zoom and view rotation. */
+  private userToScreenLinear(): [number, number, number, number] {
+    const u = this.page ? userToPageMatrix(this.page) : [1, 0, 0, 1, 0, 0];
+    const v = pageToScreenMatrix(this.view, this.viewport);
+    return [v[0] * u[0] + v[2] * u[1], v[1] * u[0] + v[3] * u[1], v[0] * u[2] + v[2] * u[3], v[1] * u[2] + v[3] * u[3]];
+  }
+
+  /** Story 4.1: Alt / Shift changed without a move. */
+  setSnapModifiers(modifiers: SnapModifiers): void {
+    if (modifiers.alt === this.snapMods.alt && modifiers.shift === this.snapMods.shift) return;
+    this.snapMods = modifiers;
+    if (this.pointerScreen) this.pointerAt(this.pointerScreen, modifiers);
+  }
+
+  /** Story 4.1: a snapping tool's click: the point it placed becomes the "from" point. */
+  snapClick(): void {
+    if (!isSnappingTool(viewerStore.getState().tool) || !this.pointerScreen || !this.page) return;
+    this.updateCursor();
+    const point = this.snapShown ?? this.cursorPoint();
+    this.snapFrom = point ? { x: point.x, y: point.y } : null;
+    this.paintOverlay();
+  }
+
+  /** Story 4.1: Esc, or another tool: no "from" point, no glyph. */
+  clearSnapFrom(): void {
+    if (!this.snapFrom && !this.snapShown) return;
+    this.snapFrom = null;
+    if (this.pointerScreen) this.updateCursor();
+    else this.snapShown = null;
+    this.paintOverlay();
+  }
+
+  /** The "from" point of the snapping tool (user space), if one was placed. */
+  get snapFromPoint(): Point | null {
+    return this.snapFrom;
+  }
+
+  /** The point the tools use (Story 4.5+): the status bar's point, snapped when snapping. */
+  getSnappedPoint(): (Point & { type: SnapType | null }) | null {
+    const shown = this.snapShown;
+    if (shown) return { x: shown.x, y: shown.y, type: shown.type };
+    const raw = this.cursorPoint();
+    return raw ? { ...raw, type: null } : null;
+  }
+
+  /** The current page's index facts on the canvas (e2e, diagnostics). */
+  private publishSnapStats(): void {
+    const stats = this.snap.stats(this.pageIndex);
+    const data = this.canvases.active.dataset as DOMStringMap | undefined;
+    if (data && stats) data.snapIndex = `${stats.count}${stats.truncated ? " truncated" : ""}`;
+  }
+
+  /** Layer 3: search highlights, the Zoom rubber band, the "from" point and the snap glyph. */
+  private paintOverlay(): void {
+    if (this.destroyed || this.suspended) return;
+    const c = this.canvases.active.getContext("2d");
+    if (c) {
+      c.setTransform(1, 0, 0, 1, 0, 0);
+      c.clearRect(0, 0, this.canvases.active.width, this.canvases.active.height);
+    }
+    this.drawSearchHighlights();
+    if (this.zoomRect) this.drawZoomRect(this.zoomRect);
+    if (c && this.page) this.drawSnap(c);
+  }
+
+  /**
+   * The snap glyph (UX-DR14): □ endpoint, ✕ intersection, △ midpoint, ⊥
+   * perpendicular, ○ on line, in the theme's snap blue (never the selection
+   * orange) over a white halo, at whole device px so it stays crisp at every
+   * zoom and rotation; its name the first time the type appears. The "from"
+   * point is a small cross.
+   */
+  private drawSnap(c: CanvasRenderingContext2D): void {
+    const shown = this.snapShown;
+    const from = this.snapFrom;
+    if (!shown && !from) return;
+    const palette = this.colors();
+    const k = this.dpr;
+    const page = this.page!;
+    const toDevice = (p: Point) => {
+      const s = pageToScreen(this.view, this.viewport, applyMatrix(userToPageMatrix(page), p));
+      return { x: Math.round(s.x * k) + 0.5, y: Math.round(s.y * k) + 0.5 };
+    };
+    const r = Math.round(5 * k);
+    const stroke = (path: () => void) => {
+      c.beginPath();
+      path();
+      c.lineWidth = Math.max(3, Math.round(3.5 * k));
+      c.strokeStyle = palette.halo;
+      c.stroke();
+      c.lineWidth = Math.max(1, Math.round(1.5 * k));
+      c.strokeStyle = palette.snap;
+      c.stroke();
+    };
+    c.save();
+    if (from) {
+      const f = toDevice(from);
+      stroke(() => {
+        c.moveTo(f.x - r, f.y);
+        c.lineTo(f.x + r, f.y);
+        c.moveTo(f.x, f.y - r);
+        c.lineTo(f.x, f.y + r);
+      });
+    }
+    if (shown) {
+      const p = toDevice(shown);
+      stroke(() => {
+        switch (shown.type) {
+          case "endpoint":
+            c.rect(p.x - r, p.y - r, 2 * r, 2 * r);
+            break;
+          case "intersection":
+            c.moveTo(p.x - r, p.y - r);
+            c.lineTo(p.x + r, p.y + r);
+            c.moveTo(p.x + r, p.y - r);
+            c.lineTo(p.x - r, p.y + r);
+            break;
+          case "midpoint":
+            c.moveTo(p.x, p.y - r);
+            c.lineTo(p.x + r, p.y + r);
+            c.lineTo(p.x - r, p.y + r);
+            c.closePath();
+            break;
+          case "perpendicular":
+            c.moveTo(p.x - r, p.y + r);
+            c.lineTo(p.x + r, p.y + r);
+            c.moveTo(p.x, p.y + r);
+            c.lineTo(p.x, p.y - r);
+            break;
+          default:
+            c.arc(p.x, p.y, r, 0, 2 * Math.PI);
+        }
+      });
+      if (this.snapLabel === shown.type) {
+        const size = Math.round(11 * k);
+        c.font = `${size}px ${palette.fontFamily}`;
+        c.textBaseline = "middle";
+        c.lineJoin = "round";
+        c.lineWidth = Math.max(2, Math.round(3 * k));
+        c.strokeStyle = palette.halo;
+        c.fillStyle = palette.snap;
+        const text = SNAP_LABELS[shown.type];
+        c.strokeText(text, p.x + r + 4 * k, p.y);
+        c.fillText(text, p.x + r + 4 * k, p.y);
+      }
+    }
+    c.restore();
   }
 
   /** Zoom % to the store (only when it changes) and the view to `data-view` (e2e, diagnostics). */

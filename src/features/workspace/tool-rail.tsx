@@ -19,10 +19,11 @@ import {
   Type,
   type LucideIcon,
 } from "lucide-react";
-import { Fragment } from "react";
+import { Fragment, useEffect } from "react";
 import { useStore } from "zustand";
 
 import { Toolbar, ToolbarSeparator, ToolbarToggleGroup, ToolbarToggleItem } from "@/components/ui/toolbar";
+import { dismissHint, showHint } from "@/components/ui/hint-store";
 import { hasDocument, setTool, viewerStore, type ViewerTool } from "@/features/viewer";
 
 import { NO_DRAWING } from "./workspace-toolbar";
@@ -34,8 +35,15 @@ interface Tool {
   shortcut: string;
 }
 
-/** Tools that work today (Story 3.2); the others arrive with the editor. */
-const LIVE_TOOLS: ReadonlySet<string> = new Set<ViewerTool>(["select", "pan"]);
+/**
+ * Tools that work today: Select and Pan (Story 3.2), and Length for its snapping
+ * preview (Story 4.1; it measures from Story 4.5). The others arrive with the editor.
+ */
+const LIVE_TOOLS: ReadonlySet<string> = new Set<ViewerTool>(["select", "pan", "length"]);
+
+export const SNAP_PREVIEW_HINT_ID = "snap-preview";
+export const SNAP_PREVIEW_HINT =
+  "Length: snapping preview. Points snap to the drawing (Alt: off, Shift: 45° steps from the clicked point, Esc: clear). Measuring arrives with the Measure tools.";
 export const EDITOR_LATER = "Arrives with the markup editor";
 
 /** UX-DR6 groups. Select and Pan work with a drawing open; the rest arrive with the editor. */
@@ -83,6 +91,13 @@ const GROUPS: { label: string; tools: Tool[] }[] = [
 export function ToolRail() {
   const open = useStore(viewerStore, hasDocument);
   const active = useStore(viewerStore, (s) => s.tool);
+  // Story 4.1: while Length is armed (whatever armed it), the HintBar says what it does yet.
+  const preview = open && active === "length";
+  useEffect(() => {
+    if (!preview) return;
+    showHint({ id: SNAP_PREVIEW_HINT_ID, variant: "info", text: SNAP_PREVIEW_HINT });
+    return () => dismissHint(SNAP_PREVIEW_HINT_ID);
+  }, [preview]);
   return (
     <Toolbar aria-label="Drawing tools" orientation="vertical" className="h-full overflow-y-auto">
       {GROUPS.map((group, index) => (

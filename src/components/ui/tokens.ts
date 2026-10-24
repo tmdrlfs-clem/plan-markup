@@ -72,7 +72,7 @@ export function readCanvasTokens(
 /** The viewer's canvas colours (Story 3.8): the theme's, read from its tokens. */
 export type ViewerPalette = Pick<
   CanvasTokens,
-  "backdrop" | "zoomRect" | "failedFill" | "failedStroke" | "searchHit" | "searchCurrent" | "searchOutline"
+  "backdrop" | "zoomRect" | "failedFill" | "failedStroke" | "searchHit" | "searchCurrent" | "searchOutline" | "snap" | "halo" | "fontFamily"
 >;
 
 /**
@@ -88,6 +88,10 @@ export const VIEWER_PALETTE_FALLBACK: Readonly<ViewerPalette> = Object.freeze({
   searchHit: "rgba(255, 214, 0, 0.4)",
   searchCurrent: "rgba(255, 170, 0, 0.6)",
   searchOutline: "#8a5a00",
+  // Story 4.1: the snap glyph (info blue, contrast-checked on the white sheet) and its halo.
+  snap: "#2563c9",
+  halo: "#ffffff",
+  fontFamily: "sans-serif",
 });
 
 /** The viewer's palette from `tokens`, an unreadable token falling back to Blueprint's value. */

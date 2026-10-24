@@ -14,6 +14,9 @@ describe("viewer palette (Story 3.8)", () => {
       searchHit: blueprint["--canvas-search-hit"],
       searchCurrent: blueprint["--canvas-search-current"],
       searchOutline: blueprint["--canvas-search-outline"],
+      snap: blueprint["--canvas-snap"],
+      halo: blueprint["--canvas-halo"],
+      fontFamily: "sans-serif", // not a theme token: the browser's own fallback
     });
   });
 

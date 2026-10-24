@@ -114,12 +114,15 @@ function target() {
     fitWidth: vi.fn(),
     goToPage: vi.fn(),
     pointerAt: vi.fn(),
+    setSnapModifiers: vi.fn(),
+    snapClick: vi.fn(),
+    clearSnapFrom: vi.fn(),
   };
   return Object.assign(fns, { currentPage: 0, pageCount: 1 });
 }
 
-function pointer(type: string, init: { x: number; y: number; button?: number; altKey?: boolean; pointerId?: number }) {
-  const e = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: init.x, clientY: init.y, button: init.button ?? 0, altKey: init.altKey });
+function pointer(type: string, init: { x: number; y: number; button?: number; altKey?: boolean; shiftKey?: boolean; pointerId?: number }) {
+  const e = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: init.x, clientY: init.y, button: init.button ?? 0, altKey: init.altKey, shiftKey: init.shiftKey });
   Object.defineProperty(e, "pointerId", { value: init.pointerId ?? 1 });
   return e;
 }
@@ -159,9 +162,28 @@ describe("ViewerInput", () => {
 
   it("tells the target where the pointer is over the canvas, and when it leaves (status bar X/Y, Story 3.7)", () => {
     canvas.dispatchEvent(pointer("pointermove", { x: 25, y: 4 }));
-    expect(t.pointerAt).toHaveBeenLastCalledWith({ x: 25, y: 4 });
+    expect(t.pointerAt).toHaveBeenLastCalledWith({ x: 25, y: 4 }, { alt: false, shift: false });
     canvas.dispatchEvent(new MouseEvent("pointerleave"));
     expect(t.pointerAt).toHaveBeenLastCalledWith(null);
+  });
+
+  it("Story 4.1: passes Alt / Shift with each move and when they change; a Length click places the point; Esc clears it", () => {
+    canvas.dispatchEvent(pointer("pointermove", { x: 5, y: 6, altKey: true, shiftKey: true }));
+    expect(t.pointerAt).toHaveBeenLastCalledWith({ x: 5, y: 6 }, { alt: true, shift: true });
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Shift", shiftKey: true }));
+    expect(t.setSnapModifiers).toHaveBeenLastCalledWith({ alt: false, shift: true });
+    window.dispatchEvent(new KeyboardEvent("keyup", { key: "Shift" }));
+    expect(t.setSnapModifiers).toHaveBeenLastCalledWith({ alt: false, shift: false });
+    // Select: a click places nothing.
+    canvas.dispatchEvent(pointer("pointerdown", { x: 5, y: 6, button: 0 }));
+    expect(t.snapClick).not.toHaveBeenCalled();
+    setTool("length");
+    canvas.dispatchEvent(pointer("pointerdown", { x: 7, y: 8, button: 0 }));
+    expect(t.snapClick).toHaveBeenCalledTimes(1);
+    expect(canvas.style.cursor).toBe("crosshair");
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    expect(t.clearSnapFrom).toHaveBeenCalledTimes(1);
+    setTool("select");
   });
 
   it("does nothing without a document", () => {

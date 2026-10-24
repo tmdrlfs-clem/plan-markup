@@ -14,8 +14,12 @@ export const VIEWER_ERROR_TEXT: Record<ViewerErrorCode, string> = {
   "render-failed": "This drawing could not be displayed.",
 };
 
-/** Navigation tools of the viewer (Story 3.2); markup tools arrive with the editor. */
-export type ViewerTool = "select" | "pan" | "zoom";
+/**
+ * Navigation tools of the viewer (Story 3.2), and Length (Story 4.1: armed
+ * for its snapping preview; measuring itself arrives with Story 4.5). Markup
+ * tools arrive with the editor.
+ */
+export type ViewerTool = "select" | "pan" | "zoom" | "length";
 
 export type ViewerTimings = {
   /** From choosing the file to the first progressive snapshot painted (ms), if any. */

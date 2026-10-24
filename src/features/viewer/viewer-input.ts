@@ -101,6 +101,7 @@ export function resolveViewerKey(
 /** The canvas cursor for the tool state. */
 export function cursorFor(state: { tool: ViewerTool; tempPan: boolean; dragging: boolean; zoomOut: boolean }): string {
   if (state.tempPan || state.tool === "pan" || state.dragging) return state.dragging ? "grabbing" : "grab";
+  if (state.tool === "length") return "crosshair";
   if (state.tool === "zoom") return state.zoomOut ? "zoom-out" : "zoom-in";
   return "default";
 }
@@ -118,9 +119,20 @@ export interface ViewerInputTarget {
   goToPage(index: number): void;
   readonly currentPage: number;
   readonly pageCount: number;
-  /** The pointer over the canvas (viewport CSS px) or off it (null): the status bar's X/Y (Story 3.7). */
-  pointerAt?(point: Point | null): void;
+  /**
+   * The pointer over the canvas (viewport CSS px) or off it (null): the status bar's X/Y
+   * (Story 3.7) and snapping (Story 4.1), with the Alt / Shift state of the move.
+   */
+  pointerAt?(point: Point | null, modifiers?: SnapModifiers): void;
+  /** Story 4.1: Alt or Shift pressed or released without a move. */
+  setSnapModifiers?(modifiers: SnapModifiers): void;
+  /** Story 4.1: a click with a snapping tool (sets the "from" point); Esc clears it. */
+  snapClick?(): void;
+  clearSnapFrom?(): void;
 }
+
+/** Alt turns snapping off while held; Shift holds the direction from the "from" point at 45° steps. */
+export type SnapModifiers = { alt: boolean; shift: boolean };
 
 type Drag =
   | { kind: "pan"; pointerId: number; last: Point }
@@ -168,6 +180,7 @@ export class ViewerInput {
     this.on(canvas, "focusout", () => {
       setTempPan(false);
       this.altDown = false;
+      this.target.setSnapModifiers?.({ alt: false, shift: false });
       this.endDrag(false);
     });
     this.removers.push(viewerStore.subscribe(() => this.updateCursor()));
@@ -226,6 +239,11 @@ export class ViewerInput {
     } else if (e.button === 0 && tool === "zoom") {
       this.drag = { kind: "zoom", pointerId: e.pointerId, start: this.point(e), zoomOut: e.altKey };
     } else {
+      // Story 4.1: a snapping tool's click places its point (the snapped one).
+      if (e.button === 0 && tool === "length") {
+        this.target.pointerAt?.(this.point(e), { alt: e.altKey, shift: e.shiftKey });
+        this.target.snapClick?.();
+      }
       return;
     }
     try {
@@ -240,7 +258,7 @@ export class ViewerInput {
   private onPointerMove(e: PointerEvent): void {
     const p = this.point(e);
     this.pointer = p;
-    this.target.pointerAt?.(p);
+    this.target.pointerAt?.(p, { alt: e.altKey, shift: e.shiftKey });
     const drag = this.drag;
     if (!drag || drag.pointerId !== e.pointerId) return;
     if (drag.kind === "pan") {
@@ -289,6 +307,12 @@ export class ViewerInput {
       this.altDown = true;
       this.updateCursor();
     }
+    if (e.key === "Alt" || e.key === "Shift") {
+      this.target.setSnapModifiers?.({ alt: e.altKey, shift: e.shiftKey });
+      // Alt over the canvas with a snapping tool only suspends snapping: no browser menu.
+      if (e.key === "Alt" && this.pointer && viewerStore.getState().tool === "length") e.preventDefault();
+    }
+    if (e.key === "Escape" && this.active() && viewerStore.getState().tool === "length") this.target.clearSnapFrom?.();
     if (e.defaultPrevented || !this.documentArea()) return;
     const doc = this.canvas.ownerDocument;
     const action = resolveViewerKey(e, {
@@ -333,6 +357,7 @@ export class ViewerInput {
       this.altDown = false;
       this.updateCursor();
     }
+    if (e.key === "Alt" || e.key === "Shift") this.target.setSnapModifiers?.({ alt: e.altKey, shift: e.shiftKey });
     if (e.code === "Space") setTempPan(false);
   }
 }
