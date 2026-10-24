@@ -22,7 +22,7 @@ so that I trust the numbers before I rely on them.
 
 - [x] **Task 1: Core** — `measureLength` and `verifyCalibration` in `src/core/calibration/` (equality at the display precision via the formatter, percentage, signed difference); the pick reports its page-point deltas (`dxPt`, `dyPt`, UserUnit applied); unit tests (equal and separate X/Y factors, /Rotate pages, ft-in, rounding edge at half a precision step).
 - [x] **Task 2: VerifyDialog + picking** — `src/features/calibration/verify-store.ts` and `verify-dialog.tsx` reusing 4.3's picking (token, instruction bar, page-follow, line clearing); result block with verdict; Keep / Recalibrate… / Pick again; unit tests.
-- [ ] **Task 3: Wiring** — "Verify…" in the Calibrate dialog when the page is calibrated; Document / Tools → Verify calibration… (disabled with the reason when not calibrated); Recalibrate prefills Calibrate (method, pick, distance, unit); only one of the two dialogs open at a time; tab switch closes it.
+- [x] **Task 3: Wiring** — "Verify…" in the Calibrate dialog when the page is calibrated; Document / Tools → Verify calibration… (disabled with the reason when not calibrated); Recalibrate prefills Calibrate (method, pick, distance, unit); only one of the two dialogs open at a time; tab switch closes it.
 - [ ] **Task 4: Tests** — `e2e/verify-calibration.spec.ts` (AC 7); local L17/L21 check (L17 at 1:75 verified on its "1905" dimension: Matches; L21 calibrated from its detected 1:75 @ A1 verified on a dimension it prints); screenshot `fixtures/private/traces/4-4-verify.png` (never commit private files).
 
 ## Dev Notes

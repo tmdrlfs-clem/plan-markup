@@ -18,7 +18,7 @@ import {
   MenuBarTrigger,
 } from "@/components/ui/menu-bar";
 import { TAB_SHORTCUTS } from "@/core/documents/tabs";
-import { openCalibrate } from "@/features/calibration";
+import { calibrationOf, openCalibrate, openVerify } from "@/features/calibration";
 import { activeUndoLabels, redoActive, undoActive, undoStore } from "@/features/editor";
 import { hasDocument, tabsStore, viewerCommands, viewerStore, viewerTabs, type ViewerCommand } from "@/features/viewer";
 import { THEMES, THEME_LABELS, isTheme, type Theme } from "@/lib/theme";
@@ -102,8 +102,18 @@ function PanelItems() {
 function CalibrateItem() {
   const open = useStore(viewerStore, hasDocument);
   return (
-    <MenuBarItem disabled={!open} onSelect={openCalibrate}>
+    <MenuBarItem disabled={!open} onSelect={() => openCalibrate()}>
       Calibrate…
+    </MenuBarItem>
+  );
+}
+
+/** Document > Verify calibration… and Tools > Verify calibration… (Story 4.4): only for a calibrated shown page. */
+function VerifyItem() {
+  const calibrated = useStore(viewerStore, (s) => hasDocument(s) && calibrationOf(s, s.pageIndex) !== null);
+  return (
+    <MenuBarItem disabled={!calibrated} title={calibrated ? undefined : "Calibrate this page first"} onSelect={() => openVerify()}>
+      Verify calibration…
     </MenuBarItem>
   );
 }
@@ -180,6 +190,7 @@ export function WorkspaceMenuBar({ onOpen, onSignOut, theme, onThemeChange }: Wo
         <MenuBarTrigger>Document</MenuBarTrigger>
         <MenuBarContent>
           <CalibrateItem />
+          <VerifyItem />
           <MenuBarSeparator />
           <Disabled label="Rotate pages…" />
           <Disabled label="Insert pages…" />
@@ -192,6 +203,7 @@ export function WorkspaceMenuBar({ onOpen, onSignOut, theme, onThemeChange }: Wo
         <MenuBarTrigger>Tools</MenuBarTrigger>
         <MenuBarContent>
           <CalibrateItem />
+          <VerifyItem />
           <Disabled label="Tool Chest" />
           <Disabled label="4541 zones" />
         </MenuBarContent>

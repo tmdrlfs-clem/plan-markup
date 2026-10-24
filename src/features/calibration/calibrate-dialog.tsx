@@ -6,7 +6,7 @@
 // picking); apply to this page, a range or all pages, optionally with a
 // separate vertical scale; display unit and precision. Story 1.7 parts only.
 
-import { TriangleAlert } from "lucide-react";
+import { CircleCheck, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { useStore } from "zustand";
 
@@ -18,6 +18,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   DISPLAY_UNITS,
   MM_PER_POINT,
+  calibrationLabel,
   factorFromPoints,
   mixedSizes,
   ratioForPage,
@@ -34,7 +35,8 @@ import { FirstUseTip } from "@/features/tips";
 import { viewerStore } from "@/features/viewer";
 
 import { PickBar, TextInput } from "./calibration-fields";
-import { applyCalibration, calibrateStore, cancelPicking, closeCalibrate, setCalibrateDraft, startPicking, type CalibrateScope } from "./calibrate-store";
+import { openVerify } from "./verify-store";
+import { applyCalibration, calibrateStore, calibrationOf, cancelPicking, closeCalibrate, setCalibrateDraft, startPicking, type CalibrateScope } from "./calibrate-store";
 
 const UNIT_LABEL: Record<DisplayUnit, string> = { mm: "Millimetres (mm)", m: "Metres (m)", in: "Inches (in)", "ft-in": "Feet-inches (ft-in)" };
 const INPUT_UNIT_LABEL: Record<InputUnit, string> = { mm: "mm", m: "m", in: "in", ft: "ft", "ft-in": "ft-in" };
@@ -85,6 +87,7 @@ function CalibrateBody() {
   const ui = useStore(calibrateStore);
   const pages = useStore(viewerStore, (s) => s.pages);
   const pageScales = useStore(viewerStore, (s) => s.pageScales[ui.pageIndex] ?? null);
+  const current = useStore(viewerStore, (s) => calibrationOf(s, ui.pageIndex));
   const [errors, setErrors] = useState<{ ratio?: string; distance?: string; range?: string; yRatio?: string }>({});
   const page = pages[ui.pageIndex];
   const pageCount = pages.length;
@@ -170,6 +173,16 @@ function CalibrateBody() {
         Use a printed scale when the drawing has one. Otherwise pick the two ends of a long dimension you know (they snap to the
         linework) and type its length.
       </FirstUseTip>
+      {current ? (
+        <div className="mb-3 flex items-center gap-2 text-ws-sm" data-testid="calibrate-current">
+          <CircleCheck size={16} aria-hidden="true" className="shrink-0 text-success" />
+          <span className="num min-w-0 flex-1 text-text">This page: {calibrationLabel(current, page.rotate).label}</span>
+          {/* Story 4.4: check it against a dimension you know. */}
+          <Button variant="secondary" size="sm" onClick={() => openVerify()}>
+            Verify…
+          </Button>
+        </div>
+      ) : null}
       <DetectedSection scales={pageScales?.scales ?? []} onUse={useDetected} />
 
       <Tabs value={ui.method} onValueChange={(v) => setCalibrateDraft({ method: v as typeof ui.method })}>

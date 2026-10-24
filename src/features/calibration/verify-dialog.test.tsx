@@ -193,6 +193,21 @@ describe("VerifyDialog (Story 4.4)", () => {
     expect(verifyStore.getState().open).toBe(false);
   });
 
+  it("the Calibrate dialog of a calibrated page names its calibration and opens Verify (AC 1)", async () => {
+    const user = userEvent.setup();
+    wrap();
+    act(() => openCalibrate());
+    const dialog = await screen.findByRole("dialog", { name: "Calibrate" });
+    expect(within(dialog).getByTestId("calibrate-current")).toHaveTextContent("This page: Scale 1:100");
+    await user.click(within(dialog).getByRole("button", { name: "Verify…" }));
+    expect(await screen.findByRole("dialog", { name: "Verify calibration" })).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Calibrate" })).toBeNull();
+    act(() => closeVerify());
+    act(() => viewerStore.setState({ pageIndex: 1 }));
+    act(() => openCalibrate());
+    expect(within(await screen.findByRole("dialog", { name: "Calibrate" })).queryByTestId("calibrate-current")).toBeNull();
+  });
+
   it("opening Verify while Calibrate is picking abandons that pick", async () => {
     const user = userEvent.setup();
     wrap();

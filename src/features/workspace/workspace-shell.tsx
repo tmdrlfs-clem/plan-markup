@@ -11,7 +11,7 @@ import { toast } from "@/components/ui/toast-store";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { signOut } from "@/features/account/actions";
 import { pageIdOf } from "@/core/calibration/calibration";
-import { CalibrateDialog, openCalibrate, useCalibrationPrefsPersistence } from "@/features/calibration";
+import { CalibrateDialog, VerifyDialog, openCalibrate, useCalibrationPrefsPersistence } from "@/features/calibration";
 import { redoActive, undoActive } from "@/features/editor";
 import { useFirstUseTipsPersistence } from "@/features/tips";
 import { chooseTheme, useWorkspaceTheme } from "@/features/appearance/theme-store";
@@ -259,10 +259,11 @@ function ShellBody({ user, initialTheme }: { user: WorkspaceUser; initialTheme: 
           page={shownPage}
           scale={shownPage ? scaleStateOf(shownScales, shownCalibration, shownPage.rotate) : null}
           calibration={shownCalibration}
-          onCalibrate={openCalibrate}
+          onCalibrate={() => openCalibrate()}
         />
       </footer>
       <CalibrateDialog />
+      <VerifyDialog />
 
       <input
         ref={fileInput}
