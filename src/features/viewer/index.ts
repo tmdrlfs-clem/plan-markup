@@ -23,7 +23,8 @@ export {
 export { CursorReadout, PageSizeItem, ScaleIndicator, SnapToggles, ZoomItem } from "./status/status-items";
 export { requestSearchFocus, searchUi } from "./search-ui";
 export { ThumbnailsPanel } from "./thumbnails-panel";
-export { activeSearch, viewerCommands, type ViewerCommand } from "./viewer-commands";
+export { activeSearch, viewerCalibration, viewerCommands, type ViewerCommand } from "./viewer-commands";
+export type { CalibrationPick, CalibrationPickListener } from "./viewer-engine";
 export {
   hasDocument,
   setTool,

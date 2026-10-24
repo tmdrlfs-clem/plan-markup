@@ -13,7 +13,7 @@ import { buildPageText, type Quad, type TextItem } from "@/core/search/page-text
 import { matchQuads } from "@/core/search/match";
 
 import { findRatios } from "./ratio";
-import { canonicalSheet, niceRatio, pageSheet, ratioOnPage } from "./sheet";
+import { canonicalSheet, niceRatio, pageSheet, ratioOnPage, ratioOnSheet } from "./sheet";
 
 export type DetectedScale = {
   /** The ratio as printed (1:ratio) and the sheet it names, if any. */
@@ -227,6 +227,18 @@ export function readingLabel(r: ScaleReading): string {
 export function conflictReadings(s: DetectedScale, pageSheetName: string | null): string[] {
   const page = `on this ${pageSheetName ? `${pageSheetName} ` : ""}page`;
   return s.readings.map((r) => `${readingLabel(r)} = 1:${r.effective} ${page}`);
+}
+
+/**
+ * Story 4.3 AC 6: why a conflicting scale is one, for the Calibrate dialog:
+ * "Printed scales disagree: 1:75 @ A1 = 1:150 @ A3, but 1:200 @ A3 is printed".
+ */
+export function conflictWarning(s: DetectedScale): string {
+  const [first, ...others] = s.readings;
+  const parts = others
+    .filter((r) => first.sheet && r.sheet)
+    .map((r) => `${readingLabel(first)} = 1:${niceRatio(ratioOnSheet(first.ratio, first.sheet!, r.sheet!))} @ ${r.sheet}, but ${readingLabel(r)} is printed`);
+  return `Printed scales disagree: ${parts.join("; ") || s.readings.map(readingLabel).join(" and ")}`;
 }
 
 /** "1:100 @ A1 → 1:200 on this A3 page" when the page converts it; null when it does not. */

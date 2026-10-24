@@ -92,7 +92,7 @@ import type { SnapModifiers } from "./viewer-input";
 import type { PageScales } from "@/core/scale/detect";
 import { setCursor } from "./status/cursor-store";
 import { searchUi } from "./search-ui";
-import { viewerStore, type ViewerErrorCode, type ViewerState } from "./viewer-store";
+import { setTool, viewerStore, type ViewerErrorCode, type ViewerState, type ViewerTool } from "./viewer-store";
 
 /** CSS px kept free around the page at fit. */
 export const FIT_PADDING = 16;
@@ -182,6 +182,16 @@ function rememberScales(key: string, scales: PageScales): void {
 export function clearScaleCache(): void {
   scaleCache.clear();
 }
+
+/**
+ * Story 4.3: two points picked for a calibration (user space), how far apart
+ * they are on the page (points, UserUnit applied) and on screen (CSS px, at
+ * the zoom they were picked at).
+ */
+export type CalibrationPick = { a: Point; b: Point; distancePt: number; screenPx: number };
+
+/** Story 4.3: what a calibration pick reports: the next point to click (1 or 2), then the result (null: cancelled). */
+export type CalibrationPickListener = { step(next: 1 | 2): void; done(pick: CalibrationPick | null): void };
 
 /** Snap types whose name was already shown next to the glyph this session (UX-DR14: first use only). */
 const snapLabelsShown = new Set<SnapType>();
@@ -295,6 +305,10 @@ export class ViewerEngine {
   /** Story 4.1: Alt / Shift as last seen, the tool's "from" point (user space), the snap shown and its first-use label. */
   private snapMods: SnapModifiers = { alt: false, shift: false };
   private snapFrom: Point | null = null;
+  /** Story 4.3: a calibration's two-point pick in progress (the tool before it comes back after). */
+  private pick: { points: Point[]; listener: CalibrationPickListener; tool: ViewerTool } | null = null;
+  /** Story 4.3: the picked dimension line, shown while the dialog asks for its real distance. */
+  private pickLine: { a: Point; b: Point } | null = null;
   private snapShown: SnapResult | null = null;
   private snapLabel: SnapType | null = null;
   private snapPartialShown = false;
@@ -349,6 +363,8 @@ export class ViewerEngine {
     // Leaving a snapping tool drops its "from" point and glyph.
     this.unsubscribeTool = viewerStore.subscribe((s, prev) => {
       if (s.tool === prev.tool) return;
+      // Story 4.3: another tool chosen while picking calibration points cancels the pick.
+      if (this.pick && s.tool !== "calibrate") this.cancelCalibrationPick();
       if (!isSnappingTool(s.tool)) this.clearSnapFrom();
       // A snapping tool armed: now the neighbours are worth building too (review S1).
       else if (this.page && this.previewFinal && !this.suspended) this.snap.ensure(this.pageIndex, this.pages.length, true);
@@ -405,6 +421,8 @@ export class ViewerEngine {
     setCursor(null);
     this.snap.cancel();
     this.snapShown = null;
+    this.cancelCalibrationPick();
+    this.pickLine = null;
     // The canvas element is shared by the tabs: its snap attributes belong to the shown one.
     this.clearSnapData();
     this.search.pause();
@@ -595,6 +613,9 @@ export class ViewerEngine {
       closeBitmap(this.preview.bitmap);
     }
     this.snap.cancel();
+    // Story 4.3: picked points belong to their page.
+    this.cancelCalibrationPick();
+    this.pickLine = null;
     this.snapFrom = null;
     this.snapShown = null;
     this.clearSnapData();
@@ -921,6 +942,8 @@ export class ViewerEngine {
     this.previewFailed = false;
     this.sha256 = null;
     this.snap.setDocument(null);
+    this.cancelCalibrationPick();
+    this.pickLine = null;
     this.snapFrom = null;
     this.snapShown = null;
     if (!this.suspended) this.clearSnapData();
@@ -1534,7 +1557,8 @@ export class ViewerEngine {
 
   private publishCursor(): void {
     if (this.suspended || this.destroyed) return;
-    if (this.updateCursor()) this.paintOverlay();
+    // A calibration pick's rubber band follows every move.
+    if (this.updateCursor() || this.pick?.points.length === 1) this.paintOverlay();
   }
 
   /**
@@ -1602,7 +1626,66 @@ export class ViewerEngine {
     this.updateCursor();
     const point = this.snapShown ?? this.cursorPoint();
     this.snapFrom = point ? { x: point.x, y: point.y } : null;
+    if (this.pick && point) this.pickPoint({ x: point.x, y: point.y });
     this.paintOverlay();
+  }
+
+  /**
+   * Story 4.3: picks two points for a calibration with the snapping tool's
+   * rules (snap glyph, Shift 45° steps, Alt no snap). The tool is
+   * "calibrate" until the second click (or a cancel), then the previous tool
+   * comes back. The picked line stays drawn until clearCalibrationLine.
+   */
+  startCalibrationPick(listener: CalibrationPickListener): void {
+    this.cancelCalibrationPick();
+    if (!this.page || this.suspended) return listener.done(null);
+    this.pickLine = null;
+    const tool = viewerStore.getState().tool;
+    this.pick = { points: [], listener, tool: tool === "calibrate" ? "select" : tool };
+    this.snapFrom = null;
+    setTool("calibrate");
+    listener.step(1);
+    this.paintOverlay();
+  }
+
+  /** Story 4.3: ends a pick in progress (Esc, another page, tab or tool); its listener gets null. */
+  cancelCalibrationPick(): void {
+    const pick = this.pick;
+    if (!pick) return;
+    this.pick = null;
+    this.snapFrom = null;
+    if (viewerStore.getState().tool === "calibrate") setTool(pick.tool);
+    this.paintOverlay();
+    pick.listener.done(null);
+  }
+
+  /** Story 4.3: the dialog is done with the picked line. */
+  clearCalibrationLine(): void {
+    if (!this.pickLine) return;
+    this.pickLine = null;
+    this.paintOverlay();
+  }
+
+  private pickPoint(point: Point): void {
+    const pick = this.pick!;
+    pick.points.push(point);
+    if (pick.points.length < 2) return pick.listener.step(2);
+    const [a, b] = pick.points;
+    const u = this.page!.userUnit && this.page!.userUnit > 0 ? this.page!.userUnit : 1;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const l = this.userToScreenLinear();
+    const result: CalibrationPick = {
+      a,
+      b,
+      distancePt: Math.hypot(dx * u, dy * u),
+      screenPx: Math.hypot(l[0] * dx + l[2] * dy, l[1] * dx + l[3] * dy),
+    };
+    this.pick = null;
+    this.snapFrom = null;
+    this.pickLine = { a, b };
+    if (viewerStore.getState().tool === "calibrate") setTool(pick.tool);
+    pick.listener.done(result);
   }
 
   /** Story 4.1: Esc, or another tool: no "from" point, no glyph. */
@@ -1694,7 +1777,51 @@ export class ViewerEngine {
     }
     this.drawSearchHighlights();
     if (this.zoomRect) this.drawZoomRect(this.zoomRect);
+    if (c && this.page) this.drawPickLine(c);
     if (c && this.page) this.drawSnap(c);
+  }
+
+  /**
+   * Story 4.3: the temporary dimension line of a calibration pick: from the
+   * first point to the pointer while picking, then the picked line, with end
+   * ticks across it, in the snap colour over a halo.
+   */
+  private drawPickLine(c: CanvasRenderingContext2D): void {
+    const pending = this.pick?.points.length === 1 ? { a: this.pick.points[0], b: this.snapShown ?? this.cursorPoint() } : null;
+    const ends = this.pickLine ?? pending;
+    if (!ends || !ends.b) return;
+    const palette = this.colors();
+    const k = this.dpr;
+    const page = this.page!;
+    const toDevice = (p: Point) => {
+      const s = pageToScreen(this.view, this.viewport, applyMatrix(userToPageMatrix(page), p));
+      return { x: s.x * k, y: s.y * k };
+    };
+    const a = toDevice(ends.a);
+    const b = toDevice(ends.b);
+    const length = Math.hypot(b.x - a.x, b.y - a.y);
+    const nx = length > 1e-6 ? -(b.y - a.y) / length : 0;
+    const ny = length > 1e-6 ? (b.x - a.x) / length : 0;
+    const tick = 6 * k;
+    const path = () => {
+      c.beginPath();
+      c.moveTo(a.x, a.y);
+      c.lineTo(b.x, b.y);
+      for (const p of [a, b]) {
+        c.moveTo(p.x - nx * tick, p.y - ny * tick);
+        c.lineTo(p.x + nx * tick, p.y + ny * tick);
+      }
+    };
+    c.save();
+    path();
+    c.lineWidth = 3.5 * k;
+    c.strokeStyle = palette.halo;
+    c.stroke();
+    path();
+    c.lineWidth = 1.5 * k;
+    c.strokeStyle = palette.snap;
+    c.stroke();
+    c.restore();
   }
 
   /**

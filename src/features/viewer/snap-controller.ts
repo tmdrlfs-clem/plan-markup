@@ -16,7 +16,7 @@ import { snapSettings, type SnapSettings } from "./status/snap-settings";
 import type { ViewerTool } from "./viewer-store";
 
 /** Tools that place points (drawing and measuring): they snap; Select, Pan and Zoom never do. */
-const SNAPPING_TOOLS: ReadonlySet<ViewerTool> = new Set<ViewerTool>(["length"]);
+const SNAPPING_TOOLS: ReadonlySet<ViewerTool> = new Set<ViewerTool>(["length", "calibrate"]);
 
 export function isSnappingTool(tool: ViewerTool): boolean {
   return SNAPPING_TOOLS.has(tool);

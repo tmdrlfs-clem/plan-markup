@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { TextItem } from "@/core/search/page-text";
 
-import { conflictReadings, conversionNote, detectScales, scaleLabel, textLines } from "./detect";
+import { conflictReadings, conflictWarning, conversionNote, detectScales, scaleLabel, textLines } from "./detect";
 import { findRatios } from "./ratio";
 import { niceRatio, ratioOnPage } from "./sheet";
 
@@ -217,5 +217,12 @@ describe("detectScales", () => {
   it("drops a ratio implausible for the page (the sheet would be over 50 km)", () => {
     expect(detect(line(["1:10000"], 10, 10)).scales).toMatchObject([{ effective: 10000 }]); // A1: 8.4 km
     expect(detect(line(["1:10000"], 10, 10), [10 * 841 * MM, 10 * 594 * MM]).scales).toEqual([]); // 84 km
+  });
+});
+
+describe("conflictWarning (Story 4.3 AC 6)", () => {
+  it("compares the first statement converted to the other's sheet with what is printed", () => {
+    const items = [run("1 : 75", 795, 1403, { size: 8, width: 22 }), run("1 : 200", 857, 1403, { size: 8, width: 25 }), run("@ A1", 824, 1403, { size: 8, width: 16 }), run("@ A3 PLAN VIEW", 884, 1403, { size: 8, width: 60 })];
+    expect(conflictWarning(detect(items).scales[0])).toBe("Printed scales disagree: 1:75 @ A1 = 1:150 @ A3, but 1:200 @ A3 is printed");
   });
 });

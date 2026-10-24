@@ -10,7 +10,7 @@ import { applyMatrix, pageToScreen, pdfToPageMatrix, userToPageMatrix } from "@/
 import { searchUi } from "./search-ui";
 import { cursorStore } from "./status/cursor-store";
 import { MIN_HIT_PX, ViewerEngine, clearDocumentViews, clearScaleCache, resetSnapLabels, type ViewerCanvases } from "./viewer-engine";
-import { canvasStateOf, setTool, type ViewerState } from "./viewer-store";
+import { canvasStateOf, setTool, viewerStore, type ViewerState } from "./viewer-store";
 import { buildSnapIndex } from "@/core/snap/index";
 import { SEG_END_POINT, SEG_START_POINT, SEG_STRAIGHT } from "@/core/snap/extract";
 import { clearSnapCache } from "./snap-controller";
@@ -1386,6 +1386,55 @@ describe("snapping (Story 4.1)", () => {
     const build = r.client.last("snap.buildIndex");
     r.engine.suspend();
     expect(r.client.cancelled).toContain(build.reqId);
+  });
+
+  it("Story 4.3: a calibration pick snaps two points, reports the page and screen distances, draws its line and restores the tool", async () => {
+    const { engine, active } = await ready();
+    setTool("pan");
+    const steps: number[] = [];
+    let result: unknown = "pending";
+    engine.startCalibrationPick({ step: (n) => steps.push(n), done: (pick) => (result = pick) });
+    expect(viewerStore.getState().tool).toBe("calibrate");
+    engine.pointerAt(screenOf(101, 101));
+    paint();
+    engine.snapClick();
+    expect(steps).toEqual([1, 2]);
+    // The rubber band follows the pointer (a stroke from the first point).
+    active.length = 0;
+    engine.pointerAt(screenOf(250, 180));
+    paint();
+    expect(active.some((o) => o.op === "stroke")).toBe(true);
+    engine.pointerAt(screenOf(298, 102));
+    paint();
+    engine.snapClick();
+    // Snapped to the rectangle's corners (100, 100) and (300, 100): 200 pt apart, 200 CSS px at this fit.
+    expect(result).toMatchObject({ a: { x: 100, y: 100 }, b: { x: 300, y: 100 }, distancePt: 200 });
+    expect((result as { screenPx: number }).screenPx).toBeCloseTo(200, 6);
+    expect(viewerStore.getState().tool).toBe("pan");
+    // The picked line stays until the dialog is done with it.
+    active.length = 0;
+    engine.pointerAt(screenOf(50, 50));
+    paint();
+    engine.clearCalibrationLine();
+    expect(active.filter((o) => o.op === "stroke")).toHaveLength(0);
+  });
+
+  it("Story 4.3: Esc, another tool or another page cancels a pick (done with null) and restores the tool", async () => {
+    const { engine } = await ready();
+    const done: unknown[] = [];
+    const listener = { step: () => undefined, done: (pick: unknown) => done.push(pick) };
+    engine.startCalibrationPick(listener);
+    engine.cancelCalibrationPick();
+    expect(done).toEqual([null]);
+    expect(viewerStore.getState().tool).toBe("select");
+    engine.startCalibrationPick(listener);
+    setTool("zoom");
+    expect(done).toEqual([null, null]);
+    expect(viewerStore.getState().tool).toBe("zoom");
+    engine.startCalibrationPick(listener);
+    engine.suspend();
+    expect(done).toEqual([null, null, null]);
+    expect(viewerStore.getState().tool).toBe("zoom");
   });
 });
 

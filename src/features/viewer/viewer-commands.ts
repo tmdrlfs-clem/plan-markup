@@ -5,7 +5,7 @@
 import { createStore } from "zustand/vanilla";
 
 import type { DocumentSearch } from "./document-search";
-import type { ThumbnailBox, ThumbnailListener } from "./viewer-engine";
+import type { CalibrationPickListener, ThumbnailBox, ThumbnailListener } from "./viewer-engine";
 
 export interface ViewerCommandTarget {
   zoomStep(direction: 1 | -1): void;
@@ -24,6 +24,10 @@ export interface ViewerCommandTarget {
   sheetLabel?(index: number): () => void;
   /** Story 3.6 (absent on test doubles): the document's text search. */
   readonly search?: DocumentSearch;
+  /** Story 4.3 (absent on test doubles): see ViewerEngine.startCalibrationPick. */
+  startCalibrationPick?(listener: CalibrationPickListener): void;
+  cancelCalibrationPick?(): void;
+  clearCalibrationLine?(): void;
 }
 
 let target: ViewerCommandTarget | null = null;
@@ -67,6 +71,16 @@ export const viewerThumbnails = {
     target?.thumbnail?.(index, box, listener) ?? (() => undefined),
   /** Looks up a row's detected sheet number; the returned release cancels it once no row needs it. */
   sheetLabel: (index: number): (() => void) => target?.sheetLabel?.(index) ?? (() => undefined),
+};
+
+/** Story 4.3: the Calibrate dialog's two-point pick on the active drawing (without one it is cancelled at once). */
+export const viewerCalibration = {
+  startPick: (listener: CalibrationPickListener): void => {
+    if (target?.startCalibrationPick) target.startCalibrationPick(listener);
+    else listener.done(null);
+  },
+  cancelPick: (): void => target?.cancelCalibrationPick?.(),
+  clearLine: (): void => target?.clearCalibrationLine?.(),
 };
 
 /** The commands without arguments (toolbar buttons and menu items). */

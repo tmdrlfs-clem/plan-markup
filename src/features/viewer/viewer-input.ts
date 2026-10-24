@@ -101,7 +101,7 @@ export function resolveViewerKey(
 /** The canvas cursor for the tool state. */
 export function cursorFor(state: { tool: ViewerTool; tempPan: boolean; dragging: boolean; zoomOut: boolean }): string {
   if (state.tempPan || state.tool === "pan" || state.dragging) return state.dragging ? "grabbing" : "grab";
-  if (state.tool === "length") return "crosshair";
+  if (state.tool === "length" || state.tool === "calibrate") return "crosshair";
   if (state.tool === "zoom") return state.zoomOut ? "zoom-out" : "zoom-in";
   return "default";
 }
@@ -129,6 +129,13 @@ export interface ViewerInputTarget {
   /** Story 4.1: a click with a snapping tool (sets the "from" point); Esc clears it. */
   snapClick?(): void;
   clearSnapFrom?(): void;
+  /** Story 4.3: Esc while picking calibration points. */
+  cancelCalibrationPick?(): void;
+}
+
+/** Tools that place points (Length, the calibration pick): a click places one, Alt suspends snapping. */
+function pointTool(tool: ViewerTool): boolean {
+  return tool === "length" || tool === "calibrate";
 }
 
 /** Alt turns snapping off while held; Shift holds the direction from the "from" point at 45° steps. */
@@ -240,7 +247,7 @@ export class ViewerInput {
       this.drag = { kind: "zoom", pointerId: e.pointerId, start: this.point(e), zoomOut: e.altKey };
     } else {
       // Story 4.1: a snapping tool's click places its point (the snapped one).
-      if (e.button === 0 && tool === "length") {
+      if (e.button === 0 && pointTool(tool)) {
         this.target.pointerAt?.(this.point(e), { alt: e.altKey, shift: e.shiftKey });
         this.target.snapClick?.();
       }
@@ -310,9 +317,11 @@ export class ViewerInput {
     if (e.key === "Alt" || e.key === "Shift") {
       this.target.setSnapModifiers?.({ alt: e.altKey, shift: e.shiftKey });
       // Alt over the canvas with a snapping tool only suspends snapping: no browser menu.
-      if (e.key === "Alt" && this.pointer && viewerStore.getState().tool === "length") e.preventDefault();
+      if (e.key === "Alt" && this.pointer && pointTool(viewerStore.getState().tool)) e.preventDefault();
     }
     if (e.key === "Escape" && this.active() && viewerStore.getState().tool === "length") this.target.clearSnapFrom?.();
+    // Story 4.3: Esc while picking calibration points cancels the pick (the dialog comes back).
+    if (e.key === "Escape" && viewerStore.getState().tool === "calibrate") this.target.cancelCalibrationPick?.();
     if (e.defaultPrevented || !this.documentArea()) return;
     const doc = this.canvas.ownerDocument;
     const action = resolveViewerKey(e, {

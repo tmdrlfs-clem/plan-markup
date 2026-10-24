@@ -1,5 +1,6 @@
 import { createStore } from "zustand/vanilla";
 
+import type { Calibration } from "@/core/calibration/calibration";
 import type { PageScales } from "@/core/scale/detect";
 import type { ContentFlags, PageInfo } from "@/workers/render-protocol";
 
@@ -17,10 +18,11 @@ export const VIEWER_ERROR_TEXT: Record<ViewerErrorCode, string> = {
 
 /**
  * Navigation tools of the viewer (Story 3.2), and Length (Story 4.1: armed
- * for its snapping preview; measuring itself arrives with Story 4.5). Markup
- * tools arrive with the editor.
+ * for its snapping preview; measuring itself arrives with Story 4.5).
+ * Calibrate (Story 4.3) is the Calibrate dialog's two-point pick, never
+ * chosen from the ToolRail. Markup tools arrive with the editor.
  */
-export type ViewerTool = "select" | "pan" | "zoom" | "length";
+export type ViewerTool = "select" | "pan" | "zoom" | "length" | "calibrate";
 
 export type ViewerTimings = {
   /** From choosing the file to the first progressive snapshot painted (ms), if any. */
@@ -77,6 +79,12 @@ export interface ViewerState {
   pageScales: Record<number, PageScales>;
   /** Story 4.1 review S3: the shown page's snap index stopped at its segment cap (snapping covers part of it). */
   snapPartial: boolean;
+  /**
+   * Story 4.3: calibrations by stable page id (core/calibration pageIdOf: sha256 + page index,
+   * AR8). In memory per tab until Epic 6 saves them with the markup set: they survive tab
+   * switches, not reloads.
+   */
+  calibrations: Readonly<Record<string, Calibration>>;
   /** HintBar notices the user dismissed for this document (they stay hidden when its tab is shown again). */
   dismissedNotices: readonly string[];
 }
@@ -105,6 +113,7 @@ export const INITIAL_VIEWER_STATE: ViewerState = {
   tempPan: false,
   snapPartial: false,
   pageScales: {},
+  calibrations: {},
   dismissedNotices: [],
 };
 
