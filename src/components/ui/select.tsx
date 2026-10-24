@@ -24,6 +24,8 @@ export interface SelectProps {
   error?: string;
   disabled?: boolean;
   id?: string;
+  /** Keep the label for assistive technology but do not draw it (a unit beside its value field). */
+  labelHidden?: boolean;
 }
 
 /** Radix Select: Enter / Space / arrows open it, arrows move, Enter selects, typing jumps. */
@@ -37,6 +39,7 @@ export function Select({
   error,
   disabled,
   id,
+  labelHidden,
 }: SelectProps) {
   const autoId = useId();
   const triggerId = id ?? autoId;
@@ -46,6 +49,7 @@ export function Select({
     <FieldShell
       layout={layout}
       label={label}
+      labelHidden={labelHidden}
       htmlFor={triggerId}
       error={error}
       errorId={errorId}

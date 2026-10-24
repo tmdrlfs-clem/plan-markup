@@ -101,6 +101,7 @@ function VerifyBody() {
           <div className="w-24">
             <Select
               label="Known unit"
+              labelHidden
               value={ui.knownUnit}
               onValueChange={(v) => setVerifyDraft({ knownUnit: v as InputUnit })}
               options={INPUT_UNITS.map((u) => ({ value: u, label: u }))}

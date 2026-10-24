@@ -26,6 +26,12 @@ describe("Select", () => {
     expect(trigger).toHaveTextContent("Choose");
   });
 
+  it("labelHidden keeps the accessible name but draws no label (Story 4.4)", () => {
+    render(<Fixture labelHidden value="a0" />);
+    expect(screen.getByRole("combobox", { name: "Paper size" })).toBeInTheDocument();
+    expect(screen.getByText("Paper size")).toHaveClass("sr-only");
+  });
+
   it("opens from the keyboard, moves with arrows and selects with Enter", async () => {
     const user = userEvent.setup();
     render(<Fixture value="a0" />);

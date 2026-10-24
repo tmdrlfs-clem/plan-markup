@@ -230,6 +230,7 @@ function CalibrateBody() {
                 <div className="w-24">
                   <Select
                     label="Distance unit"
+                    labelHidden
                     value={ui.distanceUnit}
                     onValueChange={(v) => setCalibrateDraft({ distanceUnit: v as InputUnit })}
                     options={INPUT_UNITS.map((u) => ({ value: u, label: INPUT_UNIT_LABEL[u] }))}
