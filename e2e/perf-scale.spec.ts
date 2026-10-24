@@ -3,9 +3,10 @@
 // (production build: E2E_PROD=1 after `npm run build`).
 //
 // What the founder's L17 and L21 detect: both title blocks say "SCALE As
-// indicated", which must give no scale. Prints the ScaleIndicator text and
-// tooltip of each and saves fixtures/private/traces/4-2-scale.png (L21 with
-// the tooltip open).
+// indicated", which must give no scale; L21's view title states 1:75 @ A1
+// and 1:200 @ A3, which disagree (4.2 review D1). Prints the ScaleIndicator
+// text and tooltip of each and saves fixtures/private/traces/4-2-scale.png
+// (L21 with the tooltip open).
 import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
@@ -25,8 +26,8 @@ async function openAndRead(page: Page, file: string) {
   await page.getByRole("toolbar", { name: "Document" }).getByRole("button", { name: "Open…" }).click();
   await (await chooser).setFiles(file);
   await expect(canvas(page)).toHaveAttribute("data-state", "ready", { timeout: 30_000 });
-  // Detection follows the page text (after tiles): give it time, then read what the bar settled on.
-  await page.waitForTimeout(4000);
+  // Detection follows the page text (after tiles): wait for its answer (review D7).
+  await expect(scale(page)).toHaveAttribute("data-detection", "done", { timeout: 30_000 });
   const text = await scale(page).textContent();
   await scale(page).hover();
   const tooltip = await page.getByRole("tooltip").textContent({ timeout: 3000 }).catch(() => null);
@@ -46,6 +47,9 @@ test("L17 and L21: what the status bar detects", async ({ browser }) => {
   process.stdout.write(`${JSON.stringify([l17, l21], null, 2)}\n`);
   // L17: only "As indicated" in its title block: nothing detected.
   expect(l17.text).toBe("Scale not set");
+  // L21: the view title's two sheet statements disagree.
+  expect(l21.text).toBe("Scales disagree — Verify");
+  expect(l21.tooltip).toContain("1:75 @ A1 = 1:75 on this A1 page; 1:200 @ A3 = 1:100 on this A1 page");
   await scale(page).hover();
   await expect(page.getByRole("tooltip")).toBeVisible();
   mkdirSync(path.join(PRIVATE, "traces"), { recursive: true });

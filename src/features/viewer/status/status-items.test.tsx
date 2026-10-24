@@ -170,6 +170,21 @@ describe("ScaleIndicator keyboard access (Story 4.2)", () => {
     unmount();
     wrap(<ScaleIndicator state={{ kind: "not-set" }} />);
     expect(screen.getByTestId("status-scale")).not.toHaveAttribute("tabindex");
+    expect(screen.getByTestId("status-scale")).toHaveAttribute("data-detection", "done");
+  });
+
+  it("review D1/D7: disagreeing scales are a warning tab stop with both readings; pending detection is marked", async () => {
+    const { unmount } = wrap(<ScaleIndicator state={{ kind: "conflict", readings: ["1:75 @ A1 = 1:75 on this A1 page", "1:200 @ A3 = 1:100 on this A1 page"] }} />);
+    const item = screen.getByTestId("status-scale");
+    expect(item).toHaveTextContent("Scales disagree — Verify");
+    expect(item).toHaveAttribute("data-tone", "warning");
+    expect(item).toHaveAttribute("tabindex", "0");
+    act(() => item.focus());
+    expect(await screen.findByRole("tooltip", {}, { timeout: 2000 })).toHaveTextContent("1:200 @ A3 = 1:100 on this A1 page");
+    unmount();
+    wrap(<ScaleIndicator state={{ kind: "not-set", pending: true }} />);
+    expect(screen.getByTestId("status-scale")).toHaveAttribute("data-detection", "pending");
+    expect(screen.getByTestId("status-scale")).toHaveTextContent("Scale not set");
   });
 });
 

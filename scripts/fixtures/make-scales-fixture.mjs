@@ -6,6 +6,9 @@
 //           and "SECTION B 1:100" (the same scale again)            -> 2 scales on page
 //   page 4  A3 landscape: "SCALE: As indicated", "FALLS 1:40 TO OUTLET",
 //           "DATE 12/10/2026 1:30 PM", "1:100 YEAR FLOOD LEVEL"     -> Scale not set
+//   page 5  A1 landscape: a view title stating two sheets that disagree,
+//           "PLAN VIEW 1 : 75 @ A1 1 : 200 @ A3" (as on L21; 1:75 @ A1
+//           is 1:150 @ A3)                                       -> Scales disagree (4.2 review D1)
 //
 //   node scripts/fixtures/make-scales-fixture.mjs
 import { writeFileSync } from "node:fs";
@@ -53,6 +56,7 @@ page(A3, [
   ["DATE 12/10/2026 1:30 PM", A3[0] - 250, 60, 8],
   ["1:100 YEAR FLOOD LEVEL", 100, 400, 10],
 ]);
+page(A1, [["PLAN VIEW 1 : 75 @ A1 1 : 200 @ A3", 200, 300, 14]]);
 
 writeFileSync(OUT, await doc.save({ useObjectStreams: false }));
 process.stdout.write(`wrote ${path.relative(ROOT, OUT)}\n`);

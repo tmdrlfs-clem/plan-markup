@@ -65,6 +65,12 @@ export function scaleItem(state: ScaleState): { label: string; tone: "warning" |
         tone: "warning",
         tooltip: `${state.note ? `${state.note}. ` : ""}Read from the drawing; confirm in Calibrate (coming next) before measuring`,
       };
+    case "conflict":
+      return {
+        label: "Scales disagree — Verify",
+        tone: "warning",
+        tooltip: `Printed scales disagree: ${state.readings.join("; ")}. Confirm in Calibrate (coming next) before measuring`,
+      };
     case "mixed":
       return {
         label: `${state.count} scales on page`,
@@ -83,7 +89,7 @@ export function scaleItem(state: ScaleState): { label: string; tone: "warning" |
 export function ScaleIndicator({ state }: { state: ScaleState }) {
   const { label, tone, tooltip } = scaleItem(state);
   // Story 4.2: a detected scale's tooltip carries information (the conversion, the list): reachable by keyboard.
-  const informative = state.kind === "detected" || state.kind === "mixed";
+  const informative = state.kind === "detected" || state.kind === "mixed" || state.kind === "conflict";
   return (
     <StatusBarItem
       label={label}
@@ -91,6 +97,8 @@ export function ScaleIndicator({ state }: { state: ScaleState }) {
       tooltip={tooltip}
       data-testid="status-scale"
       data-scale={state.kind}
+      // 4.2 review D7: whether the page's printed scales have been read (e2e waits for "done").
+      data-detection={state.kind === "not-set" && state.pending ? "pending" : "done"}
       tabIndex={informative ? 0 : undefined}
       className={informative ? "rounded-sm focus-ring" : undefined}
     />

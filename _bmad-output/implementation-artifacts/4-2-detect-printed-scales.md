@@ -1,6 +1,6 @@
 # Story 4.2: Detect printed scales
 
-Status: review
+Status: done
 
 ## Story
 
@@ -29,15 +29,15 @@ so that I only need to confirm it.
 
 Adversarial review 2026-10-24 (Claude Opus 5.5) of 912eb42..0bb8447 (plus the 4.2 story text that went in with b2a4136). Checked: the metric and imperial patterns against punctuation, spacing, split / interleaved / rotated runs and title-block spellings (probed with `findRatios` on the strings quoted below); the sheet maths (ISO √2 steps, cross-series long edges, UserUnit: `PageInfo` sizes include it, so the maths is right on UserUnit pages); the plausibility filter; counting / dedup; the two-sheet interpretation; the worker job (Zod payload, priority slot shared with `render.text`, `missed` wait while pdf.js parses, cancel, out-of-range); the text cache reuse (memory, then IndexedDB; nothing extracted a third time); per-tab state (engine field + store snapshot, reset on a new document); the ScaleIndicator states and its focusable tooltip; AC coverage of the tests. Founder decisions 2026-10-24 applied: (1) disagreeing sheet statements are flagged, (2) a detected scale is never applied without Calibrate (4.3), (3)-(4) the 4.1 Length snap preview / Alt and the segment cap are accepted.
 
-- [ ] **[High] D1: Disagreeing sheet statements are hidden (founder decision 1).** L21's "1 : 75 @ A1 1 : 200 @ A3" keeps only the A1 statement on an A1 page, though 1:75 @ A1 is 1:150 @ A3, not 1:200; on a page of neither sheet (A2) the two disagreeing readings become "2 scales on page". Fix: one line stating a view for several sheets is one scale; when the readings convert to different ratios on this page it carries `conflict: true` and every reading (`readings`: printed ratio, sheet, ratio on this page), the page's own sheet first; the ScaleIndicator shows "Scales disagree — Verify" (warning) with both readings in the tooltip. Bare repeats of one reading fold into it. Agreeing statements stay one plain scale.
-- [ ] **[High] D2: Punctuation after a ratio drops it.** The lookahead `(?![\d.,:/])` rejects "PLAN 1:50, SECTION 1:100" (1:50 lost) and "SCALE 1:100." (nothing). Fix: only a digit, a colon / slash, or a decimal (".5", ",5") after the number rules it out.
-- [ ] **[High] D3: `1-1/2" = 1'-0"` reads as 1:24** (the hyphenated mixed number, the usual US spelling, is matched from "1/2"); a wrong scale is worse than none. Fix: whole and fraction joined by a space or a hyphen; a hyphen before the match is excluded like a word character.
-- [ ] **[Medium] D4: The negative context is two words wide.** Any of slope / ramp / grade / pitch / batter / mix / ratio up to two words before a ratio drops it: "RAMP PLAN 1:50", "GRADE BEAM DETAIL 1:20", "SCALE RATIO 1:100" give nothing. Fix: the word must stand right before the ratio, with only "min" / "max" / "of" / "at" / "approx" / punctuation between ("FALLS 1:40", "min. gradient 1:100", "FALL AT 1:60" still rejected); "SCALE" directly before a ratio overrides.
-- [ ] **[Medium] D5: A bare sheet-like code after a ratio is taken as a qualifier.** "SECTION 1:50 B2" (a grid or detail reference) converts to 1:59.45 on A1. Fix: without "@" / "AT" / "ON" / "FOR" / brackets only "A0"-"A4" count as a sheet (title blocks print "1:100 A1"); B, ANSI and ARCH sheets need the connector.
-- [ ] **[Medium] D6: Ratios inside notes produce a scale** (AC 5): "REFER TO 1:50 DETAILS FOR ALL FLASHINGS AND THE LIKE" gives 1:50. Fix: on a line with more than eight other words and no "SCALE" before it, a ratio is part of a note and ignored (view titles and title blocks are short: L21's view title has three).
-- [ ] **[Medium] D7: The e2e "Scale not set" check on page 4 cannot fail.** It waits 1.5 s and reads the default text, which is also the text while detection is pending or after it failed. Fix: the ScaleIndicator carries `data-detection="pending|done"` (the page's detection answered); the e2e waits for "done" on every page.
-- [ ] **[Low] D8: A page whose detection fails is asked again on every settle** (each pan or zoom re-queues a text read that fails the same way). Fix: a failed page is remembered for the document (not cached across documents) and shows "Scale not set"; cancellations are not failures.
-- [ ] **[Low] D9: The ratio sign "∶" (U+2236, which NFKC keeps) is not a colon to the pattern.** Fix: accepted as the colon.
+- [x] **[High] D1: Disagreeing sheet statements are hidden (founder decision 1).** L21's "1 : 75 @ A1 1 : 200 @ A3" keeps only the A1 statement on an A1 page, though 1:75 @ A1 is 1:150 @ A3, not 1:200; on a page of neither sheet (A2) the two disagreeing readings become "2 scales on page". Fix: one line stating a view for several sheets is one scale; when the readings convert to different ratios on this page it carries `conflict: true` and every reading (`readings`: printed ratio, sheet, ratio on this page), the page's own sheet first; the ScaleIndicator shows "Scales disagree — Verify" (warning) with both readings in the tooltip. Bare repeats of one reading fold into it. Agreeing statements stay one plain scale.
+- [x] **[High] D2: Punctuation after a ratio drops it.** The lookahead `(?![\d.,:/])` rejects "PLAN 1:50, SECTION 1:100" (1:50 lost) and "SCALE 1:100." (nothing); the lookbehind also rejects "SCALE:1:100" (no space). Fix: only a digit, a colon / slash, or a decimal (".5", ",5") after the number rules it out; a colon before the "1" rules it out only after a digit (a time).
+- [x] **[High] D3: `1-1/2" = 1'-0"` reads as 1:24** (the hyphenated mixed number, the usual US spelling, is matched from "1/2"); a wrong scale is worse than none. Fix: whole and fraction joined by a space or a hyphen; a hyphen before the match is excluded like a word character.
+- [x] **[Medium] D4: The negative context is two words wide.** Any of slope / ramp / grade / pitch / batter / mix / ratio up to two words before a ratio drops it: "RAMP PLAN 1:50", "GRADE BEAM DETAIL 1:20", "SCALE RATIO 1:100" give nothing. Fix: the word must stand right before the ratio, with only "min" / "max" / "of" / "at" / "approx" / punctuation between ("FALLS 1:40", "min. gradient 1:100", "FALL AT 1:60" still rejected); "SCALE" directly before a ratio overrides.
+- [x] **[Medium] D5: A bare sheet-like code after a ratio is taken as a qualifier.** "SECTION 1:50 B2" (a grid or detail reference) converts to 1:59.45 on A1. Fix: without "@" / "AT" / "ON" / "FOR" / brackets only "A0"-"A4" count as a sheet (title blocks print "1:100 A1"); B, ANSI and ARCH sheets need the connector.
+- [x] **[Medium] D6: Ratios inside notes produce a scale** (AC 5): "REFER TO 1:50 DETAILS FOR ALL FLASHINGS AND THE LIKE" gives 1:50. Fix: on a line with more than eight other words and no "SCALE" before it, a ratio is part of a note and ignored (view titles and title blocks are short: L21's view title has three).
+- [x] **[Medium] D7: The e2e "Scale not set" check on page 4 cannot fail.** It waits 1.5 s and reads the default text, which is also the text while detection is pending or after it failed. Fix: the ScaleIndicator carries `data-detection="pending|done"` (the page's detection answered); the e2e waits for "done" on every page.
+- [x] **[Low] D8: A page whose detection fails is asked again on every settle** (each pan or zoom re-queues a text read that fails the same way). Fix: a failed page is remembered for the document (not cached across documents) and shows "Scale not set"; cancellations are not failures.
+- [x] **[Low] D9: The ratio sign "∶" (U+2236, which NFKC keeps) is not a colon to the pattern.** Fix: accepted as the colon.
 
 Not defects (checked): sheet maths on UserUnit / rotated pages (page sizes and text quads are both in /Rotate + UserUnit page space); the 50 km plausibility bound with the candidate set (converted ratios stay true values, e.g. 1:141.4 on A2, which is right); the bare-ratio adoption of a printed sheet ("1:100" beside "1:100 @ A1" on A3 is 1:200, same view); the shared priority slot with `render.text` (FIFO among text jobs, after tiles and before thumbnails, as AC 1 asks).
 
@@ -65,6 +65,7 @@ Claude Opus 5.5 (claude-opus-5-5)
 - Local: `npm run typecheck`, `npm run lint`, `npm run build` clean; `npm test` 1515 unit tests in 133 files; e2e on the production build (`E2E_PROD=1`, workers 1): 45 passed, 9 skipped (opt-in private checks). One full run had `workspace-shell` "sign out from the File menu" fail once (the known auth flake after a long Supabase session); it passed alone and in the next full run.
 - Supabase on locally remapped ports 583xx (Windows reservation), restored afterwards, never committed.
 - CI run 40057029559 (2a81f4b) **failed**: late specs could not sign in (stayed on /sign-in). Cause: the sign-in rate limiter (30 per address and 10 per account per 15 min) — every spec signs in from the same address, and this story's and 3.8 / 4.1's new specs pushed a full run past it (also the local "sign out from the File menu" flake). Fix: the e2e `signIn` helper clears the address counter and that account's counter first; `auth.spec.ts`'s limiter test keeps its counters (`keepRateLimits`). Local full e2e: 46 passed, 9 skipped. CI after the fix (the e2e helper commit): run **40057642334** success.
+- Review fixes: `npm run typecheck`, `npm run lint`, `npm run build` clean; `npm test` 1538 unit tests in 133 files; e2e on the production build (`E2E_PROD=1`, workers 1): 45 passed, 9 skipped, 1 failed once (`appearance-themes`, right after a cold Supabase start: the known flake) and passed on its own rerun; `PERF_L17=1` L17/L21 check passed. CI run (review fixes): see below.
 - **Founder drawings** (`PERF_L17=1 E2E_PROD=1 npx playwright test perf-scale`, and node on the same core over pdf.js text; private, nothing committed):
   - **L17**: title block "A1 SCALE As indicated"; the only other ratio-like text is the plot stamp "16/08/2026 1:17:46 pm" → **nothing detected, "Scale not set"** (no false scale).
   - **L21**: title block "As indicated" (nothing), plus a view title under the plan "A2102 1 : 75 @ A1 1 : 200 @ A3 PLAN VIEW" (Revit draws its runs out of order: "1 : 75", "1 : 200", "@ A1", "@ A3 PLAN VIEW"). Detected: **"Scale 1:75 @ A1 detected — Verify"** (the A1 statement for this A1 page; the A3 statement on the same line is the same view for another sheet). Before that rule it read "2 scales on page" (1:75 and 1:200 @ A3 → 1:100 on A1). Note for the founder below: the two statements disagree (1:75 @ A1 would be 1:150 @ A3).
@@ -90,7 +91,18 @@ Claude Opus 5.5 (claude-opus-5-5)
 5. **The candidate set** adds 1:75, 1:150, 1:1500 and 1:10000 to the prototype's; 1:1 is not a scale; the "1/x" spelling needs x ≥ 10 (fractions).
 6. **Keyed by page index** for now (AR8 page ids arrive with saved documents).
 
-**Questions for the founder:**
+**Review fixes (2026-10-24, D1-D9 above):**
+
+- `src/core/scale/ratio.ts`: lookahead / lookbehind (D2), the ratio sign (D9), the hyphenated imperial mixed number (D3), the slope-word rule only right before the ratio with a "SCALE" override (D4), bare sheet codes only ISO A0-A4 (D5), the note rule (D6, `NOTE_WORDS` = 8).
+- `src/core/scale/detect.ts`: `DetectedScale` carries `conflict` and `readings` (`ScaleReading`: printed ratio, sheet, ratio on this page); a line naming several sheets is one view; agreeing statements are one plain scale, disagreeing ones a conflict (the page's own sheet first); a plain scale equal to one of a conflict's readings folds into it. `readingLabel`, `conflictReadings` for the UI and Story 4.3.
+- `scale-state.ts`: new state `conflict` ("Scales disagree — Verify", warning, tab stop, both readings in the tooltip); in a list "1:75 @ A1 / 1:200 @ A3 (disagree)"; `not-set` carries `pending` until the page's detection answered, shown as `data-detection="pending|done"` (D7).
+- `viewer-engine.ts`: a failed detection is published as none for that document (D8).
+- `fixtures/pdf/scales.pdf` page 5 (A1): "PLAN VIEW 1 : 75 @ A1 1 : 200 @ A3"; the e2e waits for `data-detection="done"` on each page and checks the conflict text and its tooltip by keyboard.
+- Founder drawings after the fixes: **L17** "Scale not set" (no false scale); **L21** "Scales disagree — Verify", tooltip "Printed scales disagree: 1:75 @ A1 = 1:75 on this A1 page; 1:200 @ A3 = 1:100 on this A1 page".
+
+**Questions for the founder (answered 2026-10-24):** the L21 conflict is flagged (decision 1); a detected scale always goes through Calibrate (decision 2).
+
+**Original questions for the founder:**
 
 - L21's view title says "1 : 75 @ A1" and "1 : 200 @ A3"; 1:75 on A1 is 1:150 on A3. The app takes the A1 statement on this A1 sheet. Is 1:75 right for L21, and should the app warn when two sheet statements disagree?
 - Should the ScaleIndicator offer to apply a detected scale directly (one click), or always go through Calibrate (4.3)?
@@ -104,8 +116,10 @@ Claude Opus 5.5 (claude-opus-5-5)
 - `fixtures/pdf/scales.pdf`, `scripts/fixtures/make-scales-fixture.mjs` (new); `fixtures/README.md` (modified)
 - `e2e/viewer-scale-detect.spec.ts`, `e2e/perf-scale.spec.ts` (new)
 - `_bmad-output/implementation-artifacts/4-2-detect-printed-scales.md`, `sprint-status.yaml` (modified)
+- Review: `src/core/scale/ratio.ts`, `detect.ts`, `detect.test.ts`, `src/features/viewer/status/scale-state.ts`, `scale-state.test.ts`, `status-items.tsx`, `status-items.test.tsx`, `cursor-store.test.ts`, `src/features/viewer/viewer-engine.ts`, `viewer-engine.test.ts`, `scripts/fixtures/make-scales-fixture.mjs`, `fixtures/pdf/scales.pdf`, `fixtures/README.md`, `e2e/viewer-scale-detect.spec.ts`, `e2e/perf-scale.spec.ts` (modified); `docs/decisions/0006-snap-and-scale-in-render-worker.md` (new), `_bmad-output/planning-artifacts/architecture.md` (AR14 note)
 
 ### Change Log
 
 - 2026-10-24: Story 4.2 implemented (Claude Opus 5.5): scale detection core, worker job, ScaleIndicator states, fixture, e2e and the L17/L21 check. Status → review. Commits 912eb42 (ready for dev), 65078a3 (in progress), e68ebf1, 057eb33, bf16c97 and the Task 4 commit.
 - 2026-10-24: e2e sign-in helper clears the rate-limit counters (CI run 40057029559 had throttled the last specs); CI run 40057642334 success.
+- 2026-10-24: Adversarial review (Claude Opus 5.5): follow-ups D1-D9 and ADR 0006 (dffbef6); all fixed with tests, founder decisions 1-4 applied. Status → done.

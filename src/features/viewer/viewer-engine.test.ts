@@ -1390,7 +1390,7 @@ describe("snapping (Story 4.1)", () => {
 });
 
 describe("printed scales (Story 4.2)", () => {
-  const RESULT = { scales: [{ ratio: 100, sheet: "A1", effective: 100, imperial: false, text: "1:100 @ A1", count: 1, quads: [] }], pageSheet: null };
+  const RESULT = { scales: [{ ratio: 100, sheet: "A1", effective: 100, imperial: false, text: "1:100 @ A1", count: 1, quads: [], conflict: false, readings: [{ ratio: 100, sheet: "A1", effective: 100, text: "1:100 @ A1" }] }], pageSheet: null };
   beforeEach(() => clearScaleCache());
 
   it("asks the worker for the shown page once it settles, publishes it, and serves the next tab of the same document from memory", async () => {
@@ -1419,6 +1419,23 @@ describe("printed scales (Story 4.2)", () => {
     call.resolve(RESULT);
     await flush();
     expect(state.pageScales ?? {}).toEqual({});
+  });
+
+  it("review D8: a failed page is not asked again for this document (shown as none, not cached across documents); a cancelled one is", async () => {
+    const { client, engine } = setup();
+    await readyAtFit(client, engine);
+    client.last("scale.detect").reject(new WorkerRequestError("render-failed", { name: "Error", message: "x" }));
+    await flush();
+    expect(state.pageScales).toEqual({ 0: { scales: [], pageSheet: null } });
+    engine.requestScales(0);
+    expect(client.all("scale.detect")).toHaveLength(1);
+    const other = setup();
+    await readyAtFit(other.client, other.engine);
+    other.client.last("scale.detect").reject(new WorkerRequestError("cancelled", { name: "Error", message: "c" }));
+    await flush();
+    expect(state.pageScales).toEqual({});
+    other.engine.requestScales(0);
+    expect(other.client.all("scale.detect")).toHaveLength(2);
   });
 });
 

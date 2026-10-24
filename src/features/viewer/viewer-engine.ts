@@ -1645,8 +1645,12 @@ export class ViewerEngine {
         rememberScales(`${sha}:${index}`, result);
         this.publishScales(index, result);
       },
-      () => {
-        if (this.scaleCalls.get(index) === call.reqId) this.scaleCalls.delete(index);
+      (e: unknown) => {
+        if (this.scaleCalls.get(index) !== call.reqId || this.sha256 !== sha) return;
+        this.scaleCalls.delete(index);
+        // 4.2 review D8: a page whose detection failed is not asked again for this document
+        // (it shows "Scale not set"); not cached across documents. A cancellation is not a failure.
+        if (!(e instanceof WorkerRequestError && e.code === "cancelled")) this.publishScales(index, { scales: [], pageSheet: null });
       },
     );
   }

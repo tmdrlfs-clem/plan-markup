@@ -19,8 +19,8 @@ describe("cursor store", () => {
 });
 
 describe("scale state", () => {
-  it("is 'not set' on every page until calibration exists (Epic 4)", () => {
-    expect(scaleStateOf()).toBe(SCALE_NOT_SET);
-    expect(scaleStateOf()).toEqual({ kind: "not-set" });
+  it("is 'not set' (pending) before the page's printed scales are read, 'not set' when none are found", () => {
+    expect(scaleStateOf()).toEqual({ kind: "not-set", pending: true });
+    expect(scaleStateOf({ scales: [], pageSheet: null })).toBe(SCALE_NOT_SET);
   });
 });

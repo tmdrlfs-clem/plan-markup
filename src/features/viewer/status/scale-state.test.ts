@@ -5,12 +5,32 @@ import type { DetectedScale, PageScales } from "@/core/scale/detect";
 import { SCALE_NOT_SET, scaleStateOf } from "./scale-state";
 import { scaleItem } from "./status-items";
 
-const scale = (ratio: number, sheet: string | null, effective = ratio): DetectedScale => ({ ratio, sheet, effective, imperial: false, text: `1:${ratio}`, count: 1, quads: [] });
+const scale = (ratio: number, sheet: string | null, effective = ratio): DetectedScale => ({
+  ratio,
+  sheet,
+  effective,
+  imperial: false,
+  text: `1:${ratio}`,
+  count: 1,
+  quads: [],
+  conflict: false,
+  readings: [{ ratio, sheet, effective, text: `1:${ratio}` }],
+});
+/** L21's view title on its A1 page: 1:75 @ A1 and 1:200 @ A3 (= 1:100 on A1) disagree. */
+const conflicting: DetectedScale = {
+  ...scale(75, "A1"),
+  conflict: true,
+  readings: [
+    { ratio: 75, sheet: "A1", effective: 75, text: "1 : 75 @ A1" },
+    { ratio: 200, sheet: "A3", effective: 100, text: "1 : 200 @ A3" },
+  ],
+};
 const page = (scales: DetectedScale[], pageSheet: string | null = "A1"): PageScales => ({ scales, pageSheet });
 
 describe("scaleStateOf (Story 4.2)", () => {
   it("nothing detected, or not looked at yet: Scale not set", () => {
-    expect(scaleStateOf()).toBe(SCALE_NOT_SET);
+    expect(scaleStateOf()).toEqual({ kind: "not-set", pending: true });
+    expect(scaleItem(scaleStateOf()).label).toBe("Scale not set");
     expect(scaleStateOf(page([]))).toBe(SCALE_NOT_SET);
   });
 
@@ -33,5 +53,14 @@ describe("scaleStateOf (Story 4.2)", () => {
     expect(state).toEqual({ kind: "mixed", count: 2, list: ["1:100 @ A1", "1:50"] });
     expect(scaleItem(state)).toMatchObject({ label: "2 scales on page", tone: "warning" });
     expect(scaleItem(state).tooltip).toMatch(/: 1:100 @ A1; 1:50\./);
+  });
+
+  it("review D1: one view stated for two sheets that disagree: Scales disagree — Verify, both readings in the tooltip", () => {
+    const state = scaleStateOf(page([conflicting]));
+    expect(state).toEqual({ kind: "conflict", readings: ["1:75 @ A1 = 1:75 on this A1 page", "1:200 @ A3 = 1:100 on this A1 page"] });
+    expect(scaleItem(state)).toMatchObject({ label: "Scales disagree — Verify", tone: "warning" });
+    expect(scaleItem(state).tooltip).toMatch(/^Printed scales disagree: 1:75 @ A1 = 1:75 on this A1 page; 1:200 @ A3 = 1:100 on this A1 page\. /);
+    // Beside another scale it is one entry of the list.
+    expect(scaleStateOf(page([conflicting, scale(20, null)]))).toEqual({ kind: "mixed", count: 2, list: ["1:75 @ A1 / 1:200 @ A3 (disagree)", "1:20"] });
   });
 });
