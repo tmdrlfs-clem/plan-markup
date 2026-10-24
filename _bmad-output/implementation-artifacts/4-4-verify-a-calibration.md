@@ -48,6 +48,7 @@ Claude Opus 5.5 (claude-opus-5-5)
 ### Debug Log References
 
 - Local: `npm run typecheck`, `npm run lint`, `npm run build` clean; `npm test` 1619 unit tests in 141 files (Docker stopped); e2e on the production build (`E2E_PROD=1`, workers 1): 48 passed, 11 skipped (opt-in private checks), 1 failed once (`appearance-themes`, right after a cold Supabase start: the known flake) and passed on its own rerun; `verify-calibration.spec.ts` and `calibrate.spec.ts` passed.
+- CI: run **40136163470** success (Tasks 1-4 and the record, afaa495).
 - Supabase on its default local ports, Docker Desktop started with `docker desktop start`; both stopped afterwards with `npm run db:stop` and `docker desktop stop`.
 - **Founder drawings** (`PERF_L17=1 E2E_PROD=1 npx playwright test perf-verify`; private, nothing committed):
   - **L17** calibrated by ratio 1:75, verified on its "1905" dimension (snapped endpoints (-169.01, 98.57) and (-97.01, 98.57)): measured **1905 mm**, known 1905 → "Matches the calibration at the shown precision (1 mm)".
