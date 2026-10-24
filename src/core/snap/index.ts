@@ -53,8 +53,10 @@ export function snapIndexTransfer(data: SnapIndexData): ArrayBuffer[] {
 /** A queryable page index on the main thread. */
 export class SnapIndex {
   private readonly tree: Flatbush | null;
+  readonly data: SnapIndexData;
 
-  constructor(readonly data: SnapIndexData) {
+  constructor(data: SnapIndexData) {
+    this.data = data;
     this.tree = data.index ? Flatbush.from(data.index) : null;
   }
 

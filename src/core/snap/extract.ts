@@ -74,7 +74,7 @@ export type ExtractOptions = {
 };
 
 export const DEFAULT_CURVE_TOLERANCE = 0.1;
-export const MAX_SEGMENTS = 1_500_000;
+export const MAX_SEGMENTS = 1_000_000;
 /** Segments shorter than this (points) carry no geometry worth snapping to. */
 const MIN_LENGTH = 0.01;
 export const CHECK_EVERY = 4096;
@@ -100,10 +100,12 @@ class SegmentBuffer {
   flags: Uint8Array;
   count = 0;
   truncated = false;
-  constructor(
-    private readonly max: number,
-    private readonly bounds: readonly [number, number, number, number] | undefined,
-  ) {
+  private readonly max: number;
+  private readonly bounds: readonly [number, number, number, number] | undefined;
+  // Plain fields (no parameter properties): src/core also runs under Node's type stripping.
+  constructor(max: number, bounds: readonly [number, number, number, number] | undefined) {
+    this.max = max;
+    this.bounds = bounds;
     this.coords = new Float64Array(4 * 4096);
     this.flags = new Uint8Array(4096);
   }

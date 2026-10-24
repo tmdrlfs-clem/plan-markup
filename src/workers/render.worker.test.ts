@@ -93,10 +93,39 @@ class StubRenderer implements TileRenderer<Bitmap> {
     this.released.push(bitmap);
   }
 
+  /** Story 4.1: an operator list of one stroked line and one stroked rectangle; `listGate` holds it. */
+  listGate: Promise<void> | null = null;
+  listsRead = 0;
+  releasedLists: number[] = [];
+  async operatorList(page: number) {
+    this.listsRead++;
+    if (this.listGate) await this.listGate;
+    const ops = SNAP_OPS;
+    return {
+      fnArray: [ops.constructPath, ops.constructPath],
+      argsArray: [
+        [ops.stroke, [new Float32Array([0, 0, 0, 1, 100, 0])], null],
+        [ops.stroke, [new Float32Array([0, 10, 10, 1, 20, 10, 1, 20, 20, 4])], null],
+      ],
+      ops,
+      view: [0, 0, 1000, 600] as [number, number, number, number],
+      page,
+    };
+  }
+  releaseOperatorList(page: number): void {
+    this.releasedLists.push(page);
+  }
+
   async close(): Promise<void> {
     this.closed++;
   }
 }
+
+const SNAP_OPS = {
+  save: 10, restore: 11, transform: 12, paintFormXObjectBegin: 74, paintFormXObjectEnd: 75, constructPath: 91,
+  setFillRGBColor: 59, setStrokeRGBColor: 58, stroke: 20, closeStroke: 21, fill: 22, eoFill: 23, fillStroke: 24,
+  eoFillStroke: 25, closeFillStroke: 26, closeEOFillStroke: 27, endPath: 28, beginText: 31, endText: 32,
+};
 
 function setup(cache: RasterCache<Bitmap> | null = null) {
   const renderer = new StubRenderer();
@@ -831,5 +860,78 @@ describe("RenderWorkerHost: render.thumbnail (Story 3.4)", () => {
     await host.idle();
     for (const reqId of [2, 3, 4, 5, 6]) expect(codeOf(replies, reqId)).toBe("invalid-request");
     expect(codeOf(replies, 7)).toBe("out-of-range");
+  });
+});
+
+describe("RenderWorkerHost: snap.buildIndex (Story 4.1)", () => {
+  const snap = (reqId: number, page = 1) => ({ type: "snap.buildIndex", reqId, payload: { page } });
+
+  it("extracts the page's segments, builds the index, transfers every buffer and drops pdf.js's list", async () => {
+    const { host, replies, renderer, transfers } = setup();
+    host.handle(open(1));
+    await host.idle();
+    host.handle(snap(2));
+    await host.idle();
+    const r = resultOf(replies, 2) as unknown as { count: number; coords: Float64Array; flags: Uint8Array; index: ArrayBuffer; truncated: boolean; opListMs: number };
+    expect(r.count).toBe(4); // one line + three sides (the last lineTo and closePath)
+    expect(Array.from(r.coords.slice(0, 4))).toEqual([0, 0, 100, 0]);
+    expect(r.index).toBeInstanceOf(ArrayBuffer);
+    expect(r.truncated).toBe(false);
+    const sent = transfers[replies.findIndex((x) => x.reqId === 2 && x.type === "result")];
+    expect(sent).toEqual([r.coords.buffer, r.flags.buffer, r.index]);
+    expect(renderer.releasedLists).toEqual([1]);
+  });
+
+  it("never holds the queue while pdf.js reads the list: a tile asked meanwhile is answered first", async () => {
+    const { host, replies, renderer } = setup();
+    host.handle(open(1));
+    await host.idle();
+    let release!: () => void;
+    renderer.listGate = new Promise((r) => (release = r));
+    host.handle(snap(2));
+    await Promise.resolve();
+    host.handle(tile(3));
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(resultOf(replies, 3)).toBeTruthy();
+    expect(byReq(replies, 2)).toHaveLength(0);
+    release();
+    await host.idle();
+    await new Promise((r) => setTimeout(r, 0));
+    await host.idle();
+    expect(resultOf(replies, 2).count).toBe(4);
+    const order = replies.filter((x) => x.type === "result").map((x) => x.reqId);
+    expect(order.indexOf(3)).toBeLessThan(order.indexOf(2));
+  });
+
+  it("runs after every tile, text and thumbnail job; cancel and close drop it", async () => {
+    const { host, replies } = setup();
+    host.handle(open(1));
+    await host.idle();
+    host.handle(snap(2));
+    host.handle(tile(3));
+    host.handle({ type: "render.thumbnail", reqId: 4, payload: { page: 1, widthPx: 100, heightPx: 60 } });
+    await host.idle();
+    await new Promise((r) => setTimeout(r, 0));
+    await host.idle();
+    const order = replies.filter((x) => x.type === "result").map((x) => x.reqId);
+    expect(order.slice(1)).toEqual([3, 4, 2]);
+    host.handle(snap(5));
+    host.handle({ type: "render.cancel", reqId: 6, payload: { reqIds: [5] } });
+    await host.idle();
+    expect(codeOf(replies, 5)).toBe("cancelled");
+  });
+
+  it("a page out of range is an error; a renderer without operator lists says snapping is unavailable", async () => {
+    const { host, replies, renderer } = setup();
+    host.handle(open(1));
+    await host.idle();
+    host.handle(snap(2, 9));
+    await host.idle();
+    expect(codeOf(replies, 2)).toBe("out-of-range");
+    (renderer as { operatorList?: unknown }).operatorList = undefined;
+    host.handle(snap(3));
+    await host.idle();
+    expect(codeOf(replies, 3)).toBe("render-failed");
   });
 });

@@ -15,6 +15,8 @@ import { cleanPageLabels, detectSheetLabel } from "@/core/pdf/sheet-label";
 import { buildPageText, type TextItem } from "@/core/search/page-text";
 import { quantizeScale, scaleStep, tileGrid, tileRect } from "@/core/render/tiles";
 import { serializeWorkerError } from "@/core/worker/error";
+import { extractSegments, type SnapOps } from "@/core/snap/extract";
+import { buildSnapIndex, snapIndexTransfer } from "@/core/snap/index";
 import {
   RenderError,
   renderRequestSchema,
@@ -25,6 +27,8 @@ import {
   type RenderErrorCode,
   type RenderReply,
   type SheetLabelPayload,
+  type SnapIndexResult,
+  type SnapPayload,
   type TextPayload,
   type TextResult,
   type ThumbnailPayload,
@@ -71,6 +75,13 @@ export interface TileRenderer<B> {
    * sheet number detection). Read once per page: the worker caches them.
    */
   pageText?(page: number, signal: AbortSignal): Promise<TextItem[]>;
+  /**
+   * Story 4.1: the page's operator list for snapping (pdf.js getOperatorList,
+   * page content only, never one a render has consumed), its OPS table and
+   * the page's box in user space. `release` drops pdf.js's copy afterwards.
+   */
+  operatorList?(page: number): Promise<{ fnArray: ArrayLike<number>; argsArray: ArrayLike<unknown>; ops: SnapOps; view: [number, number, number, number] }>;
+  releaseOperatorList?(page: number): void;
   close(): Promise<void>;
 }
 
@@ -145,7 +156,12 @@ type Job =
   // missed: no cached text and pdf.js is still parsing (as for thumbnails).
   | { kind: "text"; reqId: number; payload: TextPayload; queuedAt: number; missed?: boolean }
   // `missed`: the raster cache had no copy and pdf.js is still parsing (it waits off the queue's head).
-  | { kind: "thumbnail"; reqId: number; payload: ThumbnailPayload; queuedAt: number; missed?: boolean };
+  | { kind: "thumbnail"; reqId: number; payload: ThumbnailPayload; queuedAt: number; missed?: boolean }
+  // Story 4.1. `list`: pdf.js is reading the operator list (in its parser worker); the job
+  // waits off the queue's head until it is there, so tiles never wait behind it.
+  | { kind: "snap"; reqId: number; payload: SnapPayload; queuedAt: number; list?: SnapList; startedAt?: number };
+
+type SnapList = { state: "reading" | "ready" | "failed"; value?: Awaited<ReturnType<NonNullable<TileRenderer<unknown>["operatorList"]>>>; error?: unknown };
 
 type Doc = {
   sha256: string;
@@ -240,6 +256,9 @@ export class RenderWorkerHost<B> {
         break;
       case "render.thumbnail":
         this.queue.push({ kind: "thumbnail", reqId: msg.reqId, payload: msg.payload, queuedAt });
+        break;
+      case "snap.buildIndex":
+        this.queue.push({ kind: "snap", reqId: msg.reqId, payload: msg.payload, queuedAt });
         break;
     }
     void this.pump();
@@ -339,9 +358,13 @@ export class RenderWorkerHost<B> {
   private nextJob(): Job | undefined {
     let label = -1;
     let thumb = -1;
+    let snap = -1;
     for (let i = 0; i < this.queue.length; i++) {
       const job = this.queue[i];
-      if (job.kind === "sheetLabel") {
+      if (job.kind === "snap") {
+        // Last of all; while pdf.js reads its operator list it is not runnable.
+        if (snap < 0 && (!job.list || job.list.state !== "reading") && (!this.doc || this.doc.parsed)) snap = i;
+      } else if (job.kind === "sheetLabel") {
         if (label < 0 && this.sheetLabelRunnable(job)) label = i;
       } else if (job.kind === "text") {
         if (label < 0 && (!job.missed || !this.doc || this.doc.parsed)) label = i;
@@ -351,7 +374,7 @@ export class RenderWorkerHost<B> {
         return this.queue.splice(i, 1)[0];
       }
     }
-    const pick = label >= 0 ? label : thumb;
+    const pick = label >= 0 ? label : thumb >= 0 ? thumb : snap;
     return pick < 0 ? undefined : this.queue.splice(pick, 1)[0];
   }
 
@@ -370,6 +393,7 @@ export class RenderWorkerHost<B> {
     if (job.kind === "sheetLabel") return this.sheetLabel(job, doc, page, signal);
     if (job.kind === "text") return this.text(job, doc, signal);
     if (job.kind === "thumbnail") return this.thumbnail(job, doc, page, signal);
+    if (job.kind === "snap") return this.snap(job, signal);
     return this.tile(job, doc, page, signal);
   }
 
@@ -542,6 +566,49 @@ export class RenderWorkerHost<B> {
     const index = buildPageText(items);
     const result: TextResult = { items, index };
     this.result(job.reqId, result, [index.charItem.buffer, index.charOffset.buffer]);
+  }
+
+  /**
+   * Story 4.1: the page's snap segments and index. First asks pdf.js for the
+   * operator list and steps aside (the job waits off the queue's head until
+   * the list is there); then extracts and builds the index in one go (tens of
+   * ms on L17) and transfers the buffers.
+   */
+  private async snap(job: Extract<Job, { kind: "snap" }>, signal: AbortSignal): Promise<void> {
+    const renderer = this.renderer;
+    if (!renderer.operatorList) throw new RenderError("render-failed", "Snapping is not available");
+    const page = job.payload.page;
+    if (!job.list) {
+      const list: SnapList = { state: "reading" };
+      job.list = list;
+      job.startedAt = this.now();
+      const generation = this.generation;
+      renderer.operatorList(page).then(
+        (value) => {
+          list.state = "ready";
+          list.value = value;
+          if (generation === this.generation) void this.pump();
+        },
+        (error: unknown) => {
+          list.state = "failed";
+          list.error = error;
+          if (generation === this.generation) void this.pump();
+        },
+      );
+      this.queue.push(job);
+      return;
+    }
+    if (job.list.state === "failed") throw job.list.error;
+    if (signal.aborted) throw CANCELLED();
+    const { fnArray, argsArray, ops, view } = job.list.value!;
+    const t1 = this.now();
+    const segments = extractSegments(fnArray, argsArray, ops, { bounds: view });
+    const t2 = this.now();
+    const data = buildSnapIndex(segments);
+    const t3 = this.now();
+    renderer.releaseOperatorList?.(page);
+    const result: SnapIndexResult = { ...data, opListMs: t1 - (job.startedAt ?? t1), extractMs: t2 - t1, buildMs: t3 - t2 };
+    this.result(job.reqId, result, snapIndexTransfer(data));
   }
 
   /** The page fitted into the requested box: from the raster cache, else rendered and stored. */

@@ -27,6 +27,11 @@
 //                   document in memory and in IndexedDB (<sha>:<page>:text:v1). Same
 //                   priority as render.sheetLabel (after tiles, before thumbnails).
 //                   -> result TextResult (the index's typed arrays are transferred).
+//   snap.buildIndex { page }  Story 4.1: the page's vector segments for snapping
+//                   (src/core/snap/extract.ts, PDF user space points) and their flatbush
+//                   index, built here where pdf.js already holds the document. Lowest
+//                   priority (after thumbnails); it never holds the queue while pdf.js
+//                   reads the operator list. -> result SnapIndexResult (every buffer transferred).
 //   render.cancel   { reqIds?, all? }  Each cancelled request gets an error reply
 //                   with code "cancelled"; the cancel itself gets result {}.
 //   render.close    {}  Cancels everything and releases the document. -> result {}.
@@ -46,6 +51,7 @@ import { z } from "zod";
 import { MAX_BUCKET, MIN_BUCKET } from "@/core/render/tiles";
 import type { ContentFlags as CoreContentFlags } from "@/core/render/content-flags";
 import type { PageTextIndex, TextItem } from "@/core/search/page-text";
+import type { SnapIndexData } from "@/core/snap/index";
 import type { SerializedWorkerError } from "@/core/worker/error";
 
 /** Stable error codes of the render worker (the "code" pattern from Story 2.1). */
@@ -161,6 +167,7 @@ export const tilePayloadSchema = z.object({
 });
 export const sheetLabelPayloadSchema = z.object({ page: pageNumber });
 export const textPayloadSchema = z.object({ page: pageNumber });
+export const snapPayloadSchema = z.object({ page: pageNumber });
 /** Thumbnail box in device px (panel width steps x DPR). */
 const thumbPx = z.number().int().min(16).max(2048);
 export const thumbnailPayloadSchema = z.object({ page: pageNumber, widthPx: thumbPx, heightPx: thumbPx });
@@ -177,6 +184,7 @@ export const renderRequestSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("render.sheetLabel"), reqId, payload: sheetLabelPayloadSchema }),
   z.object({ type: z.literal("render.text"), reqId, payload: textPayloadSchema }),
   z.object({ type: z.literal("render.thumbnail"), reqId, payload: thumbnailPayloadSchema }),
+  z.object({ type: z.literal("snap.buildIndex"), reqId, payload: snapPayloadSchema }),
   z.object({ type: z.literal("render.cancel"), reqId, payload: cancelPayloadSchema }),
   z.object({ type: z.literal("render.close"), reqId, payload: closePayloadSchema }),
 ]);
@@ -193,6 +201,9 @@ export type TextPayload = z.infer<typeof textPayloadSchema>;
 /** A page's text: its items with their boxes, and the normalised text to search (src/core/search). */
 export type TextResult = { items: TextItem[]; index: PageTextIndex };
 export type ThumbnailPayload = z.infer<typeof thumbnailPayloadSchema>;
+export type SnapPayload = z.infer<typeof snapPayloadSchema>;
+/** A page's snap segments and index (Story 4.1) with what building them cost (ms). */
+export type SnapIndexResult = SnapIndexData & { opListMs: number; extractMs: number; buildMs: number };
 
 /** Result payload per verb. */
 export type RenderResultMap<B> = {
@@ -202,6 +213,7 @@ export type RenderResultMap<B> = {
   "render.sheetLabel": SheetLabelResult;
   "render.text": TextResult;
   "render.thumbnail": ThumbnailResult<B>;
+  "snap.buildIndex": SnapIndexResult;
   "render.cancel": Record<string, never>;
   "render.close": Record<string, never>;
 };
@@ -213,6 +225,7 @@ export type RenderPayloadMap = {
   "render.sheetLabel": SheetLabelPayload;
   "render.text": TextPayload;
   "render.thumbnail": ThumbnailPayload;
+  "snap.buildIndex": SnapPayload;
   "render.cancel": CancelPayload;
   "render.close": Record<string, never>;
 };

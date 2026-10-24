@@ -28,6 +28,7 @@ import { textItemOf, type TextItem } from "@/core/search/page-text";
 import { contentFlags, type OpsTable } from "@/core/render/content-flags";
 import { operationsFilterFor, tileFraction, type OperationBoxes } from "@/core/render/op-culling";
 import { RenderError, type ContentFlags, type PageInfo } from "./render-protocol";
+import type { SnapOps } from "@/core/snap/extract";
 import type { RenderedTile, TileJob, TileRenderer } from "./render.worker";
 
 /** Absolute URL (ending in "/") of the same-origin pdf.js assets for this pdf.js version. */
@@ -83,6 +84,12 @@ type FontScope = { fonts?: unknown };
 const RECORD_PX = 1024;
 
 type RecordingPage = PDFPageProxy & { recordedBBoxes?: OperationBoxes | null };
+
+/** pdf.js 6.4.299 internals used to drop one intent's operator list (releaseOperatorList). */
+type OpListInternals = {
+  _transport?: { getRenderingIntent(intent: string, mode: number, storage: null, editing: boolean, opList: boolean): { cacheKey: string } };
+  _intentStates?: Map<string, { renderTasks?: Set<unknown> }>;
+};
 
 /** Progressive preview snapshots: first after this long, then at this interval (ms). */
 const PARTIAL_FIRST_MS = 300;
@@ -314,6 +321,39 @@ export class PdfjsTileRenderer implements TileRenderer<ImageBitmap> {
     if (!boxes || this.pages.get(pageNo) !== page) return null;
     this.boxes.set(pageNo, boxes);
     return boxes;
+  }
+
+  /**
+   * Story 4.1: the page's own content as an operator list for snapping. A
+   * separate pdf.js intent (operator-list only, annotations off), never the
+   * render's list: rendering turns each path into a Path2D, which cannot be read.
+   */
+  async operatorList(pageNo: number): Promise<{ fnArray: number[]; argsArray: unknown[]; ops: SnapOps; view: [number, number, number, number] }> {
+    const page = this.pages.get(pageNo);
+    if (!page) throw new RenderError("out-of-range", "Page not loaded");
+    const list = await (this.parserFailed
+      ? Promise.race([page.getOperatorList({ annotationMode: AnnotationMode.DISABLE }), this.parserFailed])
+      : page.getOperatorList({ annotationMode: AnnotationMode.DISABLE }));
+    const [x0, y0, x1, y1] = page.view;
+    return { fnArray: list.fnArray, argsArray: list.argsArray, ops: OPS as unknown as SnapOps, view: [x0, y0, x1, y1] };
+  }
+
+  /**
+   * Drops pdf.js's cached copy of the snapping operator list (tens of MB on an
+   * A1 sheet) once the index is built. pdf.js has no public call for one
+   * intent (cleanup() would also drop the render's list and its recorded
+   * boxes), so this removes that intent's entry (pdf.js 6.4.299, pinned); if
+   * the internals ever change it only keeps the memory.
+   */
+  releaseOperatorList(pageNo: number): void {
+    const page = this.pages.get(pageNo) as (PDFPageProxy & OpListInternals) | undefined;
+    try {
+      const key = page?._transport?.getRenderingIntent("display", AnnotationMode.DISABLE, null, false, true)?.cacheKey;
+      const state = key === undefined ? undefined : page?._intentStates?.get(key);
+      if (state && (!state.renderTasks || state.renderTasks.size === 0)) page!._intentStates!.delete(key!);
+    } catch {
+      // Internals changed: nothing released.
+    }
   }
 
   release(bitmap: ImageBitmap): void {
