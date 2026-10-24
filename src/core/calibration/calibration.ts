@@ -93,8 +93,12 @@ export function roundRatioOf(f: number): number | null {
   return USUAL_RATIOS.find((n) => Math.abs(ratio - n) <= n * 0.005) ?? null;
 }
 
-/** A length in page points along a direction (dx, dy in points) in real millimetres. */
-export function realLengthMm(dx: number, dy: number, calibration: Pick<Calibration, "xFactor" | "yFactor">): number {
+/**
+ * The real length in millimetres of a line `dx`, `dy` page points long along
+ * user space x and y (UserUnit applied) under `calibration` (Story 4.4 AC 5,
+ * NFR8): the one function verification and the measuring tools (4.5) use.
+ */
+export function measureLength(dx: number, dy: number, calibration: Pick<Calibration, "xFactor" | "yFactor">): number {
   return Math.hypot(dx * calibration.xFactor, dy * calibration.yFactor);
 }
 

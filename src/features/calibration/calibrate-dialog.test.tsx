@@ -153,12 +153,12 @@ describe("CalibrateDialog (Story 4.3)", () => {
     expect(within(dialog).getByRole("tab", { name: "By two points" })).toHaveAttribute("aria-selected", "true");
     // Too close on screen.
     await user.click(within(dialog).getByRole("button", { name: "Pick two points" }));
-    act(() => listener!.done({ a: { x: 0, y: 0 }, b: { x: 5, y: 0 }, distancePt: 5, screenPx: 6 }));
+    act(() => listener!.done({ a: { x: 0, y: 0 }, b: { x: 5, y: 0 }, distancePt: 5, dxPt: 5, dyPt: 0, screenPx: 6 }));
     dialog = await screen.findByRole("dialog", { name: "Calibrate" });
     expect(within(dialog).getByTestId("calibrate-pick-error")).toHaveTextContent("too close");
     // A good pick: 144 pt is 12'-6" in reality.
     await user.click(within(dialog).getByRole("button", { name: "Pick two points" }));
-    act(() => listener!.done({ a: { x: 0, y: 0 }, b: { x: 144, y: 0 }, distancePt: 144, screenPx: 200 }));
+    act(() => listener!.done({ a: { x: 0, y: 0 }, b: { x: 144, y: 0 }, distancePt: 144, dxPt: 144, dyPt: 0, screenPx: 200 }));
     dialog = await screen.findByRole("dialog", { name: "Calibrate" });
     expect(within(dialog).getByTestId("calibrate-picked")).toHaveTextContent(`${(144 * MM_PER_POINT).toFixed(1)} mm on paper`);
     act(() => calibrateStore.setState({ distanceUnit: "ft-in", unit: "ft-in", precision: "1/8" }));
@@ -201,7 +201,7 @@ describe("CalibrateDialog (Story 4.3)", () => {
     await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Pick two points" }));
     // The first pick answering late changes nothing.
     act(() => first.done(null));
-    act(() => first.done({ a: { x: 0, y: 0 }, b: { x: 72, y: 0 }, distancePt: 72, screenPx: 100 }));
+    act(() => first.done({ a: { x: 0, y: 0 }, b: { x: 72, y: 0 }, distancePt: 72, dxPt: 72, dyPt: 0, screenPx: 100 }));
     expect(calibrateStore.getState()).toMatchObject({ picking: true, pick: null });
     expect(screen.getByRole("status")).toHaveTextContent("Click the first point");
   });
@@ -213,7 +213,7 @@ describe("CalibrateDialog (Story 4.3)", () => {
     const dialog = await screen.findByRole("dialog", { name: "Calibrate" });
     await user.click(within(dialog).getByRole("tab", { name: "By two points" }));
     await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Pick two points" }));
-    act(() => listener!.done({ a: { x: 0, y: 0 }, b: { x: 72, y: 0 }, distancePt: 72, screenPx: 100 }));
+    act(() => listener!.done({ a: { x: 0, y: 0 }, b: { x: 72, y: 0 }, distancePt: 72, dxPt: 72, dyPt: 0, screenPx: 100 }));
     expect(calibrateStore.getState().pick).not.toBeNull();
     act(() => viewerStore.setState({ pageIndex: 1 }));
     const moved = await screen.findByRole("dialog", { name: "Calibrate" });
@@ -230,7 +230,7 @@ describe("CalibrateDialog (Story 4.3)", () => {
     expect(within(dialog).getByTestId("tip-calibrate")).toBeInTheDocument();
     await user.click(within(dialog).getByRole("tab", { name: "By two points" }));
     await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Pick two points" }));
-    act(() => listener!.done({ a: { x: 0, y: 0 }, b: { x: 72, y: 0 }, distancePt: 72, screenPx: 100 }));
+    act(() => listener!.done({ a: { x: 0, y: 0 }, b: { x: 72, y: 0 }, distancePt: 72, dxPt: 72, dyPt: 0, screenPx: 100 }));
     dialog = await screen.findByRole("dialog", { name: "Calibrate" });
     expect(within(dialog).getByTestId("tip-calibrate")).toBeInTheDocument();
     await user.click(within(dialog).getByRole("button", { name: "Dismiss tip" }));

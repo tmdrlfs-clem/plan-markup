@@ -102,6 +102,30 @@ export function formatRealValue(mm: number, unit: DisplayUnit, precision: Precis
   }
 }
 
+/**
+ * The real length (mm) of one step of a display precision: 1 mm, 0.01 m,
+ * 1/8", 0.1" (inches and feet-inches round their inches) (Story 4.4: values
+ * compared at the precision they are shown at).
+ */
+export function precisionStepMm(unit: DisplayUnit, precision: Precision): number {
+  const den = fractionOf(precision);
+  const decimal = 10 ** -precisionDecimals(precision);
+  switch (unit) {
+    case "mm":
+      return decimal;
+    case "m":
+      return decimal * 1000;
+    default:
+      return (den ? 1 / den : decimal) * MM_PER_INCH;
+  }
+}
+
+/** `mm` rounded to whole steps of the precision (what the formatter shows). */
+export function roundToPrecision(mm: number, unit: DisplayUnit, precision: Precision): number {
+  const step = precisionStepMm(unit, precision);
+  return Math.round(mm / step) * step;
+}
+
 /** The unit mark after a number (none for ft-in, whose text carries ' and "). */
 export function unitSuffix(unit: DisplayUnit): string {
   return unit === "ft-in" ? "" : unit === "in" ? '"' : ` ${unit}`;

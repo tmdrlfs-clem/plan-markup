@@ -188,7 +188,15 @@ export function clearScaleCache(): void {
  * they are on the page (points, UserUnit applied) and on screen (CSS px, at
  * the zoom they were picked at).
  */
-export type CalibrationPick = { a: Point; b: Point; distancePt: number; screenPx: number };
+export type CalibrationPick = {
+  a: Point;
+  b: Point;
+  distancePt: number;
+  /** Story 4.4: the line along user space x and y, in points (UserUnit applied), for separate X / Y factors. */
+  dxPt: number;
+  dyPt: number;
+  screenPx: number;
+};
 
 /** Story 4.3: what a calibration pick reports: the next point to click (1 or 2), then the result (null: cancelled). */
 export type CalibrationPickListener = { step(next: 1 | 2): void; done(pick: CalibrationPick | null): void };
@@ -1689,6 +1697,8 @@ export class ViewerEngine {
       a,
       b,
       distancePt: Math.hypot(dx * u, dy * u),
+      dxPt: dx * u,
+      dyPt: dy * u,
       screenPx: Math.hypot(l[0] * dx + l[2] * dy, l[1] * dx + l[3] * dy),
     };
     this.pick = null;

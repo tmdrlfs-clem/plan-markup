@@ -12,7 +12,7 @@ import {
   mixedSizes,
   pageIdOf,
   ratioForPage,
-  realLengthMm,
+  measureLength,
   roundRatioOf,
   type Calibration,
 } from "./calibration";
@@ -35,8 +35,8 @@ const cal = (over: Partial<Calibration> = {}): Calibration => ({
 describe("calibration model", () => {
   it("a ratio is real mm per point; 1:100 makes 72 pt (1 in of paper) 2540 mm", () => {
     expect(factorForRatio(100)).toBeCloseTo(100 * MM_PER_POINT, 12);
-    expect(realLengthMm(72, 0, cal())).toBeCloseTo(2540, 9);
-    expect(realLengthMm(30, 40, cal())).toBeCloseTo(50 * 100 * MM_PER_POINT, 9);
+    expect(measureLength(72, 0, cal())).toBeCloseTo(2540, 9);
+    expect(measureLength(30, 40, cal())).toBeCloseTo(50 * 100 * MM_PER_POINT, 9);
   });
 
   it("a ratio stated for another sheet converts per page (4.2), a bare one does not", () => {

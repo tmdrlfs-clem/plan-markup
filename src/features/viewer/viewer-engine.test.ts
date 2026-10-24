@@ -1408,7 +1408,7 @@ describe("snapping (Story 4.1)", () => {
     paint();
     engine.snapClick();
     // Snapped to the rectangle's corners (100, 100) and (300, 100): 200 pt apart, 200 CSS px at this fit.
-    expect(result).toMatchObject({ a: { x: 100, y: 100 }, b: { x: 300, y: 100 }, distancePt: 200 });
+    expect(result).toMatchObject({ a: { x: 100, y: 100 }, b: { x: 300, y: 100 }, distancePt: 200, dxPt: 200, dyPt: 0 });
     expect((result as { screenPx: number }).screenPx).toBeCloseTo(200, 6);
     expect(viewerStore.getState().tool).toBe("pan");
     // The picked line stays until the dialog is done with it.
