@@ -213,6 +213,8 @@
   --z-toolbar: 20;
   --z-popover: 40;
   --z-dialog: 50;
+  /* A Select's listbox opened from a dialog must sit above the dialog and its overlay (Story 4.3). */
+  --z-dialog-popover: 55;
   --z-toast: 60;
   --z-tooltip: 70;
 }
@@ -231,6 +233,9 @@
 }
 @utility z-dialog {
   z-index: var(--z-dialog);
+}
+@utility z-dialog-popover {
+  z-index: var(--z-dialog-popover);
 }
 @utility z-toast {
   z-index: var(--z-toast);

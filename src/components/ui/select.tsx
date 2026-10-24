@@ -66,7 +66,7 @@ export function Select({
           <SelectPrimitive.Content
             position="popper"
             sideOffset={4}
-            className="z-popover min-w-[var(--radix-select-trigger-width)] rounded-md border border-strong bg-surface-2 p-1 text-text shadow-2"
+            className="z-dialog-popover min-w-[var(--radix-select-trigger-width)] rounded-md border border-strong bg-surface-2 p-1 text-text shadow-2"
           >
             <SelectPrimitive.Viewport>
               {options.map((option) => (
