@@ -1,6 +1,6 @@
 # Story 4.4: Verify a calibration
 
-Status: in-progress
+Status: review
 
 ## Story
 
@@ -43,12 +43,49 @@ so that I trust the numbers before I rely on them.
 
 ### Agent Model Used
 
+Claude Opus 5.5 (claude-opus-5-5)
+
 ### Debug Log References
+
+- Local: `npm run typecheck`, `npm run lint`, `npm run build` clean; `npm test` 1619 unit tests in 141 files (Docker stopped); e2e on the production build (`E2E_PROD=1`, workers 1): 48 passed, 11 skipped (opt-in private checks), 1 failed once (`appearance-themes`, right after a cold Supabase start: the known flake) and passed on its own rerun; `verify-calibration.spec.ts` and `calibrate.spec.ts` passed.
+- Supabase on its default local ports, Docker Desktop started with `docker desktop start`; both stopped afterwards with `npm run db:stop` and `docker desktop stop`.
+- **Founder drawings** (`PERF_L17=1 E2E_PROD=1 npx playwright test perf-verify`; private, nothing committed):
+  - **L17** calibrated by ratio 1:75, verified on its "1905" dimension (snapped endpoints (-169.01, 98.57) and (-97.01, 98.57)): measured **1905 mm**, known 1905 → "Matches the calibration at the shown precision (1 mm)".
+  - **L21** calibrated from its detected "1:75 @ A1" (the dialog's conflict option), verified on its "1491" dimension (snapped endpoints (139.12, -94.88) and (195.46, -94.88)): measured **1491 mm**, known 1491 → Matches (difference 0 mm, -0.02 %). This confirms founder decision 3 of the 4.3 review: the set is 1:75 and the "1:200 @ A3" label is a drafting error.
+  - Screenshot `fixtures/private/traces/4-4-verify.png` (L21, the Verify dialog with the result and the status bar at Scale 1:75). Reviewed; not committed.
 
 ### Completion Notes List
 
+- **Task 1 (core)**: `src/core/calibration/calibration.ts` `measureLength(dx, dy, calibration)` (renamed from `realLengthMm`; the one function Verify and 4.5's Length use: separate X / Y factors along user space axes). `units.ts` `precisionStepMm` (1 mm, 0.01 m, 1/8" ...) and `roundToPrecision`. New `verify.ts`: `verifyCalibration(line, calibration, knownMm)` → measured (mm and as shown), known as shown, the signed difference **of the shown values** (whole precision steps), the percentage of the unrounded values, and `matches` (the shown values are equal); `formatSigned` ("+56 mm", "-0.05 m", `+0'-1/4"`), `formatPercent` ("+0.79 %"). `CalibrationPick` carries `dxPt` / `dyPt` (points, UserUnit applied).
+- **Task 2 (dialog)**: `src/features/calibration/picking.ts`, the two-point pick shared by Calibrate and Verify (one pick at a time, tokens, `abandonPick`, the 10 px rule), which `calibrate-store.ts` now uses too. `calibration-fields.tsx`: `TextInput` and `PickBar` shared by both dialogs. `verify-store.ts` / `verify-dialog.tsx`: "Verify calibration" (description "Page 1 of 2 · Scale 1:100"), Known distance + unit (the display unit's family, parsed like 4.3), Pick two points (the instruction bar; Esc / Cancel brings the dialog back; too close refused), the result block (Measured / Known / Difference, polite live region, tabular figures) with the verdict "Matches the calibration at the shown precision (1 mm)" (success + icon) or "Off by -108 mm (-2.01 %): recalibrate if the known distance is right" (warning + icon). Footer: no pick → Cancel / **Pick two points**; matches or no known → Recalibrate… / **Keep**; off → Keep / **Recalibrate…**. Keep changes nothing. Recalibrate… opens Calibrate on "By two points" with the pick (its line stays drawn) and the known distance (`openCalibrateWith`). Verify follows the shown page; a page without a calibration (or an undo removing it) closes it; a tab switch closes it; the Calibrate dialog opening closes it and vice versa.
+- **Task 3 (wiring)**: the Calibrate dialog of a calibrated page shows "This page: Scale 1:75" with **Verify…**; Document and Tools menus have **Verify calibration…** under Calibrate…, disabled (with the reason "Calibrate this page first" as its title) until the shown page is calibrated; `VerifyDialog` mounted in the workspace shell. `openCalibrate()` takes no arguments any more (menus and the status bar pass their events).
+- **Task 4 (tests)**: unit tests for the core (`verify.test.ts`: match, signed differences, separate X / Y, a two-point calibration verified on its own points is exact for several lengths, half-step rounding, m / in / ft-in fractions), the dialog (`verify-dialog.test.tsx`: calibrated pages only, match + Enter = Keep, off + Recalibrate prefilled and applied, ft-in, unreadable input, too close, Esc, page follow, close on lost calibration, one dialog at a time, stale picks), Select `labelHidden`; `e2e/verify-calibration.spec.ts` (AC 7's list); `e2e/perf-verify.spec.ts` (local, private).
+- **Fix to 4.3 found here**: the unit Select beside the distance field ("Distance unit" in Calibrate, "Known unit" in Verify) drew its label in a 96 px column inside a 96 px box, so the control was cut off. Story 1.7's `Select` gains `labelHidden` (the label stays for assistive technology), used by both.
+
+**Decisions (for review):**
+
+1. **Where Verify lives**: a "Verify…" button in the Calibrate dialog of a calibrated page, and Document / Tools > Verify calibration… (like Calibrate…, in both menus). The ScaleIndicator still opens Calibrate (one action per click).
+2. **"Matches" means equal at the shown precision** (the calibration's unit and precision), and the difference shown is the difference of the shown values, so the numbers on screen always add up; the percentage is of the unrounded values, so a match can read "0 mm (-0.02 %)".
+3. **Recalibrate… goes through Calibrate** (prefilled two-point, the user picks the pages and applies: one undo step); Verify never changes a calibration itself. When the result is off, Recalibrate… is the primary (Enter); otherwise Keep.
+4. **No tolerance setting**: there is no "within 0.5 %" band; anything not equal at the shown precision is "Off by ...", in warning colour.
+5. **Known distance unit** defaults to the calibration's display unit (m → m, ft-in → ft-in) and can be changed per check; it is not remembered.
+
+**Questions for the founder:**
+
+- Should "Matches" allow a tolerance (for example within 0.5 % or one drafting unit) instead of exact equality at the shown precision? Recommended: keep exact equality at the shown precision (a scaled PDF should measure exactly), and show the percentage as now.
+- Should the ScaleIndicator of a calibrated page offer Verify directly (a small menu: Calibrate… / Verify…) instead of opening Calibrate (which has a Verify… button)? Recommended: keep one click → Calibrate, with Verify… inside it.
+
 ### File List
+
+- `src/core/calibration/verify.ts`, `verify.test.ts` (new); `calibration.ts`, `units.ts`, `calibration.test.ts` (modified)
+- `src/features/calibration/picking.ts`, `calibration-fields.tsx`, `verify-store.ts`, `verify-dialog.tsx`, `verify-dialog.test.tsx` (new); `calibrate-store.ts`, `calibrate-dialog.tsx`, `calibrate-dialog.test.tsx`, `index.ts` (modified)
+- `src/features/viewer/viewer-engine.ts`, `viewer-engine.test.ts` (modified)
+- `src/features/workspace/workspace-menu-bar.tsx`, `workspace-shell.tsx` (modified)
+- `src/components/ui/select.tsx`, `select.test.tsx` (modified)
+- `e2e/verify-calibration.spec.ts`, `e2e/perf-verify.spec.ts` (new)
+- `_bmad-output/implementation-artifacts/4-4-verify-a-calibration.md`, `sprint-status.yaml` (modified)
 
 ### Change Log
 
-- 2026-10-25: Story 4.4 created from the epics (Claude Opus 5.5). Status → ready-for-dev.
+- 2026-10-25: Story 4.4 created from the epics (Claude Opus 5.5). Status → ready-for-dev (d4a82ba).
+- 2026-10-25: Story 4.4 implemented (Claude Opus 5.5): verify core, VerifyDialog with the shared pick, wiring, e2e and the L17/L21 check. Status → review. Commits 85046dc (Task 1), cba0ab8 (Task 2), efbbe03 (Task 3), 3d110e7 (Task 4) and this record.
