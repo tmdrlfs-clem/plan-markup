@@ -42,8 +42,8 @@ describe("SnapController", () => {
   it("builds the current page, then its neighbours one at a time; keeps them per document in a shared cache", async () => {
     const { snap, calls, ready } = setup();
     snap.setDocument("doc");
-    snap.ensure(4, 10);
-    snap.ensure(4, 10); // already building: nothing new
+    snap.ensure(4, 10, true);
+    snap.ensure(4, 10, true); // already building: nothing new
     expect(calls.map((c) => c.page)).toEqual([5]);
     calls[0].resolve(result(0));
     await flush();
@@ -59,8 +59,26 @@ describe("SnapController", () => {
     // Another tab of the same document shares them.
     const other = setup();
     other.snap.setDocument("doc");
-    other.snap.ensure(4, 10);
+    other.snap.ensure(4, 10, true);
     expect(other.calls).toHaveLength(0);
+    // Review S2: the indices stay while one tab shows the document, and go with the last.
+    snap.setDocument(null);
+    expect(other.snap.has(4)).toBe(true);
+    other.snap.setDocument(null);
+    expect(snapCacheBytes()).toBe(0);
+    other.snap.setDocument("doc");
+    expect(other.snap.has(4)).toBe(false);
+  });
+
+  it("without a snapping tool only the current page is built (review S1)", async () => {
+    const { snap, calls } = setup();
+    snap.setDocument("doc");
+    snap.ensure(4, 10);
+    calls[0].resolve(result(0));
+    await flush();
+    expect(calls.map((c) => c.page)).toEqual([5]);
+    snap.ensure(4, 10, true); // a snapping tool armed: the neighbours follow
+    expect(calls.map((c) => c.page)).toEqual([5, 6]);
   });
 
   it("cancel stops the build (asked again later); a failed page is not retried this session", async () => {

@@ -103,5 +103,22 @@ test("snap: endpoint, intersection, midpoint, on line; toggle off, Alt, Shift 45
   await page.getByRole("toolbar", { name: "Drawing tools" }).getByRole("radio", { name: "Select" }).click();
   await moveTo(page, 102, 103);
   await expect(canvas(page)).not.toHaveAttribute("data-snap", /.+/);
+
+  // Review S5, page 2: /Rotate 90 and MediaBox [-100 -50 495 792]. User space (x, y) is page
+  // space (y + 50, x + 100) there; the line (0, 0)-(200, 0) starts at user (0, 0).
+  await canvas(page).focus();
+  await page.keyboard.press("PageDown");
+  await expect(canvas(page)).toHaveAttribute("data-snap-index", /^\d+$/, { timeout: 20_000 });
+  await page.getByRole("toolbar", { name: "Drawing tools" }).getByRole("radio", { name: "Length" }).click();
+  await stable(page);
+  const box = (await canvas(page).boundingBox())!;
+  const [zoom, cx, cy] = ((await canvas(page).getAttribute("data-view")) ?? "").split(" ").map(Number);
+  const at = (ux: number, uy: number) => ({ x: box.x + box.width / 2 + (uy + 50 - cx) * zoom, y: box.y + box.height / 2 + (ux + 100 - cy) * zoom });
+  const p0 = at(2, 3);
+  await page.mouse.move(p0.x, p0.y);
+  await expect(canvas(page)).toHaveAttribute("data-snap", "endpoint 0.00 0.00");
+  // The readout counts from the box's corner: (0 - -100, 0 - -50).
+  await expect(readout(page)).toHaveText("X 100.0  Y 50.0 pt");
+  await page.getByRole("toolbar", { name: "Drawing tools" }).getByRole("radio", { name: "Select" }).click();
   await context.close();
 });

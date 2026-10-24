@@ -68,6 +68,8 @@ export interface ViewerState {
   tool: ViewerTool;
   /** Space or the middle button is held: pan without leaving `tool`. */
   tempPan: boolean;
+  /** Story 4.1 review S3: the shown page's snap index stopped at its segment cap (snapping covers part of it). */
+  snapPartial: boolean;
   /** HintBar notices the user dismissed for this document (they stay hidden when its tab is shown again). */
   dismissedNotices: readonly string[];
 }
@@ -94,6 +96,7 @@ export const INITIAL_VIEWER_STATE: ViewerState = {
   memoryPressure: false,
   tool: "select",
   tempPan: false,
+  snapPartial: false,
   dismissedNotices: [],
 };
 

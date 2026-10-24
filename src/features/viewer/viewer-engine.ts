@@ -281,6 +281,7 @@ export class ViewerEngine {
   private snapFrom: Point | null = null;
   private snapShown: SnapResult | null = null;
   private snapLabel: SnapType | null = null;
+  private snapPartialShown = false;
 
   constructor(
     private readonly canvases: ViewerCanvases,
@@ -331,7 +332,10 @@ export class ViewerEngine {
     );
     // Leaving a snapping tool drops its "from" point and glyph.
     this.unsubscribeTool = viewerStore.subscribe((s, prev) => {
-      if (s.tool !== prev.tool && !isSnappingTool(s.tool)) this.clearSnapFrom();
+      if (s.tool === prev.tool) return;
+      if (!isSnappingTool(s.tool)) this.clearSnapFrom();
+      // A snapping tool armed: now the neighbours are worth building too (review S1).
+      else if (this.page && this.previewFinal && !this.suspended) this.snap.ensure(this.pageIndex, this.pages.length, true);
     });
     // A theme change (Story 3.8) recolours the canvas: backdrop, highlights, rubber band,
     // failed tiles. Re-read from the canvas (the workspace root carries the theme) and redraw
@@ -577,6 +581,10 @@ export class ViewerEngine {
     this.snapFrom = null;
     this.snapShown = null;
     this.clearSnapData();
+    if (this.snapPartialShown) {
+      this.snapPartialShown = false;
+      this.update({ snapPartial: false });
+    }
     this.pageIndex = index;
     this.page = this.pages[index];
     this.preview = this.cache.take(previewKey(this.pageNo)) ?? null;
@@ -1061,7 +1069,7 @@ export class ViewerEngine {
       if (this.page && this.previewFinal) this.requestSheetLabel(this.pageIndex);
       // Story 4.1: the page's snap index, then its neighbours (last in the worker's queue).
       if (this.page && this.previewFinal) {
-        this.snap.ensure(this.pageIndex, this.pages.length);
+        this.snap.ensure(this.pageIndex, this.pages.length, isSnappingTool(viewerStore.getState().tool));
         this.publishSnapStats();
       }
     }, ms);
@@ -1610,6 +1618,10 @@ export class ViewerEngine {
   private publishSnapStats(): void {
     if (this.suspended) return;
     const stats = this.snap.stats(this.pageIndex);
+    if ((stats?.truncated ?? false) !== this.snapPartialShown) {
+      this.snapPartialShown = stats?.truncated ?? false;
+      this.update({ snapPartial: this.snapPartialShown });
+    }
     const data = this.canvases.active.dataset as DOMStringMap | undefined;
     if (!data || !stats) return;
     data.snapIndex = `${stats.count}${stats.truncated ? " truncated" : ""}`;
@@ -1644,18 +1656,21 @@ export class ViewerEngine {
     const palette = this.colors();
     const k = this.dpr;
     const page = this.page!;
+    const width = Math.max(1, Math.round(1.5 * k));
+    // An odd stroke width is centred on a pixel's middle, an even one on its edge (review S4).
+    const offset = width % 2 ? 0.5 : 0;
     const toDevice = (p: Point) => {
       const s = pageToScreen(this.view, this.viewport, applyMatrix(userToPageMatrix(page), p));
-      return { x: Math.round(s.x * k) + 0.5, y: Math.round(s.y * k) + 0.5 };
+      return { x: Math.round(s.x * k) + offset, y: Math.round(s.y * k) + offset };
     };
     const r = Math.round(5 * k);
     const stroke = (path: () => void) => {
       c.beginPath();
       path();
-      c.lineWidth = Math.max(3, Math.round(3.5 * k));
+      c.lineWidth = width + 2 * Math.max(1, Math.round(k));
       c.strokeStyle = palette.halo;
       c.stroke();
-      c.lineWidth = Math.max(1, Math.round(1.5 * k));
+      c.lineWidth = width;
       c.strokeStyle = palette.snap;
       c.stroke();
     };

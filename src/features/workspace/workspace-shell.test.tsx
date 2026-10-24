@@ -76,6 +76,22 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+describe("Length snapping preview (Story 4.1)", () => {
+  it("arming Length shows what it does in the HintBar, with a note on a page snapped only in part; another tool hides it", async () => {
+    const { user } = setup();
+    act(() => {
+      openDocument(new File(["%PDF"], "a.pdf", { type: "application/pdf" }));
+      viewerStore.setState({ status: "ready", pageCount: 1, zoom: 64 });
+    });
+    await user.click(screen.getByRole("radio", { name: "Length" }));
+    expect(hintStore.getState().hint?.text).toMatch(/^Length: snapping preview/);
+    act(() => viewerStore.setState({ snapPartial: true }));
+    expect(hintStore.getState().hint?.text).toMatch(/snapping covers only part of its linework/);
+    await user.click(screen.getByRole("radio", { name: "Select" }));
+    expect(hintStore.getState().hint).toBeNull();
+  });
+});
+
 describe("Settings > Appearance (Story 3.8)", () => {
   it("renders the profile's theme on the workspace root and <html>, lists the three themes with the current one checked, and switches at once", async () => {
     const user = userEvent.setup();

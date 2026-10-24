@@ -1,6 +1,6 @@
 # Story 4.1: Snap to drawing linework
 
-Status: review
+Status: done
 
 ## Story
 
@@ -27,6 +27,17 @@ so that measurements and markups land exactly on geometry.
 - [x] **Task 4: Toggles wiring** — snap-settings store from 3.7 drives sources; markup/grid source interfaces.
 - [x] **Task 5: Fixtures, tests, measurement** — `fixtures/pdf/snap.pdf` generator script, unit + `e2e/viewer-snap.spec.ts`; local L17/L21/A0 measurements recorded; screenshot of a snap glyph on L17 to `fixtures/private/traces/4-1-snap.png` (never commit private files).
 
+### Review Follow-ups (AI)
+
+Adversarial review 2026-10-24 (Claude Opus 5.5) of its own diff 224e263..a72e447. Checked: worker topology and transfers (zero copy, the index wrapped in 1.5 ms), extraction under CTM / forms / Béziers / white fills / clips / text against the fixture, the resolution priority and its bounded work, glyph rendering, tool gating, Shift / Alt, per-tab lifecycle, memory, the measurements, and AC coverage. pdf.js's copy of the snapping operator list was checked to be really released (node: the intent's entry is gone afterwards).
+
+- [x] **[Medium] S1: Prefetching neighbours competes with the next page's preview.** pdf.js has one parser worker; its operator list for a neighbour (0.8-1.1 s on L17-class sheets, 4 s on A0) cannot be aborted, so going to another page right after a page settles can wait behind it, for users who never snap. Fix: the current page's index is still built when it settles (AC 1); the neighbours only while a snapping tool is armed (and as soon as one is).
+- [x] **[Medium] S2: Indices of closed documents stay in memory.** The shared cache keeps a document's indices (15 MB per L17 page, up to the 160 MB budget) after its last tab closes. Fix: documents are counted by the engines showing them; the last one leaving drops that document's indices.
+- [x] **[Low] S3: A capped index is silent.** On a page past the 1 M segment cap (the synthetic A0) snapping covers only part of the page without saying so. Fix: the Length HintBar note says so for such a page.
+- [x] **[Low] S4: The glyph is not crisp at even line widths.** Strokes were offset by half a pixel whatever their width; a 2 px stroke (DPR 1) straddled pixels. Fix: the offset follows the stroke width's parity.
+- [x] **[Low] S5: A rotated page with its box off the origin was only unit-tested.** Fix: the e2e also snaps on `snap.pdf` page 2 (/Rotate 90, MediaBox [-100 -50 495 792]) and checks the user-space endpoint and the status-bar readout.
+- [x] **[Low] S6: `releaseOperatorList` had no test.** Fix: unit test with pdf.js's page internals faked (deleted only when no task uses it, and nothing thrown if the internals change).
+
 ## Dev Notes
 
 - This is the first Epic 4 story. Measuring/markup tools come in 4.5+; build snap as a reusable service those stories call. Do not build calibration (4.3) or measurement tools here.
@@ -49,6 +60,9 @@ so that measurements and markups land exactly on geometry.
 Claude Opus 5.5 (claude-opus-5-5)
 
 ### Debug Log References
+
+- CI for the implementation (a72e447): run **40054870092** success.
+- Review fixes S1-S6, local: typecheck, lint, build clean; `npm test` 1464 unit tests in 131 files; e2e on the production build 45 passed, 8 skipped (private opt-in); `viewer-snap` now also snaps on the /Rotate 90, off-origin page 2. Review CI run: see Change Log.
 
 - Local: `npm run typecheck`, `npm run lint`, `npm run build` clean; `npm test` 1459 unit tests in 131 files; e2e on the production build (`E2E_PROD=1`, workers 1): 45 passed, 8 skipped (opt-in private checks). `viewer-snap` failed once in the full run: the HintBar that arming Length shows moved the canvas after the test had read its position; the spec now waits for a stable canvas (3 × 2 consecutive green runs since).
 - Supabase on locally remapped ports 583xx (Windows reservation), restored afterwards, never committed.
@@ -100,3 +114,4 @@ Claude Opus 5.5 (claude-opus-5-5)
 ### Change Log
 
 - 2026-10-24: Story 4.1 implemented (Claude Opus 5.5): snap core, worker build, controller and glyph, toggles, e2e and measurements. Status → review. Commits 224e263, 9f8c059, f8bd430 and the Task 5 commit.
+- 2026-10-24: Review (Claude Opus 5.5) S1-S6 fixed with tests: neighbours built only while a snapping tool is armed, indices dropped with a document's last tab, the capped-index note in the HintBar, pixel-aligned glyph strokes, the rotated off-origin page in the e2e, the operator-list release tested. Status → done.

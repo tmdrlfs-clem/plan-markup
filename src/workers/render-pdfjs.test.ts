@@ -94,3 +94,39 @@ describe("PdfjsTileRenderer.open", () => {
     await expect(reopening).resolves.toEqual([{ width: 10, height: 20, rotate: 0, view: [5, 6, 15, 26], userUnit: 1 }]);
   });
 });
+
+describe("PdfjsTileRenderer snapping operator list (Story 4.1 review S6)", () => {
+  function withPage(page: unknown) {
+    const renderer = new PdfjsTileRenderer("http://localhost/pdfjs/");
+    (renderer as unknown as { pages: Map<number, unknown> }).pages.set(1, page);
+    return renderer;
+  }
+
+  it("reads the page's own list (annotations off) with its box, and drops pdf.js's copy only when no task uses it", async () => {
+    const states = new Map<string, { renderTasks?: Set<unknown> }>([["oplist-key", { renderTasks: new Set() }], ["render-key", { renderTasks: new Set([1]) }]]);
+    const getOperatorList = vi.fn(async () => ({ fnArray: [1], argsArray: [null] }));
+    const page = {
+      view: [-10, -20, 100, 200],
+      getOperatorList,
+      _intentStates: states,
+      _transport: { getRenderingIntent: (intent: string, mode: number, _s: null, _e: boolean, opList: boolean) => ({ cacheKey: opList && intent === "display" && mode === 0 ? "oplist-key" : "render-key" }) },
+    };
+    const renderer = withPage(page);
+    const list = await renderer.operatorList(1);
+    expect(getOperatorList).toHaveBeenCalledWith({ annotationMode: 0 });
+    expect(list).toMatchObject({ fnArray: [1], view: [-10, -20, 100, 200] });
+    renderer.releaseOperatorList(1);
+    expect([...states.keys()]).toEqual(["render-key"]);
+    // In use by a task: kept.
+    states.set("oplist-key", { renderTasks: new Set([2]) });
+    renderer.releaseOperatorList(1);
+    expect(states.has("oplist-key")).toBe(true);
+  });
+
+  it("changed internals or an unknown page never throw", () => {
+    expect(() => withPage({ view: [0, 0, 1, 1] }).releaseOperatorList(1)).not.toThrow();
+    expect(() => withPage({ _transport: { getRenderingIntent: () => { throw new Error("x"); } } }).releaseOperatorList(1)).not.toThrow();
+    expect(() => withPage(null).releaseOperatorList(2)).not.toThrow();
+  });
+});
+

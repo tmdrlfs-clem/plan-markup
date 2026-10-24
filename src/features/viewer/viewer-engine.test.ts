@@ -1364,6 +1364,22 @@ describe("snapping (Story 4.1)", () => {
     expect(engine.snapFromPoint).toBeNull();
   });
 
+  it("a capped index marks the page as partly snappable (review S3); glyph strokes sit on whole pixels at DPR 1 (review S4)", async () => {
+    const r = setupRecording();
+    await readyAtFit(r.client, r.engine);
+    r.client.last("snap.buildIndex").resolve({ ...rect(), truncated: true, opListMs: 1, extractMs: 1, buildMs: 1 });
+    await flush();
+    expect(state.snapPartial).toBe(true);
+    expect(r.canvases.active.dataset.snapIndex).toBe("4 truncated");
+    setTool("length");
+    r.active.length = 0;
+    r.engine.pointerAt(screenOf(102, 103));
+    paint();
+    // Width 2 at DPR 1: the square's edges on pixel edges (integers), not half pixels.
+    const square = r.active.find((o) => o.op === "rect")!.args as number[];
+    expect(square.every((v) => Number.isInteger(v))).toBe(true);
+  });
+
   it("a background tab cancels the build in flight", async () => {
     const r = setupRecording();
     await readyAtFit(r.client, r.engine);

@@ -42,6 +42,8 @@ interface Tool {
 const LIVE_TOOLS: ReadonlySet<string> = new Set<ViewerTool>(["select", "pan", "length"]);
 
 export const SNAP_PREVIEW_HINT_ID = "snap-preview";
+/** Review S3: a page past the segment cap. */
+export const SNAP_PARTIAL_NOTE = "This page is very large: snapping covers only part of its linework.";
 export const SNAP_PREVIEW_HINT =
   "Length: snapping preview. Points snap to the drawing (Alt: off, Shift: 45° steps from the clicked point, Esc: clear). Measuring arrives with the Measure tools.";
 export const EDITOR_LATER = "Arrives with the markup editor";
@@ -93,11 +95,12 @@ export function ToolRail() {
   const active = useStore(viewerStore, (s) => s.tool);
   // Story 4.1: while Length is armed (whatever armed it), the HintBar says what it does yet.
   const preview = open && active === "length";
+  const partial = useStore(viewerStore, (s) => s.snapPartial);
   useEffect(() => {
     if (!preview) return;
-    showHint({ id: SNAP_PREVIEW_HINT_ID, variant: "info", text: SNAP_PREVIEW_HINT });
+    showHint({ id: SNAP_PREVIEW_HINT_ID, variant: "info", text: partial ? `${SNAP_PREVIEW_HINT} ${SNAP_PARTIAL_NOTE}` : SNAP_PREVIEW_HINT });
     return () => dismissHint(SNAP_PREVIEW_HINT_ID);
-  }, [preview]);
+  }, [preview, partial]);
   return (
     <Toolbar aria-label="Drawing tools" orientation="vertical" className="h-full overflow-y-auto">
       {GROUPS.map((group, index) => (

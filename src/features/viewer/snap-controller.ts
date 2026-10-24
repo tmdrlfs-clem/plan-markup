@@ -48,10 +48,32 @@ function remember(key: string, entry: Entry): void {
   }
 }
 
+/** Engines showing each document (review S2): its indices go when the last one leaves. */
+const openDocuments = new Map<string, number>();
+
+function holdDocument(sha: string): void {
+  openDocuments.set(sha, (openDocuments.get(sha) ?? 0) + 1);
+}
+
+function releaseDocument(sha: string): void {
+  const n = (openDocuments.get(sha) ?? 1) - 1;
+  if (n > 0) {
+    openDocuments.set(sha, n);
+    return;
+  }
+  openDocuments.delete(sha);
+  for (const [key, entry] of cache) {
+    if (!key.startsWith(`${sha}:`)) continue;
+    cache.delete(key);
+    cacheBytes -= entry.bytes;
+  }
+}
+
 /** Forgets every index (tests). */
 export function clearSnapCache(): void {
   cache.clear();
   cacheBytes = 0;
+  openDocuments.clear();
 }
 
 export function snapCacheBytes(): number {
@@ -78,16 +100,23 @@ export class SnapController {
   setDocument(sha: string | null): void {
     this.cancel();
     this.failed = new Set();
+    if (sha === this.sha) return;
+    if (this.sha !== null) releaseDocument(this.sha);
     this.sha = sha;
+    if (sha !== null) holdDocument(sha);
   }
 
   /**
-   * Makes sure the index of `page` (0-based) is built or being built, then
-   * its neighbours, one at a time (lowest priority in the worker).
+   * Makes sure the index of `page` (0-based) is built or being built and,
+   * with `neighbours`, then the pages next to it, one at a time (lowest
+   * priority in the worker). Neighbours are only worth it while a snapping
+   * tool is armed: pdf.js reads their operator lists in its one parser
+   * worker, where they would delay the preview of a page the user goes to
+   * (review S1).
    */
-  ensure(page: number, pageCount: number): void {
+  ensure(page: number, pageCount: number, neighbours = false): void {
     if (this.sha === null) return;
-    const order = [page, page + 1, page - 1].filter((p) => p >= 0 && p < pageCount);
+    const order = (neighbours ? [page, page + 1, page - 1] : [page]).filter((p) => p >= 0 && p < pageCount);
     const next = order.find((p) => !this.has(p) && !this.failed.has(p));
     if (next === undefined || this.pending.has(next)) return;
     // Only one build at a time: a neighbour waits for the current page.
@@ -107,7 +136,7 @@ export class SnapController {
           stats: { count: result.count, truncated: result.truncated, opListMs: result.opListMs, extractMs: result.extractMs, buildMs: result.buildMs, bytes },
         });
         this.onReady(next);
-        this.ensure(page, pageCount);
+        this.ensure(page, pageCount, neighbours);
       },
       () => {
         if (this.pending.get(next) !== call.cancel) return;
