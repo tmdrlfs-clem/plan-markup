@@ -14,6 +14,8 @@ import { ToggleButton } from "@/components/ui/toggle-button";
 import { sheetSize } from "@/core/pdf/page-size";
 import { fromPageCorner, type PageGeometry } from "@/core/render/view";
 import { DEFAULT_LENGTH_UNIT, formatCursor } from "@/core/units/format";
+import type { Calibration } from "@/core/calibration/calibration";
+import { formatCursorReal } from "@/core/calibration/units";
 
 import { viewerCommands } from "../viewer-commands";
 import { cursorStore } from "./cursor-store";
@@ -58,35 +60,36 @@ export function PageSizeItem({ page }: { page: { width: number; height: number }
 export function scaleItem(state: ScaleState): { label: string; tone: "warning" | "success"; tooltip: string } {
   switch (state.kind) {
     case "set":
-      return { label: `Scale ${state.label}`, tone: "success", tooltip: "The page is calibrated" };
+      return { label: state.label, tone: "success", tooltip: `${state.tooltip ?? "The page is calibrated"}. Click to calibrate again` };
     case "detected":
       return {
         label: `Scale ${state.label} detected — Verify`,
         tone: "warning",
-        tooltip: `${state.note ? `${state.note}. ` : ""}Read from the drawing; confirm in Calibrate (coming next) before measuring`,
+        tooltip: `${state.note ? `${state.note}. ` : ""}Read from the drawing; click to confirm it in Calibrate before measuring`,
       };
     case "conflict":
       return {
         label: "Scales disagree — Verify",
         tone: "warning",
-        tooltip: `Printed scales disagree: ${state.readings.join("; ")}. Confirm in Calibrate (coming next) before measuring`,
+        tooltip: `Printed scales disagree: ${state.readings.join("; ")}. Click to choose one in Calibrate`,
       };
     case "mixed":
       return {
         label: `${state.count} scales on page`,
         tone: "warning",
-        tooltip: `Viewports on this page use different scales${state.list?.length ? `: ${state.list.join("; ")}` : ""}. Calibrate each one (coming next)`,
+        tooltip: `Viewports on this page use different scales${state.list?.length ? `: ${state.list.join("; ")}` : ""}. Click to calibrate the page`,
       };
     default:
-      return { label: "Scale not set", tone: "warning", tooltip: "Calibration arrives with the Measure tools" };
+      return { label: "Scale not set", tone: "warning", tooltip: "Click to calibrate this page" };
   }
 }
 
 /**
- * The ScaleIndicator (AC 3). Not actionable before calibration exists (Epic 4,
- * Story 4.3), so a plain item whose tooltip says so; 4.3 makes it open Calibrate.
+ * The ScaleIndicator (AC 3). Story 4.3: with `onCalibrate` it is a button that
+ * opens the Calibrate dialog (founder decision 2026-10-24: a detected scale is
+ * only ever applied there). Without it (tests, no drawing) a plain item.
  */
-export function ScaleIndicator({ state }: { state: ScaleState }) {
+export function ScaleIndicator({ state, onCalibrate }: { state: ScaleState; onCalibrate?: () => void }) {
   const { label, tone, tooltip } = scaleItem(state);
   // Story 4.2: a detected scale's tooltip carries information (the conversion, the list): reachable by keyboard.
   const informative = state.kind === "detected" || state.kind === "mixed" || state.kind === "conflict";
@@ -99,8 +102,9 @@ export function ScaleIndicator({ state }: { state: ScaleState }) {
       data-scale={state.kind}
       // 4.2 review D7: whether the page's printed scales have been read (e2e waits for "done").
       data-detection={state.kind === "not-set" && state.pending ? "pending" : "done"}
-      tabIndex={informative ? 0 : undefined}
-      className={informative ? "rounded-sm focus-ring" : undefined}
+      onClick={onCalibrate}
+      tabIndex={informative && !onCalibrate ? 0 : undefined}
+      className={informative && !onCalibrate ? "rounded-sm focus-ring" : undefined}
     />
   );
 }
@@ -154,17 +158,19 @@ export function SnapToggles() {
  * move) and never announced (aria-live off, AC 7). A minimum width keeps the
  * bar from shifting; a longer readout grows instead of overflowing (review R4).
  */
-export function CursorReadout({ page = null }: { page?: PageGeometry | null }) {
+export function CursorReadout({ page = null, calibration = null }: { page?: PageGeometry | null; calibration?: Calibration | null }) {
   const ref = useRef<HTMLSpanElement>(null);
   useEffect(() => {
     const write = (point: { x: number; y: number } | null) => {
       const el = ref.current;
-      const text = formatCursor(point && page ? fromPageCorner(page, point) : null);
+      const at = point && page ? fromPageCorner(page, point) : null;
+      // Story 4.3: a calibrated page reads in its real units and precision.
+      const text = calibration ? formatCursorReal(at, calibration) : formatCursor(at);
       if (el && el.textContent !== text) el.textContent = text;
     };
     write(cursorStore.getState().point);
     return cursorStore.subscribe((s) => write(s.point));
-  }, [page]);
+  }, [page, calibration]);
   return (
     <span
       aria-live="off"

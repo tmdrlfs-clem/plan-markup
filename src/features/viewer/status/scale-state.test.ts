@@ -38,7 +38,7 @@ describe("scaleStateOf (Story 4.2)", () => {
     const state = scaleStateOf(page([scale(100, "A1")]));
     expect(state).toEqual({ kind: "detected", label: "1:100 @ A1", note: null });
     expect(scaleItem(state)).toMatchObject({ label: "Scale 1:100 @ A1 detected — Verify", tone: "warning" });
-    expect(scaleItem(state).tooltip).toMatch(/confirm in Calibrate \(coming next\)/);
+    expect(scaleItem(state).tooltip).toMatch(/click to confirm it in Calibrate/);
   });
 
   it("a scale stated for another sheet shows the page's ratio first and both in the tooltip", () => {
@@ -62,5 +62,14 @@ describe("scaleStateOf (Story 4.2)", () => {
     expect(scaleItem(state).tooltip).toMatch(/^Printed scales disagree: 1:75 @ A1 = 1:75 on this A1 page; 1:200 @ A3 = 1:100 on this A1 page\. /);
     // Beside another scale it is one entry of the list.
     expect(scaleStateOf(page([conflicting, scale(20, null)]))).toEqual({ kind: "mixed", count: 2, list: ["1:75 @ A1 / 1:200 @ A3 (disagree)", "1:20"] });
+  });
+});
+
+describe("scaleStateOf with a calibration (Story 4.3 AC 5)", () => {
+  it("a calibration comes before the printed scales", () => {
+    const calibration = { xFactor: 100 * (25.4 / 72), yFactor: 100 * (25.4 / 72), unit: "mm" as const, precision: "0" as const, source: "ratio" as const, ratio: 100 };
+    const state = scaleStateOf(page([conflicting]), calibration);
+    expect(state).toMatchObject({ kind: "set", label: "Scale 1:100" });
+    expect(scaleItem(state)).toMatchObject({ label: "Scale 1:100", tone: "success" });
   });
 });

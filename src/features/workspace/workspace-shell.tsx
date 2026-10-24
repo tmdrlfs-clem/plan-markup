@@ -10,7 +10,10 @@ import { Toaster } from "@/components/ui/toast";
 import { toast } from "@/components/ui/toast-store";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { signOut } from "@/features/account/actions";
+import { pageIdOf } from "@/core/calibration/calibration";
+import { CalibrateDialog, openCalibrate, useCalibrationPrefsPersistence } from "@/features/calibration";
 import { redoActive, undoActive } from "@/features/editor";
+import { useFirstUseTipsPersistence } from "@/features/tips";
 import { chooseTheme, useWorkspaceTheme } from "@/features/appearance/theme-store";
 import {
   DocumentTabs,
@@ -98,7 +101,13 @@ function ShellBody({ user, initialTheme }: { user: WorkspaceUser; initialTheme: 
   const shownPage = useStore(viewerStore, (s) => (hasDocument(s) ? (s.pages[s.pageIndex] ?? null) : null));
   // Story 4.2: the shown page's printed scales (absent until detected).
   const shownScales = useStore(viewerStore, (s) => (hasDocument(s) ? (s.pageScales[s.pageIndex] ?? null) : null));
+  // Story 4.3: the shown page's calibration (by stable page id).
+  const shownCalibration = useStore(viewerStore, (s) =>
+    hasDocument(s) && s.documentId ? (s.calibrations[pageIdOf(s.documentId, s.pageIndex)] ?? null) : null,
+  );
   useSnapSettingsPersistence(user.id);
+  useCalibrationPrefsPersistence(user.id);
+  useFirstUseTipsPersistence(user.id);
   const announcement = usePageAnnouncement();
 
   const fileInput = useRef<HTMLInputElement>(null);
@@ -248,9 +257,12 @@ function ShellBody({ user, initialTheme }: { user: WorkspaceUser; initialTheme: 
           pager={<PagePager />}
           announcement={announcement}
           page={shownPage}
-          scale={shownPage ? scaleStateOf(shownScales) : null}
+          scale={shownPage ? scaleStateOf(shownScales, shownCalibration) : null}
+          calibration={shownCalibration}
+          onCalibrate={openCalibrate}
         />
       </footer>
+      <CalibrateDialog />
 
       <input
         ref={fileInput}

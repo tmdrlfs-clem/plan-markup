@@ -18,6 +18,7 @@ import {
   MenuBarTrigger,
 } from "@/components/ui/menu-bar";
 import { TAB_SHORTCUTS } from "@/core/documents/tabs";
+import { openCalibrate } from "@/features/calibration";
 import { activeUndoLabels, redoActive, undoActive, undoStore } from "@/features/editor";
 import { hasDocument, tabsStore, viewerCommands, viewerStore, viewerTabs, type ViewerCommand } from "@/features/viewer";
 import { THEMES, THEME_LABELS, isTheme, type Theme } from "@/lib/theme";
@@ -97,6 +98,16 @@ function PanelItems() {
   );
 }
 
+/** Document > Calibrate… and Tools > Calibrate… (Story 4.3): the shown page's Calibrate dialog. */
+function CalibrateItem() {
+  const open = useStore(viewerStore, hasDocument);
+  return (
+    <MenuBarItem disabled={!open} onSelect={openCalibrate}>
+      Calibrate…
+    </MenuBarItem>
+  );
+}
+
 /** Edit > Undo / Redo (Story 4.3): the active drawing's next step, named ("Undo Calibrate page 1"). */
 function UndoItems() {
   const tabId = useStore(viewerStore, (s) => s.tabId);
@@ -168,6 +179,8 @@ export function WorkspaceMenuBar({ onOpen, onSignOut, theme, onThemeChange }: Wo
       <MenuBarMenu>
         <MenuBarTrigger>Document</MenuBarTrigger>
         <MenuBarContent>
+          <CalibrateItem />
+          <MenuBarSeparator />
           <Disabled label="Rotate pages…" />
           <Disabled label="Insert pages…" />
           <Disabled label="Delete pages…" />
@@ -178,7 +191,7 @@ export function WorkspaceMenuBar({ onOpen, onSignOut, theme, onThemeChange }: Wo
       <MenuBarMenu>
         <MenuBarTrigger>Tools</MenuBarTrigger>
         <MenuBarContent>
-          <Disabled label="Calibrate…" />
+          <CalibrateItem />
           <Disabled label="Tool Chest" />
           <Disabled label="4541 zones" />
         </MenuBarContent>

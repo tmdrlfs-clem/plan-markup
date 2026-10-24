@@ -50,23 +50,39 @@ describe("PageSizeItem", () => {
 });
 
 describe("ScaleIndicator", () => {
-  it("shows '⚠ Scale not set' in the warning colour with the warning icon, and says calibration comes later", async () => {
+  it("shows '⚠ Scale not set' in the warning colour with the warning icon; a plain item without an action", async () => {
     const user = userEvent.setup();
     wrap(<ScaleIndicator state={{ kind: "not-set" }} />);
     const item = screen.getByTestId("status-scale");
     expect(item).toHaveTextContent("Scale not set");
     expect(item).toHaveClass("text-warning-text");
     expect(item.querySelector("svg.lucide-triangle-alert")).toBeInTheDocument();
-    expect(item.tagName).toBe("SPAN"); // nothing to act on before Epic 4
+    expect(item.tagName).toBe("SPAN"); // no action given (no drawing, tests)
     await user.hover(item);
-    expect(await screen.findByRole("tooltip", {}, { timeout: 2000 })).toHaveTextContent("Calibration arrives with the Measure tools");
+    expect(await screen.findByRole("tooltip", {}, { timeout: 2000 })).toHaveTextContent("Click to calibrate this page");
   });
 
-  it("already shows the calibrated, detected and mixed states (Stories 4.3 / 4.4 only wire data)", () => {
-    expect(scaleItem({ kind: "set", label: "1:100" })).toMatchObject({ label: "Scale 1:100", tone: "success" });
+  it("Story 4.3: with an action it is a button that opens Calibrate, in every state", async () => {
+    const user = userEvent.setup();
+    const onCalibrate = vi.fn();
+    const { unmount } = wrap(<ScaleIndicator state={{ kind: "conflict", readings: ["a", "b"] }} onCalibrate={onCalibrate} />);
+    const item = screen.getByRole("button", { name: "Scales disagree — Verify" });
+    await user.click(item);
+    unmount();
+    wrap(<ScaleIndicator state={{ kind: "not-set" }} onCalibrate={onCalibrate} />);
+    await user.click(screen.getByRole("button", { name: "Scale not set" }));
+    expect(onCalibrate).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows the calibrated, detected and mixed states", () => {
+    expect(scaleItem({ kind: "set", label: "Scale 1:100", tooltip: "Calibrated from a ratio: 1:100" })).toMatchObject({
+      label: "Scale 1:100",
+      tone: "success",
+      tooltip: "Calibrated from a ratio: 1:100. Click to calibrate again",
+    });
     expect(scaleItem({ kind: "detected", label: "1:100" })).toMatchObject({ label: "Scale 1:100 detected — Verify", tone: "warning" });
     expect(scaleItem({ kind: "mixed", count: 2 })).toMatchObject({ label: "2 scales on page", tone: "warning" });
-    wrap(<ScaleIndicator state={{ kind: "set", label: "1:50" }} />);
+    wrap(<ScaleIndicator state={{ kind: "set", label: "Scale 1:50" }} />);
     expect(screen.getByTestId("status-scale").querySelector("svg.lucide-circle-check")).toBeInTheDocument();
   });
 });
@@ -113,6 +129,14 @@ describe("CursorReadout", () => {
     act(() => setCursor(null));
     expect(value.textContent).toBe("");
     expect(renders).toBe(1);
+    act(() => setCursor(null));
+  });
+
+  it("Story 4.3: on a calibrated page the point reads in its real unit and precision", () => {
+    const calibration = { xFactor: 100 * (25.4 / 72), yFactor: 100 * (25.4 / 72), unit: "m" as const, precision: "0.00" as const, source: "ratio" as const };
+    render(<CursorReadout page={PLAIN} calibration={calibration} />);
+    act(() => setCursor({ x: 72, y: 144 }));
+    expect(screen.getByTestId("status-cursor-value").textContent).toBe("X 2.54  Y 5.08 m");
     act(() => setCursor(null));
   });
 

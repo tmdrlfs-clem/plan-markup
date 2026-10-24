@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 
 import { StatusBarItem } from "@/components/ui/status-bar-item";
+import type { Calibration } from "@/core/calibration/calibration";
 import type { PageGeometry } from "@/core/render/view";
 import { CursorReadout, PageSizeItem, ScaleIndicator, SnapToggles, ZoomItem, type ScaleState } from "@/features/viewer";
 
@@ -15,8 +16,11 @@ export interface WorkspaceStatusBarProps {
   announcement?: string;
   /** The shown page (points, /Rotate applied; its box and UserUnit for the cursor readout) (Story 3.7). */
   page?: PageGeometry | null;
-  /** The shown page's scale (Story 3.7; "not set" until Epic 4). */
+  /** The shown page's scale (Story 3.7; detected 4.2, calibrated 4.3). */
   scale?: ScaleState | null;
+  /** Story 4.3: the shown page's calibration (the cursor reads in real units) and the ScaleIndicator's action. */
+  calibration?: Calibration | null;
+  onCalibrate?: () => void;
 }
 
 /**
@@ -36,6 +40,8 @@ export function WorkspaceStatusBar({
   announcement = "",
   page = null,
   scale = null,
+  calibration = null,
+  onCalibrate,
 }: WorkspaceStatusBarProps) {
   const open = fileName !== null;
   return (
@@ -50,9 +56,9 @@ export function WorkspaceStatusBar({
         <div className="flex shrink-0 items-center gap-1">
           {pager}
           {page ? <PageSizeItem page={page} /> : null}
-          {scale ? <ScaleIndicator state={scale} /> : null}
+          {scale ? <ScaleIndicator state={scale} onCalibrate={onCalibrate} /> : null}
           <SnapToggles />
-          <CursorReadout page={page} />
+          <CursorReadout page={page} calibration={calibration} />
           {zoom !== null ? <ZoomItem zoom={zoom} /> : null}
           {/* Story 6.x: the SaveIndicator. */}
           <span data-testid="status-save" />
