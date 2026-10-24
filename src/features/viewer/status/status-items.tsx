@@ -60,9 +60,17 @@ export function scaleItem(state: ScaleState): { label: string; tone: "warning" |
     case "set":
       return { label: `Scale ${state.label}`, tone: "success", tooltip: "The page is calibrated" };
     case "detected":
-      return { label: `Scale ${state.label} detected — Verify`, tone: "warning", tooltip: "Read from the title block; verify it before measuring" };
+      return {
+        label: `Scale ${state.label} detected — Verify`,
+        tone: "warning",
+        tooltip: `${state.note ? `${state.note}. ` : ""}Read from the drawing; confirm in Calibrate (coming next) before measuring`,
+      };
     case "mixed":
-      return { label: `${state.count} scales on page`, tone: "warning", tooltip: "Viewports on this page use different scales" };
+      return {
+        label: `${state.count} scales on page`,
+        tone: "warning",
+        tooltip: `Viewports on this page use different scales${state.list?.length ? `: ${state.list.join("; ")}` : ""}. Calibrate each one (coming next)`,
+      };
     default:
       return { label: "Scale not set", tone: "warning", tooltip: "Calibration arrives with the Measure tools" };
   }

@@ -9,7 +9,7 @@ import { applyMatrix, pageToScreen, pdfToPageMatrix, userToPageMatrix } from "@/
 
 import { searchUi } from "./search-ui";
 import { cursorStore } from "./status/cursor-store";
-import { MIN_HIT_PX, ViewerEngine, clearDocumentViews, resetSnapLabels, type ViewerCanvases } from "./viewer-engine";
+import { MIN_HIT_PX, ViewerEngine, clearDocumentViews, clearScaleCache, resetSnapLabels, type ViewerCanvases } from "./viewer-engine";
 import { canvasStateOf, setTool, type ViewerState } from "./viewer-store";
 import { buildSnapIndex } from "@/core/snap/index";
 import { SEG_END_POINT, SEG_START_POINT, SEG_STRAIGHT } from "@/core/snap/extract";
@@ -1388,3 +1388,37 @@ describe("snapping (Story 4.1)", () => {
     expect(r.client.cancelled).toContain(build.reqId);
   });
 });
+
+describe("printed scales (Story 4.2)", () => {
+  const RESULT = { scales: [{ ratio: 100, sheet: "A1", effective: 100, imperial: false, text: "1:100 @ A1", count: 1, quads: [] }], pageSheet: null };
+  beforeEach(() => clearScaleCache());
+
+  it("asks the worker for the shown page once it settles, publishes it, and serves the next tab of the same document from memory", async () => {
+    const { client, engine } = setup();
+    await readyAtFit(client, engine);
+    const call = client.last("scale.detect");
+    expect(call.payload).toEqual({ page: 1 });
+    call.resolve(RESULT);
+    await flush();
+    expect(state.pageScales).toEqual({ 0: RESULT });
+    engine.requestScales(0);
+    expect(client.all("scale.detect")).toHaveLength(1);
+    const other = setup();
+    await readyAtFit(other.client, other.engine);
+    expect(other.client.all("scale.detect")).toHaveLength(0);
+    expect(state.pageScales).toEqual({ 0: RESULT });
+  });
+
+  it("a new document starts without scales and cancels the detection in flight", async () => {
+    const { client, engine } = setup();
+    await readyAtFit(client, engine);
+    const call = client.last("scale.detect");
+    void engine.open(file("b.pdf"));
+    await flush();
+    expect(client.cancelled).toContain(call.reqId);
+    call.resolve(RESULT);
+    await flush();
+    expect(state.pageScales ?? {}).toEqual({});
+  });
+});
+

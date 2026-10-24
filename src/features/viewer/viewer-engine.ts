@@ -89,6 +89,7 @@ import { SNAP_TOLERANCE_PX, SnapController, isSnappingTool } from "./snap-contro
 import { constraintFor, projectOnto } from "@/core/snap/constrain";
 import type { SnapResult, SnapType } from "@/core/snap/resolve";
 import type { SnapModifiers } from "./viewer-input";
+import type { PageScales } from "@/core/scale/detect";
 import { setCursor } from "./status/cursor-store";
 import { searchUi } from "./search-ui";
 import { viewerStore, type ViewerErrorCode, type ViewerState } from "./viewer-store";
@@ -170,6 +171,18 @@ function tilePerfLog(): TilePerfEntry[] | null {
   return Array.isArray(log) ? (log as TilePerfEntry[]) : null;
 }
 
+/** Story 4.2: detected scales by `${sha256}:${page}` (small; the most recent 500 pages). */
+const scaleCache = new Map<string, PageScales>();
+function rememberScales(key: string, scales: PageScales): void {
+  scaleCache.delete(key);
+  scaleCache.set(key, scales);
+  while (scaleCache.size > 500) scaleCache.delete(scaleCache.keys().next().value!);
+}
+/** Forgets detected scales (tests). */
+export function clearScaleCache(): void {
+  scaleCache.clear();
+}
+
 /** Snap types whose name was already shown next to the glyph this session (UX-DR14: first use only). */
 const snapLabelsShown = new Set<SnapType>();
 export const SNAP_LABELS: Readonly<Record<SnapType, string>> = {
@@ -232,6 +245,9 @@ export class ViewerEngine {
   private readonly sheetRequested = new Set<number>();
   /** Sheet-label lookups in flight, by 0-based page. */
   private readonly sheetCalls = new Map<number, SheetLabelCall>();
+  /** Story 4.2: scale detection in flight by page, and the results so far (published as pageScales). */
+  private readonly scaleCalls = new Map<number, number>();
+  private pageScales: Record<number, PageScales> = {};
   /** The document's first complete frame has been reported (status ready). */
   private firstFrameShown = false;
   /** The shown page's preview failed (multi-page documents; Retry asks again). */
@@ -521,6 +537,7 @@ export class ViewerEngine {
       documentId: opened.sha256,
       pageLabels: this.pageLabels,
       sheetLabels: {},
+      pageScales: {},
     });
     this.search.reset(this.pages.length);
     this.invalidate();
@@ -869,6 +886,9 @@ export class ViewerEngine {
     for (const pending of this.thumbPending.values()) if (pending.reqId !== null) ids.push(pending.reqId);
     for (const call of this.sheetCalls.values()) ids.push(call.reqId);
     this.sheetCalls.clear();
+    ids.push(...this.scaleCalls.values());
+    this.scaleCalls.clear();
+    this.pageScales = {};
     this.thumbPending.clear();
     this.thumbs.clear();
     this.documentGeneration++;
@@ -1067,6 +1087,8 @@ export class ViewerEngine {
       this.requestTiles();
       // After the tiles: text extraction is never urgent (the worker also runs it last).
       if (this.page && this.previewFinal) this.requestSheetLabel(this.pageIndex);
+      // Story 4.2: the shown page's printed scales (after its text, which they read).
+      if (this.page && this.previewFinal) this.requestScales(this.pageIndex);
       // Story 4.1: the page's snap index, then its neighbours (last in the worker's queue).
       if (this.page && this.previewFinal) {
         this.snap.ensure(this.pageIndex, this.pages.length, isSnappingTool(viewerStore.getState().tool));
@@ -1603,6 +1625,35 @@ export class ViewerEngine {
     if (shown) return { x: shown.x, y: shown.y, type: shown.type };
     const raw = this.cursorPoint();
     return raw ? { ...raw, type: null } : null;
+  }
+
+  /**
+   * Story 4.2: detects the printed scales of page `index` (0-based) once per
+   * document (cached by sha256 + page, shared by tabs) and publishes them.
+   */
+  requestScales(index: number): void {
+    const sha = this.sha256;
+    if (!sha || index in this.pageScales || this.scaleCalls.has(index)) return;
+    const cached = scaleCache.get(`${sha}:${index}`);
+    if (cached) return this.publishScales(index, cached);
+    const call = this.client.request("scale.detect", { page: index + 1 });
+    this.scaleCalls.set(index, call.reqId);
+    call.promise.then(
+      (result) => {
+        if (this.scaleCalls.get(index) !== call.reqId || this.sha256 !== sha) return;
+        this.scaleCalls.delete(index);
+        rememberScales(`${sha}:${index}`, result);
+        this.publishScales(index, result);
+      },
+      () => {
+        if (this.scaleCalls.get(index) === call.reqId) this.scaleCalls.delete(index);
+      },
+    );
+  }
+
+  private publishScales(index: number, scales: PageScales): void {
+    this.pageScales = { ...this.pageScales, [index]: scales };
+    this.update({ pageScales: this.pageScales });
   }
 
   /** Drops the snap attributes from the (shared) canvas element. */

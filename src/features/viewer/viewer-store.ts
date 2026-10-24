@@ -1,5 +1,6 @@
 import { createStore } from "zustand/vanilla";
 
+import type { PageScales } from "@/core/scale/detect";
 import type { ContentFlags, PageInfo } from "@/workers/render-protocol";
 
 export type ViewerStatus = "empty" | "loading" | "ready" | "error";
@@ -68,6 +69,12 @@ export interface ViewerState {
   tool: ViewerTool;
   /** Space or the middle button is held: pan without leaving `tool`. */
   tempPan: boolean;
+  /**
+   * Story 4.2: printed scales detected per 0-based page (pages not looked at
+   * yet are absent). Keyed by page index: stable page ids arrive with saved
+   * documents (AR8, Story 4.3 re-keys them).
+   */
+  pageScales: Record<number, PageScales>;
   /** Story 4.1 review S3: the shown page's snap index stopped at its segment cap (snapping covers part of it). */
   snapPartial: boolean;
   /** HintBar notices the user dismissed for this document (they stay hidden when its tab is shown again). */
@@ -97,6 +104,7 @@ export const INITIAL_VIEWER_STATE: ViewerState = {
   tool: "select",
   tempPan: false,
   snapPartial: false,
+  pageScales: {},
   dismissedNotices: [],
 };
 

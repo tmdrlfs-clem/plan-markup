@@ -95,6 +95,8 @@ function ShellBody({ user, initialTheme }: { user: WorkspaceUser; initialTheme: 
   const zoom = useStore(viewerStore, (s) => s.zoom);
   // The shown page's facts for the status bar (Story 3.7): they follow the active tab and page.
   const shownPage = useStore(viewerStore, (s) => (hasDocument(s) ? (s.pages[s.pageIndex] ?? null) : null));
+  // Story 4.2: the shown page's printed scales (absent until detected).
+  const shownScales = useStore(viewerStore, (s) => (hasDocument(s) ? (s.pageScales[s.pageIndex] ?? null) : null));
   useSnapSettingsPersistence(user.id);
   const announcement = usePageAnnouncement();
 
@@ -242,7 +244,7 @@ function ShellBody({ user, initialTheme }: { user: WorkspaceUser; initialTheme: 
           pager={<PagePager />}
           announcement={announcement}
           page={shownPage}
-          scale={shownPage ? scaleStateOf() : null}
+          scale={shownPage ? scaleStateOf(shownScales) : null}
         />
       </footer>
 
