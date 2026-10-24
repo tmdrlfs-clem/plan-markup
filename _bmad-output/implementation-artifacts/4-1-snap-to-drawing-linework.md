@@ -1,6 +1,6 @@
 # Story 4.1: Snap to drawing linework
 
-Status: ready-for-dev
+Status: in-progress
 
 ## Story
 

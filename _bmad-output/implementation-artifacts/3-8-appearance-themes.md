@@ -58,7 +58,7 @@ Claude Opus 5.5 (claude-opus-5-5)
 ### Debug Log References
 
 - CI for the implementation (5f89519): CI run **40031313793** success, Database run **40031313791** success.
-- Review fixes (T1-T4), local: typecheck, lint, build clean; `npm test` 1417 unit tests in 126 files; `supabase test db` PASS (new: pending and deactivated users update 0 rows; `profiles_name_length.test.sql` now activates its user first); `check:rls` OK; e2e on the production build 44 passed, 7 skipped (private opt-in). Review CI run: see Change Log.
+- Review fixes (T1-T4), local: typecheck, lint, build clean; `npm test` 1417 unit tests in 126 files; `supabase test db` PASS (new: pending and deactivated users update 0 rows; `profiles_name_length.test.sql` now activates its user first); `check:rls` OK; e2e on the production build 44 passed, 7 skipped (private opt-in). Review commit 3454774: CI run **40052680967** success, Database run **40052680982** success.
 
 - Local: `npm run typecheck`, `npm run lint`, `npm run build` clean; `npm test` (all unit tests, Docker running); `supabase test db` incl. the new `profiles_theme.test.sql`; `npm run check:rls` OK; `npm run db:types` / `db:schema` regenerated (`types.gen.ts`, `schema.sql`).
 - e2e on the production build (`E2E_PROD=1`, workers 1, local Supabase after `npm run db:reset` for the new seeded user): all passed, opt-in private checks skipped. `appearance-themes.spec.ts` passed on its first run; axe-core (`@axe-core/playwright` 4.13.0) found no serious or critical violation in any theme. (`security-headers` failed once only because `NEXT_PUBLIC_SUPABASE_URL` was not exported for the remapped local ports; passes with it.)
