@@ -75,7 +75,7 @@ development_status:
   epic-3-retrospective: optional
   # Epic 4: Calibrate and Measure
   epic-4: in-progress
-  4-1-snap-to-drawing-linework: in-progress
+  4-1-snap-to-drawing-linework: review
   4-2-detect-printed-scales: backlog
   4-3-calibrate-a-page: backlog
   4-4-verify-a-calibration: backlog

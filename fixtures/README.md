@@ -20,6 +20,8 @@ dependencies) and `python scripts/fixtures/make-wasm-images.py` (Pillow with Ope
 | `multi-page.pdf` | 4 pages: A3 landscape with a title block (sheet number `S-101`, no page label); A4 portrait labelled `FP-201`; A3 portrait with /Rotate 90 labelled `FP-202 - SPRINKLER LAYOUT`; A4 landscape labelled `4` | pager, page keys, sheet labels (Story 3.3) |
 | `search.pdf` | 3 pages: A4 landscape with `CH +2700` twice, `SPRINKLER VALVE` split inside the word across two runs (two fonts), `LEVEL` + `17` as two runs, `D1` / `D10`; an image-only page; A4 portrait with /Rotate 90 with `CH +2700` and `SPRINKLER VALVE` | text search (Story 3.6): `ch +2700` gives 3 results on 2 pages |
 
+| `snap.pdf` | Story 4.1, from `node scripts/fixtures/make-snap-fixture.mjs` (deterministic): page 1 A4 landscape with a stroked rectangle (100, 100)-(300, 250), two lines crossing at (500, 200), a circle (700, 200) r 50, a white-filled and a clip-only rectangle and the text "SNAP" (not snap targets), a form XObject's line (600, 400)-(650, 400); page 2 A4 portrait, /Rotate 90, MediaBox [-100 -50 495 792], a line and a rectangle | snap extraction and resolution unit tests, `viewer-snap` e2e |
+
 `password.pdf` is not deterministic (random salts), so the script rewrites it only when it is
 missing or with `--force`.
 

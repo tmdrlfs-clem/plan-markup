@@ -385,6 +385,8 @@ export class ViewerEngine {
     setCursor(null);
     this.snap.cancel();
     this.snapShown = null;
+    // The canvas element is shared by the tabs: its snap attributes belong to the shown one.
+    this.clearSnapData();
     this.search.pause();
   }
 
@@ -401,6 +403,7 @@ export class ViewerEngine {
     this.frame = null;
     this.draw();
     if (this.page && this.previewFinal) this.scheduleSettle(0);
+    this.publishSnapStats();
     this.search.resume();
   }
 
@@ -573,6 +576,7 @@ export class ViewerEngine {
     this.snap.cancel();
     this.snapFrom = null;
     this.snapShown = null;
+    this.clearSnapData();
     this.pageIndex = index;
     this.page = this.pages[index];
     this.preview = this.cache.take(previewKey(this.pageNo)) ?? null;
@@ -891,6 +895,7 @@ export class ViewerEngine {
     this.snap.setDocument(null);
     this.snapFrom = null;
     this.snapShown = null;
+    if (!this.suspended) this.clearSnapData();
     this.openReq = null;
     this.previewReq = null;
     this.zoomRect = null;
@@ -1055,7 +1060,10 @@ export class ViewerEngine {
       // After the tiles: text extraction is never urgent (the worker also runs it last).
       if (this.page && this.previewFinal) this.requestSheetLabel(this.pageIndex);
       // Story 4.1: the page's snap index, then its neighbours (last in the worker's queue).
-      if (this.page && this.previewFinal) this.snap.ensure(this.pageIndex, this.pages.length);
+      if (this.page && this.previewFinal) {
+        this.snap.ensure(this.pageIndex, this.pages.length);
+        this.publishSnapStats();
+      }
     }, ms);
   }
 
@@ -1589,11 +1597,24 @@ export class ViewerEngine {
     return raw ? { ...raw, type: null } : null;
   }
 
+  /** Drops the snap attributes from the (shared) canvas element. */
+  private clearSnapData(): void {
+    const data = this.canvases.active.dataset as DOMStringMap | undefined;
+    if (!data) return;
+    delete data.snapIndex;
+    delete data.snapBuild;
+    delete data.snap;
+  }
+
   /** The current page's index facts on the canvas (e2e, diagnostics). */
   private publishSnapStats(): void {
+    if (this.suspended) return;
     const stats = this.snap.stats(this.pageIndex);
     const data = this.canvases.active.dataset as DOMStringMap | undefined;
-    if (data && stats) data.snapIndex = `${stats.count}${stats.truncated ? " truncated" : ""}`;
+    if (!data || !stats) return;
+    data.snapIndex = `${stats.count}${stats.truncated ? " truncated" : ""}`;
+    // Diagnostics (local perf checks): operator list, extraction and build (ms), index bytes.
+    data.snapBuild = `${Math.round(stats.opListMs)} ${Math.round(stats.extractMs)} ${Math.round(stats.buildMs)} ${stats.bytes}`;
   }
 
   /** Layer 3: search highlights, the Zoom rubber band, the "from" point and the snap glyph. */
