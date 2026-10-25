@@ -90,4 +90,4 @@ Claude Opus 5.5 (claude-opus-5-5)
 
 - 2026-10-25: Story 4.5 created from the epics (Claude Opus 5.5). Status → ready-for-dev.
 - 2026-10-25: Tasks 1-4 implemented (9c48602, 2c6c323, 8a202f8, 2a7dab8). CI run 40180790714 green (unit, e2e on the production build, secret scan). Status → review.
-- 2026-10-25: Adversarial review R1-R6 fixed with tests; founder decisions (1)-(4) recorded. Status → done.
+- 2026-10-25: Adversarial review R1-R6 fixed with tests (0f2125c, CI run 40182610430 green); founder decisions (1)-(4) recorded. Status → done.
