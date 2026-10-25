@@ -188,7 +188,7 @@ export function CanvasViewport({ onOpen, onOpenFiles, createWorker = defaultWork
       className="relative h-full w-full touch-none overflow-hidden select-none bg-surface-0"
     >
       <canvas ref={tilesRef} data-testid="tiles-canvas" aria-hidden="true" className={canvasClass} />
-      <canvas ref={markupsRef} aria-hidden="true" className={canvasClass} />
+      <canvas ref={markupsRef} data-testid="markups-canvas" aria-hidden="true" className={canvasClass} />
       <canvas
         ref={activeRef}
         tabIndex={0}

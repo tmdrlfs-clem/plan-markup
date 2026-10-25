@@ -1,6 +1,6 @@
 # Story 4.5: Draw a length measurement (editor foundation)
 
-Status: in-progress
+Status: review
 
 ## Story
 
@@ -24,7 +24,7 @@ so that I can read real distances off the drawing.
 - [x] **Task 1: Core** — `src/core/schema/markup.ts` (Zod union, UUID pattern), `src/core/ids/uuid.ts` (v7), `src/core/measure/length.ts` (`lengthMm`, caption text, caption placement), `src/core/commands/ops.ts` (ops, Zod schema, inversion); unit tests.
 - [x] **Task 2: Editor store and session** — `src/features/editor/editor-store.ts` (slices), op-based commands (`executeOp`), the 4.3 history moved in (API kept: `executeCommand`, `undoActive`, `redoActive`, `activeUndoLabels`), calibrate apply as a `calibrations.set` op, `session.ts` (sessionStorage per user + sha256, restore on open, drop history on tab close); unit tests.
 - [x] **Task 3: Length tool** — viewer layer / tool interface (static and active layers, tool point / escape / cancel hooks, synchronous static repaint), `src/features/editor/length-tool.ts` (drawing, live label, captions, Esc / undo-in-progress rules), `Shift+Alt+L`, ToolRail Length live with its hint updated; unit tests.
-- [ ] **Task 4: Tests** — `e2e/measure-length.spec.ts` (AC 8); local L17/L21 check (L17 at 1:75: the "1905" dimension measured; L21 from its detected 1:75 @ A1: the "1491" dimension); screenshot `fixtures/private/traces/4-5-length.png` (never commit private files).
+- [x] **Task 4: Tests** — `e2e/measure-length.spec.ts` (AC 8); local L17/L21 check (L17 at 1:75: the "1905" dimension measured; L21 from its detected 1:75 @ A1: the "1491" dimension); screenshot `fixtures/private/traces/4-5-length.png` (never commit private files).
 
 ## Dev Notes
 
@@ -44,12 +44,34 @@ so that I can read real distances off the drawing.
 
 ### Agent Model Used
 
+Claude Opus 5.5 (claude-opus-5-5)
+
 ### Debug Log References
+
+- `npx vitest run` (Docker stopped): 146 files, 1649 tests passed. `tsc --noEmit` and `eslint .` clean.
+- `E2E_PROD=1 npx playwright test` (production build, local Supabase): 50 passed, 12 skipped (local-only perf checks).
+- `measure-length.spec.ts`: click → layer 2 painted in 1.4 ms (NFR3: 50 ms).
+- Local check `PERF_L17=1 E2E_PROD=1 npx playwright test perf-length`: L17 at 1:75, Length snapped to endpoints (-169.01, 98.57)-(-97.01, 98.57) reads **1905 mm** (paint 7.3 ms); L21 from its detected 1:75 @ A1, endpoints (139.12, -94.88)-(195.46, -94.88) read **1491 mm** (paint 1.4 ms). Screenshot `fixtures/private/traces/4-5-length.png` (not committed).
 
 ### Completion Notes List
 
+- Core (Task 1): markup Zod schema (discriminated union, permissive UUID pattern, AR7), UUID v7, `core/measure/length.ts` (values through `measureLength` + `formatMeasured`, the same functions as Verify, so the two always agree), serialisable document ops with inverses.
+- Editor store (Task 2): one zustand store with `doc` / `view` / `tools` / `selection` / `history` slices; the 4.3 per-tab histories moved into `history`; `executeOp` records ops as undo commands; Calibrate now applies a `calibrations.set` op (one undo step, as before). `session.ts` keeps markups, calibrations and the history (as ops) per user and sha256 in sessionStorage, Zod-validated on restore; another user starts empty; closing a document tab drops its history but keeps its markups and calibrations; a duplicate tab closed in favour of the open one keeps that tab's history.
+- Length (Task 3): the viewer paints layer 2 and the drawing on layer 3 through a registered `MarkupPainter` (`features/viewer/markup-layer.ts`), so the viewer never imports the editor (AR10). Markup changes repaint synchronously. Clicks use the engine's tool point (snap, Shift 45°, Alt off: the 4.1 / 4.3 R1 rules). The tool stays armed; Esc while drawing cancels, Esc again returns to Select (only an Esc meant for the canvas: not one handled by a menu, field or dialog); Ctrl+Z while drawing removes the placed point; another tool, page, tab or document cancels. `Shift+Alt+L` arms Length (by `code`, not in fields or dialogs). Captions are derived on every paint: a recalibration (or its undo) updates them; without a calibration they read "Scale not set" in the new `--canvas-warning` token (#8a6400, readable on the white sheet in every theme).
+- Defaults chosen (Revu-like, listed as questions): red #FF0000, 1 pt line with short end ticks, 10 pt caption in page units (scales with the zoom), caption above the line and never upside down; live value in screen px beside the pointer; a second click on the first point is ignored.
+
 ### File List
+
+- `src/core/ids/uuid.ts` (new), `src/core/schema/markup.ts` (new), `src/core/measure/length.ts` (new), `src/core/commands/ops.ts` (new), `src/core/measure/length.test.ts` (new), `src/core/commands/ops.test.ts` (new)
+- `src/core/calibration/units.ts`, `src/core/calibration/verify.ts`, `src/core/undo/stack.ts`
+- `src/features/editor/editor-store.ts` (new), `commands.ts` (new), `session.ts` (new), `session.test.tsx` (new), `length-tool.ts` (new), `length-tool.test.ts` (new), `undo-store.ts`, `undo-store.test.ts`, `index.ts`
+- `src/features/viewer/markup-layer.ts` (new), `viewer-engine.ts`, `viewer-engine.test.ts`, `viewer-input.ts`, `viewer-input.test.ts`, `viewer-store.ts`, `canvas-viewport.tsx`, `index.ts`
+- `src/features/calibration/calibrate-store.ts`
+- `src/features/workspace/workspace-shell.tsx`, `workspace-shell.test.tsx`, `workspace-menu-bar.tsx`, `tool-rail.tsx`, `use-workspace-shortcuts.ts`, `use-workspace-shortcuts.test.ts`
+- `src/app/globals.css`, `src/components/ui/tokens.ts`, `token-names.ts`, `viewer-palette.test.ts`
+- `e2e/measure-length.spec.ts` (new), `e2e/perf-length.spec.ts` (new, local only), `e2e/viewer-snap.spec.ts`
 
 ### Change Log
 
 - 2026-10-25: Story 4.5 created from the epics (Claude Opus 5.5). Status → ready-for-dev.
+- 2026-10-25: Tasks 1-4 implemented (9c48602, 2c6c323, 8a202f8, tests). Status → review.
