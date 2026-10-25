@@ -1,6 +1,6 @@
 # Story 4.4: Verify a calibration
 
-Status: review
+Status: done
 
 ## Story
 
@@ -24,6 +24,17 @@ so that I trust the numbers before I rely on them.
 - [x] **Task 2: VerifyDialog + picking** — `src/features/calibration/verify-store.ts` and `verify-dialog.tsx` reusing 4.3's picking (token, instruction bar, page-follow, line clearing); result block with verdict; Keep / Recalibrate… / Pick again; unit tests.
 - [x] **Task 3: Wiring** — "Verify…" in the Calibrate dialog when the page is calibrated; Document / Tools → Verify calibration… (disabled with the reason when not calibrated); Recalibrate prefills Calibrate (method, pick, distance, unit); only one of the two dialogs open at a time; tab switch closes it.
 - [x] **Task 4: Tests** — `e2e/verify-calibration.spec.ts` (AC 7); local L17/L21 check (L17 at 1:75 verified on its "1905" dimension: Matches; L21 calibrated from its detected 1:75 @ A1 verified on a dimension it prints); screenshot `fixtures/private/traces/4-4-verify.png` (never commit private files).
+
+### Review Follow-ups (AI)
+
+Adversarial review 2026-10-25 (Claude Opus 5.5) of d4a82ba..497d161, including the shared two-point pick (`picking.ts`, now also used by Calibrate) and Story 1.7's `Select` `labelHidden`. Checked: the measured value against the calibration (`measureLength` along user space axes with separate X / Y factors, /Rotate pages, UserUnit through the pick's `dxPt` / `dyPt`); comparison at the shown precision for every unit and precision (steps, half-step rounding, signs, ft-in fractions); the pick tokens across Calibrate and Verify (reopen, other dialog, Esc, page / tab change, undo removing the calibration while picking); Recalibrate's prefill and its single undo step; Calibrate regressions from the refactor (`closeCalibrate` early return, `openCalibrate()` without arguments from menus and the status bar, R3 / R4 behaviour, line clearing); keyboard and Enter primaries; live regions; menus; the tests. Founder decisions 2026-10-25 (answered questions, not to be asked again): (1) "Matches" is exact equality at the shown precision, the percentage still shown; (2) the status-bar scale click keeps opening Calibrate (Verify… inside it); (3) when the result is off Recalibrate… is the primary (Enter), otherwise Keep.
+
+- [x] **[Medium] V1: The reason a disabled "Verify calibration…" is disabled was never shown.** It was a `title` on a Radix menu item, but disabled items take no pointer events (`pointer-events-none`) and no focus, so neither a mouse nor a screen reader ever met it (AC 1). Fix: the item carries the reason in its text, "Verify calibration… (calibrate this page first)", until the page is calibrated.
+- [x] **[Low] V2: The whole result block was a live region**, so every keystroke in Known distance re-announced Measured / Known / Difference. Fix: only the verdict is a polite live region (without a known distance it reads "Measured 7056 mm. Type the known distance to compare.").
+- [x] **[Low] V3: A real difference could read as none.** "Off by +1 mm" with a difference under 0.005 % showed "(0.00 %)". Fix: `formatPercent` gives "+<0.01 %" / "-<0.01 %"; "0.00 %" only for exactly none.
+- [x] **[Low] V4: Test gaps.** The shared pick had no tests of its own (tokens, abandon, a second answer, no drawing, the 10 px rule), and nothing verified a /Rotate 90 page with a separate vertical scale. Fix: `picking.test.ts`; a /Rotate verify case in `verify.test.ts`.
+
+Not defects (checked): Calibrate after the refactor (R3 / R4 tests and `calibrate.spec.ts` pass; `closeCalibrate` on a closed dialog only skipped a redundant line clear, every opener clears it); `openCalibrate` passed a menu or click event before Task 3 (fixed there by taking no arguments); Recalibrate drops a separate vertical ratio (a two-point calibration sets X and Y alike, 4.3 decision 2); the known distance accepts any unit whatever the display unit; Verify closes when an undo removes the calibration while picking (the pick is abandoned); `labelHidden` keeps the accessible name (Select tests).
 
 ## Dev Notes
 
@@ -71,7 +82,9 @@ Claude Opus 5.5 (claude-opus-5-5)
 4. **No tolerance setting**: there is no "within 0.5 %" band; anything not equal at the shown precision is "Off by ...", in warning colour.
 5. **Known distance unit** defaults to the calibration's display unit (m → m, ft-in → ft-in) and can be changed per check; it is not remembered.
 
-**Questions for the founder:**
+**Questions for the founder (answered 2026-10-25, see the review section):** exact equality at the shown precision; the status bar keeps opening Calibrate; Recalibrate… is the primary when off.
+
+**Original questions for the founder:**
 
 - Should "Matches" allow a tolerance (for example within 0.5 % or one drafting unit) instead of exact equality at the shown precision? Recommended: keep exact equality at the shown precision (a scaled PDF should measure exactly), and show the percentage as now.
 - Should the ScaleIndicator of a calibrated page offer Verify directly (a small menu: Calibrate… / Verify…) instead of opening Calibrate (which has a Verify… button)? Recommended: keep one click → Calibrate, with Verify… inside it.
@@ -85,8 +98,10 @@ Claude Opus 5.5 (claude-opus-5-5)
 - `src/components/ui/select.tsx`, `select.test.tsx` (modified)
 - `e2e/verify-calibration.spec.ts`, `e2e/perf-verify.spec.ts` (new)
 - `_bmad-output/implementation-artifacts/4-4-verify-a-calibration.md`, `sprint-status.yaml` (modified)
+- Review: `src/features/workspace/workspace-menu-bar.tsx`, `src/features/calibration/verify-dialog.tsx`, `verify-dialog.test.tsx`, `src/core/calibration/verify.ts`, `verify.test.ts`, `e2e/verify-calibration.spec.ts` (modified); `src/features/calibration/picking.test.ts` (new)
 
 ### Change Log
 
 - 2026-10-25: Story 4.4 created from the epics (Claude Opus 5.5). Status → ready-for-dev (d4a82ba).
 - 2026-10-25: Story 4.4 implemented (Claude Opus 5.5): verify core, VerifyDialog with the shared pick, wiring, e2e and the L17/L21 check. Status → review. Commits 85046dc (Task 1), cba0ab8 (Task 2), efbbe03 (Task 3), 3d110e7 (Task 4) and this record.
+- 2026-10-25: Adversarial review (Claude Opus 5.5): V1-V4 fixed with tests, founder decisions 1-3 recorded. Status → done.

@@ -71,7 +71,10 @@ test("verify a calibration: match, Esc, mismatch, ft-in, Recalibrate as one undo
   await expect(canvas(page)).toHaveAttribute("data-snap-index", /^\d+$/, { timeout: 20_000 });
 
   // Not calibrated yet: Verify is disabled.
-  await expect(await menu(page, "Verify calibration…")).toBeDisabled();
+  const disabled = await menu(page, "Verify calibration…");
+  await expect(disabled).toBeDisabled();
+  // Review V1: the reason is in the item (a disabled item takes no pointer, a tooltip would never show).
+  await expect(disabled).toContainText("(calibrate this page first)");
   await page.keyboard.press("Escape");
 
   // Calibrate 1:100 by ratio.
@@ -81,7 +84,9 @@ test("verify a calibration: match, Esc, mismatch, ft-in, Recalibrate as one undo
   await expect(scale(page)).toHaveText("Scale 1:100");
 
   // Verify from the menu: the bottom edge (200 pt = 7056 mm at 1:100), known 7056: Matches.
-  await (await menu(page, "Verify calibration…")).click();
+  const enabled = await menu(page, "Verify calibration…");
+  await expect(enabled).not.toContainText("calibrate this page first");
+  await enabled.click();
   await expect(verify(page)).toHaveAccessibleDescription(/Scale 1:100$/);
   await verify(page).getByTestId("verify-known").fill("7056");
   // Esc while picking brings the dialog back.

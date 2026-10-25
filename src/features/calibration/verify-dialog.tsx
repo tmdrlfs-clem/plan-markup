@@ -125,7 +125,7 @@ function ResultBlock({ result, calibration }: { result: VerifyResult; calibratio
   if (result.knownText !== null) rows.push(["Known", result.knownText]);
   if (result.differenceText !== null && result.percent !== null) rows.push(["Difference", `${result.differenceText} (${formatPercent(result.percent)})`]);
   return (
-    <section aria-label="Result" aria-live="polite" role="status" className="rounded-sm border border-border bg-surface-2 p-2" data-testid="verify-result">
+    <section aria-label="Result" className="rounded-sm border border-border bg-surface-2 p-2" data-testid="verify-result">
       <dl className="num grid grid-cols-[96px_1fr] gap-x-2 gap-y-1 text-ws-sm">
         {rows.map(([term, value]) => (
           <div key={term} className="contents">
@@ -136,21 +136,27 @@ function ResultBlock({ result, calibration }: { result: VerifyResult; calibratio
           </div>
         ))}
       </dl>
-      {result.matches === true ? (
-        <p className="mt-2 flex items-center gap-2 text-ws-sm text-success" data-testid="verify-verdict" data-verdict="matches">
-          <CircleCheck size={16} aria-hidden="true" className="shrink-0" />
-          <span>Matches the calibration at {precisionText(calibration)}</span>
-        </p>
-      ) : result.matches === false ? (
-        <p className="num mt-2 flex items-center gap-2 text-ws-sm text-warning-text" data-testid="verify-verdict" data-verdict="off">
-          <TriangleAlert size={16} aria-hidden="true" className="shrink-0" />
-          <span>
-            Off by {result.differenceText} ({formatPercent(result.percent!)}): recalibrate if the known distance is right
-          </span>
-        </p>
-      ) : (
-        <p className="mt-2 text-ws-sm text-muted">Type the known distance to compare.</p>
-      )}
+      {/* Review V2: only the verdict is announced (politely), not the whole block on every keystroke. */}
+      <div role="status" aria-live="polite">
+        {result.matches === true ? (
+          <p className="mt-2 flex items-center gap-2 text-ws-sm text-success" data-testid="verify-verdict" data-verdict="matches">
+            <CircleCheck size={16} aria-hidden="true" className="shrink-0" />
+            <span>Matches the calibration at {precisionText(calibration)}</span>
+          </p>
+        ) : result.matches === false ? (
+          <p className="num mt-2 flex items-center gap-2 text-ws-sm text-warning-text" data-testid="verify-verdict" data-verdict="off">
+            <TriangleAlert size={16} aria-hidden="true" className="shrink-0" />
+            <span>
+              Off by {result.differenceText} ({formatPercent(result.percent!)}): recalibrate if the known distance is right
+            </span>
+          </p>
+        ) : (
+          <p className="mt-2 text-ws-sm text-muted">
+            <span className="sr-only">Measured {result.measuredText}. </span>
+            Type the known distance to compare.
+          </p>
+        )}
+      </div>
     </section>
   );
 }

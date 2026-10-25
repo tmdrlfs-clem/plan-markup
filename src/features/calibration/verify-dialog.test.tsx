@@ -137,6 +137,9 @@ describe("VerifyDialog (Story 4.4)", () => {
     await user.type(within(dialog).getByTestId("verify-known"), "7000");
     dialog = screen.getByRole("dialog", { name: "Verify calibration" });
     expect(within(dialog).getByTestId("verify-verdict")).toHaveTextContent("Off by +56 mm (+0.79 %)");
+    // Review V2: only the verdict is a live region, not the result block.
+    expect(within(dialog).getByTestId("verify-result")).not.toHaveAttribute("aria-live");
+    expect(within(dialog).getByTestId("verify-verdict").closest("[aria-live]")).toHaveAttribute("aria-live", "polite");
     expect(within(dialog).getByTestId("verify-verdict")).toHaveAttribute("data-verdict", "off");
     await user.click(within(dialog).getByRole("button", { name: "Recalibrate…" }));
     const calibrate = await screen.findByRole("dialog", { name: "Calibrate" });

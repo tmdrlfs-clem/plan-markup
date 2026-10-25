@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { MM_PER_POINT, factorForRatio, factorFromPoints, measureLength, sideways } from "./calibration";
+import { MM_PER_POINT, calibrationsFor, factorForRatio, factorFromPoints, measureLength, sideways } from "./calibration";
 import { precisionStepMm, roundToPrecision } from "./units";
 import { formatPercent, formatSigned, verifyCalibration } from "./verify";
 
@@ -71,6 +71,14 @@ describe("verifyCalibration (Story 4.4)", () => {
     expect(inches).toMatchObject({ measuredText: `1"`, knownText: `1 1/16"`, differenceText: `-1/16"` });
   });
 
+  it("review V4: on a /Rotate 90 page with a separate vertical scale, a line along user space x reads at the vertical scale", () => {
+    const m = calibrationsFor({ kind: "ratio", ratio: 100, sheet: null, yRatio: 50 }, [{ index: 0, size: { width: 842, height: 595, rotate: 90 } }], { unit: "mm", precision: "0" });
+    const c = m.get(0)!;
+    // 72 pt along user x is the page's vertical as it reads: 1:50, 1270 mm.
+    expect(verifyCalibration({ dxPt: 72, dyPt: 0 }, c, 1270)).toMatchObject({ measuredText: "1270 mm", matches: true });
+    expect(verifyCalibration({ dxPt: 0, dyPt: 72 }, c, null).measuredText).toBe("2540 mm");
+  });
+
   it("precision steps, rounding and signs", () => {
     expect(precisionStepMm("mm", "0.0")).toBeCloseTo(0.1, 12);
     expect(precisionStepMm("m", "0.00")).toBeCloseTo(10, 12);
@@ -80,7 +88,10 @@ describe("verifyCalibration (Story 4.4)", () => {
     expect(formatSigned(0.2, "mm", "0")).toBe("0 mm");
     expect(formatSigned(-12, "mm", "0")).toBe("-12 mm");
     expect(formatSigned(50, "m", "0.00")).toBe("+0.05 m");
-    expect(formatPercent(-0.001)).toBe("0.00 %");
+    // Review V3: a difference under 0.005 % never reads as none.
+    expect(formatPercent(-0.001)).toBe("-<0.01 %");
+    expect(formatPercent(0.004)).toBe("+<0.01 %");
+    expect(formatPercent(0)).toBe("0.00 %");
     expect(sideways(-90)).toBe(true);
   });
 });

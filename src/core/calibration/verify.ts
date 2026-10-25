@@ -62,9 +62,10 @@ export function verifyCalibration(
   };
 }
 
-/** "+0.80 %", "-0.10 %", "0.00 %". */
+/** "+0.80 %", "-0.10 %", "+<0.01 %" (review V3: a difference never reads as none), "0.00 %" only for none. */
 export function formatPercent(percent: number): string {
+  if (percent === 0 || !Number.isFinite(percent)) return "0.00 %";
+  const sign = percent > 0 ? "+" : "-";
   const text = Math.abs(percent).toFixed(2);
-  if (/^0\.00$/.test(text)) return "0.00 %";
-  return `${percent > 0 ? "+" : "-"}${text} %`;
+  return text === "0.00" ? `${sign}<0.01 %` : `${sign}${text} %`;
 }

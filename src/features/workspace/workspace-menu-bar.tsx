@@ -112,8 +112,14 @@ function CalibrateItem() {
 function VerifyItem() {
   const calibrated = useStore(viewerStore, (s) => hasDocument(s) && calibrationOf(s, s.pageIndex) !== null);
   return (
-    <MenuBarItem disabled={!calibrated} title={calibrated ? undefined : "Calibrate this page first"} onSelect={() => openVerify()}>
+    // Review V1: a disabled item takes no pointer or focus, so a title would never show: the reason is in the item.
+    <MenuBarItem disabled={!calibrated} onSelect={() => openVerify()}>
       Verify calibration…
+      {calibrated ? null : (
+        <span className="ml-2 text-ws-xs" data-testid="verify-disabled-reason">
+          (calibrate this page first)
+        </span>
+      )}
     </MenuBarItem>
   );
 }
