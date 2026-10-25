@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { calibrationsFor, factorForRatio, factorFromPoints, type Calibration } from "@/core/calibration/calibration";
 import { verifyCalibration } from "@/core/calibration/verify";
 
-import { SCALE_NOT_SET, captionPlacement, lengthCaption, lengthMm, paperLengthPt } from "./length";
+import { SCALE_NOT_SET, captionPlacement, lengthCaption, lengthMm, paperLengthPt, polylineCaptionAnchor } from "./length";
 
 const at = (ratio: number, unit: Calibration["unit"] = "mm", precision: Calibration["precision"] = "0"): Calibration => ({
   xFactor: factorForRatio(ratio),
@@ -12,6 +12,23 @@ const at = (ratio: number, unit: Calibration["unit"] = "mm", precision: Calibrat
   precision,
   source: "ratio",
   ratio,
+});
+
+describe("polylength (Story 4.6)", () => {
+  it("totals the segments exactly as the sum Verify reports for each (NFR8), with separate X / Y factors", () => {
+    const run = [{ x: 0, y: 0 }, { x: 200, y: 0 }, { x: 200, y: 150 }];
+    expect(lengthCaption(run, at(100)).text).toBe("12347 mm");
+    // Separate vertical scale: each segment along its own axis factor.
+    const c: Calibration = { ...at(100), yFactor: factorForRatio(50) };
+    expect(lengthMm(run, c)).toBeCloseTo(200 * factorForRatio(100) + 150 * factorForRatio(50), 9);
+    expect(lengthCaption(run, null)).toEqual({ text: SCALE_NOT_SET, scaled: false });
+  });
+
+  it("anchors the caption on the longest segment (the first of equals)", () => {
+    expect(polylineCaptionAnchor([{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 30 }, { x: 0, y: 30 }])).toEqual([{ x: 10, y: 0 }, { x: 10, y: 30 }]);
+    expect(polylineCaptionAnchor([{ x: 0, y: 0 }, { x: 5, y: 0 }, { x: 10, y: 0 }])).toEqual([{ x: 0, y: 0 }, { x: 5, y: 0 }]);
+    expect(polylineCaptionAnchor([{ x: 1, y: 1 }, { x: 4, y: 5 }])).toEqual([{ x: 1, y: 1 }, { x: 4, y: 5 }]);
+  });
 });
 
 describe("length measurements (Story 4.5)", () => {

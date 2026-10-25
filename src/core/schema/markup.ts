@@ -36,18 +36,35 @@ const base = {
   style: markupStyleSchema,
 };
 
+/**
+ * Story 4.6: a measurement caption moved off its default place, as a user
+ * space offset from it (it follows zoom and rotation like the markup).
+ */
+const measure = { ...base, captionOffset: pointSchema.optional() };
+
 /** A length measurement: two points (Story 4.5). */
 export const lengthMarkupSchema = z.object({
-  ...base,
+  ...measure,
   type: z.literal("length"),
   points: z.tuple([pointSchema, pointSchema]),
 });
 
-/** Every markup type (more join with Stories 4.6-4.10 and Epic 5). */
-export const markupSchema = z.discriminatedUnion("type", [lengthMarkupSchema]);
+/** Story 4.6: a polylength, the total along its vertices. */
+export const MAX_POLYLINE_POINTS = 10_000;
+export const polylengthMarkupSchema = z.object({
+  ...measure,
+  type: z.literal("polylength"),
+  points: z.array(pointSchema).min(2).max(MAX_POLYLINE_POINTS),
+});
+
+/** Every markup type (more join with Stories 4.7-4.10 and Epic 5). */
+export const markupSchema = z.discriminatedUnion("type", [lengthMarkupSchema, polylengthMarkupSchema]);
 
 export type Markup = z.infer<typeof markupSchema>;
 export type LengthMarkup = z.infer<typeof lengthMarkupSchema>;
+export type PolylengthMarkup = z.infer<typeof polylengthMarkupSchema>;
+/** The measurements with a caption (Stories 4.5, 4.6). */
+export type MeasureMarkup = LengthMarkup | PolylengthMarkup;
 export type MarkupType = Markup["type"];
 
 /** Revu's default measurement style: red, 1 pt, 10 pt captions. */

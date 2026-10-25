@@ -22,6 +22,8 @@ const positions = z.array(z.number().int().min(0).max(1_000_000)).max(10_000).op
 export const docOpSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("markups.add"), documentId, markups: z.array(markupSchema).max(10_000), at: positions }),
   z.object({ kind: z.literal("markups.remove"), documentId, markups: z.array(markupSchema).max(10_000), at: positions }),
+  /** Story 4.6: markups changed in place (same ids), as they were and as they are. */
+  z.object({ kind: z.literal("markups.update"), documentId, before: z.array(markupSchema).max(10_000), after: z.array(markupSchema).max(10_000) }),
   /** Calibrations by page id before and after (null: none). */
   z.object({ kind: z.literal("calibrations.set"), documentId, before: calibrationMap, after: calibrationMap }),
 ]);
@@ -35,6 +37,8 @@ export function invertOp(op: DocOp): DocOp {
       return { kind: "markups.remove", documentId: op.documentId, markups: op.markups, ...(op.at ? { at: op.at } : {}) };
     case "markups.remove":
       return { kind: "markups.add", documentId: op.documentId, markups: op.markups, ...(op.at ? { at: op.at } : {}) };
+    case "markups.update":
+      return { kind: "markups.update", documentId: op.documentId, before: op.after, after: op.before };
     case "calibrations.set":
       return { kind: "calibrations.set", documentId: op.documentId, before: op.after, after: op.before };
   }
@@ -71,6 +75,11 @@ export function applyMarkupsOp(markups: readonly Markup[], op: DocOp): Markup[] 
     const placed = op.markups.map((m, i) => ({ m, at: at[i] })).sort((a, b) => a.at - b.at);
     for (const p of placed) out.splice(Math.min(p.at, out.length), 0, p.m);
     return out;
+  }
+  if (op.kind === "markups.update") {
+    // In place: the drawing order stays; an id that is not there is not added.
+    const next = new Map(op.after.map((m) => [m.id, m]));
+    return markups.map((m) => next.get(m.id) ?? m);
   }
   if (op.kind === "markups.remove") {
     const ids = new Set(op.markups.map((m) => m.id));

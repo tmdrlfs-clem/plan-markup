@@ -73,6 +73,27 @@ describe("document ops (Story 4.5, AR13)", () => {
     expect(applyMarkupsOp(after, { kind: "markups.add", documentId: SHA, markups: [list[0]] }).at(-1)).toEqual(list[0]);
   });
 
+  it("Story 4.6: markups.update changes markups in place; its inverse restores them; unknown ids are not added", () => {
+    const list = [length(uuidv7(1)), length(uuidv7(2), 144), length(uuidv7(3), 216)];
+    const moved = { ...list[1], captionOffset: { x: 5, y: -3 } };
+    const op: DocOp = { kind: "markups.update", documentId: SHA, before: [list[1]], after: [moved] };
+    const after = applyMarkupsOp(list, op);
+    expect(after).toEqual([list[0], moved, list[2]]);
+    expect(applyMarkupsOp(after, invertOp(op))).toEqual(list);
+    expect(docOpSchema.parse(JSON.parse(JSON.stringify(op)))).toEqual(op);
+    const stranger = length(uuidv7(9));
+    expect(applyMarkupsOp(list, { ...op, after: [stranger] })).toEqual(list);
+  });
+
+  it("Story 4.6: a polylength has 2 or more points", () => {
+    const base = length(uuidv7());
+    const poly = { ...base, type: "polylength", points: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }] };
+    expect(markupSchema.safeParse(poly).success).toBe(true);
+    expect(markupSchema.safeParse({ ...poly, points: [{ x: 0, y: 0 }] }).success).toBe(false);
+    expect(markupSchema.safeParse({ ...poly, captionOffset: { x: 1, y: 2 } }).success).toBe(true);
+    expect(markupSchema.safeParse({ ...poly, captionOffset: { x: NaN, y: 2 } }).success).toBe(false);
+  });
+
   it("calibrations.set writes and clears page calibrations; its inverse restores them", () => {
     const op: DocOp = { kind: "calibrations.set", documentId: SHA, before: { [`${SHA}:0`]: null }, after: { [`${SHA}:0`]: cal } };
     const set = applyCalibrationsOp({}, op);

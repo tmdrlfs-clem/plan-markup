@@ -44,6 +44,23 @@ export function lengthCaption(points: readonly Point[], calibration: Calibration
 }
 
 /**
+ * Story 4.6: the segment a polyline's caption sits along: the longest (in
+ * user space, so on paper too), the first of equals. Two points: the line itself.
+ */
+export function polylineCaptionAnchor(points: readonly Point[]): [Point, Point] {
+  let best = 0;
+  let longest = -1;
+  for (let i = 1; i < points.length; i++) {
+    const d = Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
+    if (d > longest) {
+      longest = d;
+      best = i;
+    }
+  }
+  return best === 0 ? [points[0], points[0]] : [points[best - 1], points[best]];
+}
+
+/**
  * Where a two-point caption goes, in screen (device) space: centred on the
  * line, `gap` px off it on the side above (screen up), turned along the line
  * but never upside down. `a`, `b` are the line's ends on screen.

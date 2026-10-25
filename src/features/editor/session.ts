@@ -52,7 +52,9 @@ export function recordBelongsTo(record: SessionRecord, documentId: string): bool
   const ownPage = (id: string) => id.startsWith(page);
   const ownOp = (op: SessionRecord["past"][number]["op"]) =>
     op.documentId === documentId &&
-    (op.kind === "calibrations.set" ? [...Object.keys(op.before), ...Object.keys(op.after)].every(ownPage) : op.markups.every((m) => ownPage(m.pageId)));
+    (op.kind === "calibrations.set"
+      ? [...Object.keys(op.before), ...Object.keys(op.after)].every(ownPage)
+      : (op.kind === "markups.update" ? [...op.before, ...op.after] : op.markups).every((m) => ownPage(m.pageId)));
   return (
     record.markups.every((m) => ownPage(m.pageId)) &&
     Object.keys(record.calibrations).every(ownPage) &&

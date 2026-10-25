@@ -10,7 +10,7 @@ import { editorStore, markupsOf, setDocMarkups } from "./editor-store";
 
 /** Applies `op`. A calibrations op for a document that is not the active one changes nothing (undo only runs in the active tab). */
 export function applyOp(op: DocOp): void {
-  if (op.kind === "markups.add" || op.kind === "markups.remove") {
+  if (op.kind !== "calibrations.set") {
     setDocMarkups(op.documentId, applyMarkupsOp(markupsOf(editorStore.getState(), op.documentId), op));
     return;
   }
