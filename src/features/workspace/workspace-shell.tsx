@@ -15,6 +15,7 @@ import { CalibrateDialog, VerifyDialog, openCalibrate, useCalibrationPrefsPersis
 import { redoActive, undoActive } from "@/features/editor";
 import { useFirstUseTipsPersistence } from "@/features/tips";
 import { chooseTheme, useWorkspaceTheme } from "@/features/appearance/theme-store";
+import { useEditorSession } from "@/features/editor";
 import {
   DocumentTabs,
   DocumentViewer,
@@ -58,6 +59,8 @@ export function WorkspaceShell({ user, theme = null }: { user: WorkspaceUser; th
   // The open drawings belong to the signed-in user: another user's workspace starts empty.
   // In render, before the canvas mounts and would reopen the previous user's tabs.
   useMemo(() => viewerTabs.setOwner(user.id), [user.id]);
+  // Story 4.5: the editing session (markups, calibrations, undo) of this user's documents survives a reload.
+  useEditorSession(user.id);
   return (
     <LayoutProvider userId={user.id}>
       <TooltipProvider>

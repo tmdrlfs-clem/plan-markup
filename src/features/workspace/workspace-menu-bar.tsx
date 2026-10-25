@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/menu-bar";
 import { TAB_SHORTCUTS } from "@/core/documents/tabs";
 import { calibrationOf, openCalibrate, openVerify } from "@/features/calibration";
-import { activeUndoLabels, redoActive, undoActive, undoStore } from "@/features/editor";
+import { activeUndoLabels, redoActive, undoActive, editorStore } from "@/features/editor";
 import { hasDocument, tabsStore, viewerCommands, viewerStore, viewerTabs, type ViewerCommand } from "@/features/viewer";
 import { THEMES, THEME_LABELS, isTheme, type Theme } from "@/lib/theme";
 
@@ -128,8 +128,8 @@ function VerifyItem() {
 function UndoItems() {
   const tabId = useStore(viewerStore, (s) => s.tabId);
   const open = useStore(viewerStore, hasDocument);
-  const undoLabel = useStore(undoStore, (s) => activeUndoLabels(s, tabId).undo);
-  const redoLabel = useStore(undoStore, (s) => activeUndoLabels(s, tabId).redo);
+  const undoLabel = useStore(editorStore, (s) => activeUndoLabels(s, tabId).undo);
+  const redoLabel = useStore(editorStore, (s) => activeUndoLabels(s, tabId).redo);
   return (
     <>
       <MenuBarItem disabled={!open || !undoLabel} shortcut="Ctrl+Z" onSelect={() => undoActive()}>

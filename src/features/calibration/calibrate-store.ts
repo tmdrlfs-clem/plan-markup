@@ -7,7 +7,7 @@ import { createStore } from "zustand/vanilla";
 
 import { calibrationsFor, pageIdOf, type Calibration, type CalibrationInput, type DisplayUnit, type Precision } from "@/core/calibration/calibration";
 import type { InputUnit } from "@/core/calibration/units";
-import { executeCommand } from "@/features/editor";
+import { executeOp } from "@/features/editor";
 import { hasDocument, tabsStore, viewerCalibration, viewerStore, type CalibrationPick } from "@/features/viewer";
 
 import { calibrationPrefs, setCalibrationPrefs } from "./calibration-prefs";
@@ -165,24 +165,12 @@ export function applyCalibration(input: CalibrationInput, pages: readonly number
   const sized = pages.filter((i) => viewer.pages[i]).map((index) => ({ index, size: viewer.pages[index] }));
   const next = calibrationsFor(input, sized, display);
   const ids = [...next.keys()].map((i) => pageIdOf(sha, i));
-  const before = new Map(ids.map((id) => [id, viewer.calibrations[id] ?? null] as const));
-  const tabId = viewer.tabId;
-  const write = (values: ReadonlyMap<string, Calibration | null>) => {
-    // Commands act on their own tab's state (undo only ever runs in the active tab).
-    if (viewerStore.getState().tabId !== tabId) return;
-    const calibrations = { ...viewerStore.getState().calibrations };
-    for (const [id, value] of values) {
-      if (value) calibrations[id] = value;
-      else delete calibrations[id];
-    }
-    viewerStore.setState({ calibrations });
-  };
-  const after = new Map([...next].map(([i, c]) => [pageIdOf(sha, i), c] as const));
-  executeCommand({
-    label: pages.length === 1 ? `Calibrate page ${pages[0] + 1}` : `Calibrate ${pages.length} pages`,
-    do: () => write(after),
-    undo: () => write(before),
-  });
+  const before = Object.fromEntries(ids.map((id) => [id, viewer.calibrations[id] ?? null] as const));
+  const after = Object.fromEntries([...next].map(([i, c]) => [pageIdOf(sha, i), c] as const));
+  executeOp(
+    { kind: "calibrations.set", documentId: sha, before, after },
+    pages.length === 1 ? `Calibrate page ${pages[0] + 1}` : `Calibrate ${pages.length} pages`,
+  );
   setCalibrationPrefs(display);
   return true;
 }

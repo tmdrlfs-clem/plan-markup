@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { tabsStore, viewerStore } from "@/features/viewer";
 
-import { activeUndoLabels, clearUndo, executeCommand, redoActive, undoActive, undoStore } from "./undo-store";
+import { activeUndoLabels, clearUndo, executeCommand, redoActive, undoActive } from "./undo-store";
+import { editorStore } from "./editor-store";
 
 const log: string[] = [];
 const command = (label: string) => ({ label, do: () => log.push(`do ${label}`), undo: () => log.push(`undo ${label}`) });
@@ -20,10 +21,10 @@ describe("undo per tab (Story 4.3 AC 7)", () => {
     executeCommand(command("A"));
     viewerStore.setState({ tabId: "doc-2" });
     executeCommand(command("B"));
-    expect(activeUndoLabels(undoStore.getState(), "doc-1")).toEqual({ undo: "A", redo: null });
+    expect(activeUndoLabels(editorStore.getState(), "doc-1")).toEqual({ undo: "A", redo: null });
     expect(undoActive()).toBe(true);
     expect(undoActive()).toBe(false); // doc-2 has nothing more
-    expect(activeUndoLabels(undoStore.getState(), "doc-2")).toEqual({ undo: null, redo: "B" });
+    expect(activeUndoLabels(editorStore.getState(), "doc-2")).toEqual({ undo: null, redo: "B" });
     expect(redoActive()).toBe(true);
     expect(redoActive()).toBe(false);
     expect(log).toEqual(["do A", "do B", "undo B", "do B"]);
@@ -33,9 +34,9 @@ describe("undo per tab (Story 4.3 AC 7)", () => {
     tabsStore.setState({ tabs: [{ id: "doc-1", fileName: "a", title: "a", status: "ready", failed: false }], activeId: "doc-1" });
     viewerStore.setState({ tabId: "doc-1" });
     executeCommand(command("A"));
-    expect(Object.keys(undoStore.getState().histories)).toEqual(["doc-1"]);
+    expect(Object.keys(editorStore.getState().history.histories)).toEqual(["doc-1"]);
     tabsStore.setState({ tabs: [], activeId: null });
-    expect(undoStore.getState().histories).toEqual({});
+    expect(editorStore.getState().history.histories).toEqual({});
   });
 
   it("review R5: a tab that opens its file again drops its history; a tab switch keeps it", () => {
@@ -43,8 +44,8 @@ describe("undo per tab (Story 4.3 AC 7)", () => {
     executeCommand(command("A"));
     viewerStore.setState({ tabId: "doc-2", openSeq: 2 });
     viewerStore.setState({ tabId: "doc-1", openSeq: 1 });
-    expect(activeUndoLabels(undoStore.getState(), "doc-1").undo).toBe("A");
+    expect(activeUndoLabels(editorStore.getState(), "doc-1").undo).toBe("A");
     viewerStore.setState({ openSeq: 3 }); // Try again in doc-1
-    expect(activeUndoLabels(undoStore.getState(), "doc-1").undo).toBeNull();
+    expect(activeUndoLabels(editorStore.getState(), "doc-1").undo).toBeNull();
   });
 });

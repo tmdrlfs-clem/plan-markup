@@ -1,28 +1,31 @@
-// Undo per document tab (Story 4.3 AC 7): one history per tab in a zustand
-// vanilla store, so undoing in one drawing never touches another. The active
-// tab's history drives Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z and Edit > Undo / Redo.
-// Commands act on the active tab's state (viewerStore), which is the tab the
-// command was recorded in: only the active tab's history is ever used.
-// A closed tab's history is dropped. Story 4.5 (editor foundation) builds on
-// this (markup commands, serialising to sessionStorage, UX-DR36).
+// Undo per document tab (Story 4.3 AC 7; Story 4.5 moves it into the editor
+// store's `history` slice and adds op commands). One history per tab, so
+// undoing in one drawing never touches another. The active tab's history
+// drives Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z and Edit > Undo / Redo. Commands act on
+// the active tab's state, which is the tab the command was recorded in. A
+// closed tab's history is dropped; a tab that opens its file again drops its
+// history (4.3 review R5) until the session restores it (session.ts).
+//
+// While a measurement is being drawn, Undo removes its last point instead
+// (UX-DR35): the drawing tool registers that step (registerDrawingUndo).
 
-import { createStore } from "zustand/vanilla";
-
+import { invertOp, type DocOp } from "@/core/commands/ops";
 import { EMPTY_HISTORY, execute, nextLabels, redo, undo, type UndoCommand, type UndoHistory } from "@/core/undo/stack";
 import { tabsStore, viewerStore } from "@/features/viewer";
 
-export type UndoState = {
-  /** Histories by tab id ("" outside tabs). */
-  histories: Readonly<Record<string, UndoHistory>>;
-};
-
-export const undoStore = createStore<UndoState>(() => ({ histories: {} }));
+import { editorStore, type EditorState } from "./editor-store";
+import { applyOp } from "./commands";
 
 const activeKey = () => viewerStore.getState().tabId ?? "";
-const historyOf = (key: string) => undoStore.getState().histories[key] ?? EMPTY_HISTORY;
+const historyOf = (key: string) => editorStore.getState().history.histories[key] ?? EMPTY_HISTORY;
 
 function setHistory(key: string, history: UndoHistory): void {
-  undoStore.setState((s) => ({ histories: { ...s.histories, [key]: history } }));
+  editorStore.setState((s) => ({ history: { histories: { ...s.history.histories, [key]: history } } }));
+}
+
+/** Sets a tab's history (the session restore only). */
+export function setTabHistory(tabId: string, history: UndoHistory): void {
+  setHistory(tabId, history);
 }
 
 /** Runs `command` in the active tab and records it as one undo step. */
@@ -31,8 +34,29 @@ export function executeCommand(command: UndoCommand): void {
   setHistory(key, execute(historyOf(key), command));
 }
 
-/** Undoes the active tab's last step; false when there was none. */
+/** The undo command of an op: `do` applies it, `undo` applies its inverse; it serialises as the op. */
+export function commandOf(op: DocOp, label: string): UndoCommand {
+  return { label, op, do: () => applyOp(op), undo: () => applyOp(invertOp(op)) };
+}
+
+/** Applies `op` to the active document as one undo step named `label` (AR13: every document mutation). */
+export function executeOp(op: DocOp, label: string): void {
+  executeCommand(commandOf(op, label));
+}
+
+let drawingUndo: (() => boolean) | null = null;
+
+/** The drawing tool's undo while drawing (removes the last point; false when nothing is drawn). */
+export function registerDrawingUndo(fn: (() => boolean) | null): () => void {
+  drawingUndo = fn;
+  return () => {
+    if (drawingUndo === fn) drawingUndo = null;
+  };
+}
+
+/** Undoes the active tab's last step (or the last point of a drawing in progress); false when there was none. */
 export function undoActive(): boolean {
+  if (drawingUndo?.()) return true;
   const key = activeKey();
   const before = historyOf(key);
   if (before.past.length === 0) return false;
@@ -49,33 +73,33 @@ export function redoActive(): boolean {
   return true;
 }
 
-/** The active tab's next undo / redo labels (React: useStore(undoStore, …) with viewerStore's tabId). */
-export function activeUndoLabels(state: UndoState, tabId: string | null): { undo: string | null; redo: string | null } {
-  return nextLabels(state.histories[tabId ?? ""] ?? EMPTY_HISTORY);
+/** The active tab's next undo / redo labels (React: useStore(editorStore, …) with viewerStore's tabId). */
+export function activeUndoLabels(state: EditorState, tabId: string | null): { undo: string | null; redo: string | null } {
+  return nextLabels(state.history.histories[tabId ?? ""] ?? EMPTY_HISTORY);
 }
 
 /** Forgets every history (tests, another user's workspace). */
 export function clearUndo(): void {
-  undoStore.setState({ histories: {} }, true);
+  editorStore.setState({ history: { histories: {} } });
+}
+
+function dropHistory(tabId: string): void {
+  const histories = editorStore.getState().history.histories;
+  if (!histories[tabId]) return;
+  const next = { ...histories };
+  delete next[tabId];
+  editorStore.setState({ history: { histories: next } });
 }
 
 // A closed tab's history goes with it (its commands hold that document's state).
 tabsStore.subscribe((tabs) => {
   const open = new Set(tabs.tabs.map((t) => t.id));
-  const histories = undoStore.getState().histories;
-  const stale = Object.keys(histories).filter((k) => k !== "" && !open.has(k));
-  if (stale.length === 0) return;
-  const next = { ...histories };
-  for (const k of stale) delete next[k];
-  undoStore.setState({ histories: next });
+  for (const k of Object.keys(editorStore.getState().history.histories)) if (k !== "" && !open.has(k)) dropHistory(k);
 });
 
-// Review R5: a tab that opens its file again (Try again) starts with no calibrations, so its
-// history is dropped too (an "Undo Calibrate page 1" would otherwise name a step that is gone).
+// Review R5: a tab that opens its file again (Try again) starts without its document state, so
+// its history is dropped too; the session restores both together when the document is back.
 viewerStore.subscribe((s, prev) => {
   if (!s.tabId || s.tabId !== prev.tabId || s.openSeq === prev.openSeq) return;
-  if (!undoStore.getState().histories[s.tabId]) return;
-  const next = { ...undoStore.getState().histories };
-  delete next[s.tabId];
-  undoStore.setState({ histories: next });
+  dropHistory(s.tabId);
 });

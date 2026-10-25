@@ -4,10 +4,14 @@
 // from it. Story 4.5 (editor foundation) extends this (merging, grouping,
 // serialising to sessionStorage, UX-DR36) rather than replacing it.
 
+import type { DocOp } from "@/core/commands/ops";
+
 /** One undoable step. `do` applies it (again, on redo); `undo` reverts it. */
 export interface UndoCommand {
   /** What the menu names: "Calibrate page 3" → "Undo Calibrate page 3". */
   readonly label: string;
+  /** Story 4.5: the document op it applies, when it is one (the history serialises these, UX-DR36). */
+  readonly op?: DocOp;
   do(): void;
   undo(): void;
 }
