@@ -126,6 +126,15 @@ export function roundToPrecision(mm: number, unit: DisplayUnit, precision: Preci
   return Math.round(mm / step) * step;
 }
 
+/**
+ * A measured length as shown (Stories 4.4, 4.5): rounded to whole steps of the
+ * precision first, then formatted, so Verify, the Length tool and the
+ * captions show the same text for the same length (NFR8).
+ */
+export function formatMeasured(mm: number, unit: DisplayUnit, precision: Precision): string {
+  return formatReal(roundToPrecision(mm, unit, precision), unit, precision);
+}
+
 /** The unit mark after a number (none for ft-in, whose text carries ' and "). */
 export function unitSuffix(unit: DisplayUnit): string {
   return unit === "ft-in" ? "" : unit === "in" ? '"' : ` ${unit}`;

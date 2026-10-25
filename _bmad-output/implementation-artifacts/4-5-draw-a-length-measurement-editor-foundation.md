@@ -1,6 +1,6 @@
 # Story 4.5: Draw a length measurement (editor foundation)
 
-Status: ready-for-dev
+Status: in-progress
 
 ## Story
 
@@ -21,7 +21,7 @@ so that I can read real distances off the drawing.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Core** — `src/core/schema/markup.ts` (Zod union, UUID pattern), `src/core/ids/uuid.ts` (v7), `src/core/measure/length.ts` (`lengthMm`, caption text, caption placement), `src/core/commands/ops.ts` (ops, Zod schema, inversion); unit tests.
+- [x] **Task 1: Core** — `src/core/schema/markup.ts` (Zod union, UUID pattern), `src/core/ids/uuid.ts` (v7), `src/core/measure/length.ts` (`lengthMm`, caption text, caption placement), `src/core/commands/ops.ts` (ops, Zod schema, inversion); unit tests.
 - [ ] **Task 2: Editor store and session** — `src/features/editor/editor-store.ts` (slices), op-based commands (`executeOp`), the 4.3 history moved in (API kept: `executeCommand`, `undoActive`, `redoActive`, `activeUndoLabels`), calibrate apply as a `calibrations.set` op, `session.ts` (sessionStorage per user + sha256, restore on open, drop history on tab close); unit tests.
 - [ ] **Task 3: Length tool** — viewer layer / tool interface (static and active layers, tool point / escape / cancel hooks, synchronous static repaint), `src/features/editor/length-tool.ts` (drawing, live label, captions, Esc / undo-in-progress rules), `Shift+Alt+L`, ToolRail Length live with its hint updated; unit tests.
 - [ ] **Task 4: Tests** — `e2e/measure-length.spec.ts` (AC 8); local L17/L21 check (L17 at 1:75: the "1905" dimension measured; L21 from its detected 1:75 @ A1: the "1491" dimension); screenshot `fixtures/private/traces/4-5-length.png` (never commit private files).

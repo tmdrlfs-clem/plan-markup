@@ -7,7 +7,7 @@
 // numbers are equal and "Off by" is the difference of the shown numbers.
 
 import { measureLength, type Calibration } from "./calibration";
-import { formatReal, roundToPrecision } from "./units";
+import { formatMeasured, formatReal, roundToPrecision } from "./units";
 
 /** A picked line: its length along user space x and y in page points (UserUnit applied). */
 export type PickedLine = { dxPt: number; dyPt: number };
@@ -42,7 +42,7 @@ export function verifyCalibration(
   const { unit, precision } = calibration;
   const measuredMm = measureLength(line.dxPt, line.dyPt, calibration);
   const shownMeasured = roundToPrecision(measuredMm, unit, precision);
-  const measuredText = formatReal(shownMeasured, unit, precision);
+  const measuredText = formatMeasured(measuredMm, unit, precision);
   if (knownMm === null || !(knownMm > 0) || !Number.isFinite(knownMm)) {
     return { measuredMm, measuredText, knownMm: null, knownText: null, differenceMm: null, differenceText: null, percent: null, matches: null };
   }
