@@ -52,6 +52,25 @@ function strokeLength(c: CanvasRenderingContext2D, a: Point, b: Point, style: Ma
   c.stroke();
 }
 
+/**
+ * Review R6: whether a length (with its ticks and caption) can touch the
+ * canvas. Zoomed in, most markups are off screen and their captions are huge:
+ * they are skipped, not drawn and clipped.
+ */
+export function onCanvas(a: Point, b: Point, style: MarkupStyle, view: LayerView): boolean {
+  if (!(view.width > 0 && view.height > 0)) return true; // size unknown: draw
+  const caption = style.fontSize * view.devicePerPt;
+  // The caption is centred on the line and at most half the text width long either way; a
+  // generous margin (text up to 12 em) keeps a long caption on a short line drawn.
+  const margin = Math.max(3 * view.dpr, 3 * view.devicePerPt) + caption * 12;
+  return (
+    Math.max(a.x, b.x) >= -margin &&
+    Math.min(a.x, b.x) <= view.width + margin &&
+    Math.max(a.y, b.y) >= -margin &&
+    Math.min(a.y, b.y) <= view.height + margin
+  );
+}
+
 /** The caption along the line, above it, never upside down; "Scale not set" in the warning colour. */
 function drawCaption(c: CanvasRenderingContext2D, a: Point, b: Point, text: string, scaled: boolean, style: MarkupStyle, view: LayerView): void {
   const size = style.fontSize * view.devicePerPt;
@@ -97,9 +116,10 @@ export const lengthPainter: MarkupPainter = {
       const a = view.toDevice(m.points[0]);
       const b = view.toDevice(m.points[1]);
       const caption = lengthCaption(m.points, calibration, view.userUnit);
+      captions.push(caption.text);
+      if (!onCanvas(a, b, m.style, view)) continue;
       strokeLength(c, a, b, m.style, view);
       drawCaption(c, a, b, caption.text, caption.scaled, m.style, view);
-      captions.push(caption.text);
     }
     c.restore();
     return captions;

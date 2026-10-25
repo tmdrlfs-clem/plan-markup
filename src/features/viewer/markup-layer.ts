@@ -18,6 +18,9 @@ export type LayerView = {
   devicePerPt: number;
   /** Device pixel ratio (screen-unit sizes, such as the live label). */
   dpr: number;
+  /** The canvas in device px: markups wholly outside it are not drawn (review R6). */
+  width: number;
+  height: number;
   colors: { halo: string; warning: string; fontFamily: string };
 };
 

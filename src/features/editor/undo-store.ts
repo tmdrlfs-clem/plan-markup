@@ -73,9 +73,16 @@ export function redoActive(): boolean {
   return true;
 }
 
-/** The active tab's next undo / redo labels (React: useStore(editorStore, …) with viewerStore's tabId). */
+/** Review R5: what Undo does while a measurement is being drawn (it removes the placed point). */
+export const DRAWING_POINT_LABEL = "Length point";
+
+/**
+ * The active tab's next undo / redo labels (React: useStore(editorStore, …) with viewerStore's tabId).
+ * While drawing, Undo removes the drawing's point (UX-DR35), so the menu says that, not the history's step.
+ */
 export function activeUndoLabels(state: EditorState, tabId: string | null): { undo: string | null; redo: string | null } {
-  return nextLabels(state.history.histories[tabId ?? ""] ?? EMPTY_HISTORY);
+  const labels = nextLabels(state.history.histories[tabId ?? ""] ?? EMPTY_HISTORY);
+  return state.tools.drawing ? { ...labels, undo: DRAWING_POINT_LABEL } : labels;
 }
 
 /** Forgets every history (tests, another user's workspace). */

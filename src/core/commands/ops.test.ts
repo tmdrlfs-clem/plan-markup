@@ -4,7 +4,7 @@ import { factorForRatio, type Calibration } from "@/core/calibration/calibration
 import { uuidv7, UUID_PATTERN } from "@/core/ids/uuid";
 import { DEFAULT_MEASURE_STYLE, markupSchema, type Markup } from "@/core/schema/markup";
 
-import { applyCalibrationsOp, applyMarkupsOp, docOpSchema, invertOp, type DocOp } from "./ops";
+import { applyCalibrationsOp, applyMarkupsOp, docOpSchema, invertOp, removeMarkupsOp, type DocOp } from "./ops";
 
 const SHA = "a".repeat(64);
 const length = (id: string, x = 72): Markup => ({
@@ -55,6 +55,22 @@ describe("document ops (Story 4.5, AR13)", () => {
     // Adding an id again replaces it (redo after a restore never duplicates).
     expect(applyMarkupsOp(after, add)).toHaveLength(2);
     expect(docOpSchema.parse(JSON.parse(JSON.stringify(add)))).toEqual(add);
+  });
+
+  it("review R1: undoing a removal puts each markup back where it was in the drawing order", () => {
+    const list = [1, 2, 3, 4, 5].map((n) => length(uuidv7(n), 10 * n));
+    const op = removeMarkupsOp(SHA, list, [list[0].id, list[2].id, list[4].id])!;
+    expect(op).toMatchObject({ kind: "markups.remove", at: [0, 2, 4] });
+    const after = applyMarkupsOp(list, op);
+    expect(after.map((m) => m.id)).toEqual([list[1].id, list[3].id]);
+    expect(applyMarkupsOp(after, invertOp(op))).toEqual(list);
+    // Undo then redo then undo again round-trips; the inverse of the inverse is the op.
+    expect(invertOp(invertOp(op))).toEqual(op);
+    expect(applyMarkupsOp(applyMarkupsOp(applyMarkupsOp(after, invertOp(op)), op), invertOp(op))).toEqual(list);
+    expect(docOpSchema.parse(JSON.parse(JSON.stringify(op)))).toEqual(op);
+    expect(removeMarkupsOp(SHA, list, ["nope"])).toBeNull();
+    // An add without positions stays on top.
+    expect(applyMarkupsOp(after, { kind: "markups.add", documentId: SHA, markups: [list[0]] }).at(-1)).toEqual(list[0]);
   });
 
   it("calibrations.set writes and clears page calibrations; its inverse restores them", () => {

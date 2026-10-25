@@ -1,6 +1,6 @@
 # Story 4.5: Draw a length measurement (editor foundation)
 
-Status: review
+Status: done
 
 ## Story
 
@@ -25,6 +25,21 @@ so that I can read real distances off the drawing.
 - [x] **Task 2: Editor store and session** — `src/features/editor/editor-store.ts` (slices), op-based commands (`executeOp`), the 4.3 history moved in (API kept: `executeCommand`, `undoActive`, `redoActive`, `activeUndoLabels`), calibrate apply as a `calibrations.set` op, `session.ts` (sessionStorage per user + sha256, restore on open, drop history on tab close); unit tests.
 - [x] **Task 3: Length tool** — viewer layer / tool interface (static and active layers, tool point / escape / cancel hooks, synchronous static repaint), `src/features/editor/length-tool.ts` (drawing, live label, captions, Esc / undo-in-progress rules), `Shift+Alt+L`, ToolRail Length live with its hint updated; unit tests.
 - [x] **Task 4: Tests** — `e2e/measure-length.spec.ts` (AC 8); local L17/L21 check (L17 at 1:75: the "1905" dimension measured; L21 from its detected 1:75 @ A1: the "1491" dimension); screenshot `fixtures/private/traces/4-5-length.png` (never commit private files).
+
+### Review Follow-ups (AI)
+
+Adversarial review 2026-10-25 (Claude Opus 5.5) of 2a6f612..e55d1c5: the editor store and its slices, document ops and their inverses, undo across calibrations and lengths, the viewer ↔ editor painter interface, sessionStorage persistence (keying per user and sha256, stale and corrupt data, tab close, user change), memory and per-frame cost, Esc / Ctrl+Z / Shift+Alt+L, and the tests. Founder decisions 2026-10-25 (answered questions, not to be asked again; the founder will reassess after real use): (1) captions are 10 pt in page units (they scale with the zoom; editable with Epic 5 properties); (2) Esc with nothing drawn returns to Select (only an Esc meant for the canvas); (3) markups are Revu red #FF0000, 1 pt, with end ticks, caption above the line and never upside down; (4) closing a document tab keeps its measurements and calibrations for the browser session (history dropped) until Epic 6 saving.
+
+- [x] **[Medium] R1: Undoing a removal put the markups on top.** `markups.remove` inverted to a plain `markups.add`, which appends: undo changed the drawing order (Epic 5 delete would have shipped it). Fix: removals carry each markup's position (`at`, built by `removeMarkupsOp`); the inverse add puts each back where it was; the inverse of the inverse is the op.
+- [x] **[Medium] R2: A session record was trusted as a whole once it parsed.** A record holding an op, markup or calibration of another document (corrupt, edited, or written by a bug) restored into this document's history, and its undo would change the other document. Fix: `recordBelongsTo` requires every op's document, every markup's and calibration's page id (by `sha256:` prefix, so a longer id that only starts alike is refused) to be this document's; otherwise the record is ignored.
+- [x] **[Medium] R3: Another user's records stayed in the browser tab's storage.** They were never read by the next user (keys are per user), but on a shared computer they lingered until the tab closed. Fix: mounting the workspace for a user removes this tab's records of other users.
+- [x] **[Low] R4: The duplicate-tab close path was untested, and opens of closed tabs were tracked forever.** Fix: the decision is a pure function (`closedTabs`), tested for a duplicate closed in favour of the shown tab, a duplicate of a background tab, a single tab, and everything closed; the restored-open keys of a closed tab are dropped.
+- [x] **[Low] R5: Edit > Undo named the history's step while drawing**, but Undo then removed the placed point instead. Fix: while drawing, the menu says "Undo Length point" (and is enabled even with an empty history).
+- [x] **[Low] R6: Per-frame cost.** Every pan / zoom frame rewrote the markups canvas's data attributes and drew every length of the page, including huge captions far off screen when zoomed in. Fix: lengths wholly off the canvas are skipped (their captions are still listed); the attributes are written only when they change, the paint time only on a markups change.
+
+Also covered: one history across calibrations and lengths, undone and redone through four mixed steps in order (`session.test.tsx`).
+
+Not defects (checked): op inverses for `markups.add` and `calibrations.set` (round trips in `ops.test.ts`); redo of an add after a restore replaces the same id, never duplicates; old records without `at` still parse (optional); a calibrations op for a document that is not shown changes nothing (undo only runs in the active tab); R5 of Story 4.3 (a retried open drops its history; the session restores history and calibrations together when the document is back); quota or blocked storage only loses the reload copy; sideways pages measure through the user-space X / Y factors (4.3 R2); the painter registers once per mounted shell (reference counted); an Esc handled by a menu, field or dialog never leaves the tool.
 
 ## Dev Notes
 
@@ -75,3 +90,4 @@ Claude Opus 5.5 (claude-opus-5-5)
 
 - 2026-10-25: Story 4.5 created from the epics (Claude Opus 5.5). Status → ready-for-dev.
 - 2026-10-25: Tasks 1-4 implemented (9c48602, 2c6c323, 8a202f8, 2a7dab8). CI run 40180790714 green (unit, e2e on the production build, secret scan). Status → review.
+- 2026-10-25: Adversarial review R1-R6 fixed with tests; founder decisions (1)-(4) recorded. Status → done.

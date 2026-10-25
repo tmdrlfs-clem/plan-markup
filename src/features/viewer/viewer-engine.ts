@@ -390,7 +390,7 @@ export class ViewerEngine {
     this.unsubscribeMarkups = onMarkupsChanged((change) => {
       if (this.destroyed || this.suspended) return;
       if (change.drawingEnded && this.snapFrom) this.clearSnapFrom();
-      this.paintMarkups();
+      this.paintMarkups(true);
       this.paintOverlay();
     });
     this.unsubscribeTokens = subscribeCanvasTokens(() => {
@@ -1422,7 +1422,7 @@ export class ViewerEngine {
     }
     // Layer 2: the page's markups (Story 4.5); layer 3 (paintOverlay) holds the search
     // highlights, the Zoom tool's rubber band, the snap glyph and the drawing in progress.
-    this.paintMarkups();
+    this.paintMarkups(false);
     this.publishView();
     // The view moved under a still pointer: the page point under it changed.
     if (this.pointerScreen) this.updateCursor();
@@ -1846,12 +1846,18 @@ export class ViewerEngine {
       // CSS px per user unit, over UserUnit: per page point.
       devicePerPt: (Math.hypot(linear[0], linear[1]) / userUnit) * k,
       dpr: k,
+      width: this.canvases.markups.width,
+      height: this.canvases.markups.height,
       colors: { halo: palette.halo, warning: palette.canvasWarning, fontFamily: palette.fontFamily },
     };
   }
 
-  /** Layer 2 (Story 4.5): the shown page's markups, painted by the registered painter. */
-  private paintMarkups(): void {
+  /**
+   * Layer 2 (Story 4.5): the shown page's markups, painted by the registered
+   * painter. `changed`: a markups change (not a view frame) stamps the paint
+   * time (e2e: NFR3); review R6: a frame writes the attributes only when they change.
+   */
+  private paintMarkups(changed: boolean): void {
     if (this.destroyed || this.suspended) return;
     const canvas = this.canvases.markups;
     const c = canvas.getContext("2d");
@@ -1865,10 +1871,13 @@ export class ViewerEngine {
     if (!data) return;
     // e2e and diagnostics: what layer 2 shows and when it was last painted.
     const text = captions.join(" | ");
-    if (text) data.captions = text;
-    else delete data.captions;
-    data.markupCount = String(captions.length);
-    data.paintedAt = String(performance.now());
+    if ((data.captions ?? "") !== text) {
+      if (text) data.captions = text;
+      else delete data.captions;
+    }
+    const count = String(captions.length);
+    if (data.markupCount !== count) data.markupCount = count;
+    if (changed) data.paintedAt = String(performance.now());
   }
 
   /** Layer 3 (Story 4.5): the drawing in progress and its live value beside the pointer. */
@@ -1878,6 +1887,7 @@ export class ViewerEngine {
     const live = painter && view ? painter.paintActive(c, view, this.pointerScreen ? this.toolPoint : null) : null;
     const data = this.canvases.active.dataset as DOMStringMap | undefined;
     if (!data) return;
+    if ((data.measure ?? null) === live) return;
     if (live) data.measure = live;
     else delete data.measure;
   }

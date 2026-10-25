@@ -79,7 +79,7 @@ development_status:
   4-2-detect-printed-scales: done
   4-3-calibrate-a-page: done
   4-4-verify-a-calibration: done
-  4-5-draw-a-length-measurement-editor-foundation: review
+  4-5-draw-a-length-measurement-editor-foundation: done
   4-6-polylength-and-measurement-captions: backlog
   4-7-prompt-for-scale-and-never-show-unscaled-numbers: backlog
   4-8-area-and-count-measurements: backlog

@@ -31,6 +31,8 @@ const view: LayerView = {
   toDevice: (p) => ({ x: p.x, y: -p.y }),
   devicePerPt: 1,
   dpr: 1,
+  width: 0,
+  height: 0,
   colors: { halo: "#ffffff", warning: "#8a6400", fontFamily: "sans-serif" },
 };
 
@@ -98,7 +100,10 @@ describe("Length tool (Story 4.5)", () => {
     expect(lengthPainter.escape()).toBe(true);
     expect(lengthPainter.escape()).toBe(false); // idle: the viewer leaves the tool
     lengthPainter.place({ x: 0, y: 0 }, AT);
+    // Review R5: Edit > Undo names what it does while drawing.
+    expect(activeUndoLabels(editorStore.getState(), "t1").undo).toBe("Length point");
     expect(undoActive()).toBe(true); // the placed point
+    expect(activeUndoLabels(editorStore.getState(), "t1").undo).toBeNull();
     expect(lengthPainter.tracking).toBe(false);
     for (const change of [() => setTool("pan"), () => viewerStore.setState({ pageIndex: 1 }), () => viewerStore.setState({ tabId: "t2" })]) {
       setTool("length");
@@ -119,6 +124,19 @@ describe("Length tool (Story 4.5)", () => {
     off();
     expect(changes.some((c) => c.drawingEnded)).toBe(true);
     expect(changes.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("review R6: a length wholly off the canvas is not drawn, though its caption is still listed", () => {
+    lengthPainter.place({ x: 0, y: 0 }, AT);
+    lengthPainter.place({ x: 72, y: 0 }, AT);
+    const sized = { ...view, width: 1000, height: 800 };
+    const on = recorder();
+    expect(lengthPainter.paintStatic(on.ctx, sized)).toEqual(["Scale not set"]);
+    expect(on.ops.some((o) => o.op === "stroke")).toBe(true);
+    const off = recorder();
+    const far = { ...sized, toDevice: (p: { x: number; y: number }) => ({ x: p.x + 50_000, y: -p.y }) };
+    expect(lengthPainter.paintStatic(off.ctx, far)).toEqual(["Scale not set"]);
+    expect(off.ops.some((o) => o.op === "stroke" || o.op === "fillText")).toBe(false);
   });
 
   it("only places with Length armed", () => {

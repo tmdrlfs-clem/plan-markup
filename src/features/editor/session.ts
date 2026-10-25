@@ -28,8 +28,10 @@ const recordSchema = z.object({
 });
 export type SessionRecord = z.infer<typeof recordSchema>;
 
+const KEY_PREFIX = "pm.editor.v1.";
+
 export function sessionKey(userId: string, documentId: string): string {
-  return `pm.editor.v1.${userId}.${documentId}`;
+  return `${KEY_PREFIX}${userId}.${documentId}`;
 }
 
 function storage(): Storage | undefined {
@@ -40,23 +42,76 @@ function storage(): Storage | undefined {
   }
 }
 
-/** A stored record, or null when missing or unusable (never trusted unparsed). */
-export function parseSessionRecord(raw: string | null): SessionRecord | null {
+/**
+ * Review R2: everything in a record belongs to its document: the markups' and
+ * calibrations' page ids, and every op (an op for another document would
+ * change that document's markups on undo).
+ */
+export function recordBelongsTo(record: SessionRecord, documentId: string): boolean {
+  const page = `${documentId}:`;
+  const ownPage = (id: string) => id.startsWith(page);
+  const ownOp = (op: SessionRecord["past"][number]["op"]) =>
+    op.documentId === documentId &&
+    (op.kind === "calibrations.set" ? [...Object.keys(op.before), ...Object.keys(op.after)].every(ownPage) : op.markups.every((m) => ownPage(m.pageId)));
+  return (
+    record.markups.every((m) => ownPage(m.pageId)) &&
+    Object.keys(record.calibrations).every(ownPage) &&
+    [...record.past, ...record.future].every((e) => ownOp(e.op))
+  );
+}
+
+/** A stored record, or null when missing or unusable (never trusted unparsed; with `documentId`, only one wholly of that document). */
+export function parseSessionRecord(raw: string | null, documentId?: string): SessionRecord | null {
   if (raw === null) return null;
   try {
     const parsed = recordSchema.safeParse(JSON.parse(raw));
-    return parsed.success ? parsed.data : null;
+    if (!parsed.success) return null;
+    return documentId === undefined || recordBelongsTo(parsed.data, documentId) ? parsed.data : null;
   } catch {
     return null;
   }
 }
 
-function read(key: string): SessionRecord | null {
+function read(key: string, documentId: string): SessionRecord | null {
   try {
-    return parseSessionRecord(storage()?.getItem(key) ?? null);
+    return parseSessionRecord(storage()?.getItem(key) ?? null, documentId);
   } catch {
     return null;
   }
+}
+
+/** Review R3: this browser tab's records of other users go (a shared computer: the next user never inherits them). */
+export function dropOtherUsersRecords(userId: string): void {
+  try {
+    const store = storage();
+    if (!store) return;
+    const own = `${KEY_PREFIX}${userId}.`;
+    const keys: string[] = [];
+    for (let i = 0; i < store.length; i++) {
+      const key = store.key(i);
+      if (key?.startsWith(KEY_PREFIX) && !key.startsWith(own)) keys.push(key);
+    }
+    for (const key of keys) store.removeItem(key);
+  } catch {
+    // Blocked storage: nothing was kept either.
+  }
+}
+
+/**
+ * Review R4: which closed document tabs' histories leave the session. A tab
+ * closed because its document is already open in another tab (Story 3.5: the
+ * existing tab is shown instead) keeps that document's history.
+ */
+export function closedTabs(
+  tabDocs: ReadonlyMap<string, string>,
+  openTabIds: ReadonlySet<string>,
+  activeDocumentId: string | null,
+): { closed: string[]; dropHistoryOf: string[] } {
+  const closed = [...tabDocs.keys()].filter((id) => !openTabIds.has(id));
+  const stillOpen = new Set([...tabDocs].filter(([id]) => openTabIds.has(id)).map(([, doc]) => doc));
+  if (activeDocumentId) stillOpen.add(activeDocumentId);
+  const dropHistoryOf = [...new Set(closed.map((id) => tabDocs.get(id)!))].filter((doc) => !stillOpen.has(doc));
+  return { closed, dropHistoryOf };
 }
 
 function write(key: string, record: SessionRecord): void {
@@ -95,7 +150,7 @@ function restoreActive(): void {
   if (!open || restored.has(open.key)) return;
   restored.add(open.key);
   tabDocs.set(open.tabId, open.documentId);
-  const record = read(sessionKey(owner!, open.documentId));
+  const record = read(sessionKey(owner!, open.documentId), open.documentId);
   if (!record) return;
   if (markupsOf(editorStore.getState(), open.documentId).length === 0 && record.markups.length > 0) setDocMarkups(open.documentId, record.markups);
   const calibrations = ownCalibrations(record.calibrations, open.documentId);
@@ -138,15 +193,15 @@ function sync(): void {
 // A closed document tab keeps its markups and calibrations for the session, not its history.
 tabsStore.subscribe((tabs) => {
   if (!owner) return;
-  const open = new Set(tabs.tabs.map((t) => t.id));
-  for (const [tabId, documentId] of [...tabDocs]) {
-    if (open.has(tabId)) continue;
+  const { closed, dropHistoryOf } = closedTabs(tabDocs, new Set(tabs.tabs.map((t) => t.id)), viewerStore.getState().documentId);
+  for (const tabId of closed) {
     tabDocs.delete(tabId);
-    // A tab closed because its document is already open in another tab (Story 3.5) keeps that tab's history.
-    const elsewhere = viewerStore.getState().documentId === documentId || [...tabDocs].some(([id, doc]) => doc === documentId && open.has(id));
-    if (elsewhere) continue;
+    // Its opens are done with (the set never grows past the open tabs).
+    for (const key of [...restored]) if (key.startsWith(`${tabId}:`)) restored.delete(key);
+  }
+  for (const documentId of dropHistoryOf) {
     const key = sessionKey(owner, documentId);
-    const record = read(key);
+    const record = read(key, documentId);
     if (record) write(key, { ...record, past: [], future: [] });
     written.delete(documentId);
   }
@@ -163,6 +218,7 @@ export function useEditorSession(userId: string): void {
     }
     owner = userId;
     lastOwner = userId;
+    dropOtherUsersRecords(userId);
     sync();
     const offViewer = viewerStore.subscribe(sync);
     const offEditor = editorStore.subscribe(writeActive);
