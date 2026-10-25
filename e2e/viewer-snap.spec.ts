@@ -1,7 +1,7 @@
 // Story 4.1: snapping on the committed fixture fixtures/pdf/snap.pdf (page 1,
 // A4 landscape, user space origin at the corner): a rectangle (100, 100)-(300,
 // 250), two lines crossing at (500, 200), a circle centred (700, 200) r 50.
-// With the Length tool (armed for its snapping preview) the cursor snaps:
+// With the Length tool armed the cursor snaps:
 // endpoint, intersection, midpoint, on line; the status bar shows the snapped
 // point; the content toggle off and Alt disable it; Shift holds 45° steps
 // from the clicked point; the Select tool never snaps.
@@ -59,9 +59,9 @@ test("snap: endpoint, intersection, midpoint, on line; toggle off, Alt, Shift 45
   await moveTo(page, 101, 102);
   await expect(canvas(page)).not.toHaveAttribute("data-snap", /.+/);
 
-  // Length, armed for its snapping preview (the HintBar says so).
+  // Length, armed (the HintBar says how it works).
   await page.getByRole("toolbar", { name: "Drawing tools" }).getByRole("radio", { name: "Length" }).click();
-  await expect(page.getByText(/Length: snapping preview/)).toBeVisible();
+  await expect(page.getByText(/Length: click the start and the end point/)).toBeVisible();
   await stable(page);
   await moveTo(page, 102, 103);
   await expect(canvas(page)).toHaveAttribute("data-snap", "endpoint 100.00 100.00");

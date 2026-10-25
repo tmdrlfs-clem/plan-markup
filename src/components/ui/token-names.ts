@@ -24,6 +24,7 @@ export const REQUIRED_THEME_VARS = [
   "--canvas-selection-outline",
   "--canvas-snap",
   "--canvas-danger",
+  "--canvas-warning",
   "--canvas-coverage-fill",
   "--canvas-coverage-outline",
   "--canvas-zone",

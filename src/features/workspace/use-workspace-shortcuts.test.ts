@@ -95,6 +95,21 @@ describe("handleWorkspaceShortcut", () => {
     expect(h.showLeftPanel).toHaveBeenNthCalledWith(2, "tool-chest");
   });
 
+  it("Story 4.5: Shift+Alt+L arms Length (by code), not in fields or dialogs, not without a drawing", () => {
+    const h = { ...handlers(), lengthTool: vi.fn() };
+    const shiftAltL = (target?: EventTarget) => key({ shiftKey: true, altKey: true, code: "KeyL", key: "Ł" }, target);
+    expect(handleWorkspaceShortcut(shiftAltL(), h)).toBe(true);
+    expect(h.lengthTool).toHaveBeenCalledTimes(1);
+    expect(handleWorkspaceShortcut(shiftAltL(document.createElement("input")), h)).toBe(false);
+    const dialog = document.createElement("div");
+    dialog.setAttribute("role", "dialog");
+    const button = document.createElement("button");
+    dialog.appendChild(button);
+    expect(handleWorkspaceShortcut(shiftAltL(button), h)).toBe(false);
+    expect(handleWorkspaceShortcut(shiftAltL(), handlers())).toBe(false);
+    expect(h.lengthTool).toHaveBeenCalledTimes(1);
+  });
+
   it("Alt+L toggles the Markups list and Shift+F4 hides all panels", () => {
     const h = handlers();
     handleWorkspaceShortcut(key({ altKey: true, code: "KeyL", key: "l" }), h);

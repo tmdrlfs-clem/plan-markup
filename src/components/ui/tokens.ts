@@ -13,6 +13,8 @@ export interface CanvasTokens {
   snap: string;
   danger: string;
   warning: string;
+  /** Story 4.5: a warning drawn on the white sheet ("Scale not set" captions). */
+  canvasWarning: string;
   success: string;
   coverageFill: string;
   coverageOutline: string;
@@ -52,6 +54,7 @@ export function readCanvasTokens(
     snap: readVar(style, "--canvas-snap"),
     danger: readVar(style, "--canvas-danger"),
     warning: readVar(style, "--warning"),
+    canvasWarning: readVar(style, "--canvas-warning"),
     success: readVar(style, "--success"),
     coverageFill: readVar(style, "--canvas-coverage-fill"),
     coverageOutline: readVar(style, "--canvas-coverage-outline"),
@@ -72,7 +75,7 @@ export function readCanvasTokens(
 /** The viewer's canvas colours (Story 3.8): the theme's, read from its tokens. */
 export type ViewerPalette = Pick<
   CanvasTokens,
-  "backdrop" | "zoomRect" | "failedFill" | "failedStroke" | "searchHit" | "searchCurrent" | "searchOutline" | "snap" | "halo" | "fontFamily"
+  "backdrop" | "zoomRect" | "failedFill" | "failedStroke" | "searchHit" | "searchCurrent" | "searchOutline" | "snap" | "halo" | "canvasWarning" | "fontFamily"
 >;
 
 /**
@@ -91,6 +94,8 @@ export const VIEWER_PALETTE_FALLBACK: Readonly<ViewerPalette> = Object.freeze({
   // Story 4.1: the snap glyph (info blue, contrast-checked on the white sheet) and its halo.
   snap: "#2563c9",
   halo: "#ffffff",
+  // Story 4.5: "Scale not set" captions (dark amber, readable on the white sheet).
+  canvasWarning: "#8a6400",
   fontFamily: "sans-serif",
 });
 

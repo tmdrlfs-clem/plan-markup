@@ -15,7 +15,7 @@ import { CalibrateDialog, VerifyDialog, openCalibrate, useCalibrationPrefsPersis
 import { redoActive, undoActive } from "@/features/editor";
 import { useFirstUseTipsPersistence } from "@/features/tips";
 import { chooseTheme, useWorkspaceTheme } from "@/features/appearance/theme-store";
-import { useEditorSession } from "@/features/editor";
+import { armLength, useEditorSession, useLengthTool } from "@/features/editor";
 import {
   DocumentTabs,
   DocumentViewer,
@@ -61,6 +61,8 @@ export function WorkspaceShell({ user, theme = null }: { user: WorkspaceUser; th
   useMemo(() => viewerTabs.setOwner(user.id), [user.id]);
   // Story 4.5: the editing session (markups, calibrations, undo) of this user's documents survives a reload.
   useEditorSession(user.id);
+  // Story 4.5: the Length measurement paints and places through the viewer's markup layers.
+  useLengthTool();
   return (
     <LayoutProvider userId={user.id}>
       <TooltipProvider>
@@ -165,6 +167,8 @@ function ShellBody({ user, initialTheme }: { user: WorkspaceUser; initialTheme: 
     // Story 4.3: the active drawing's undo history.
     undo: drawingOpen ? undoActive : undefined,
     redo: drawingOpen ? redoActive : undefined,
+    // Story 4.5: Shift+Alt+L, the Length measurement.
+    lengthTool: drawingOpen ? armLength : undefined,
   });
 
   const panel = leftPanel(left.active);

@@ -30,6 +30,7 @@
   --canvas-selection-outline: #1a0e05;
   --canvas-snap: #2563c9;
   --canvas-danger: #c8243a;
+  --canvas-warning: #8a6400;
   --canvas-coverage-fill: rgba(108, 168, 255, 0.18);
   --canvas-coverage-outline: #6ca8ff;
   --canvas-zone: #8b7fd1;
@@ -70,6 +71,7 @@
   --canvas-selection-outline: #1a0e05;
   --canvas-snap: #2563c9;
   --canvas-danger: #c8243a;
+  --canvas-warning: #8a6400;
   --canvas-coverage-fill: rgba(37, 99, 201, 0.18);
   --canvas-coverage-outline: #2563c9;
   --canvas-zone: #6a5bc2;
@@ -110,6 +112,7 @@
   --canvas-selection-outline: #000000;
   --canvas-snap: #1d56b0;
   --canvas-danger: #b3202f;
+  --canvas-warning: #8a6400;
   --canvas-coverage-fill: rgba(125, 182, 255, 0.22);
   --canvas-coverage-outline: #7db6ff;
   --canvas-zone: #8b7fd1;

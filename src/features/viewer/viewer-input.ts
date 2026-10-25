@@ -129,6 +129,11 @@ export interface ViewerInputTarget {
   /** Story 4.1: a click with a snapping tool (sets the "from" point); Esc clears it. */
   snapClick?(): void;
   clearSnapFrom?(): void;
+  /**
+   * Story 4.5: Esc with Length: cancels the drawing in progress (or clears the "from" point);
+   * otherwise, when the Esc is the canvas's (`leave`), back to Select.
+   */
+  escapeTool?(leave: boolean): void;
   /** Story 4.3: Esc while picking calibration points. */
   cancelCalibrationPick?(): void;
 }
@@ -319,7 +324,13 @@ export class ViewerInput {
       // Alt over the canvas with a snapping tool only suspends snapping: no browser menu.
       if (e.key === "Alt" && this.pointer && pointTool(viewerStore.getState().tool)) e.preventDefault();
     }
-    if (e.key === "Escape" && this.active() && viewerStore.getState().tool === "length") this.target.clearSnapFrom?.();
+    if (e.key === "Escape" && this.active() && viewerStore.getState().tool === "length") {
+      const doc = this.canvas.ownerDocument;
+      // An Esc meant for a menu, field or dialog never leaves the tool.
+      const leave = !e.defaultPrevented && (doc.activeElement === this.canvas || doc.activeElement === doc.body || this.pointer !== null);
+      if (this.target.escapeTool) this.target.escapeTool(leave);
+      else this.target.clearSnapFrom?.();
+    }
     // Story 4.3: Esc while picking calibration points cancels the pick (the dialog comes back).
     if (e.key === "Escape" && viewerStore.getState().tool === "calibrate") this.target.cancelCalibrationPick?.();
     if (e.defaultPrevented || !this.documentArea()) return;

@@ -15,6 +15,7 @@ import { buildSnapIndex } from "@/core/snap/index";
 import { SEG_END_POINT, SEG_START_POINT, SEG_STRAIGHT } from "@/core/snap/extract";
 import { clearSnapCache } from "./snap-controller";
 import { DEFAULT_SNAP, setSnap, snapSettings } from "./status/snap-settings";
+import { notifyMarkups, registerMarkupPainter, type LayerView, type MarkupPainter } from "./markup-layer";
 
 type Call = {
   type: RenderVerb;
@@ -1458,6 +1459,82 @@ describe("snapping (Story 4.1)", () => {
     engine.suspend();
     expect(done).toEqual([null, null, null]);
     expect(viewerStore.getState().tool).toBe("zoom");
+  });
+  it("Story 4.5: Length clicks go to the markup painter; layers 2 and 3 paint through it; Esc cancels, then leaves the tool", async () => {
+    const r = await ready();
+    const markOps: Op[] = [];
+    r.canvases.markups = recordingCanvas(markOps);
+    const placed: { x: number; y: number }[] = [];
+    const views: LayerView[] = [];
+    let drawing = false;
+    let pointers: ({ x: number; y: number } | null)[] = [];
+    const painter: MarkupPainter = {
+      paintStatic: (_c, view) => (views.push(view), placed.length >= 2 ? ["2 m"] : []),
+      paintActive: (_c, _view, pointer) => (pointers.push(pointer), drawing ? "live" : null),
+      get tracking() {
+        return drawing;
+      },
+      place: (point) => {
+        placed.push(point);
+        drawing = !drawing;
+        return drawing ? "continue" : "done";
+      },
+      escape: () => {
+        const was = drawing;
+        drawing = false;
+        return was;
+      },
+    };
+    const off = registerMarkupPainter(painter);
+    setTool("length");
+    r.engine.pointerAt(screenOf(101, 101));
+    paint();
+    r.engine.snapClick();
+    expect(placed).toEqual([{ x: 100, y: 100 }]); // the snapped point
+    expect(r.engine.snapFromPoint).toEqual({ x: 100, y: 100 });
+    // While drawing every move repaints layer 3 with the tool point (here Shift-held horizontal).
+    pointers = [];
+    r.engine.pointerAt(screenOf(180, 110), { alt: true, shift: true });
+    paint();
+    expect(pointers.at(-1)!.y).toBeCloseTo(100, 9);
+    expect(r.canvases.active.dataset.measure).toBe("live");
+    r.engine.pointerAt(screenOf(180, 110), { alt: true, shift: false });
+    paint();
+    r.engine.snapClick();
+    expect(placed[1]).toEqual({ x: 180, y: 110 });
+    // Done: no "from" point; a markups change paints layer 2 synchronously, no frame needed.
+    expect(r.engine.snapFromPoint).toBeNull();
+    notifyMarkups({});
+    expect(r.canvases.markups.dataset.captions).toBe("2 m");
+    expect(r.canvases.markups.dataset.markupCount).toBe("1");
+    expect(r.canvases.markups.dataset.paintedAt).toMatch(/^[0-9.]+$/);
+    // The layer view: page points to device px (1 CSS px per point at this fit, DPR 1).
+    const view = views.at(-1)!;
+    expect(view.pageIndex).toBe(0);
+    expect(view.devicePerPt).toBeCloseTo(1, 9);
+    expect(view.toDevice({ x: 0, y: 0 })).toEqual(screenOf(0, 0));
+    // Esc while drawing cancels it (and its "from" point); Esc again leaves the tool; an Esc not
+    // meant for the canvas never does.
+    r.engine.snapClick();
+    expect(drawing).toBe(true);
+    r.engine.escapeTool(true);
+    expect(drawing).toBe(false);
+    expect(r.engine.snapFromPoint).toBeNull();
+    expect(viewerStore.getState().tool).toBe("length");
+    r.engine.escapeTool(false);
+    expect(viewerStore.getState().tool).toBe("length");
+    r.engine.escapeTool(true);
+    expect(viewerStore.getState().tool).toBe("select");
+    // A drawing ended elsewhere (Ctrl+Z) drops the "from" point too.
+    setTool("length");
+    r.engine.snapClick();
+    expect(r.engine.snapFromPoint).not.toBeNull();
+    notifyMarkups({ drawingEnded: true });
+    expect(r.engine.snapFromPoint).toBeNull();
+    off();
+    // Without a painter layer 2 is cleared and empty.
+    notifyMarkups({});
+    expect(r.canvases.markups.dataset.markupCount).toBe("0");
   });
 });
 

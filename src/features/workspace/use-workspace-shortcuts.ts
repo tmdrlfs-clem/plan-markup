@@ -22,6 +22,8 @@ export interface WorkspaceShortcutHandlers {
    */
   undo?: () => void;
   redo?: () => void;
+  /** Story 4.5: Shift+Alt+L arms Length (Revu's shortcut; passed while a drawing is open). Not in fields or dialogs. */
+  lengthTool?: () => void;
 }
 
 /** Dialogs and forms that are not the workspace: their text fields keep the browser's Ctrl+F and F3. */
@@ -79,6 +81,7 @@ function resolve(event: KeyboardEvent, handlers: WorkspaceShortcutHandlers): (()
     if (panel) return () => handlers.showLeftPanel(panel.id);
     if (event.code === MARKUPS_LIST.code) return handlers.toggleMarkupsList;
   }
+  if (event.shiftKey && event.altKey && !ctrl && event.code === "KeyL" && handlers.lengthTool && !inDialog(event.target)) return handlers.lengthTool;
   if (event.shiftKey && !ctrl && !event.altKey && event.key === "F4") return handlers.hideAllPanels;
   return null;
 }

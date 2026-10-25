@@ -92,6 +92,7 @@ import type { SnapModifiers } from "./viewer-input";
 import type { PageScales } from "@/core/scale/detect";
 import { setCursor } from "./status/cursor-store";
 import { searchUi } from "./search-ui";
+import { markupPainter, onMarkupsChanged, type LayerView } from "./markup-layer";
 import { setTool, viewerStore, type ViewerErrorCode, type ViewerState, type ViewerTool } from "./viewer-store";
 
 /** CSS px kept free around the page at fit. */
@@ -385,6 +386,13 @@ export class ViewerEngine {
     // A theme change (Story 3.8) recolours the canvas: backdrop, highlights, rubber band,
     // failed tiles. Re-read from the canvas (the workspace root carries the theme) and redraw
     // from the bitmaps in memory; no tile is rendered again.
+    // Story 4.5: markups or the drawing changed: paint layers 2 and 3 now (NFR3: within 50 ms).
+    this.unsubscribeMarkups = onMarkupsChanged((change) => {
+      if (this.destroyed || this.suspended) return;
+      if (change.drawingEnded && this.snapFrom) this.clearSnapFrom();
+      this.paintMarkups();
+      this.paintOverlay();
+    });
     this.unsubscribeTokens = subscribeCanvasTokens(() => {
       this.palette = null;
       this.invalidate();
@@ -398,6 +406,7 @@ export class ViewerEngine {
   /** Story 4.1: this document's snapping (indices built in the worker, queried here). */
   readonly snap: SnapController;
   private readonly unsubscribeTokens: () => void;
+  private readonly unsubscribeMarkups: () => void;
   /** The theme's canvas colours (read on first use and again after every theme change). */
   private palette: ViewerPalette | null = null;
 
@@ -487,6 +496,7 @@ export class ViewerEngine {
     this.search.destroy();
     this.unsubscribeSearchUi();
     this.unsubscribeTokens();
+    this.unsubscribeMarkups();
     this.client.terminate();
   }
 
@@ -1410,13 +1420,9 @@ export class ViewerEngine {
         }
       }
     }
-    // Layer 2 stays empty until markups arrive (Epic 5); layer 3 (paintOverlay) holds the
-    // search highlights, the Zoom tool's rubber band and the snap glyph.
-    const markups = this.canvases.markups.getContext("2d");
-    if (markups) {
-      markups.setTransform(1, 0, 0, 1, 0, 0);
-      markups.clearRect(0, 0, this.canvases.markups.width, this.canvases.markups.height);
-    }
+    // Layer 2: the page's markups (Story 4.5); layer 3 (paintOverlay) holds the search
+    // highlights, the Zoom tool's rubber band, the snap glyph and the drawing in progress.
+    this.paintMarkups();
     this.publishView();
     // The view moved under a still pointer: the page point under it changed.
     if (this.pointerScreen) this.updateCursor();
@@ -1574,7 +1580,7 @@ export class ViewerEngine {
   private publishCursor(): void {
     if (this.suspended || this.destroyed) return;
     // A calibration pick's rubber band follows every move.
-    if (this.updateCursor() || this.pick?.points.length === 1) this.paintOverlay();
+    if (this.updateCursor() || this.pick?.points.length === 1 || markupPainter()?.tracking) this.paintOverlay();
   }
 
   /**
@@ -1645,7 +1651,25 @@ export class ViewerEngine {
     const point = this.toolPoint;
     this.snapFrom = point ? { x: point.x, y: point.y } : null;
     if (this.pick && point) this.pickPoint({ x: point.x, y: point.y });
+    else if (point && this.sha256 && viewerStore.getState().tool === "length") {
+      // Story 4.5: the Length tool places the point; a finished measurement starts the next one afresh.
+      const placed = markupPainter()?.place({ x: point.x, y: point.y }, { documentId: this.sha256, pageIndex: this.pageIndex });
+      if (placed === "done") this.snapFrom = null;
+    }
     this.paintOverlay();
+  }
+
+  /**
+   * Story 4.5: Esc with a measuring tool: cancels the drawing in progress
+   * (its "from" point too); with nothing drawn, back to Select.
+   */
+  escapeTool(leave = true): void {
+    if (markupPainter()?.escape()) {
+      this.clearSnapFrom();
+      return;
+    }
+    if (this.snapFrom) return this.clearSnapFrom();
+    if (leave) setTool("select");
   }
 
   /**
@@ -1798,7 +1822,64 @@ export class ViewerEngine {
     this.drawSearchHighlights();
     if (this.zoomRect) this.drawZoomRect(this.zoomRect);
     if (c && this.page) this.drawPickLine(c);
+    if (c && this.page) this.drawActiveMarkup(c);
     if (c && this.page) this.drawSnap(c);
+  }
+
+  /** Story 4.5: how the markup painter sees this page on the canvases. */
+  private layerView(): LayerView | null {
+    const page = this.page;
+    const documentId = this.sha256;
+    if (!page || !documentId) return null;
+    const k = this.dpr;
+    const userUnit = page.userUnit && page.userUnit > 0 ? page.userUnit : 1;
+    const linear = this.userToScreenLinear();
+    const palette = this.colors();
+    return {
+      documentId,
+      pageIndex: this.pageIndex,
+      userUnit,
+      toDevice: (p) => {
+        const s = pageToScreen(this.view, this.viewport, applyMatrix(userToPageMatrix(page), p));
+        return { x: s.x * k, y: s.y * k };
+      },
+      // CSS px per user unit, over UserUnit: per page point.
+      devicePerPt: (Math.hypot(linear[0], linear[1]) / userUnit) * k,
+      dpr: k,
+      colors: { halo: palette.halo, warning: palette.canvasWarning, fontFamily: palette.fontFamily },
+    };
+  }
+
+  /** Layer 2 (Story 4.5): the shown page's markups, painted by the registered painter. */
+  private paintMarkups(): void {
+    if (this.destroyed || this.suspended) return;
+    const canvas = this.canvases.markups;
+    const c = canvas.getContext("2d");
+    if (!c) return;
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.clearRect(0, 0, canvas.width, canvas.height);
+    const painter = markupPainter();
+    const view = this.layerView();
+    const captions = painter && view ? painter.paintStatic(c, view) : [];
+    const data = canvas.dataset as DOMStringMap | undefined;
+    if (!data) return;
+    // e2e and diagnostics: what layer 2 shows and when it was last painted.
+    const text = captions.join(" | ");
+    if (text) data.captions = text;
+    else delete data.captions;
+    data.markupCount = String(captions.length);
+    data.paintedAt = String(performance.now());
+  }
+
+  /** Layer 3 (Story 4.5): the drawing in progress and its live value beside the pointer. */
+  private drawActiveMarkup(c: CanvasRenderingContext2D): void {
+    const painter = markupPainter();
+    const view = this.layerView();
+    const live = painter && view ? painter.paintActive(c, view, this.pointerScreen ? this.toolPoint : null) : null;
+    const data = this.canvases.active.dataset as DOMStringMap | undefined;
+    if (!data) return;
+    if (live) data.measure = live;
+    else delete data.measure;
   }
 
   /**

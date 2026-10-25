@@ -25,6 +25,7 @@ export { requestSearchFocus, searchUi } from "./search-ui";
 export { ThumbnailsPanel } from "./thumbnails-panel";
 export { activeSearch, viewerCalibration, viewerCommands, type ViewerCommand } from "./viewer-commands";
 export type { CalibrationPick, CalibrationPickListener } from "./viewer-engine";
+export { notifyMarkups, registerMarkupPainter, type LayerView, type MarkupPainter } from "./markup-layer";
 export {
   hasDocument,
   setTool,

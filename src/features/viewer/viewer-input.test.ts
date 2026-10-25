@@ -186,6 +186,23 @@ describe("ViewerInput", () => {
     setTool("select");
   });
 
+  it("Story 4.5: Esc with Length goes to the tool, leaving it only when the Esc is the canvas's", () => {
+    const escapeTool = vi.fn();
+    Object.assign(t, { escapeTool });
+    setTool("length");
+    const field = document.createElement("input");
+    document.body.appendChild(field);
+    field.focus();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    expect(escapeTool).toHaveBeenLastCalledWith(false);
+    canvas.dispatchEvent(pointer("pointermove", { x: 5, y: 6 }));
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    expect(escapeTool).toHaveBeenLastCalledWith(true);
+    expect(t.clearSnapFrom).not.toHaveBeenCalled();
+    field.remove();
+    setTool("select");
+  });
+
   it("does nothing without a document", () => {
     viewerStore.setState({ status: "empty", pageCount: 0 });
     canvas.dispatchEvent(new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaY: 10 }));

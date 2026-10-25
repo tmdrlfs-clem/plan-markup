@@ -18,7 +18,7 @@ export const VIEWER_ERROR_TEXT: Record<ViewerErrorCode, string> = {
 
 /**
  * Navigation tools of the viewer (Story 3.2), and Length (Story 4.1: armed
- * for its snapping preview; measuring itself arrives with Story 4.5).
+ * for snapping; it measures from Story 4.5).
  * Calibrate (Story 4.3) is the Calibrate dialog's two-point pick, never
  * chosen from the ToolRail. Markup tools arrive with the editor.
  */

@@ -36,8 +36,8 @@ interface Tool {
 }
 
 /**
- * Tools that work today: Select and Pan (Story 3.2), and Length for its snapping
- * preview (Story 4.1; it measures from Story 4.5). The others arrive with the editor.
+ * Tools that work today: Select and Pan (Story 3.2), and Length (snapping from
+ * Story 4.1, measuring from Story 4.5). The others arrive with the editor.
  */
 const LIVE_TOOLS: ReadonlySet<string> = new Set<ViewerTool>(["select", "pan", "length"]);
 
@@ -45,7 +45,7 @@ export const SNAP_PREVIEW_HINT_ID = "snap-preview";
 /** Review S3: a page past the segment cap. */
 export const SNAP_PARTIAL_NOTE = "This page is very large: snapping covers only part of its linework.";
 export const SNAP_PREVIEW_HINT =
-  "Length: snapping preview. Points snap to the drawing (Alt: off, Shift: 45° steps from the clicked point, Esc: clear). Measuring arrives with the Measure tools.";
+  "Length: click the start and the end point. Points snap to the drawing (Alt: off, Shift: 45° steps). Esc cancels a measurement; Esc again returns to Select.";
 export const EDITOR_LATER = "Arrives with the markup editor";
 
 /** UX-DR6 groups. Select and Pan work with a drawing open; the rest arrive with the editor. */
@@ -93,7 +93,7 @@ const GROUPS: { label: string; tools: Tool[] }[] = [
 export function ToolRail() {
   const open = useStore(viewerStore, hasDocument);
   const active = useStore(viewerStore, (s) => s.tool);
-  // Story 4.1: while Length is armed (whatever armed it), the HintBar says what it does yet.
+  // Story 4.1 / 4.5: while Length is armed (whatever armed it), the HintBar says how it works.
   const preview = open && active === "length";
   const partial = useStore(viewerStore, (s) => s.snapPartial);
   useEffect(() => {

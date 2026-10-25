@@ -84,7 +84,7 @@ describe("Length snapping preview (Story 4.1)", () => {
       viewerStore.setState({ status: "ready", pageCount: 1, zoom: 64 });
     });
     await user.click(screen.getByRole("radio", { name: "Length" }));
-    expect(hintStore.getState().hint?.text).toMatch(/^Length: snapping preview/);
+    expect(hintStore.getState().hint?.text).toMatch(/^Length: click the start and the end point/);
     act(() => viewerStore.setState({ snapPartial: true }));
     expect(hintStore.getState().hint?.text).toMatch(/snapping covers only part of its linework/);
     await user.click(screen.getByRole("radio", { name: "Select" }));
