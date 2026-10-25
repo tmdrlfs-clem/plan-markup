@@ -104,4 +104,4 @@ Claude Opus 5.5 (claude-opus-5-5)
 
 - 2026-10-25: Story 4.4 created from the epics (Claude Opus 5.5). Status → ready-for-dev (d4a82ba).
 - 2026-10-25: Story 4.4 implemented (Claude Opus 5.5): verify core, VerifyDialog with the shared pick, wiring, e2e and the L17/L21 check. Status → review. Commits 85046dc (Task 1), cba0ab8 (Task 2), efbbe03 (Task 3), 3d110e7 (Task 4) and this record.
-- 2026-10-25: Adversarial review (Claude Opus 5.5): V1-V4 fixed with tests, founder decisions 1-3 recorded. Status → done.
+- 2026-10-25: Adversarial review (Claude Opus 5.5): V1-V4 fixed with tests, founder decisions 1-3 recorded. Status → done. Commit 3f5bbbd, CI run **40178517803** success.
