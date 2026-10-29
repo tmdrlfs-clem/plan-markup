@@ -42,12 +42,25 @@ so that I can measure pipe runs and keep labels readable.
 
 ### Agent Model Used
 
+Claude Opus 5.5
+
 ### Debug Log References
 
 ### Completion Notes List
 
+- Task 2: the 4.5 Length painter generalised to `measure-tool.ts` (Length and Polylength); the viewer's `MarkupPainter` gained `finish`, `removeLastPoint` and `lastPoint`; a click within 3 CSS px of the last vertex adds nothing (a double-click's second click); Enter and Backspace go to the tool only when they are the canvas's keys.
+- Task 3: caption hit boxes are recorded as layer 2 paints (text width from `measureText`, 3 px slop); the live preview is `tools.captionDrag` in the editor store; the offset is accumulated in user space and committed as one `markups.update` op ("Move caption"). Another tool, page or tab drops a drag in progress.
+- Task 4: `e2e/measure-polylength.spec.ts` passes in CI (run 40941465553, green). Older specs matched "Length" loosely and also hit the new "Polylength" radio: their ToolRail locators are now exact.
+- Not yet done: the local L17/L21 check and the screenshot (Docker was off this session).
+
 ### File List
+
+- src/features/editor/measure-tool.ts (was length-tool.ts), measure-tool.test.ts, editor-store.ts, undo-store.ts, index.ts
+- src/features/viewer/markup-layer.ts, viewer-engine.ts, viewer-engine.test.ts, viewer-input.ts, viewer-input.test.ts, viewer-store.ts, snap-controller.ts, index.ts
+- src/features/workspace/tool-rail.tsx, use-workspace-shortcuts.ts, use-workspace-shortcuts.test.ts, workspace-shell.tsx, workspace-shell.test.tsx
+- e2e/measure-polylength.spec.ts; e2e/measure-length.spec.ts, perf-snap.spec.ts, viewer-snap.spec.ts, workspace-shell.spec.ts (exact names)
 
 ### Change Log
 
 - 2026-10-25: Story 4.6 created from the epics (Claude Opus 5.5). Status → ready-for-dev.
+- 2026-10-30: Tasks 2-3 done, Task 4 e2e green in CI (40941465553); local L17/L21 check and screenshot pending (Claude Opus 5.5).
