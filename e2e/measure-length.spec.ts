@@ -18,7 +18,7 @@ const canvas = (page: Page) => page.getByTestId("drawing-canvas");
 const markups = (page: Page) => page.getByTestId("markups-canvas");
 const scale = (page: Page) => page.getByTestId("status-bar").getByTestId("status-scale");
 const calibrate = (page: Page) => page.getByRole("dialog", { name: "Calibrate" });
-const tool = (page: Page, name: string) => page.getByRole("toolbar", { name: "Drawing tools" }).getByRole("radio", { name });
+const tool = (page: Page, name: string) => page.getByRole("toolbar", { name: "Drawing tools" }).getByRole("radio", { name, exact: true });
 
 async function open(page: Page) {
   const chooser = page.waitForEvent("filechooser");

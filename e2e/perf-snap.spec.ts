@@ -46,7 +46,7 @@ async function measure(page: Page, name: keyof typeof FILES) {
   const [opListMs, extractMs, buildMs, bytes] = ((await canvas(page).getAttribute("data-snap-build")) ?? "").split(" ").map(Number);
   const segments = await canvas(page).getAttribute("data-snap-index");
 
-  await page.getByRole("toolbar", { name: "Drawing tools" }).getByRole("radio", { name: "Length" }).click();
+  await page.getByRole("toolbar", { name: "Drawing tools" }).getByRole("radio", { name: "Length", exact: true }).click();
   await page.getByTestId("status-bar").getByTestId("status-zoom").click();
   await page.getByRole("menuitem", { name: "200%" }).click();
   await page.waitForTimeout(500);

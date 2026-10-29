@@ -60,7 +60,7 @@ test("snap: endpoint, intersection, midpoint, on line; toggle off, Alt, Shift 45
   await expect(canvas(page)).not.toHaveAttribute("data-snap", /.+/);
 
   // Length, armed (the HintBar says how it works).
-  await page.getByRole("toolbar", { name: "Drawing tools" }).getByRole("radio", { name: "Length" }).click();
+  await page.getByRole("toolbar", { name: "Drawing tools" }).getByRole("radio", { name: "Length", exact: true }).click();
   await expect(page.getByText(/Length: click the start and the end point/)).toBeVisible();
   await stable(page);
   await moveTo(page, 102, 103);
@@ -109,7 +109,7 @@ test("snap: endpoint, intersection, midpoint, on line; toggle off, Alt, Shift 45
   await canvas(page).focus();
   await page.keyboard.press("PageDown");
   await expect(canvas(page)).toHaveAttribute("data-snap-index", /^\d+$/, { timeout: 20_000 });
-  await page.getByRole("toolbar", { name: "Drawing tools" }).getByRole("radio", { name: "Length" }).click();
+  await page.getByRole("toolbar", { name: "Drawing tools" }).getByRole("radio", { name: "Length", exact: true }).click();
   await stable(page);
   const box = (await canvas(page).boundingBox())!;
   const [zoom, cx, cy] = ((await canvas(page).getAttribute("data-view")) ?? "").split(" ").map(Number);

@@ -53,7 +53,7 @@ test("the shell has its landmarks, menus and empty state", async ({ browser }) =
 
 test("a ToolRail button explains why it is disabled", async ({ browser }) => {
   const page = await signedInPage(browser);
-  const length = page.getByRole("toolbar", { name: "Drawing tools" }).getByRole("radio", { name: "Length" });
+  const length = page.getByRole("toolbar", { name: "Drawing tools" }).getByRole("radio", { name: "Length", exact: true });
   await expect(length).toHaveAttribute("aria-disabled", "true");
   // Keyboard focus opens the tooltip deterministically; Playwright's one-step mouse jumps can
   // leave Radix's pointer-in-transit state set between hovers (hover is unit-tested).
