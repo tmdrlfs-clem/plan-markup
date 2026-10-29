@@ -140,6 +140,11 @@ export interface ViewerInputTarget {
   removeToolPoint?(): boolean;
   /** Story 4.3: Esc while picking calibration points. */
   cancelCalibrationPick?(): void;
+  /** Story 4.6: Shift + drag with Select: true when a caption is at `at` (the drag moves it). */
+  startCaptionDrag?(at: Point): boolean;
+  moveCaptionDrag?(at: Point): void;
+  /** Story 4.6: the caption drag ends: kept (`commit`) or put back (Esc, a cancelled pointer). */
+  endCaptionDrag?(commit: boolean): void;
 }
 
 /** Tools that place points (Length, Polylength, the calibration pick): a click places one, Alt suspends snapping. */
@@ -152,7 +157,8 @@ export type SnapModifiers = { alt: boolean; shift: boolean };
 
 type Drag =
   | { kind: "pan"; pointerId: number; last: Point }
-  | { kind: "zoom"; pointerId: number; start: Point; zoomOut: boolean };
+  | { kind: "zoom"; pointerId: number; start: Point; zoomOut: boolean }
+  | { kind: "caption"; pointerId: number };
 
 /** Normalised rectangle between two points. */
 function rectOf(a: Point, b: Point): Rect {
@@ -241,7 +247,7 @@ export class ViewerInput {
   private updateCursor(): void {
     const { tool, tempPan } = viewerStore.getState();
     const zoomOut = this.drag?.kind === "zoom" ? this.drag.zoomOut : this.altDown;
-    const cursor = cursorFor({ tool, tempPan, dragging: this.drag?.kind === "pan", zoomOut });
+    const cursor = this.drag?.kind === "caption" ? "move" : cursorFor({ tool, tempPan, dragging: this.drag?.kind === "pan", zoomOut });
     if (this.canvas.style.cursor !== cursor) this.canvas.style.cursor = cursor;
   }
 
@@ -264,6 +270,10 @@ export class ViewerInput {
       this.drag = { kind: "pan", pointerId: e.pointerId, last: this.point(e) };
     } else if (e.button === 0 && tool === "zoom") {
       this.drag = { kind: "zoom", pointerId: e.pointerId, start: this.point(e), zoomOut: e.altKey };
+    } else if (e.button === 0 && e.shiftKey && tool === "select" && this.target.startCaptionDrag?.(this.point(e))) {
+      // Story 4.6: Shift + drag on a measurement's caption moves the caption only.
+      e.preventDefault();
+      this.drag = { kind: "caption", pointerId: e.pointerId };
     } else {
       // Story 4.1: a snapping tool's click places its point (the snapped one).
       if (e.button === 0 && pointTool(tool)) {
@@ -290,6 +300,8 @@ export class ViewerInput {
     if (drag.kind === "pan") {
       this.target.panBy(p.x - drag.last.x, p.y - drag.last.y);
       drag.last = p;
+    } else if (drag.kind === "caption") {
+      this.target.moveCaptionDrag?.(p);
     } else {
       this.target.setZoomRect(rectOf(drag.start, p));
     }
@@ -310,6 +322,7 @@ export class ViewerInput {
     const drag = this.drag;
     if (!drag) return;
     this.drag = null;
+    if (drag.kind === "caption") this.target.endCaptionDrag?.(commit);
     if (drag.kind === "zoom") {
       this.target.setZoomRect(null);
       const end = this.pointer;
@@ -337,6 +350,12 @@ export class ViewerInput {
       this.target.setSnapModifiers?.({ alt: e.altKey, shift: e.shiftKey });
       // Alt over the canvas with a snapping tool only suspends snapping: no browser menu.
       if (e.key === "Alt" && this.pointer && pointTool(viewerStore.getState().tool)) e.preventDefault();
+    }
+    // Story 4.6: Esc during a caption drag puts the caption back (and nothing else).
+    if (e.key === "Escape" && this.drag?.kind === "caption") {
+      e.preventDefault();
+      this.endDrag(false);
+      return;
     }
     // Story 4.6: Enter finishes a polylength, Backspace removes its last vertex (the canvas's keys only).
     if ((e.key === "Enter" || e.key === "Backspace") && this.active() && isMeasureTool(viewerStore.getState().tool) && !e.defaultPrevented && this.canvasKeys()) {

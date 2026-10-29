@@ -233,6 +233,42 @@ describe("ViewerInput", () => {
     setTool("select");
   });
 
+  it("Story 4.6: Shift + drag with Select on a caption moves it; Esc puts it back; without a caption nothing happens", () => {
+    let onCaption = true;
+    const startCaptionDrag = vi.fn(() => onCaption);
+    const moveCaptionDrag = vi.fn();
+    const endCaptionDrag = vi.fn();
+    Object.assign(t, { startCaptionDrag, moveCaptionDrag, endCaptionDrag });
+    // Without Shift a Select drag is not a caption's.
+    canvas.dispatchEvent(pointer("pointerdown", { x: 5, y: 6, button: 0 }));
+    expect(startCaptionDrag).not.toHaveBeenCalled();
+    canvas.dispatchEvent(pointer("pointerdown", { x: 5, y: 6, button: 0, shiftKey: true }));
+    expect(startCaptionDrag).toHaveBeenLastCalledWith({ x: 5, y: 6 });
+    expect(canvas.style.cursor).toBe("move");
+    canvas.dispatchEvent(pointer("pointermove", { x: 15, y: 16, shiftKey: true }));
+    expect(moveCaptionDrag).toHaveBeenLastCalledWith({ x: 15, y: 16 });
+    canvas.dispatchEvent(pointer("pointerup", { x: 15, y: 16 }));
+    expect(endCaptionDrag).toHaveBeenLastCalledWith(true);
+    expect(canvas.style.cursor).toBe("default");
+    // Esc during the drag: put back.
+    canvas.dispatchEvent(pointer("pointerdown", { x: 5, y: 6, button: 0, shiftKey: true }));
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    expect(endCaptionDrag).toHaveBeenLastCalledWith(false);
+    canvas.dispatchEvent(pointer("pointermove", { x: 25, y: 26 }));
+    expect(moveCaptionDrag).toHaveBeenCalledTimes(1);
+    // No caption under the pointer: no drag.
+    onCaption = false;
+    canvas.dispatchEvent(pointer("pointerdown", { x: 50, y: 60, button: 0, shiftKey: true }));
+    canvas.dispatchEvent(pointer("pointerup", { x: 50, y: 60 }));
+    expect(endCaptionDrag).toHaveBeenCalledTimes(2);
+    // Another tool never starts one.
+    onCaption = true;
+    setTool("length");
+    canvas.dispatchEvent(pointer("pointerdown", { x: 5, y: 6, button: 0, shiftKey: true }));
+    expect(startCaptionDrag).toHaveBeenCalledTimes(3);
+    setTool("select");
+  });
+
   it("does nothing without a document", () => {
     viewerStore.setState({ status: "empty", pageCount: 0 });
     canvas.dispatchEvent(new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaY: 10 }));

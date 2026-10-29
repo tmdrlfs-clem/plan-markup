@@ -45,6 +45,12 @@ export interface MarkupPainter {
   readonly lastPoint: Point | null;
   /** Esc: true when it cancelled a drawing (Esc again leaves the tool). */
   escape(): boolean;
+  /** Story 4.6: the markup whose caption is at `at` (device px) on the page as last painted with `view`, if any. */
+  captionAt(view: LayerView, at: Point): string | null;
+  /** Story 4.6: previews a caption moved by `delta` (user space) from where it was. */
+  dragCaption(id: string, documentId: string, delta: Point): void;
+  /** Story 4.6: ends a caption move; `commit` keeps it (one undo step). True when it moved one. */
+  endCaptionDrag(commit: boolean): boolean;
 }
 
 export type MarkupChange = { drawingEnded?: boolean };

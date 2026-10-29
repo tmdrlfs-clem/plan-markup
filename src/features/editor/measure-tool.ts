@@ -7,6 +7,9 @@
 // after a measurement (Revu). Esc while drawing cancels it, Ctrl+Z removes its
 // last point; another tool, page or tab cancels it.
 //
+// With Select, Shift + drag on a caption moves the caption only ("Move
+// caption", a markups.update op); the offset is stored in user space.
+//
 // The editor paints the viewer's layers 2 and 3 through the viewer's markup
 // painter interface (AR10): layer 2 the page's markups, layer 3 the drawing.
 
@@ -27,13 +30,14 @@ import {
   type MeasureTool,
 } from "@/features/viewer";
 
-import { editorStore, pageMarkups, setDrawing, type Drawing } from "./editor-store";
+import { editorStore, pageMarkups, setCaptionDrag, setDrawing, type Drawing } from "./editor-store";
 import { executeOp, registerDrawingUndo } from "./undo-store";
 
 type Point = { x: number; y: number };
 
 export const ADD_LENGTH = "Add length";
 export const ADD_POLYLENGTH = "Add polylength";
+export const MOVE_CAPTION = "Move caption";
 const ADD_LABEL: Record<MeasureTool, string> = { length: ADD_LENGTH, polylength: ADD_POLYLENGTH };
 /** The live label beside the pointer, in screen px (not page units: it is UI, not the markup). */
 const LIVE_FONT_PX = 12;
@@ -143,17 +147,35 @@ function liveLabel(c: CanvasRenderingContext2D, at: Point, text: string, scaled:
 
 const devicePoints = (pts: readonly Point[], view: LayerView) => pts.map((p) => view.toDevice(p));
 
+/** A caption as last painted (device px): its frame and half its text width, for hits. */
+type CaptionBox = { id: string; frame: CaptionFrame; half: number };
+/** By page id: the captions of the page last painted (in drawing order). */
+const captionBoxes = new Map<string, CaptionBox[]>();
+/** CSS px around a caption that still hit it. */
+const CAPTION_SLOP_PX = 3;
+
+const addOffset = (a: Point | undefined, b: Point): Point => ({ x: (a?.x ?? 0) + b.x, y: (a?.y ?? 0) + b.y });
+
+/** The markup as painted: a caption being moved shows where it goes. */
+function shown(m: MeasureMarkup): MeasureMarkup {
+  const drag = editorStore.getState().tools.captionDrag;
+  return drag && drag.id === m.id ? { ...m, captionOffset: addOffset(m.captionOffset, drag.delta) } : m;
+}
+
 const isMeasure = (m: { type: string }): m is MeasureMarkup => m.type === "length" || m.type === "polylength";
 
 export const measurePainter: MarkupPainter = {
   paintStatic(c, view) {
     const markups = pageMarkups(editorStore.getState(), view.documentId, pageIdOf(view.documentId, view.pageIndex));
     if (markups.length === 0) return [];
+    const pageId = pageIdOf(view.documentId, view.pageIndex);
     const calibration = calibrationOf(view.documentId, view.pageIndex);
     const captions: string[] = [];
+    const boxes: CaptionBox[] = [];
     c.save();
-    for (const m of markups) {
-      if (!isMeasure(m)) continue;
+    for (const stored of markups) {
+      if (!isMeasure(stored)) continue;
+      const m = shown(stored);
       const caption = lengthCaption(m.points, calibration, view.userUnit);
       captions.push(caption.text);
       const pts = devicePoints(m.points, view);
@@ -161,8 +183,13 @@ export const measurePainter: MarkupPainter = {
       if (!onCanvas(pts, m.style, view, [frame])) continue;
       strokeMeasure(c, pts, m.style, view);
       drawCaption(c, frame, caption.text, caption.scaled, m.style, view);
+      if (frame.size >= 1) {
+        c.font = `${frame.size}px ${view.colors.fontFamily}`;
+        boxes.push({ id: m.id, frame, half: (c.measureText(caption.text).width || 0) / 2 });
+      }
     }
     c.restore();
+    captionBoxes.set(pageId, boxes);
     return captions;
   },
 
@@ -225,7 +252,47 @@ export const measurePainter: MarkupPainter = {
     setDrawing(null);
     return true;
   },
+
+  captionAt(view, at) {
+    const boxes = captionBoxes.get(pageIdOf(view.documentId, view.pageIndex)) ?? [];
+    const slop = CAPTION_SLOP_PX * view.dpr;
+    // The topmost (last drawn) first.
+    for (let i = boxes.length - 1; i >= 0; i--) {
+      const { id, frame, half } = boxes[i];
+      const dx = at.x - frame.x;
+      const dy = at.y - frame.y;
+      const cos = Math.cos(frame.angle);
+      const sin = Math.sin(frame.angle);
+      // Into the caption's frame: centred on x, text above its baseline (y from -size to 0).
+      const lx = dx * cos + dy * sin;
+      const ly = -dx * sin + dy * cos;
+      if (Math.abs(lx) <= half + slop && ly >= -frame.size - slop && ly <= slop) return id;
+    }
+    return null;
+  },
+
+  dragCaption(id, documentId, delta) {
+    if (!pageMarkupById(documentId, id)) return;
+    setCaptionDrag({ id, documentId, delta: { x: delta.x, y: delta.y } });
+  },
+
+  endCaptionDrag(commit) {
+    const drag = editorStore.getState().tools.captionDrag;
+    setCaptionDrag(null);
+    if (!drag || !commit || (drag.delta.x === 0 && drag.delta.y === 0)) return false;
+    const before = pageMarkupById(drag.documentId, drag.id);
+    if (!before) return false;
+    const after: MeasureMarkup = { ...before, captionOffset: addOffset(before.captionOffset, drag.delta) };
+    executeOp({ kind: "markups.update", documentId: drag.documentId, before: [before], after: [after] }, MOVE_CAPTION);
+    return true;
+  },
 };
+
+/** A document's measurement by id, if it has it. */
+function pageMarkupById(documentId: string, id: string): MeasureMarkup | null {
+  const m = (editorStore.getState().doc.markups[documentId] ?? []).find((x) => x.id === id);
+  return m && isMeasure(m) ? m : null;
+}
 
 /** Adds the drawing as its markup (one undo step) and ends it. */
 function commit(documentId: string): "done" {
@@ -262,9 +329,11 @@ export function installMeasureTools(): () => void {
       if (s.doc === prev.doc && s.tools === prev.tools) return;
       notifyMarkups({ drawingEnded: prev.tools.drawing !== null && s.tools.drawing === null });
     });
-    // Another tool, page, tab or document cancels the drawing in progress.
+    // Another tool, page, tab or document cancels the drawing in progress (and a caption move).
     const offViewer = viewerStore.subscribe((s, prev) => {
       if (s.calibrations !== prev.calibrations) notifyMarkups({});
+      const moved = s.tool !== prev.tool || s.pageIndex !== prev.pageIndex || s.tabId !== prev.tabId || s.openSeq !== prev.openSeq || s.documentId !== prev.documentId;
+      if (moved) setCaptionDrag(null);
       const d = drawing();
       if (!d) return;
       if (s.tool !== d.tool || s.pageIndex !== prev.pageIndex || s.tabId !== prev.tabId || s.openSeq !== prev.openSeq || s.documentId !== prev.documentId) {
@@ -273,6 +342,8 @@ export function installMeasureTools(): () => void {
     });
     uninstall = () => {
       setDrawing(null);
+      setCaptionDrag(null);
+      captionBoxes.clear();
       offViewer();
       offEditor();
       offUndo();

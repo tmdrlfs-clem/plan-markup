@@ -313,6 +313,8 @@ export class ViewerEngine {
   private shownPending = "";
   /** The pointer over the canvas (viewport CSS px), for the status bar's X/Y (Story 3.7). */
   private pointerScreen: Point | null = null;
+  /** Story 4.6: a caption being moved: its markup and where the drag started (user space). */
+  private captionDrag: { id: string; documentId: string; start: Point } | null = null;
   private cursorFrame: number | null = null;
   /** Story 4.1: Alt / Shift as last seen, the tool's "from" point (user space), the snap shown and its first-use label. */
   private snapMods: SnapModifiers = { alt: false, shift: false };
@@ -1675,6 +1677,42 @@ export class ViewerEngine {
   /** Story 4.6: Backspace removes the drawing's last vertex; Shift's steps then go from the one before. */
   removeToolPoint(): boolean {
     return markupPainter()?.removeLastPoint() ?? false;
+  }
+
+  /**
+   * Story 4.6: Shift + drag with Select on a measurement's caption (viewport
+   * CSS px): starts moving it; false when no caption is there.
+   */
+  startCaptionDrag(at: Point): boolean {
+    const painter = markupPainter();
+    const view = this.layerView();
+    const start = this.screenToUser(at);
+    if (!painter || !view || !start) return false;
+    const id = painter.captionAt(view, { x: at.x * this.dpr, y: at.y * this.dpr });
+    if (!id) return false;
+    this.captionDrag = { id, documentId: view.documentId, start };
+    painter.dragCaption(id, view.documentId, { x: 0, y: 0 });
+    return true;
+  }
+
+  /** Story 4.6: the caption follows the pointer (a live preview). */
+  moveCaptionDrag(at: Point): void {
+    const drag = this.captionDrag;
+    const p = this.screenToUser(at);
+    if (!drag || !p) return;
+    markupPainter()?.dragCaption(drag.id, drag.documentId, { x: p.x - drag.start.x, y: p.y - drag.start.y });
+  }
+
+  /** Story 4.6: the drag ends: `commit` keeps the move ("Move caption"), otherwise (Esc) the caption goes back. */
+  endCaptionDrag(commit: boolean): void {
+    if (!this.captionDrag) return;
+    this.captionDrag = null;
+    markupPainter()?.endCaptionDrag(commit);
+  }
+
+  /** A viewport point in PDF user space, on the page or off it. */
+  private screenToUser(at: Point): Point | null {
+    return this.page ? pageToUser(this.page, screenToPage(this.view, this.viewport, at)) : null;
   }
 
   /** The "from" point follows the drawing's last vertex (a vertex removed by Backspace or Ctrl+Z). */

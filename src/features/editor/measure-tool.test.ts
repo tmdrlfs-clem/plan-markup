@@ -5,7 +5,7 @@ import { setTool, viewerStore, type LayerView } from "@/features/viewer";
 import { onMarkupsChanged } from "@/features/viewer/markup-layer";
 
 import { editorStore, markupsOf, resetEditor } from "./editor-store";
-import { ADD_LENGTH, ADD_POLYLENGTH, installMeasureTools, measurePainter } from "./measure-tool";
+import { ADD_LENGTH, ADD_POLYLENGTH, MOVE_CAPTION, installMeasureTools, measurePainter } from "./measure-tool";
 import { activeUndoLabels, clearUndo, redoActive, undoActive } from "./undo-store";
 
 const SHA = "e".repeat(64);
@@ -18,7 +18,12 @@ function recorder() {
   const ops: Op[] = [];
   const props: Record<string, unknown> = {};
   const ctx = new Proxy(props, {
-    get: (_t, prop: string) => (prop in props ? props[prop] : (...args: unknown[]) => void ops.push({ op: prop, args, fillStyle: props.fillStyle })),
+    get: (_t, prop: string) =>
+      prop in props
+        ? props[prop]
+        : prop === "measureText"
+          ? (text: string) => ({ width: text.length * 6 }) // 6 px a character
+          : (...args: unknown[]) => void ops.push({ op: prop, args, fillStyle: props.fillStyle }),
     set: (_t, prop: string, value) => ((props[prop] = value), true),
   }) as unknown as CanvasRenderingContext2D;
   return { ctx, ops, texts: () => ops.filter((o) => o.op === "fillText") };
@@ -218,5 +223,73 @@ describe("Polylength tool (Story 4.6)", () => {
     setTool("length");
     expect(measurePainter.tracking).toBe(false);
     expect(markupsOf(editorStore.getState(), SHA)).toEqual([]);
+  });
+});
+
+describe("Moving a caption (Story 4.6)", () => {
+  // A length from (0, 0) to (100, 0): on the device from (0, 0) to (100, 0), its caption centred above x 50.
+  function lengthWithCaption() {
+    measurePainter.place({ x: 0, y: 0 }, AT);
+    measurePainter.place({ x: 100, y: 0 }, AT);
+    const r = recorder();
+    measurePainter.paintStatic(r.ctx, view);
+    return markupsOf(editorStore.getState(), SHA)[0];
+  }
+  const translateOf = () => {
+    const r = recorder();
+    measurePainter.paintStatic(r.ctx, view);
+    return r.ops.find((o) => o.op === "translate")!.args as number[];
+  };
+
+  it("hits a caption where it was painted (above its line), not the line's far end", () => {
+    const m = lengthWithCaption();
+    const at = translateOf();
+    // "Scale not set" is 13 characters, 78 px wide at 6 px each: centred, 39 px either way (+3 px slop).
+    expect(measurePainter.captionAt(view, { x: at[0], y: at[1] - 2 })).toBe(m.id);
+    expect(measurePainter.captionAt(view, { x: at[0] + 41, y: at[1] - 5 })).toBe(m.id);
+    expect(measurePainter.captionAt(view, { x: at[0] + 43, y: at[1] - 5 })).toBeNull();
+    expect(measurePainter.captionAt(view, { x: at[0], y: at[1] + 4 })).toBeNull(); // below the baseline
+    expect(measurePainter.captionAt(view, { x: 100, y: 40 })).toBeNull();
+    expect(measurePainter.captionAt({ ...view, pageIndex: 1 }, { x: at[0], y: at[1] - 2 })).toBeNull();
+  });
+
+  it("previews the move live, commits it as one undo step 'Move caption' and keeps the measurement", () => {
+    const m = lengthWithCaption();
+    const before = translateOf();
+    measurePainter.dragCaption(m.id, SHA, { x: 10, y: 20 });
+    const live = translateOf();
+    // User y up is device y down (the test view flips y).
+    expect([live[0] - before[0], live[1] - before[1]]).toEqual([10, -20]);
+    expect(markupsOf(editorStore.getState(), SHA)[0].captionOffset).toBeUndefined();
+    expect(measurePainter.endCaptionDrag(true)).toBe(true);
+    const [moved] = markupsOf(editorStore.getState(), SHA);
+    expect(moved).toMatchObject({ id: m.id, points: m.points, captionOffset: { x: 10, y: 20 } });
+    expect(activeUndoLabels(editorStore.getState(), "t1").undo).toBe(MOVE_CAPTION);
+    // A second move adds to the first.
+    measurePainter.dragCaption(m.id, SHA, { x: 5, y: 0 });
+    measurePainter.endCaptionDrag(true);
+    expect(markupsOf(editorStore.getState(), SHA)[0].captionOffset).toEqual({ x: 15, y: 20 });
+    undoActive();
+    expect(markupsOf(editorStore.getState(), SHA)[0].captionOffset).toEqual({ x: 10, y: 20 });
+    undoActive();
+    expect(markupsOf(editorStore.getState(), SHA)[0].captionOffset).toBeUndefined();
+    expect(activeUndoLabels(editorStore.getState(), "t1").undo).toBe(ADD_LENGTH);
+  });
+
+  it("Esc (no commit), no movement or another page puts it back; nothing is added to the history", () => {
+    const m = lengthWithCaption();
+    measurePainter.dragCaption(m.id, SHA, { x: 10, y: 20 });
+    expect(measurePainter.endCaptionDrag(false)).toBe(false);
+    measurePainter.dragCaption(m.id, SHA, { x: 0, y: 0 });
+    expect(measurePainter.endCaptionDrag(true)).toBe(false);
+    measurePainter.dragCaption(m.id, SHA, { x: 10, y: 20 });
+    viewerStore.setState({ pageIndex: 1 });
+    expect(editorStore.getState().tools.captionDrag).toBeNull();
+    expect(measurePainter.endCaptionDrag(true)).toBe(false);
+    expect(markupsOf(editorStore.getState(), SHA)[0].captionOffset).toBeUndefined();
+    expect(activeUndoLabels(editorStore.getState(), "t1").undo).toBe(ADD_LENGTH);
+    // An unknown markup is not dragged.
+    measurePainter.dragCaption("nope", SHA, { x: 1, y: 1 });
+    expect(editorStore.getState().tools.captionDrag).toBeNull();
   });
 });

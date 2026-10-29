@@ -4,7 +4,7 @@
 //
 //   doc        markups by document (sha256), shared by the tabs (a document is open in one tab)
 //   view       the active document tab, mirrored from the viewer
-//   tools      the drawing in progress (Length, Story 4.5; more tools with Epic 5)
+//   tools      the drawing in progress (Length, Story 4.5; more tools with Epic 5) and a caption being moved (4.6)
 //   selection  selected markup ids (Epic 5)
 //   history    undo histories by document tab (the Story 4.3 undo stack)
 
@@ -19,10 +19,13 @@ type Point = { x: number; y: number };
 /** A measurement being drawn (Length 4.5, Polylength 4.6): its tool, its page and the points placed so far (user space). */
 export type Drawing = { tool: MeasureTool; pageId: string; pageIndex: number; points: readonly Point[] };
 
+/** Story 4.6: a caption being moved: its markup and the offset change so far (user space). */
+export type CaptionDrag = { id: string; documentId: string; delta: Point };
+
 export type EditorState = {
   doc: { markups: Readonly<Record<string, readonly Markup[]>> };
   view: { tabId: string | null; documentId: string | null };
-  tools: { drawing: Drawing | null };
+  tools: { drawing: Drawing | null; captionDrag: CaptionDrag | null };
   selection: { ids: readonly string[] };
   /** Histories by tab id ("" outside tabs). */
   history: { histories: Readonly<Record<string, UndoHistory>> };
@@ -31,7 +34,7 @@ export type EditorState = {
 export const EMPTY_EDITOR: EditorState = {
   doc: { markups: {} },
   view: { tabId: null, documentId: null },
-  tools: { drawing: null },
+  tools: { drawing: null, captionDrag: null },
   selection: { ids: [] },
   history: { histories: {} },
 };
@@ -58,7 +61,13 @@ export function setDocMarkups(documentId: string, markups: readonly Markup[]): v
 /** The drawing in progress (the tools only). */
 export function setDrawing(drawing: Drawing | null): void {
   if (editorStore.getState().tools.drawing === drawing) return;
-  editorStore.setState({ tools: { drawing } });
+  editorStore.setState((s) => ({ tools: { ...s.tools, drawing } }));
+}
+
+/** The caption being moved (the tools only). */
+export function setCaptionDrag(captionDrag: CaptionDrag | null): void {
+  if (editorStore.getState().tools.captionDrag === captionDrag) return;
+  editorStore.setState((s) => ({ tools: { ...s.tools, captionDrag } }));
 }
 
 /** Forgets everything (another user's workspace, tests). */

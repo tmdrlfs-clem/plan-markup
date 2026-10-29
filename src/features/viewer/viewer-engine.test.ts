@@ -1487,6 +1487,9 @@ describe("snapping (Story 4.1)", () => {
       finish: () => "ignored",
       removeLastPoint: () => false,
       lastPoint: null,
+      captionAt: () => null,
+      dragCaption: () => undefined,
+      endCaptionDrag: () => false,
     };
     const off = registerMarkupPainter(painter);
     setTool("length");
@@ -1558,6 +1561,9 @@ describe("snapping (Story 4.1)", () => {
         return vertices.at(-1) ?? null;
       },
       escape: () => false,
+      captionAt: () => null,
+      dragCaption: () => undefined,
+      endCaptionDrag: () => false,
     };
     const off = registerMarkupPainter(painter);
     setTool("polylength");
@@ -1581,6 +1587,39 @@ describe("snapping (Story 4.1)", () => {
     expect(r.engine.snapFromPoint).toBeNull();
     off();
     setTool("select");
+  });
+
+  it("Story 4.6: a caption drag hits in device px and moves by the pointer's change in user space", async () => {
+    const r = await ready();
+    const hits: { x: number; y: number }[] = [];
+    const deltas: { x: number; y: number }[] = [];
+    const ends: boolean[] = [];
+    const painter: MarkupPainter = {
+      paintStatic: () => [],
+      paintActive: () => null,
+      tracking: false,
+      place: () => "ignored",
+      finish: () => "ignored",
+      removeLastPoint: () => false,
+      lastPoint: null,
+      escape: () => false,
+      captionAt: (view, at) => (hits.push(at), view.pageIndex === 0 && at.x < 150 ? "m1" : null),
+      dragCaption: (id, _documentId, delta) => void (id === "m1" && deltas.push(delta)),
+      endCaptionDrag: (commit) => (ends.push(commit), commit),
+    };
+    const off = registerMarkupPainter(painter);
+    expect(r.engine.startCaptionDrag(screenOf(200, 100))).toBe(false); // no caption there
+    expect(r.engine.startCaptionDrag(screenOf(100, 100))).toBe(true);
+    expect(hits.at(-1)).toEqual(screenOf(100, 100)); // DPR 1: device px = CSS px
+    expect(deltas.at(-1)).toEqual({ x: 0, y: 0 });
+    r.engine.moveCaptionDrag(screenOf(130, 90));
+    expect(deltas.at(-1)!.x).toBeCloseTo(30, 9);
+    expect(deltas.at(-1)!.y).toBeCloseTo(-10, 9);
+    r.engine.endCaptionDrag(false);
+    expect(ends).toEqual([false]);
+    r.engine.endCaptionDrag(true); // no drag: nothing ends
+    expect(ends).toEqual([false]);
+    off();
   });
 });
 
