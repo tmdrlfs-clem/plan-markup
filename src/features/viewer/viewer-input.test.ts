@@ -203,6 +203,36 @@ describe("ViewerInput", () => {
     setTool("select");
   });
 
+  it("Story 4.6: Enter, Backspace and a double-click go to the measuring tool, only when the keys are the canvas's", () => {
+    const finishTool = vi.fn(() => true);
+    const removeToolPoint = vi.fn(() => true);
+    Object.assign(t, { finishTool, removeToolPoint });
+    // Select: Enter and Backspace are not the tool's.
+    canvas.dispatchEvent(pointer("pointermove", { x: 5, y: 6 }));
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+    expect(finishTool).not.toHaveBeenCalled();
+    setTool("polylength");
+    expect(canvas.style.cursor).toBe("crosshair");
+    const enter = new KeyboardEvent("keydown", { key: "Enter", cancelable: true });
+    window.dispatchEvent(enter);
+    expect(finishTool).toHaveBeenCalledTimes(1);
+    expect(enter.defaultPrevented).toBe(true);
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace" }));
+    expect(removeToolPoint).toHaveBeenCalledTimes(1);
+    canvas.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
+    expect(finishTool).toHaveBeenCalledTimes(2);
+    // Typing in a field keeps its Backspace and Enter.
+    const field = document.createElement("input");
+    document.body.appendChild(field);
+    field.focus();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace" }));
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+    expect(removeToolPoint).toHaveBeenCalledTimes(1);
+    expect(finishTool).toHaveBeenCalledTimes(2);
+    field.remove();
+    setTool("select");
+  });
+
   it("does nothing without a document", () => {
     viewerStore.setState({ status: "empty", pageCount: 0 });
     canvas.dispatchEvent(new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaY: 10 }));

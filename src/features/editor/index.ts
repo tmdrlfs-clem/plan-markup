@@ -2,5 +2,5 @@
 export { editorStore, markupsOf, pageMarkups, resetEditor, type Drawing, type EditorState } from "./editor-store";
 export { activeUndoLabels, clearUndo, executeCommand, executeOp, redoActive, undoActive } from "./undo-store";
 export { useEditorSession } from "./session";
-export { ADD_LENGTH, armLength, useLengthTool } from "./length-tool";
+export { ADD_LENGTH, ADD_POLYLENGTH, armLength, armPolylength, useMeasureTools } from "./measure-tool";
 export type { UndoCommand } from "@/core/undo/stack";

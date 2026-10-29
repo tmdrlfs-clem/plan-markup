@@ -31,8 +31,18 @@ export interface MarkupPainter {
   paintActive(c: CanvasRenderingContext2D, view: LayerView, pointer: Point | null): string | null;
   /** A drawing follows the pointer (the overlay repaints on every move). */
   readonly tracking: boolean;
-  /** A measuring tool's click at `point` (user space): "continue" while drawing, "done" when a markup was added. */
-  place(point: Point, at: { documentId: string; pageIndex: number }): "continue" | "done" | "ignored";
+  /**
+   * A measuring tool's click at `point` (user space): "continue" while drawing, "done" when a
+   * markup was added. `tolerance`: user units within which a click repeats the last point
+   * (a double-click's second click).
+   */
+  place(point: Point, at: { documentId: string; pageIndex: number; tolerance: number }): "continue" | "done" | "ignored";
+  /** Story 4.6: Enter or a double-click: "done" when it added the markup in progress. */
+  finish(): "done" | "ignored";
+  /** Story 4.6: Backspace: removes the drawing's last point; false when nothing is drawn. */
+  removeLastPoint(): boolean;
+  /** The drawing's last point (the "from" point of Shift's 45° steps), if drawing. */
+  readonly lastPoint: Point | null;
   /** Esc: true when it cancelled a drawing (Esc again leaves the tool). */
   escape(): boolean;
 }

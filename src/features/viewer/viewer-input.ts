@@ -18,7 +18,7 @@
 
 import type { Point, Rect } from "@/core/render/view";
 
-import { hasDocument, setTempPan, setTool, viewerStore, type ViewerTool } from "./viewer-store";
+import { hasDocument, isMeasureTool, setTempPan, setTool, viewerStore, type ViewerTool } from "./viewer-store";
 
 /** CSS px per wheel "line" (deltaMode 1, e.g. Firefox: 3 lines per notch). */
 export const WHEEL_LINE_PX = 40;
@@ -101,7 +101,7 @@ export function resolveViewerKey(
 /** The canvas cursor for the tool state. */
 export function cursorFor(state: { tool: ViewerTool; tempPan: boolean; dragging: boolean; zoomOut: boolean }): string {
   if (state.tempPan || state.tool === "pan" || state.dragging) return state.dragging ? "grabbing" : "grab";
-  if (state.tool === "length" || state.tool === "calibrate") return "crosshair";
+  if (pointTool(state.tool)) return "crosshair";
   if (state.tool === "zoom") return state.zoomOut ? "zoom-out" : "zoom-in";
   return "default";
 }
@@ -134,13 +134,17 @@ export interface ViewerInputTarget {
    * otherwise, when the Esc is the canvas's (`leave`), back to Select.
    */
   escapeTool?(leave: boolean): void;
+  /** Story 4.6: Enter or a double-click finishes a polylength; true when it did. */
+  finishTool?(): boolean;
+  /** Story 4.6: Backspace removes the drawing's last vertex; true when there was one. */
+  removeToolPoint?(): boolean;
   /** Story 4.3: Esc while picking calibration points. */
   cancelCalibrationPick?(): void;
 }
 
-/** Tools that place points (Length, the calibration pick): a click places one, Alt suspends snapping. */
+/** Tools that place points (Length, Polylength, the calibration pick): a click places one, Alt suspends snapping. */
 function pointTool(tool: ViewerTool): boolean {
-  return tool === "length" || tool === "calibrate";
+  return isMeasureTool(tool) || tool === "calibrate";
 }
 
 /** Alt turns snapping off while held; Shift holds the direction from the "from" point at 45° steps. */
@@ -185,6 +189,10 @@ export class ViewerInput {
     this.on(canvas, "auxclick", (e) => {
       if ((e as MouseEvent).button === 1) e.preventDefault();
     });
+    // Story 4.6: a double-click finishes a polylength (its clicks placed the last vertex once).
+    this.on(canvas, "dblclick", (e) => {
+      if (this.active() && isMeasureTool(viewerStore.getState().tool) && this.target.finishTool?.()) e.preventDefault();
+    });
     this.on(win, "keydown", (e) => this.onKeyDown(e as KeyboardEvent));
     this.on(win, "keyup", (e) => this.onKeyUp(e as KeyboardEvent));
     // Focus leaving the canvas (also when the window loses focus) ends Space-pan and drags:
@@ -212,6 +220,12 @@ export class ViewerInput {
   /** A page is shown: the viewer acts on input. */
   private active(): boolean {
     return hasDocument(viewerStore.getState());
+  }
+
+  /** A key meant for the canvas: it is focused, or nothing else is and the pointer is over it. */
+  private canvasKeys(): boolean {
+    const doc = this.canvas.ownerDocument;
+    return doc.activeElement === this.canvas || ((doc.activeElement === doc.body || doc.activeElement === null) && this.pointer !== null);
   }
 
   /** A document area is shown (loading, ready or failed): browser zoom input is suppressed. */
@@ -324,7 +338,12 @@ export class ViewerInput {
       // Alt over the canvas with a snapping tool only suspends snapping: no browser menu.
       if (e.key === "Alt" && this.pointer && pointTool(viewerStore.getState().tool)) e.preventDefault();
     }
-    if (e.key === "Escape" && this.active() && viewerStore.getState().tool === "length") {
+    // Story 4.6: Enter finishes a polylength, Backspace removes its last vertex (the canvas's keys only).
+    if ((e.key === "Enter" || e.key === "Backspace") && this.active() && isMeasureTool(viewerStore.getState().tool) && !e.defaultPrevented && this.canvasKeys()) {
+      const handled = e.key === "Enter" ? this.target.finishTool?.() : this.target.removeToolPoint?.();
+      if (handled) e.preventDefault();
+    }
+    if (e.key === "Escape" && this.active() && isMeasureTool(viewerStore.getState().tool)) {
       const doc = this.canvas.ownerDocument;
       // An Esc meant for a menu, field or dialog never leaves the tool.
       const leave = !e.defaultPrevented && (doc.activeElement === this.canvas || doc.activeElement === doc.body || this.pointer !== null);

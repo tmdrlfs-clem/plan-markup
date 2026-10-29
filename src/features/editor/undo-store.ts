@@ -11,7 +11,7 @@
 
 import { invertOp, type DocOp } from "@/core/commands/ops";
 import { EMPTY_HISTORY, execute, nextLabels, redo, undo, type UndoCommand, type UndoHistory } from "@/core/undo/stack";
-import { tabsStore, viewerStore } from "@/features/viewer";
+import { tabsStore, viewerStore, type MeasureTool } from "@/features/viewer";
 
 import { editorStore, type EditorState } from "./editor-store";
 import { applyOp } from "./commands";
@@ -73,8 +73,8 @@ export function redoActive(): boolean {
   return true;
 }
 
-/** Review R5: what Undo does while a measurement is being drawn (it removes the placed point). */
-export const DRAWING_POINT_LABEL = "Length point";
+/** 4.5 review R5: what Undo does while a measurement is being drawn (it removes the last placed point). */
+export const DRAWING_POINT_LABEL: Readonly<Record<MeasureTool, string>> = { length: "Length point", polylength: "Polylength point" };
 
 /**
  * The active tab's next undo / redo labels (React: useStore(editorStore, …) with viewerStore's tabId).
@@ -82,7 +82,7 @@ export const DRAWING_POINT_LABEL = "Length point";
  */
 export function activeUndoLabels(state: EditorState, tabId: string | null): { undo: string | null; redo: string | null } {
   const labels = nextLabels(state.history.histories[tabId ?? ""] ?? EMPTY_HISTORY);
-  return state.tools.drawing ? { ...labels, undo: DRAWING_POINT_LABEL } : labels;
+  return state.tools.drawing ? { ...labels, undo: DRAWING_POINT_LABEL[state.tools.drawing.tool] } : labels;
 }
 
 /** Forgets every history (tests, another user's workspace). */

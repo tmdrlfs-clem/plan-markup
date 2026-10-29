@@ -12,12 +12,12 @@ import { createStore } from "zustand/vanilla";
 
 import type { Markup } from "@/core/schema/markup";
 import type { UndoHistory } from "@/core/undo/stack";
-import { viewerStore } from "@/features/viewer";
+import { viewerStore, type MeasureTool } from "@/features/viewer";
 
 type Point = { x: number; y: number };
 
-/** A measurement being drawn: its tool, its page and the points placed so far (user space). */
-export type Drawing = { tool: "length"; pageId: string; pageIndex: number; points: readonly Point[] };
+/** A measurement being drawn (Length 4.5, Polylength 4.6): its tool, its page and the points placed so far (user space). */
+export type Drawing = { tool: MeasureTool; pageId: string; pageIndex: number; points: readonly Point[] };
 
 export type EditorState = {
   doc: { markups: Readonly<Record<string, readonly Markup[]>> };

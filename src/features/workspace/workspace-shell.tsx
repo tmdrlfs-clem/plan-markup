@@ -15,7 +15,7 @@ import { CalibrateDialog, VerifyDialog, openCalibrate, useCalibrationPrefsPersis
 import { redoActive, undoActive } from "@/features/editor";
 import { useFirstUseTipsPersistence } from "@/features/tips";
 import { chooseTheme, useWorkspaceTheme } from "@/features/appearance/theme-store";
-import { armLength, useEditorSession, useLengthTool } from "@/features/editor";
+import { armLength, armPolylength, useEditorSession, useMeasureTools } from "@/features/editor";
 import {
   DocumentTabs,
   DocumentViewer,
@@ -61,8 +61,8 @@ export function WorkspaceShell({ user, theme = null }: { user: WorkspaceUser; th
   useMemo(() => viewerTabs.setOwner(user.id), [user.id]);
   // Story 4.5: the editing session (markups, calibrations, undo) of this user's documents survives a reload.
   useEditorSession(user.id);
-  // Story 4.5: the Length measurement paints and places through the viewer's markup layers.
-  useLengthTool();
+  // Stories 4.5 / 4.6: the measuring tools paint and place through the viewer's markup layers.
+  useMeasureTools();
   return (
     <LayoutProvider userId={user.id}>
       <TooltipProvider>
@@ -169,6 +169,8 @@ function ShellBody({ user, initialTheme }: { user: WorkspaceUser; initialTheme: 
     redo: drawingOpen ? redoActive : undefined,
     // Story 4.5: Shift+Alt+L, the Length measurement.
     lengthTool: drawingOpen ? armLength : undefined,
+    // Story 4.6: Shift+Alt+Q, the Polylength measurement.
+    polylengthTool: drawingOpen ? armPolylength : undefined,
   });
 
   const panel = leftPanel(left.active);

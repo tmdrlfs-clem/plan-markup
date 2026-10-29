@@ -28,10 +28,12 @@ export type { CalibrationPick, CalibrationPickListener } from "./viewer-engine";
 export { notifyMarkups, registerMarkupPainter, type LayerView, type MarkupPainter } from "./markup-layer";
 export {
   hasDocument,
+  isMeasureTool,
   setTool,
   viewerStore,
   type ViewerState,
   type ViewerStatus,
+  type MeasureTool,
   type ViewerTool,
 } from "./viewer-store";
 export { openDocument, openDocuments, resetViewer, tabTitle, tabsStore, viewerTabs, type DocumentTab } from "./viewer-tabs";

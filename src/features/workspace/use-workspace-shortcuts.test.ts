@@ -110,6 +110,16 @@ describe("handleWorkspaceShortcut", () => {
     expect(h.lengthTool).toHaveBeenCalledTimes(1);
   });
 
+  it("Story 4.6: Shift+Alt+Q arms Polylength (by code), not in fields, not without a drawing", () => {
+    const h = { ...handlers(), polylengthTool: vi.fn() };
+    const shiftAltQ = (target?: EventTarget) => key({ shiftKey: true, altKey: true, code: "KeyQ", key: "Œ" }, target);
+    expect(handleWorkspaceShortcut(shiftAltQ(), h)).toBe(true);
+    expect(h.polylengthTool).toHaveBeenCalledTimes(1);
+    expect(handleWorkspaceShortcut(shiftAltQ(document.createElement("input")), h)).toBe(false);
+    expect(handleWorkspaceShortcut(shiftAltQ(), handlers())).toBe(false);
+    expect(h.polylengthTool).toHaveBeenCalledTimes(1);
+  });
+
   it("Alt+L toggles the Markups list and Shift+F4 hides all panels", () => {
     const h = handlers();
     handleWorkspaceShortcut(key({ altKey: true, code: "KeyL", key: "l" }), h);

@@ -93,7 +93,10 @@ import type { PageScales } from "@/core/scale/detect";
 import { setCursor } from "./status/cursor-store";
 import { searchUi } from "./search-ui";
 import { markupPainter, onMarkupsChanged, type LayerView } from "./markup-layer";
-import { setTool, viewerStore, type ViewerErrorCode, type ViewerState, type ViewerTool } from "./viewer-store";
+import { isMeasureTool, setTool, viewerStore, type ViewerErrorCode, type ViewerState, type ViewerTool } from "./viewer-store";
+
+/** Story 4.6: a click this close (CSS px) to the last vertex repeats it (a double-click's second click). */
+const DOUBLE_CLICK_SLOP_PX = 3;
 
 /** CSS px kept free around the page at fit. */
 export const FIT_PADDING = 16;
@@ -390,6 +393,7 @@ export class ViewerEngine {
     this.unsubscribeMarkups = onMarkupsChanged((change) => {
       if (this.destroyed || this.suspended) return;
       if (change.drawingEnded && this.snapFrom) this.clearSnapFrom();
+      else this.followDrawing();
       this.paintMarkups(true);
       this.paintOverlay();
     });
@@ -1651,12 +1655,34 @@ export class ViewerEngine {
     const point = this.toolPoint;
     this.snapFrom = point ? { x: point.x, y: point.y } : null;
     if (this.pick && point) this.pickPoint({ x: point.x, y: point.y });
-    else if (point && this.sha256 && viewerStore.getState().tool === "length") {
-      // Story 4.5: the Length tool places the point; a finished measurement starts the next one afresh.
-      const placed = markupPainter()?.place({ x: point.x, y: point.y }, { documentId: this.sha256, pageIndex: this.pageIndex });
+    else if (point && this.sha256 && isMeasureTool(viewerStore.getState().tool)) {
+      // Story 4.5 / 4.6: the measuring tool places the point; a finished measurement starts the next one afresh.
+      const linear = this.userToScreenLinear();
+      const tolerance = DOUBLE_CLICK_SLOP_PX / (Math.hypot(linear[0], linear[1]) || 1);
+      const placed = markupPainter()?.place({ x: point.x, y: point.y }, { documentId: this.sha256, pageIndex: this.pageIndex, tolerance });
       if (placed === "done") this.snapFrom = null;
     }
     this.paintOverlay();
+  }
+
+  /** Story 4.6: Enter or a double-click finishes the measurement in progress (a polylength). */
+  finishTool(): boolean {
+    if (markupPainter()?.finish() !== "done") return false;
+    this.clearSnapFrom();
+    return true;
+  }
+
+  /** Story 4.6: Backspace removes the drawing's last vertex; Shift's steps then go from the one before. */
+  removeToolPoint(): boolean {
+    return markupPainter()?.removeLastPoint() ?? false;
+  }
+
+  /** The "from" point follows the drawing's last vertex (a vertex removed by Backspace or Ctrl+Z). */
+  private followDrawing(): void {
+    const last = markupPainter()?.lastPoint;
+    if (!last || (this.snapFrom && this.snapFrom.x === last.x && this.snapFrom.y === last.y)) return;
+    this.snapFrom = { x: last.x, y: last.y };
+    if (this.pointerScreen) this.updateCursor();
   }
 
   /**

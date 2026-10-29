@@ -12,6 +12,7 @@ import {
   MousePointer2,
   Pen,
   Pentagon,
+  Route,
   Ruler,
   Slash,
   Square,
@@ -39,13 +40,17 @@ interface Tool {
  * Tools that work today: Select and Pan (Story 3.2), and Length (snapping from
  * Story 4.1, measuring from Story 4.5). The others arrive with the editor.
  */
-const LIVE_TOOLS: ReadonlySet<string> = new Set<ViewerTool>(["select", "pan", "length"]);
+const LIVE_TOOLS: ReadonlySet<string> = new Set<ViewerTool>(["select", "pan", "length", "polylength"]);
 
 export const SNAP_PREVIEW_HINT_ID = "snap-preview";
 /** Review S3: a page past the segment cap. */
 export const SNAP_PARTIAL_NOTE = "This page is very large: snapping covers only part of its linework.";
 export const SNAP_PREVIEW_HINT =
   "Length: click the start and the end point. Points snap to the drawing (Alt: off, Shift: 45° steps). Esc cancels a measurement; Esc again returns to Select.";
+/** Story 4.6: the HintBar while Polylength is armed. */
+export const POLYLENGTH_HINT =
+  "Polylength: click each vertex; double-click or Enter finishes. Backspace removes the last vertex. Points snap to the drawing (Alt: off, Shift: 45° steps). Esc cancels a measurement; Esc again returns to Select.";
+const TOOL_HINTS: Partial<Record<ViewerTool, string>> = { length: SNAP_PREVIEW_HINT, polylength: POLYLENGTH_HINT };
 export const EDITOR_LATER = "Arrives with the markup editor";
 
 /** UX-DR6 groups. Select and Pan work with a drawing open; the rest arrive with the editor. */
@@ -75,6 +80,7 @@ const GROUPS: { label: string; tools: Tool[] }[] = [
     label: "Measure",
     tools: [
       { id: "length", label: "Length", icon: Ruler, shortcut: "Shift+Alt+L" },
+      { id: "polylength", label: "Polylength", icon: Route, shortcut: "Shift+Alt+Q" },
       { id: "area", label: "Area", icon: Pentagon, shortcut: "Shift+Alt+A" },
       { id: "count", label: "Count", icon: Hash, shortcut: "Shift+Alt+C" },
     ],
@@ -93,14 +99,14 @@ const GROUPS: { label: string; tools: Tool[] }[] = [
 export function ToolRail() {
   const open = useStore(viewerStore, hasDocument);
   const active = useStore(viewerStore, (s) => s.tool);
-  // Story 4.1 / 4.5: while Length is armed (whatever armed it), the HintBar says how it works.
-  const preview = open && active === "length";
+  // Stories 4.1 / 4.5 / 4.6: while a measuring tool is armed (whatever armed it), the HintBar says how it works.
+  const hint = open ? (TOOL_HINTS[active] ?? null) : null;
   const partial = useStore(viewerStore, (s) => s.snapPartial);
   useEffect(() => {
-    if (!preview) return;
-    showHint({ id: SNAP_PREVIEW_HINT_ID, variant: "info", text: partial ? `${SNAP_PREVIEW_HINT} ${SNAP_PARTIAL_NOTE}` : SNAP_PREVIEW_HINT });
+    if (!hint) return;
+    showHint({ id: SNAP_PREVIEW_HINT_ID, variant: "info", text: partial ? `${hint} ${SNAP_PARTIAL_NOTE}` : hint });
     return () => dismissHint(SNAP_PREVIEW_HINT_ID);
-  }, [preview, partial]);
+  }, [hint, partial]);
   return (
     <Toolbar aria-label="Drawing tools" orientation="vertical" className="h-full overflow-y-auto">
       {GROUPS.map((group, index) => (

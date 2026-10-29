@@ -21,7 +21,7 @@ so that I can measure pipe runs and keep labels readable.
 ## Tasks / Subtasks
 
 - [x] **Task 1: Core** — `polylength` in the markup schema (2 to 10 000 points), an optional `captionOffset` on measurements, a `markups.update` op with its inverse, `polylineCaptionAnchor` (longest segment) in `src/core/measure/length.ts`; unit tests.
-- [ ] **Task 2: Polylength tool** — `polylength` viewer tool (snapping, crosshair), engine finish hook (`Enter`, double-click) and `Backspace`, the measuring painter generalised to both tools (`src/features/editor/measure-tool.ts`), `Shift+Alt+Q`, ToolRail Polylength (live) and hint, undo labels; unit tests.
+- [x] **Task 2: Polylength tool** — `polylength` viewer tool (snapping, crosshair), engine finish hook (`Enter`, double-click) and `Backspace`, the measuring painter generalised to both tools (`src/features/editor/measure-tool.ts`), `Shift+Alt+Q`, ToolRail Polylength (live) and hint, undo labels; unit tests.
 - [ ] **Task 3: Caption move** — caption hit boxes from the painter, engine caption drag (preview, commit, cancel), `Shift`+drag with Select in `viewer-input`, "Move caption" as a `markups.update` op; unit tests.
 - [ ] **Task 4: Tests** — `e2e/measure-polylength.spec.ts` (AC 7); local L17/L21 check (a polylength along L17's "1905" dimension through its midpoint reads 1905 mm; L21's "1491" likewise); screenshot `fixtures/private/traces/4-6-polylength.png` (never commit private files).
 

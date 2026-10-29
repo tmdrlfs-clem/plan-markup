@@ -1484,6 +1484,9 @@ describe("snapping (Story 4.1)", () => {
         drawing = false;
         return was;
       },
+      finish: () => "ignored",
+      removeLastPoint: () => false,
+      lastPoint: null,
     };
     const off = registerMarkupPainter(painter);
     setTool("length");
@@ -1535,6 +1538,49 @@ describe("snapping (Story 4.1)", () => {
     // Without a painter layer 2 is cleared and empty.
     notifyMarkups({});
     expect(r.canvases.markups.dataset.markupCount).toBe("0");
+  });
+
+  it("Story 4.6: Polylength clicks pass a double-click tolerance; Enter finishes; the from point follows a removed vertex", async () => {
+    const r = await ready();
+    const vertices: { x: number; y: number }[] = [];
+    const tolerances: number[] = [];
+    let finished = 0;
+    const painter: MarkupPainter = {
+      paintStatic: () => [],
+      paintActive: () => (vertices.length > 0 ? "live" : null),
+      get tracking() {
+        return vertices.length > 0;
+      },
+      place: (point, at) => (vertices.push(point), tolerances.push(at.tolerance), "continue"),
+      finish: () => (vertices.length >= 2 ? (finished++, vertices.splice(0), "done") : "ignored"),
+      removeLastPoint: () => vertices.pop() !== undefined,
+      get lastPoint() {
+        return vertices.at(-1) ?? null;
+      },
+      escape: () => false,
+    };
+    const off = registerMarkupPainter(painter);
+    setTool("polylength");
+    r.engine.pointerAt(screenOf(101, 101));
+    paint();
+    r.engine.snapClick();
+    expect(r.engine.finishTool()).toBe(false); // one vertex: nothing to finish
+    r.engine.pointerAt(screenOf(180, 110), { alt: true, shift: false });
+    paint();
+    r.engine.snapClick();
+    // 3 CSS px in user units (1 CSS px per point at this fit).
+    expect(tolerances[0]).toBeCloseTo(3, 6);
+    expect(r.engine.snapFromPoint).toEqual({ x: 180, y: 110 });
+    // Backspace: the vertex goes, and Shift's steps go from the one before.
+    expect(r.engine.removeToolPoint()).toBe(true);
+    notifyMarkups({});
+    expect(r.engine.snapFromPoint).toEqual({ x: 100, y: 100 });
+    r.engine.snapClick();
+    expect(r.engine.finishTool()).toBe(true);
+    expect(finished).toBe(1);
+    expect(r.engine.snapFromPoint).toBeNull();
+    off();
+    setTool("select");
   });
 });
 
