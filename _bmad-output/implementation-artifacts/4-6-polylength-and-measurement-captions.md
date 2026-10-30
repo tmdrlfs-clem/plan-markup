@@ -1,6 +1,6 @@
 # Story 4.6: Polylength and measurement captions
 
-Status: in-progress
+Status: review
 
 ## Story
 
@@ -23,7 +23,7 @@ so that I can measure pipe runs and keep labels readable.
 - [x] **Task 1: Core** — `polylength` in the markup schema (2 to 10 000 points), an optional `captionOffset` on measurements, a `markups.update` op with its inverse, `polylineCaptionAnchor` (longest segment) in `src/core/measure/length.ts`; unit tests.
 - [x] **Task 2: Polylength tool** — `polylength` viewer tool (snapping, crosshair), engine finish hook (`Enter`, double-click) and `Backspace`, the measuring painter generalised to both tools (`src/features/editor/measure-tool.ts`), `Shift+Alt+Q`, ToolRail Polylength (live) and hint, undo labels; unit tests.
 - [x] **Task 3: Caption move** — caption hit boxes from the painter, engine caption drag (preview, commit, cancel), `Shift`+drag with Select in `viewer-input`, "Move caption" as a `markups.update` op; unit tests.
-- [ ] **Task 4: Tests** — `e2e/measure-polylength.spec.ts` (AC 7); local L17/L21 check (a polylength along L17's "1905" dimension through its midpoint reads 1905 mm; L21's "1491" likewise); screenshot `fixtures/private/traces/4-6-polylength.png` (never commit private files).
+- [x] **Task 4: Tests** — `e2e/measure-polylength.spec.ts` (AC 7); local L17/L21 check (a polylength along L17's "1905" dimension through its midpoint reads 1905 mm; L21's "1491" likewise); screenshot `fixtures/private/traces/4-6-polylength.png` (never commit private files).
 
 ## Dev Notes
 
@@ -51,16 +51,18 @@ Claude Opus 5.5
 - Task 2: the 4.5 Length painter generalised to `measure-tool.ts` (Length and Polylength); the viewer's `MarkupPainter` gained `finish`, `removeLastPoint` and `lastPoint`; a click within 3 CSS px of the last vertex adds nothing (a double-click's second click); Enter and Backspace go to the tool only when they are the canvas's keys.
 - Task 3: caption hit boxes are recorded as layer 2 paints (text width from `measureText`, 3 px slop); the live preview is `tools.captionDrag` in the editor store; the offset is accumulated in user space and committed as one `markups.update` op ("Move caption"). Another tool, page or tab drops a drag in progress.
 - Task 4: `e2e/measure-polylength.spec.ts` passes in CI (run 40941465553, green). Older specs matched "Length" loosely and also hit the new "Polylength" radio: their ToolRail locators are now exact.
-- Not yet done: the local L17/L21 check and the screenshot (Docker was off this session).
+- Local check `PERF_L17=1 E2E_PROD=1 npx playwright test perf-polylength --workers=1` (`e2e/perf-polylength.spec.ts`, skipped in CI): a polylength through each dimension's midpoint (middle vertex with Alt, unsnapped) reads **1905 mm** on L17 at 1:75 (Enter to paint 4.6 ms) and **1491 mm** on L21 from its detected 1:75 @ A1 (2.1 ms). Screenshot `fixtures/private/traces/4-6-polylength.png` (not committed). Run with one worker: three heavy specs in parallel pushed even the unchanged 4.5 Length check to 284 ms.
+- Observed: with two equal segments the caption sits on the first one (the longest-segment rule, AC 4), so it is not centred on the whole run.
 
 ### File List
 
 - src/features/editor/measure-tool.ts (was length-tool.ts), measure-tool.test.ts, editor-store.ts, undo-store.ts, index.ts
 - src/features/viewer/markup-layer.ts, viewer-engine.ts, viewer-engine.test.ts, viewer-input.ts, viewer-input.test.ts, viewer-store.ts, snap-controller.ts, index.ts
 - src/features/workspace/tool-rail.tsx, use-workspace-shortcuts.ts, use-workspace-shortcuts.test.ts, workspace-shell.tsx, workspace-shell.test.tsx
-- e2e/measure-polylength.spec.ts; e2e/measure-length.spec.ts, perf-snap.spec.ts, viewer-snap.spec.ts, workspace-shell.spec.ts (exact names)
+- e2e/measure-polylength.spec.ts, e2e/perf-polylength.spec.ts; e2e/measure-length.spec.ts, perf-snap.spec.ts, viewer-snap.spec.ts, workspace-shell.spec.ts (exact names)
 
 ### Change Log
 
 - 2026-10-25: Story 4.6 created from the epics (Claude Opus 5.5). Status → ready-for-dev.
 - 2026-10-30: Tasks 2-3 done, Task 4 e2e green in CI (40941465553); local L17/L21 check and screenshot pending (Claude Opus 5.5).
+- 2026-10-30: Local L17/L21 check passed (1905 / 1491 mm); Status → review (Claude Opus 5.5).
