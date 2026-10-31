@@ -102,6 +102,9 @@ describe("measurementGroups (Story 4.11)", () => {
     expect(groups[0].rows).toHaveLength(2);
     expect(groups[0].unscaled).toBe(1);
     expect(groups[0].total).toBeCloseTo(measureLength(72, 0, cal), 6);
+    // Review R2: three points in a line have no value, but they are not "not scaled".
+    const line = measurementGroups([markup("radius", [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }], "doc:0")], pageOf);
+    expect(line[0].unscaled).toBe(0);
   });
 });
 

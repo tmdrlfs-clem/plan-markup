@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { factorForRatio, type Calibration } from "@/core/calibration/calibration";
 import { DEFAULT_MEASURE_STYLE, type MeasureMarkup } from "@/core/schema/markup";
 import { registerViewerEngine } from "@/features/viewer/viewer-commands";
-import { viewerStore } from "@/features/viewer/viewer-store";
+import { setTool, viewerStore } from "@/features/viewer/viewer-store";
 import { resetViewer } from "@/features/viewer/viewer-tabs";
 
 import { editorStore, resetEditor, setDocMarkups, setSelection } from "./editor-store";
@@ -113,8 +113,11 @@ describe("MeasurementsPanel (Story 4.11)", () => {
     const a = markup("length", [{ x: 0, y: 0 }, { x: 72, y: 0 }]);
     const b = markup("area", RECT, 1);
     const user = setup([a, b], { "doc:0": CAL, "doc:1": CAL });
+    setTool("length");
     const rows = screen.getAllByTestId("measurements-row");
     await user.click(rows[0]);
+    // Review R1: a tool in use gives way to Select.
+    expect(viewerStore.getState().tool).toBe("select");
     expect(editorStore.getState().selection.ids).toEqual([a.id]);
     expect(reveal).toHaveBeenCalledWith(0, { x: 0, y: 0, width: 72, height: 0 });
     expect(screen.getAllByTestId("measurements-row")[0].getAttribute("aria-selected")).toBe("true");

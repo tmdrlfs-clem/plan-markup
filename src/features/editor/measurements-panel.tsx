@@ -28,7 +28,7 @@ import {
   type PageContext,
   type PanelUnits,
 } from "@/core/measure/totals";
-import { hasDocument, viewerCommands, viewerStore } from "@/features/viewer";
+import { hasDocument, setTool, viewerCommands, viewerStore } from "@/features/viewer";
 
 import { editorStore, markupsOf, setSelection } from "./editor-store";
 
@@ -47,8 +47,9 @@ function pageText(index: number, pageLabels: readonly string[] | null, sheetLabe
   return sheetLabelOf(index + 1, pageLabels?.[index], sheetLabels[index])?.short ?? `Page ${index + 1}`;
 }
 
-/** Shows a row's measurement and selects it (AC 5). */
+/** Shows a row's measurement and selects it (AC 5); a tool in use gives way to Select (review R1). */
 function reveal(row: MeasurementRow): void {
+  if (viewerStore.getState().tool !== "select") setTool("select");
   setSelection([row.markup.id]);
   viewerCommands.revealMarkup(row.pageIndex, markupBounds(row.markup));
 }

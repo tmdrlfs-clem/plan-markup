@@ -112,7 +112,7 @@ export type MeasurementGroup = {
   rows: MeasurementRow[];
   /** The sum (mm, mm² or markers); null for groups without a total (D2). */
   total: number | null;
-  /** Rows without a value (no scale, no circle): left out of the total. */
+  /** Rows without a scale (left out of the total, as rows without a circle are). */
   unscaled: number;
 };
 
@@ -149,7 +149,7 @@ export function measurementGroups(
     let total = 0;
     let unscaled = 0;
     for (const { value } of rows) {
-      if (value.kind === "none") unscaled++;
+      if (value.kind === "none") unscaled += value.reason === "scale" ? 1 : 0;
       else if (value.kind === "length") total += value.mm;
       else if (value.kind === "area") total += value.mm2;
       else if (value.kind === "count") total += value.n;
