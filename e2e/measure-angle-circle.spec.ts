@@ -7,7 +7,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { signIn } from "./helpers";
+import { armMeasureTool, signIn } from "./helpers";
 
 const PDF = path.join(__dirname, "..", "fixtures", "pdf", "snap.pdf");
 const A4_HEIGHT = 595;
@@ -80,7 +80,7 @@ test("angle, radius and diameter: a right angle without a scale, the circle thro
   await open(page);
 
   // Angle on the uncalibrated page: no scale prompt; the live angle; Backspace; the third click adds it.
-  await tool(page, "Angle").click();
+  await armMeasureTool(page, "Angle");
   await expect(page.getByText(/Angle: click the start of the first leg/)).toBeVisible();
   await stable(page);
   await expect(prompt(page)).toBeHidden();
@@ -97,7 +97,7 @@ test("angle, radius and diameter: a right angle without a scale, the circle thro
   await expectUndo(page, "Undo Add angle");
 
   // Radius: the scale prompt; calibrated 1:100; three corners.
-  await tool(page, "Radius").click();
+  await armMeasureTool(page, "Radius");
   await expect(prompt(page)).toBeVisible();
   await scale(page).click();
   await calibrate(page).getByTestId("calibrate-ratio").fill("1:100");
@@ -115,7 +115,7 @@ test("angle, radius and diameter: a right angle without a scale, the circle thro
   await expectUndo(page, "Undo Add radius");
 
   // Diameter through the same corners.
-  await tool(page, "Diameter").click();
+  await armMeasureTool(page, "Diameter");
   await stable(page);
   for (const [x, y] of [[102, 103], [298, 102], [298, 248]] as const) await clickCorner(page, x, y);
   await expect(markups(page)).toHaveAttribute("data-captions", "90.0° | R 4410 mm | Ø 8819 mm");

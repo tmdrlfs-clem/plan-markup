@@ -9,7 +9,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { signIn } from "./helpers";
+import { armMeasureTool, signIn } from "./helpers";
 
 const PDF = path.join(__dirname, "..", "fixtures", "pdf", "snap.pdf");
 const A4_HEIGHT = 595;
@@ -163,7 +163,7 @@ test("length: Scale not set, live value, mm and ft-in captions, Shift, Esc, Ctrl
   await expectUndo(page, "Undo Calibrate page 1");
 
   // From the ToolRail too.
-  await tool(page, "Length").click();
+  await armMeasureTool(page, "Length");
   await expect(tool(page, "Length")).toBeChecked();
   await tool(page, "Select").click();
 

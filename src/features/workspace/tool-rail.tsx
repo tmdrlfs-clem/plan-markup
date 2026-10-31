@@ -3,6 +3,7 @@
 import {
   Angle,
   ArrowUpRight,
+  ChevronDown,
   Circle,
   Cloud,
   Diameter,
@@ -23,12 +24,13 @@ import {
   Type,
   type LucideIcon,
 } from "lucide-react";
-import { Fragment, useEffect } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useStore } from "zustand";
 
-import { Toolbar, ToolbarSeparator, ToolbarToggleGroup, ToolbarToggleItem } from "@/components/ui/toolbar";
+import { Menu, MenuContent, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "@/components/ui/menu";
+import { Toolbar, ToolbarButton, ToolbarSeparator, ToolbarToggleGroup, ToolbarToggleItem } from "@/components/ui/toolbar";
 import { dismissHint, showHint } from "@/components/ui/hint-store";
-import { hasDocument, setTool, viewerStore, type ViewerTool } from "@/features/viewer";
+import { hasDocument, isMeasureTool, setTool, viewerStore, type MeasureTool, type ViewerTool } from "@/features/viewer";
 
 import { NO_DRAWING } from "./workspace-toolbar";
 
@@ -97,18 +99,8 @@ const GROUPS: { label: string; tools: Tool[] }[] = [
       { id: "stamp", label: "Stamp", icon: Stamp, shortcut: "S" },
     ],
   },
-  {
-    label: "Measure",
-    tools: [
-      { id: "length", label: "Length", icon: Ruler, shortcut: "Shift+Alt+L" },
-      { id: "polylength", label: "Polylength", icon: Route, shortcut: "Shift+Alt+Q" },
-      { id: "area", label: "Area", icon: Pentagon, shortcut: "Shift+Alt+A" },
-      { id: "count", label: "Count", icon: Hash, shortcut: "Shift+Alt+C" },
-      { id: "angle", label: "Angle", icon: Angle },
-      { id: "radius", label: "Radius", icon: Radius },
-      { id: "diameter", label: "Diameter", icon: Diameter },
-    ],
-  },
+  // The measuring tools share one button and a menu (MeasureGroup).
+  { label: "Measure", tools: [] },
   {
     label: "White-out",
     tools: [{ id: "white-out", label: "White-out", icon: Eraser, shortcut: "Shift+W" }],
@@ -118,6 +110,67 @@ const GROUPS: { label: string; tools: Tool[] }[] = [
     tools: [{ id: "sprinkler-zone", label: "Sprinkler zone", icon: Droplets, shortcut: "J" }],
   },
 ];
+
+/**
+ * The measuring tools, in one slot: the rail shows the armed (or last armed) one and a menu
+ * lists them all, as Revu's measure flyout does (founder 2026-11-01: the rail no longer
+ * fits 768 px screens with one button per tool).
+ */
+export const MEASURE_TOOLS: readonly (Tool & { id: MeasureTool })[] = [
+  { id: "length", label: "Length", icon: Ruler, shortcut: "Shift+Alt+L" },
+  { id: "polylength", label: "Polylength", icon: Route, shortcut: "Shift+Alt+Q" },
+  { id: "area", label: "Area", icon: Pentagon, shortcut: "Shift+Alt+A" },
+  { id: "count", label: "Count", icon: Hash, shortcut: "Shift+Alt+C" },
+  { id: "angle", label: "Angle", icon: Angle },
+  { id: "radius", label: "Radius", icon: Radius },
+  { id: "diameter", label: "Diameter", icon: Diameter },
+];
+export const MORE_MEASURE_TOOLS = "More measure tools";
+
+function MeasureGroup({ open, active }: { open: boolean; active: ViewerTool }) {
+  const [last, setLast] = useState<MeasureTool>("length");
+  // The slot follows the armed measuring tool, whatever armed it (rail, menu or shortcut).
+  if (isMeasureTool(active) && active !== last) setLast(active);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const shown = MEASURE_TOOLS.find((t) => t.id === last) ?? MEASURE_TOOLS[0];
+  return (
+    <>
+      <ToolbarToggleGroup
+        type="single"
+        aria-label="Measure"
+        className="flex-col"
+        value={open && active === shown.id ? active : ""}
+        onValueChange={(value: string) => {
+          if (value) setTool(value as ViewerTool);
+        }}
+      >
+        <ToolbarToggleItem
+          value={shown.id}
+          label={shown.label}
+          icon={shown.icon}
+          shortcut={shown.shortcut}
+          size="md"
+          disabled={!open}
+          disabledReason={NO_DRAWING}
+        />
+      </ToolbarToggleGroup>
+      <Menu open={open && menuOpen} onOpenChange={(next) => setMenuOpen(open && next)}>
+        <MenuTrigger asChild>
+          <ToolbarButton label={MORE_MEASURE_TOOLS} icon={ChevronDown} size="xs" className="h-4 w-8" disabled={!open} disabledReason={NO_DRAWING} />
+        </MenuTrigger>
+        <MenuContent side="left" align="start">
+          <MenuRadioGroup value={isMeasureTool(active) ? active : ""} onValueChange={(value) => setTool(value as ViewerTool)}>
+            {MEASURE_TOOLS.map((tool) => (
+              <MenuRadioItem key={tool.id} value={tool.id} shortcut={tool.shortcut}>
+                {tool.label}
+              </MenuRadioItem>
+            ))}
+          </MenuRadioGroup>
+        </MenuContent>
+      </Menu>
+    </>
+  );
+}
 
 /** Right 44 px tool rail; every tool needs an open drawing. */
 export function ToolRail() {
@@ -136,29 +189,33 @@ export function ToolRail() {
       {GROUPS.map((group, index) => (
         <Fragment key={group.label}>
           {index > 0 ? <ToolbarSeparator className="my-1" /> : null}
-          <ToolbarToggleGroup
-            type="single"
-            aria-label={group.label}
-            className="flex-col"
-            value={open && LIVE_TOOLS.has(active) ? active : ""}
-            onValueChange={(value: string) => {
-              // Clicking the active tool again keeps it: a tool is always active.
-              if (LIVE_TOOLS.has(value)) setTool(value as ViewerTool);
-            }}
-          >
-            {group.tools.map((tool) => (
-              <ToolbarToggleItem
-                key={tool.id}
-                value={tool.id}
-                label={tool.label}
-                icon={tool.icon}
-                shortcut={tool.shortcut}
-                size="md"
-                disabled={!(open && LIVE_TOOLS.has(tool.id))}
-                disabledReason={open ? EDITOR_LATER : NO_DRAWING}
-              />
-            ))}
-          </ToolbarToggleGroup>
+          {group.label === "Measure" ? (
+            <MeasureGroup open={open} active={active} />
+          ) : (
+            <ToolbarToggleGroup
+              type="single"
+              aria-label={group.label}
+              className="flex-col"
+              value={open && LIVE_TOOLS.has(active) ? active : ""}
+              onValueChange={(value: string) => {
+                // Clicking the active tool again keeps it: a tool is always active.
+                if (LIVE_TOOLS.has(value)) setTool(value as ViewerTool);
+              }}
+            >
+              {group.tools.map((tool) => (
+                <ToolbarToggleItem
+                  key={tool.id}
+                  value={tool.id}
+                  label={tool.label}
+                  icon={tool.icon}
+                  shortcut={tool.shortcut}
+                  size="md"
+                  disabled={!(open && LIVE_TOOLS.has(tool.id))}
+                  disabledReason={open ? EDITOR_LATER : NO_DRAWING}
+                />
+              ))}
+            </ToolbarToggleGroup>
+          )}
         </Fragment>
       ))}
     </Toolbar>

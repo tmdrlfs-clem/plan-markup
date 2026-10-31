@@ -11,6 +11,7 @@ import {
   ANNOUNCE_LABEL_WAIT_MS,
   openDocument,
   resetViewer,
+  setTool,
   tabsStore,
   viewerCommands,
   viewerStore,
@@ -90,6 +91,39 @@ describe("Length snapping preview (Story 4.1)", () => {
     await user.click(screen.getByRole("radio", { name: "Select" }));
     expect(hintStore.getState().hint).toBeNull();
   });
+
+  it("the measuring tools share one slot: the menu arms any of them and the slot shows the last armed", async () => {
+    const { user } = setup();
+    act(() => {
+      openDocument(new File(["%PDF"], "a.pdf", { type: "application/pdf" }));
+      viewerStore.setState({ status: "ready", pageCount: 1, zoom: 64 });
+    });
+    const rail = screen.getByRole("toolbar", { name: "Drawing tools" });
+    expect(within(rail).getByRole("radio", { name: "Length" })).not.toBeChecked();
+    await user.click(within(rail).getByRole("button", { name: "More measure tools" }));
+    const items = await screen.findAllByRole("menuitemradio");
+    expect(items.map((i) => i.textContent)).toEqual([
+      expect.stringContaining("Length"),
+      expect.stringContaining("Polylength"),
+      expect.stringContaining("Area"),
+      expect.stringContaining("Count"),
+      "Angle",
+      "Radius",
+      "Diameter",
+    ]);
+    await user.click(screen.getByRole("menuitemradio", { name: "Radius" }));
+    expect(viewerStore.getState().tool).toBe("radius");
+    expect(within(rail).getByRole("radio", { name: "Radius" })).toBeChecked();
+    expect(within(rail).queryByRole("radio", { name: "Length" })).toBeNull();
+    // Another tool: the slot keeps Radius, unchecked; clicking it arms Radius again.
+    await user.click(within(rail).getByRole("radio", { name: "Select" }));
+    expect(within(rail).getByRole("radio", { name: "Radius" })).not.toBeChecked();
+    await user.click(within(rail).getByRole("radio", { name: "Radius" }));
+    expect(viewerStore.getState().tool).toBe("radius");
+    // A shortcut-armed tool takes the slot too.
+    act(() => setTool("area"));
+    expect(within(rail).getByRole("radio", { name: "Area" })).toBeChecked();
+  });
 });
 
 describe("Settings > Appearance (Story 3.8)", () => {
@@ -166,8 +200,10 @@ describe("WorkspaceShell layout", () => {
     setup();
     const rail = screen.getByRole("toolbar", { name: "Drawing tools" });
     const tools = within(rail).getAllByRole("radio");
-    expect(tools.length).toBe(20);
+    // The measuring tools share one slot and a menu.
+    expect(tools.length).toBe(14);
     for (const tool of tools) expect(tool).toHaveAttribute("aria-disabled", "true");
+    expect(within(rail).getByRole("button", { name: "More measure tools" })).toHaveAttribute("aria-disabled", "true");
     expect(screen.getByText("Select a tool to see its options")).toBeInTheDocument();
   });
 

@@ -9,7 +9,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { signIn } from "./helpers";
+import { armMeasureTool, signIn } from "./helpers";
 
 const PDF = path.join(__dirname, "..", "fixtures", "pdf", "snap.pdf");
 const A4_HEIGHT = 595;
@@ -140,7 +140,7 @@ test("area and count: count without a scale, Esc keeps it; area live, Enter / fi
 
   // From the ToolRail; a click on the first corner closes it.
   await tool(page, "Select").click();
-  await tool(page, "Area").click();
+  await armMeasureTool(page, "Area");
   await stable(page);
   for (const [x, y] of [[102, 103], [298, 102], [298, 248], [102, 248], [102, 103]] as const) await clickCorner(page, x, y);
   await expect(markups(page)).toHaveAttribute("data-captions", `4 | ${AREA} | ${AREA}`);

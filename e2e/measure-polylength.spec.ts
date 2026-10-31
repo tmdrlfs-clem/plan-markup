@@ -8,7 +8,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { signIn } from "./helpers";
+import { armMeasureTool, signIn } from "./helpers";
 
 const PDF = path.join(__dirname, "..", "fixtures", "pdf", "snap.pdf");
 const A4_HEIGHT = 595;
@@ -153,7 +153,7 @@ test("polylength: live total, Enter / double-click, Backspace, Ctrl+Z, Esc, undo
 
   // From the ToolRail; a double-click finishes (its second click adds no vertex): the top edge.
   await tool(page, "Select").click();
-  await tool(page, "Polylength").click();
+  await armMeasureTool(page, "Polylength");
   await expect(tool(page, "Polylength")).toBeChecked();
   await stable(page);
   await clickCorner(page, 102, 248);

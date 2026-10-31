@@ -37,3 +37,9 @@ export async function signIn(page: Page, email: string, password = PASSWORD, opt
   await page.getByLabel("Password", { exact: true }).fill(password);
   await page.getByRole("button", { name: "Sign in" }).click();
 }
+
+/** Arms a measuring tool from the ToolRail's measure menu (the rail shows one measuring tool at a time). */
+export async function armMeasureTool(page: Page, name: string) {
+  await page.getByRole("toolbar", { name: "Drawing tools" }).getByRole("button", { name: "More measure tools" }).click();
+  await page.getByRole("menuitemradio", { name, exact: true }).click();
+}
