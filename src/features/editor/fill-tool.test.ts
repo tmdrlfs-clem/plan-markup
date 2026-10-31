@@ -5,7 +5,7 @@ import { factorForRatio, pageIdOf, type Calibration } from "@/core/calibration/c
 import { setTool, viewerStore, type LayerView, type PressContext } from "@/features/viewer";
 
 import { editorStore, markupsOf, resetEditor } from "./editor-store";
-import { FILL_LEAKED, FILL_NO_LINES, fillFrames, fillOf } from "./fill-tool";
+import { FILL_LEAKED, FILL_NO_LINES, FILL_OUTSIDE, fillFrames, fillOf } from "./fill-tool";
 import { ADD_AREA, installMeasureTools, measurePainter } from "./measure-tool";
 import { activeUndoLabels, clearUndo, undoActive } from "./undo-store";
 
@@ -152,6 +152,23 @@ describe("Dynamic fill (Story 4.10)", () => {
     expect(fillOf(PAGE)).toBeNull();
     expect(toasts()).toContain(FILL_NO_LINES);
     expect(markupsOf(editorStore.getState(), SHA)).toEqual([]);
+  });
+
+  it("review R1: a press outside the fill's view starts again when nothing is filled, otherwise says why", () => {
+    const moved = (): PressContext => ({ ...at(), window: { x0: 150, y0: 120, x1: 550, y1: 420 } });
+    measurePainter.press!("start", { x: 50, y: 50 }, at(), "grow");
+    measurePainter.press!("end", { x: 50, y: 50 }, at(), "grow");
+    // Nothing spread yet (no frame ran): a press beyond the first view starts a fill in the new one.
+    measurePainter.press!("start", { x: 500, y: 400 }, moved(), "grow");
+    expect(fillOf(PAGE)!.grid.x0).toBe(150);
+    measurePainter.press!("end", { x: 500, y: 400 }, moved(), "grow");
+    measurePainter.press!("start", { x: 200, y: 175 }, moved(), "grow");
+    runFrames(300);
+    measurePainter.press!("end", { x: 200, y: 175 }, moved(), "grow");
+    const count = fillOf(PAGE)!.count;
+    measurePainter.press!("start", { x: 50, y: 50 }, at(), "grow");
+    expect(toasts()).toContain(FILL_OUTSIDE);
+    expect(fillOf(PAGE)!.count).toBe(count);
   });
 
   it("Ctrl + drag erases a hole, Shift + drag paints, strokes undo one by one", () => {

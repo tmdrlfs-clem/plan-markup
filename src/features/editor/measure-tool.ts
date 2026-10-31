@@ -29,7 +29,7 @@ import { uuidv7 } from "@/core/ids/uuid";
 import { angleCaption, bisector } from "@/core/measure/angle";
 import { areaCaption, areaCaptionText, formatArea, polygonCentroid, selfIntersects } from "@/core/measure/area";
 import { circleCaption, circleThrough } from "@/core/measure/circle";
-import { captionPlacement, lengthCaption, polylineCaptionAnchor } from "@/core/measure/length";
+import { SCALE_NOT_SET, captionPlacement, lengthCaption, polylineCaptionAnchor } from "@/core/measure/length";
 import { DEFAULT_MEASURE_STYLE, MAX_POLYLINE_POINTS, type MarkupStyle, type MeasureMarkup } from "@/core/schema/markup";
 import {
   isMeasureTool,
@@ -538,7 +538,7 @@ function paintFillActive(c: CanvasRenderingContext2D, view: LayerView, pointer: 
   const u = view.userUnit > 0 ? view.userUnit : 1;
   const live = calibration
     ? { text: formatArea(user2 * u * u * calibration.xFactor * calibration.yFactor, calibration.unit), scaled: true }
-    : { text: areaCaption([], undefined, null).area, scaled: false };
+    : { text: SCALE_NOT_SET, scaled: false };
   if (pointer) liveLabel(c, view.toDevice(pointer), live.text, live.scaled, view);
   return live.text;
 }

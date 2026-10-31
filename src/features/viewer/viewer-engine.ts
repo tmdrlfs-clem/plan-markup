@@ -398,7 +398,7 @@ export class ViewerEngine {
       if (this.destroyed || this.suspended) return;
       if (change.drawingEnded && this.snapFrom) this.clearSnapFrom();
       else this.followDrawing();
-      this.paintMarkups(true);
+      if (!change.activeOnly) this.paintMarkups(true);
       this.paintOverlay();
     });
     this.unsubscribeTokens = subscribeCanvasTokens(() => {

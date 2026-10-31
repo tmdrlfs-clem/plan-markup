@@ -1,6 +1,6 @@
 # Story 4.10: Dynamic fill area
 
-Status: review
+Status: done
 
 ## Story
 
@@ -59,6 +59,14 @@ Claude Opus 5.5
 - The live value counts filled cells only; enclosed islands (furniture, texture dashes) join at Enter, so the added area is larger than the last live value (L17: 15.62 → 18.41 m²).
 - Unit 152 files / 1728+ tests; related e2e 18 passed.
 
+### Review (Claude Opus 5.5, 2026-11-01)
+
+- R1 (fixed): a press outside the grid (the view moved since the fill started) did nothing. An empty fill now starts again in the new view; a fill with cells stays and says why ("This fill covers the view it started in…"). Unit test.
+- R2 (fixed): every fill frame painted layer 2 (all the page's markups) again. `MarkupChange.activeOnly` lets the fill repaint layer 3 only.
+- R3 (fixed): the unscaled live value used a roundabout `areaCaption([])`; now `SCALE_NOT_SET`.
+- Noted, not changed: the live value excludes enclosed islands until Enter (computing them every frame would cost a full region pass); the grid is fixed at the first press's zoom (the brush keeps that size if the user zooms while filling).
+- Checked: Esc / tool / page / tab during a hold (the release after a discard does nothing), pointer capture for the press drag, the leak at the grid border, memory released on discard (~40 MB at the 4 M cell cap).
+
 ### File List
 
 - src/core/fill/grid.ts, spread.ts, polygon.ts, fill.test.ts
@@ -71,3 +79,4 @@ Claude Opus 5.5
 
 - 2026-11-01: Story 4.10 created from the epics (Claude Opus 5.5). Status → ready-for-dev.
 - 2026-11-01: Tasks 1-4 done (L17 room 809 ms); Status → review (Claude Opus 5.5).
+- 2026-11-01: Review R1-R3 fixed; Status → done (Claude Opus 5.5).

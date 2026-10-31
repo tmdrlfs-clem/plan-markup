@@ -70,7 +70,8 @@ export interface MarkupPainter {
   press?(phase: "start" | "move" | "end", point: Point, at: PressContext, brush: PressBrush): void;
 }
 
-export type MarkupChange = { drawingEnded?: boolean };
+/** `activeOnly`: only the drawing in progress changed (review 4.10 R2: layer 2 is not painted again). */
+export type MarkupChange = { drawingEnded?: boolean; activeOnly?: boolean };
 type Listener = (change: MarkupChange) => void;
 
 let painter: MarkupPainter | null = null;

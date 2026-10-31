@@ -33,6 +33,7 @@ export const FILL_LEAKED =
   "The fill leaked out of the room. Block the opening with a Length line or erase it with Ctrl + drag, or zoom out if the room is bigger than the view. Ctrl+Z undoes the stroke.";
 export const FILL_EMPTY = "Nothing is filled yet. Press and hold inside a room.";
 export const FILL_NO_LINES = "The drawing's lines are still being read. Try again in a moment.";
+export const FILL_OUTSIDE = "This fill covers the view it started in. Press inside it, or Esc to start a fill in this view.";
 
 type Session = {
   pageId: string;
@@ -138,7 +139,7 @@ function tick(): void {
   const px = fillFrames.now() - s.pressed.since < 1000 ? SPREAD_PX.first : SPREAD_PX.after;
   show(s, s.spread.step((10 * px) / s.cellPx));
   checkLeak(s);
-  notifyMarkups({});
+  notifyMarkups({ activeOnly: true });
   // Frames run while there is something to spread (a drag seeding more starts them again).
   if (s.spread.growing) s.frame = fillFrames.request(tick);
 }
@@ -152,7 +153,14 @@ function brushAt(s: Session, brush: PressBrush, x: number, y: number): void {
 export function fillPress(phase: "start" | "move" | "end", point: Point, at: PressContext, brush: PressBrush): void {
   if (phase === "start") {
     const pageId = pageIdOf(at.documentId, at.pageIndex);
-    if (!session || session.pageId !== pageId) {
+    // Review R1: a press outside the grid (the view moved since the fill started) starts an
+    // empty fill again in this view; a fill with cells stays and says why.
+    const outside = session !== null && cellAt(session.spread.grid, point) === null;
+    if (outside && session!.spread.count > 0 && session!.pageId === pageId) {
+      toast({ title: FILL_OUTSIDE, variant: "info" });
+      return;
+    }
+    if (!session || session.pageId !== pageId || outside) {
       discardFill();
       session = start(at);
     }
@@ -185,7 +193,7 @@ export function fillPress(phase: "start" | "move" | "end", point: Point, at: Pre
     if (s.frame !== null) fillFrames.cancel(s.frame);
     s.frame = null;
   }
-  notifyMarkups({});
+  notifyMarkups({ activeOnly: true });
 }
 
 /** Ctrl+Z / Backspace while filling: undoes the last stroke; false when there is none. */
@@ -194,7 +202,7 @@ export function undoFillStroke(): boolean {
   if (!s || !s.spread.undoStroke()) return false;
   showAll(s);
   checkLeak(s);
-  notifyMarkups({});
+  notifyMarkups({ activeOnly: true });
   return true;
 }
 
