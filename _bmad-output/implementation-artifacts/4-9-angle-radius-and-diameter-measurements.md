@@ -1,6 +1,6 @@
 # Story 4.9: Angle, radius and diameter measurements
 
-Status: review
+Status: done
 
 ## Story
 
@@ -57,6 +57,13 @@ Claude Opus 5.5
 - ToolRail: Angle, Radius, Diameter live (lucide Angle / Radius / Diameter icons) without shortcuts (D5); the rail has 20 tools.
 - Local: unit 149 files / 1711 tests; `measure-angle-circle` e2e passes (90.0°, R 4410 mm, Ø 8819 mm); related e2e 17 passed.
 
+### Review (Claude Opus 5.5, 2026-11-01)
+
+- No defects found. Checked: fixed-point commits (Enter / double-click ignored, a double-click's second click adds nothing), the collinear and repeated-point refusals, Esc / another tool cancelling, `needsScale` (Angle none), captions and hit boxes, the circle's extent in the off-canvas test, rotated views (the device mapping is a similarity, so circles stay circles).
+- Screenshot (fixtures/private/traces/4-9-angle-circle.png, not committed): the angle's arc and caption inside the corner, the diameter's circle and diagonal with "Ø 8819 mm", a live radius.
+- Open (founder): the ToolRail has 20 tools; at 1366 × 768 (613 px of rail for 750 px of tools) Diameter, White-out and Sprinkler zone scroll out of view (White-out and Sprinkler zone already did at 17 tools). Options: smaller rail buttons, measure tools in a flyout, or keep the scroll.
+- The 2.4 export model stores a circle as centre + radius; the export story derives them with `circleThrough` from the three stored points.
+
 ### File List
 
 - src/core/measure/angle.ts, circle.ts, angle-circle.test.ts; src/core/schema/markup.ts
@@ -70,3 +77,4 @@ Claude Opus 5.5
 
 - 2026-11-01: Story 4.9 created from the epics (Claude Opus 5.5). Status → ready-for-dev.
 - 2026-11-01: Tasks 1-3 done; Status → review (Claude Opus 5.5).
+- 2026-11-01: Review: no defects; ToolRail overflow raised with the founder; Status → done (Claude Opus 5.5).
