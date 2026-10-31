@@ -85,7 +85,7 @@ development_status:
   4-8-area-and-count-measurements: done
   4-9-angle-radius-and-diameter-measurements: done
   4-10-dynamic-fill-area: done
-  4-11-measurements-panel: backlog
+  4-11-measurements-panel: ready-for-dev
   epic-4-retrospective: optional
   # Epic 5: Markup and As-Built Drawing
   epic-5: backlog
