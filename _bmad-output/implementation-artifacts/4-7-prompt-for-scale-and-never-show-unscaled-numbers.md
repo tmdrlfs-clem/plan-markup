@@ -1,6 +1,6 @@
 # Story 4.7: Prompt for scale and never show unscaled numbers
 
-Status: review
+Status: done
 
 ## Story
 
@@ -27,6 +27,12 @@ so that I never copy a wrong number.
 - [x] **Task 1: Prompt state** — `src/features/calibration/scale-prompt-store.ts`: the session's dismissed pages, `scalePromptFor(...)` (pure: shown or not and its contents from the viewer state, the dialogs' state and the dismissals), `applyDetectedScale()` and `dismissScalePrompt()`; unit tests.
 - [x] **Task 2: ScalePrompt** — `scale-prompt.tsx` (warning bar like the PickBar: ⚠, text, Use it, Calibrate…, ×), mounted by the workspace shell; component tests.
 - [x] **Task 3: Tests** — `e2e/scale-prompt.spec.ts` (AC 7); update specs that arm Length on an uncalibrated page if the prompt gets in their way.
+
+### Review Follow-ups (2026-11-01)
+
+- [x] R1: a Calibrate dialog opened from the prompt and closed by a tab switch dismissed the other document's page: a dialog closed on another document dismisses nothing.
+- [x] R2: the prompt was fixed at the viewport top and covered the HintBar (the tool's instructions): it now sits in the document area under the tabs.
+- Decision 2b implemented (`calibrateFromPrompt`); unit 147 files / 1681 tests; local e2e 15 passed.
 
 ## Dev Notes
 
@@ -56,7 +62,7 @@ Claude Opus 5.5
 - The prompt sits where the calibration PickBar does (fixed, top centre) and is a labelled region with a polite status line; it never takes the focus (the e2e checks the canvas keeps it).
 - Existing measuring specs (measure-length, measure-polylength, viewer-snap, workspace-shell, calibrate, verify-calibration) pass unchanged with the prompt shown: it does not cover their clicks.
 - Local: `E2E_PROD=1 npx playwright test scale-prompt` passes; unit 147 files / 1679 tests.
-- Open for the founder: "Use it" applies directly (FR82) although the ScaleIndicator never does (4.3 decision); Calibrate… cancelled brings the prompt back (not a dismissal).
+- Founder decisions 2026-11-01: (1a) "Use it" applies directly; (2b) Calibrate… opened from the prompt and closed with the page still without a scale counts as a dismissal for that page.
 
 ### File List
 
@@ -68,3 +74,4 @@ Claude Opus 5.5
 
 - 2026-10-31: Story 4.7 created from the epics (Claude Opus 5.5). Status → ready-for-dev.
 - 2026-10-31: Tasks 1-3 done; Status → review (Claude Opus 5.5).
+- 2026-11-01: Founder decisions 1a / 2b, review R1-R2 fixed; Status → done (Claude Opus 5.5).

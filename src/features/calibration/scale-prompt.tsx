@@ -1,6 +1,6 @@
 "use client";
 
-// The ScalePrompt (Story 4.7, FR82, UX J2 step 1): over the document area
+// The ScalePrompt (Story 4.7, FR82, UX J2 step 1): at the top of the document area (under the tabs, never over the HintBar)
 // while a measuring tool is armed on a page with no scale. One detected scale:
 // "Detected 1:100 @ A1 — Use it / Calibrate…"; otherwise only Calibrate…, with
 // why. Non-modal: it never takes the focus, the canvas keeps its keys.
@@ -12,8 +12,8 @@ import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { viewerStore } from "@/features/viewer";
 
-import { calibrateStore, openCalibrate } from "./calibrate-store";
-import { applyDetectedScale, dismissScalePrompt, scalePromptFor, scalePromptStore, type ScalePrompt as Prompt } from "./scale-prompt-store";
+import { calibrateStore } from "./calibrate-store";
+import { applyDetectedScale, calibrateFromPrompt, dismissScalePrompt, scalePromptFor, scalePromptStore, type ScalePrompt as Prompt } from "./scale-prompt-store";
 import { verifyStore } from "./verify-store";
 
 export const SCALE_PROMPT_NOTE = "Measurements show “Scale not set” until the page has a scale.";
@@ -56,7 +56,7 @@ export function ScalePrompt() {
       aria-label="Scale not set"
       data-testid="scale-prompt"
       data-state={prompt.state.kind}
-      className="fixed left-1/2 top-24 z-popover flex max-w-[calc(100vw-32px)] -translate-x-1/2 items-center gap-3 rounded-sm border border-strong bg-surface-1 py-1 pl-3 pr-1 text-ws-md text-text shadow-2"
+      className="absolute left-1/2 top-11 z-popover flex max-w-[calc(100%-32px)] -translate-x-1/2 items-center gap-3 rounded-sm border border-strong bg-surface-1 py-1 pl-3 pr-1 text-ws-md text-text shadow-2"
     >
       <TriangleAlert size={16} aria-hidden="true" className="shrink-0 text-warning-text" />
       <p role="status" aria-live="polite" className="min-w-0">
@@ -68,7 +68,7 @@ export function ScalePrompt() {
           Use it
         </Button>
       ) : null}
-      <Button size="sm" variant="secondary" onClick={() => openCalibrate()}>
+      <Button size="sm" variant="secondary" onClick={() => calibrateFromPrompt()}>
         Calibrate…
       </Button>
       <IconButton label="Measure without scale" icon={X} onClick={() => dismissScalePrompt()} />

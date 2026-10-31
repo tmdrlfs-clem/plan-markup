@@ -11,7 +11,7 @@ import { activeUndoLabels, clearUndo, editorStore, undoActive } from "@/features
 import { INITIAL_VIEWER_STATE } from "@/features/viewer/viewer-store";
 import { setTool, viewerStore } from "@/features/viewer";
 
-import { calibrateStore, closeCalibrate } from "./calibrate-store";
+import { applyCalibration, calibrateStore, closeCalibrate } from "./calibrate-store";
 import { DEFAULT_CALIBRATION_PREFS, calibrationPrefs } from "./calibration-prefs";
 import { ScalePrompt } from "./scale-prompt";
 import { applyDetectedScale, dismissScalePrompt, needsScale, resetScalePrompt, scalePromptFor } from "./scale-prompt-store";
@@ -173,7 +173,7 @@ describe("ScalePrompt (Story 4.7)", () => {
     expect(screen.queryByTestId("scale-prompt")).toBeNull();
   });
 
-  it("offers only Calibrate… without one detected scale, says why, and hides while the dialog is open", async () => {
+  it("offers only Calibrate… without one detected scale, says why, and hides while a dialog is open", async () => {
     const user = userEvent.setup();
     setup();
     act(() => {
@@ -188,14 +188,46 @@ describe("ScalePrompt (Story 4.7)", () => {
     expect(screen.getByTestId("scale-prompt")).toHaveTextContent("2 scales on page");
     act(() => viewerStore.setState({ pageScales: {} }));
     expect(screen.getByTestId("scale-prompt")).toHaveTextContent("Reading the drawing’s scale…");
+    act(() => verifyStore.setState({ open: true }));
+    expect(screen.queryByTestId("scale-prompt")).toBeNull();
+    act(() => verifyStore.setState({ open: false }));
     await user.click(screen.getByRole("button", { name: "Calibrate…" }));
     expect(calibrateStore.getState().open).toBe(true);
     expect(screen.queryByTestId("scale-prompt")).toBeNull();
+    // Founder decision: cancelled (still no scale), it stays away on that page; other pages still prompt.
     act(() => closeCalibrate());
-    // Still no scale: it comes back.
-    expect(screen.getByTestId("scale-prompt")).toBeInTheDocument();
-    act(() => verifyStore.setState({ open: true }));
     expect(screen.queryByTestId("scale-prompt")).toBeNull();
+    act(() => viewerStore.setState({ pageIndex: 3 }));
+    expect(screen.getByTestId("scale-prompt")).toBeInTheDocument();
+  });
+
+  it("Calibrate… applied: the page has a scale, nothing is dismissed (undoing it prompts again)", async () => {
+    const user = userEvent.setup();
+    setup();
+    act(() => setTool("length"));
+    await user.click(screen.getByRole("button", { name: "Calibrate…" }));
+    act(() => {
+      applyCalibration({ kind: "ratio", ratio: 50, sheet: null }, [0], DEFAULT_CALIBRATION_PREFS);
+      closeCalibrate();
+    });
+    expect(screen.queryByTestId("scale-prompt")).toBeNull();
+    act(() => {
+      undoActive();
+    });
+    expect(screen.getByTestId("scale-prompt")).toBeInTheDocument();
+  });
+
+  it("review R1: the dialog closed by another tab dismisses nothing", async () => {
+    const user = userEvent.setup();
+    setup();
+    act(() => setTool("length"));
+    await user.click(screen.getByRole("button", { name: "Calibrate…" }));
+    act(() => {
+      viewerStore.setState({ documentId: "b".repeat(64), tabId: "doc-2" });
+      closeCalibrate();
+      viewerStore.setState({ documentId: SHA, tabId: "doc-1" });
+    });
+    expect(screen.getByTestId("scale-prompt")).toBeInTheDocument();
   });
 
   it("× hides it for the page; another tool hides it too", async () => {

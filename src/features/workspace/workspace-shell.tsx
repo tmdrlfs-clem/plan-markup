@@ -218,7 +218,7 @@ function ShellBody({ user, initialTheme }: { user: WorkspaceUser; initialTheme: 
             </Panel>
           </div>
         )}
-        <main data-region="canvas" tabIndex={-1} className="min-w-0 flex-1 bg-surface-0 focus-ring">
+        <main data-region="canvas" tabIndex={-1} className="relative min-w-0 flex-1 bg-surface-0 focus-ring">
           {viewerStatus === "empty" ? (
             <EmptyWorkspace onOpen={open} onOpenFiles={openFiles} recent={[]} />
           ) : (
@@ -226,6 +226,8 @@ function ShellBody({ user, initialTheme }: { user: WorkspaceUser; initialTheme: 
               <DocumentViewer onOpen={open} onOpenFiles={openFiles} />
             </DocumentTabs>
           )}
+          {/* Story 4.7: a measuring tool on a page with no scale offers the detected scale or Calibrate (under the tabs). */}
+          <ScalePrompt />
         </main>
         <aside aria-label="Tools" data-region="tool-rail" className="w-11 shrink-0 border-l border-border bg-surface-2">
           <ToolRail />
@@ -273,8 +275,6 @@ function ShellBody({ user, initialTheme }: { user: WorkspaceUser; initialTheme: 
       </footer>
       <CalibrateDialog />
       <VerifyDialog />
-      {/* Story 4.7: a measuring tool on a page with no scale offers the detected scale or Calibrate. */}
-      <ScalePrompt />
 
       <input
         ref={fileInput}

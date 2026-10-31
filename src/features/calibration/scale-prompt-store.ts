@@ -2,7 +2,8 @@
 // no scale offers the detected scale ("Detected 1:100 @ A1 — Use it /
 // Calibrate…") or only Calibrate…. It never blocks the canvas: dismissed,
 // the page's measurements read "Scale not set" (FR27). Dismissals last for the
-// session, by page.
+// session, by page; founder decision 2026-11-01: Calibrate… from the prompt
+// left without a scale (cancelled) counts as a dismissal.
 
 import { createStore } from "zustand/vanilla";
 
@@ -10,7 +11,7 @@ import { pageIdOf } from "@/core/calibration/calibration";
 import type { DetectedScale } from "@/core/scale/detect";
 import { hasDocument, isMeasureTool, scaleStateOf, viewerStore, type ScaleState, type ViewerState, type ViewerTool } from "@/features/viewer";
 
-import { applyCalibration, calibrateStore, calibrationOf } from "./calibrate-store";
+import { applyCalibration, calibrateStore, calibrationOf, openCalibrate } from "./calibrate-store";
 import { calibrationPrefs } from "./calibration-prefs";
 import { verifyStore } from "./verify-store";
 
@@ -75,12 +76,38 @@ export function applyDetectedScale(): boolean {
 /** ×: no prompt on the shown page for the rest of the session (its measurements read "Scale not set"). */
 export function dismissScalePrompt(): void {
   const { documentId, pageIndex } = viewerStore.getState();
-  if (!documentId) return;
-  const id = pageIdOf(documentId, pageIndex);
+  if (documentId) dismissPage(pageIdOf(documentId, pageIndex));
+}
+
+function dismissPage(id: string): void {
   scalePromptStore.setState((s) => ({ dismissed: { ...s.dismissed, [id]: true } }));
 }
 
+/** The document whose prompt opened the Calibrate dialog (until the dialog closes). */
+let calibratingFrom: string | null = null;
+
+/** Calibrate…: opens the dialog for the shown page; closed with the page still without a scale, the prompt stays away. */
+export function calibrateFromPrompt(): void {
+  const { documentId, pageIndex } = viewerStore.getState();
+  if (!documentId) return;
+  openCalibrate();
+  if (calibrateStore.getState().open && calibrateStore.getState().pageIndex === pageIndex) calibratingFrom = documentId;
+}
+
+calibrateStore.subscribe((s, prev) => {
+  if (!prev.open || s.open || !calibratingFrom) return;
+  const documentId = calibratingFrom;
+  calibratingFrom = null;
+  const viewer = viewerStore.getState();
+  // 4.7 review R1: another tab closed it (not a cancel): nothing is dismissed. The dialog follows
+  // paging (4.3 review R4): the page it closes on is what counts.
+  if (viewer.documentId !== documentId) return;
+  const page = pageIdOf(documentId, s.pageIndex);
+  if (!viewer.calibrations[page]) dismissPage(page);
+});
+
 /** Forgets the dismissals (another user's workspace, tests). */
 export function resetScalePrompt(): void {
+  calibratingFrom = null;
   scalePromptStore.setState({ dismissed: {} });
 }
