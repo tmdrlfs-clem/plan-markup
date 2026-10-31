@@ -22,7 +22,7 @@ so that I get a room area without clicking every corner.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Core** — `src/core/fill/` (`grid.ts` window + rasterisation, `spread.ts` session state: seeds, steps, brushes, strokes, leak, `polygon.ts` region → rings in user space); unit tests.
+- [x] **Task 1: Core** — `src/core/fill/` (`grid.ts` window + rasterisation, `spread.ts` session state: seeds, steps, brushes, strokes, leak, `polygon.ts` region → rings in user space); unit tests.
 - [ ] **Task 2: Viewer** — viewer tool `fill` (a measuring tool that does not snap or place points), press / move / release with the fill tool forwarded to the painter with the page's segments, the visible window in user space and the cell size; `J`; measure menu entry; HintBar text.
 - [ ] **Task 3: Editor** — the fill session (`fill-tool.ts`): barriers from segments + the page's Length / Polylength markups, the frame loop, the overlay on layer 3, the live area, Enter → area markup, Esc / tool / page / tab discard, stroke undo through `registerDrawingUndo`, leak toast; unit tests.
 - [ ] **Task 4: Tests** — `e2e/measure-dynamic-fill.spec.ts` (AC 9); local L17 timing.
