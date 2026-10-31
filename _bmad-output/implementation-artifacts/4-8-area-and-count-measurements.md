@@ -1,6 +1,6 @@
 # Story 4.8: Area and count measurements
 
-Status: in-progress
+Status: review
 
 ## Story
 
@@ -23,7 +23,7 @@ so that I can quantify rooms and devices.
 - [x] **Task 1: Core** — `src/core/measure/area.ts` (area with holes, perimeter, centroid, self-intersection, `formatArea`, captions), `area` and `count` in the markup schema; unit tests.
 - [x] **Task 2: Area tool** — viewer tool `area` (snapping, crosshair), painter: outline, live polygon, caption at the centroid (two lines, hit box), first-vertex close, crossing refusal with the HintBar; `Shift+Alt+A`, ToolRail Area live and hint; unit tests.
 - [x] **Task 3: Count tool** — viewer tool `count` (no snapping), markers, running count, finish-not-cancel rules, caption; `Shift+Alt+C`, ToolRail Count live and hint; `needsScale` excludes Count; unit tests.
-- [ ] **Task 4: Tests** — `e2e/measure-area-count.spec.ts` (AC 7); local L17 check (an area on a known room reads its printed size if one is marked; otherwise a rectangle of two printed dimensions).
+- [x] **Task 4: Tests** — `e2e/measure-area-count.spec.ts` (AC 7); local L17 check (an area on a known room reads its printed size if one is marked; otherwise a rectangle of two printed dimensions).
 
 ## Dev Notes
 
@@ -41,12 +41,29 @@ so that I can quantify rooms and devices.
 
 ### Agent Model Used
 
+Claude Opus 5.5
+
 ### Debug Log References
 
 ### Completion Notes List
 
+- One painter still draws every measurement (`measure-tool.ts`): outline / markers / dimension line by type, captions with one or two lines (`CaptionFrame` is the first line's baseline centre; hit boxes know the line count).
+- The engine placed points only for snapping tools; Count does not snap (D8), so `snapClick` now also serves every measuring tool (found by the e2e; engine test added).
+- A count left by a tab switch is recorded in the history of the tab it was drawn in (`executeOp(op, label, tabId)`); a tab being closed drops that history, the count stays with its document.
+- Crossing areas: the HintBar is not used (it would replace the tool's instructions and not come back): the live value says "Crosses itself" and finishing does nothing (AC 2 updated).
+- Local: `measure-area-count` e2e passes (37.34 m², P 24694 mm at 1:100); unit 148 files / 1698 tests; related e2e 16 passed.
+- Not done: the L17 area check. No room on L17 has known coordinates for two perpendicular printed dimensions, so there is nothing honest to compare with; the area formula is the product of the 4.5-verified lengths (unit-tested).
+
 ### File List
+
+- src/core/measure/area.ts, area.test.ts; src/core/schema/markup.ts
+- src/features/editor/measure-tool.ts, measure-tool.test.ts, undo-store.ts, editor-store.ts, index.ts
+- src/features/viewer/viewer-store.ts, snap-controller.ts, viewer-engine.ts, viewer-engine.test.ts
+- src/features/calibration/scale-prompt-store.ts, scale-prompt.test.tsx
+- src/features/workspace/tool-rail.tsx, use-workspace-shortcuts.ts, use-workspace-shortcuts.test.ts, workspace-shell.tsx
+- e2e/measure-area-count.spec.ts
 
 ### Change Log
 
 - 2026-11-01: Story 4.8 created from the epics (Claude Opus 5.5). Status → ready-for-dev.
+- 2026-11-01: Tasks 1-4 done (L17 area check not possible, see notes); Status → review (Claude Opus 5.5).

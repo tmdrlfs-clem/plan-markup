@@ -1653,7 +1653,9 @@ export class ViewerEngine {
 
   /** Story 4.1: a snapping tool's click: the point it placed becomes the "from" point. */
   snapClick(): void {
-    if (!isSnappingTool(viewerStore.getState().tool) || !this.pointerScreen || !this.page) return;
+    // Story 4.8: Count places points without snapping (the raw point).
+    const tool = viewerStore.getState().tool;
+    if (!(isSnappingTool(tool) || isMeasureTool(tool)) || !this.pointerScreen || !this.page) return;
     this.updateCursor();
     // The snapped point, else the Shift-held one (review R1: never the raw pointer while Shift holds a direction).
     const point = this.toolPoint;

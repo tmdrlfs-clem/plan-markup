@@ -1585,6 +1585,13 @@ describe("snapping (Story 4.1)", () => {
     expect(r.engine.finishTool()).toBe(true);
     expect(finished).toBe(1);
     expect(r.engine.snapFromPoint).toBeNull();
+    // Story 4.8: Count places the raw point (no snapping), though it is not a snapping tool.
+    setTool("count");
+    r.engine.pointerAt(screenOf(101, 101));
+    paint();
+    r.engine.snapClick();
+    expect(vertices.at(-1)!.x).toBeCloseTo(101, 6);
+    expect(vertices.at(-1)!.y).toBeCloseTo(101, 6);
     off();
     setTool("select");
   });
