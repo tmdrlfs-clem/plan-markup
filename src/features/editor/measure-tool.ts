@@ -240,8 +240,13 @@ function captionOf(m: MeasureMarkup, calibration: Calibration | null, userUnit: 
 function liveValue(tool: MeasureTool, points: readonly Point[], calibration: Calibration | null, userUnit: number): { text: string; scaled: boolean } {
   if (tool === "count") return { text: String(points.length - 1), scaled: true };
   if (tool === "area") {
-    if (points.length >= 3 && selfIntersects(points)) return { text: CROSSES_ITSELF, scaled: false };
-    const a = areaCaption(points, undefined, calibration, userUnit);
+    // Review R1: the tool point on the last vertex (just clicked) or on the first (about to
+    // close it) adds no vertex; it must not read as a crossing.
+    const p = points[points.length - 1];
+    const same = (q: Point) => q.x === p.x && q.y === p.y;
+    const ring = points.length > 1 && (same(points[0]) || same(points[points.length - 2])) ? points.slice(0, -1) : points;
+    if (ring.length >= 3 && selfIntersects(ring)) return { text: CROSSES_ITSELF, scaled: false };
+    const a = areaCaption(ring, undefined, calibration, userUnit);
     return { text: a.area, scaled: a.scaled };
   }
   return lengthCaption(points, calibration, userUnit);

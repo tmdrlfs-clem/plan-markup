@@ -343,6 +343,9 @@ describe("Area tool (Story 4.8)", () => {
     // 72 pt at 1:75 = 1905 mm: the square is 3.63 m².
     expect(measurePainter.paintActive(recorder().ctx, view, square[3])).toBe("3.63 m²");
     measurePainter.place(square[3], AT);
+    // Review R1: the tool point on the last vertex or on the first is no crossing.
+    expect(measurePainter.paintActive(recorder().ctx, view, square[3])).toBe("3.63 m²");
+    expect(measurePainter.paintActive(recorder().ctx, view, square[0])).toBe("3.63 m²");
     measurePainter.finish();
     const r = recorder();
     expect(measurePainter.paintStatic(r.ctx, view)).toEqual(["3.63 m², P 7620 mm"]);

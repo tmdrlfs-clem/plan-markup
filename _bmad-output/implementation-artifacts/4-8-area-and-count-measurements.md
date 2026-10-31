@@ -1,6 +1,6 @@
 # Story 4.8: Area and count measurements
 
-Status: review
+Status: done
 
 ## Story
 
@@ -54,6 +54,12 @@ Claude Opus 5.5
 - Local: `measure-area-count` e2e passes (37.34 m², P 24694 mm at 1:100); unit 148 files / 1698 tests; related e2e 16 passed.
 - Not done: the L17 area check. No room on L17 has known coordinates for two perpendicular printed dimensions, so there is nothing honest to compare with; the area formula is the product of the 4.5-verified lengths (unit-tested).
 
+### Review (Claude Opus 5.5, 2026-11-01)
+
+- R1 (fixed): the live area read "Crosses itself" while the tool point sat on the vertex just clicked or on the first vertex (about to close): a repeated vertex. The tool point that coincides with either is now left out of the live ring (unit test).
+- Deferred: a count finished by closing its tab is recorded under the closed tab's id until the next tab change prunes that history; harmless (the count stays with its document).
+- Checked: count Esc / tool / page / tab rules, first-vertex close, double-click (second click within the tolerance adds nothing), caption hit boxes for two lines, `needsScale` without Count, Count never snaps.
+
 ### File List
 
 - src/core/measure/area.ts, area.test.ts; src/core/schema/markup.ts
@@ -67,3 +73,4 @@ Claude Opus 5.5
 
 - 2026-11-01: Story 4.8 created from the epics (Claude Opus 5.5). Status → ready-for-dev.
 - 2026-11-01: Tasks 1-4 done (L17 area check not possible, see notes); Status → review (Claude Opus 5.5).
+- 2026-11-01: Review R1 fixed; Status → done (Claude Opus 5.5).
