@@ -58,7 +58,7 @@ Claude Opus 5.5
 - The viewer: `revealUserRect` (user → page space, at least 72 pt a side, HIT_MARGIN, zoom up to the fit but not past 400 %, never down while already in view) via `viewerCommands.revealMarkup`; `LayerView.colors.selection` (the accent token).
 - The editor: `setSelection`, the first writer of the `selection` slice; the measure painter strokes the selection outline (white halo, accent) 4 CSS px around the markup; Esc with Select on the canvas, arming another tool, another tab / document, or the measurement going away (undo) clears it.
 - Panel: `MeasurementsPanel` (listbox of groups; one tab stop, ↑ / ↓ / Home / End, Enter / Space), units select kept for the session (D4), "Page n" or the sheet label, the area's perimeter in the row tooltip.
-- Local: e2e on snap.pdf at 1:100 — Length (2) 12347 mm, Area (1) 37.34 m², m → 12.35 m, row click fits the rectangle at 240 % and selects it (screenshot fixtures/private/traces/4-11-panel.png, not committed). Unit 153 files / 1748 tests; related e2e 15 passed.
+- Local: e2e on snap.pdf at 1:100 — Length (2) 12347 mm, Area (1) 37.34 m², m → 12.35 m, row click fits the rectangle at 240 % and selects it (screenshot fixtures/private/traces/4-11-panel.png, not committed). Unit 153 files / 1745 tests; related e2e 15 passed.
 
 ### Review (self, adversarial)
 
