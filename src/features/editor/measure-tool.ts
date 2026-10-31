@@ -1,11 +1,16 @@
-// The measuring tools (FR26): Length (Story 4.5) and Polylength (Story 4.6).
+// The measuring tools (FR26): Length (Story 4.5), Polylength (Story 4.6),
+// Area and Count (Story 4.8).
 // Length: two clicks, the second adds it as one undo step ("Add length").
 // Polylength: each click adds a vertex; a double-click or Enter finishes it
-// ("Add polylength"), Backspace removes the last vertex. While drawing, a
-// rubber band follows the tool point (snapped, Shift-held or raw: the viewer's
-// snapping rules) with the live total beside the pointer. The tool stays armed
-// after a measurement (Revu). Esc while drawing cancels it, Ctrl+Z removes its
-// last point; another tool, page or tab cancels it.
+// ("Add polylength"), Backspace removes the last vertex. Area: the same, at
+// least three vertices, a click on the first vertex also closes it; a polygon
+// that crosses itself is not added. While drawing, a rubber band follows the
+// tool point (snapped, Shift-held or raw: the viewer's snapping rules) with the
+// live value beside the pointer. The tool stays armed after a measurement
+// (Revu). Esc while drawing cancels it, Ctrl+Z removes its last point; another
+// tool, page or tab cancels it. Count: each click places a marker of one count;
+// Enter, a double-click, Esc and leaving the tool finish it (founder default
+// D4: a count is never thrown away).
 //
 // With Select, Shift + drag on a caption moves the caption only ("Move
 // caption", a markups.update op); the offset is stored in user space.
@@ -17,6 +22,7 @@ import { useLayoutEffect } from "react";
 
 import { pageIdOf, type Calibration } from "@/core/calibration/calibration";
 import { uuidv7 } from "@/core/ids/uuid";
+import { areaCaption, areaCaptionText, polygonCentroid, selfIntersects } from "@/core/measure/area";
 import { captionPlacement, lengthCaption, polylineCaptionAnchor } from "@/core/measure/length";
 import { DEFAULT_MEASURE_STYLE, MAX_POLYLINE_POINTS, type MarkupStyle, type MeasureMarkup } from "@/core/schema/markup";
 import {
@@ -37,16 +43,34 @@ type Point = { x: number; y: number };
 
 export const ADD_LENGTH = "Add length";
 export const ADD_POLYLENGTH = "Add polylength";
+export const ADD_AREA = "Add area";
+export const ADD_COUNT = "Add count";
 export const MOVE_CAPTION = "Move caption";
-const ADD_LABEL: Record<MeasureTool, string> = { length: ADD_LENGTH, polylength: ADD_POLYLENGTH };
+const ADD_LABEL: Record<MeasureTool, string> = { length: ADD_LENGTH, polylength: ADD_POLYLENGTH, area: ADD_AREA, count: ADD_COUNT };
+/** Story 4.8: what the live value says while an area crosses itself (it cannot be added). */
+export const CROSSES_ITSELF = "Crosses itself";
+/** Vertices a drawing needs before it can be finished. */
+const MIN_POINTS: Record<MeasureTool, number> = { length: 2, polylength: 2, area: 3, count: 1 };
 /** The live label beside the pointer, in screen px (not page units: it is UI, not the markup). */
 const LIVE_FONT_PX = 12;
 const LIVE_OFFSET_PX = { x: 14, y: 22 };
+/** Story 4.8: a count marker's radius in points (page units: it scales with the zoom). */
+const COUNT_MARKER_PT = 4;
+/** Line spacing of a two-line caption, in caption sizes. */
+const LINE_HEIGHT = 1.15;
 
 const drawing = (): Drawing | null => editorStore.getState().tools.drawing;
 
 function calibrationOf(documentId: string, pageIndex: number): Calibration | null {
   return viewerStore.getState().calibrations[pageIdOf(documentId, pageIndex)] ?? null;
+}
+
+function stroke(c: CanvasRenderingContext2D, style: MarkupStyle, view: LayerView): void {
+  c.lineWidth = Math.max(1, style.width * view.devicePerPt);
+  c.lineCap = "butt";
+  c.lineJoin = "miter";
+  c.strokeStyle = style.color;
+  c.stroke();
 }
 
 /** A polyline in page units with short end ticks across its first and last segments (a dimension line). */
@@ -67,12 +91,33 @@ function strokeMeasure(c: CanvasRenderingContext2D, pts: readonly Point[], style
     c.moveTo(p.x - nx * tick, p.y - ny * tick);
     c.lineTo(p.x + nx * tick, p.y + ny * tick);
   }
-  c.lineWidth = Math.max(1, style.width * view.devicePerPt);
-  c.lineCap = "butt";
-  c.lineJoin = "miter";
-  c.strokeStyle = style.color;
-  c.stroke();
+  stroke(c, style, view);
 }
+
+/** Story 4.8: closed rings (an area's outline and its holes), no fill (founder default D6). */
+function strokeRings(c: CanvasRenderingContext2D, rings: readonly (readonly Point[])[], style: MarkupStyle, view: LayerView): void {
+  c.beginPath();
+  for (const ring of rings) {
+    if (ring.length < 2) continue;
+    c.moveTo(ring[0].x, ring[0].y);
+    for (let i = 1; i < ring.length; i++) c.lineTo(ring[i].x, ring[i].y);
+    c.closePath();
+  }
+  stroke(c, style, view);
+}
+
+/** Story 4.8: a count's markers, circles in page units. */
+function drawMarkers(c: CanvasRenderingContext2D, pts: readonly Point[], style: MarkupStyle, view: LayerView): void {
+  const r = markerRadius(view);
+  c.beginPath();
+  for (const p of pts) {
+    c.moveTo(p.x + r, p.y);
+    c.arc(p.x, p.y, r, 0, Math.PI * 2);
+  }
+  stroke(c, style, view);
+}
+
+const markerRadius = (view: LayerView) => Math.max(2 * view.dpr, COUNT_MARKER_PT * view.devicePerPt);
 
 /**
  * Review R6 (4.5): whether a measurement (with its ticks and caption) can
@@ -98,13 +143,28 @@ export function onCanvas(pts: readonly Point[], style: MarkupStyle, view: LayerV
   return x1 >= -margin && x0 <= view.width + margin && y1 >= -margin && y0 <= view.height + margin;
 }
 
+/** Where a caption is drawn (device px): its first line's baseline centre, turned by `angle`. */
 export type CaptionFrame = { x: number; y: number; angle: number; size: number };
 
-/** Where a measurement's caption is drawn (device px): along its anchor segment, moved by its offset. */
+/**
+ * Where a measurement's caption is drawn, moved by its offset: a length's and
+ * a polylength's along their (longest) segment, above it; an area's at its
+ * centroid, horizontal, the first line above the centre; a count's above its
+ * first marker.
+ */
 export function captionFrame(m: MeasureMarkup, view: LayerView): CaptionFrame {
-  const [ua, ub] = m.type === "length" ? m.points : polylineCaptionAnchor(m.points);
   const size = m.style.fontSize * view.devicePerPt;
-  const at = captionPlacement(view.toDevice(ua), view.toDevice(ub), Math.max(1, m.style.width * view.devicePerPt) / 2 + size * 0.2);
+  let at: { x: number; y: number; angle: number };
+  if (m.type === "area") {
+    const c = view.toDevice(polygonCentroid(m.points));
+    at = { x: c.x, y: c.y, angle: 0 };
+  } else if (m.type === "count") {
+    const p = view.toDevice(m.points[0]);
+    at = { x: p.x, y: p.y - markerRadius(view) - size * 0.2, angle: 0 };
+  } else {
+    const [ua, ub] = m.type === "length" ? m.points : polylineCaptionAnchor(m.points);
+    at = captionPlacement(view.toDevice(ua), view.toDevice(ub), Math.max(1, m.style.width * view.devicePerPt) / 2 + size * 0.2);
+  }
   if (m.captionOffset) {
     const o = view.toDevice(m.captionOffset);
     const z = view.toDevice({ x: 0, y: 0 });
@@ -114,8 +174,8 @@ export function captionFrame(m: MeasureMarkup, view: LayerView): CaptionFrame {
   return { ...at, size };
 }
 
-/** The caption above its anchor, never upside down; "Scale not set" in the warning colour. */
-function drawCaption(c: CanvasRenderingContext2D, at: CaptionFrame, text: string, scaled: boolean, style: MarkupStyle, view: LayerView): void {
+/** The caption's lines from its frame down, never upside down; "Scale not set" in the warning colour. */
+function drawCaption(c: CanvasRenderingContext2D, at: CaptionFrame, lines: readonly string[], scaled: boolean, style: MarkupStyle, view: LayerView): void {
   if (at.size < 1) return;
   c.save();
   c.translate(at.x, at.y);
@@ -124,7 +184,7 @@ function drawCaption(c: CanvasRenderingContext2D, at: CaptionFrame, text: string
   c.textAlign = "center";
   c.textBaseline = "bottom";
   c.fillStyle = scaled ? style.color : view.colors.warning;
-  c.fillText(text, 0, 0);
+  lines.forEach((line, i) => c.fillText(line, 0, i * at.size * LINE_HEIGHT));
   c.restore();
 }
 
@@ -147,8 +207,8 @@ function liveLabel(c: CanvasRenderingContext2D, at: Point, text: string, scaled:
 
 const devicePoints = (pts: readonly Point[], view: LayerView) => pts.map((p) => view.toDevice(p));
 
-/** A caption as last painted (device px): its frame and half its text width, for hits. */
-type CaptionBox = { id: string; frame: CaptionFrame; half: number };
+/** A caption as last painted (device px): its frame, half its widest line and its line count, for hits. */
+type CaptionBox = { id: string; frame: CaptionFrame; half: number; lines: number };
 /** The captions of the page last painted, in drawing order (review R2: that page only, not every page ever painted). */
 let captionBoxes: { pageId: string; boxes: CaptionBox[] } | null = null;
 /** CSS px around a caption that still hit it. */
@@ -162,7 +222,30 @@ function shown(m: MeasureMarkup): MeasureMarkup {
   return drag && drag.id === m.id ? { ...m, captionOffset: addOffset(m.captionOffset, drag.delta) } : m;
 }
 
-const isMeasure = (m: { type: string }): m is MeasureMarkup => m.type === "length" || m.type === "polylength";
+const MEASURE_TYPES: ReadonlySet<string> = new Set(["length", "polylength", "area", "count"]);
+const isMeasure = (m: { type: string }): m is MeasureMarkup => MEASURE_TYPES.has(m.type);
+
+/** A measurement's caption: its lines on the canvas, its one-line text (layer 2's list) and whether it is scaled. */
+function captionOf(m: MeasureMarkup, calibration: Calibration | null, userUnit: number): { lines: string[]; text: string; scaled: boolean } {
+  if (m.type === "count") return { lines: [String(m.points.length)], text: String(m.points.length), scaled: true };
+  if (m.type === "area") {
+    const a = areaCaption(m.points, m.holes, calibration, userUnit);
+    return { lines: a.perimeter ? [a.area, `P ${a.perimeter}`] : [a.area], text: areaCaptionText(a), scaled: a.scaled };
+  }
+  const l = lengthCaption(m.points, calibration, userUnit);
+  return { lines: [l.text], text: l.text, scaled: l.scaled };
+}
+
+/** The live value of a drawing with the tool point added (or null when there is none to show). */
+function liveValue(tool: MeasureTool, points: readonly Point[], calibration: Calibration | null, userUnit: number): { text: string; scaled: boolean } {
+  if (tool === "count") return { text: String(points.length - 1), scaled: true };
+  if (tool === "area") {
+    if (points.length >= 3 && selfIntersects(points)) return { text: CROSSES_ITSELF, scaled: false };
+    const a = areaCaption(points, undefined, calibration, userUnit);
+    return { text: a.area, scaled: a.scaled };
+  }
+  return lengthCaption(points, calibration, userUnit);
+}
 
 export const measurePainter: MarkupPainter = {
   paintStatic(c, view) {
@@ -179,16 +262,19 @@ export const measurePainter: MarkupPainter = {
     for (const stored of markups) {
       if (!isMeasure(stored)) continue;
       const m = shown(stored);
-      const caption = lengthCaption(m.points, calibration, view.userUnit);
+      const caption = captionOf(m, calibration, view.userUnit);
       captions.push(caption.text);
       const pts = devicePoints(m.points, view);
       const frame = captionFrame(m, view);
       if (!onCanvas(pts, m.style, view, [frame])) continue;
-      strokeMeasure(c, pts, m.style, view);
-      drawCaption(c, frame, caption.text, caption.scaled, m.style, view);
+      if (m.type === "area") strokeRings(c, [pts, ...(m.holes ?? []).map((h) => devicePoints(h, view))], m.style, view);
+      else if (m.type === "count") drawMarkers(c, pts, m.style, view);
+      else strokeMeasure(c, pts, m.style, view);
+      drawCaption(c, frame, caption.lines, caption.scaled, m.style, view);
       if (frame.size >= 1) {
         c.font = `${frame.size}px ${view.colors.fontFamily}`;
-        boxes.push({ id: m.id, frame, half: (c.measureText(caption.text).width || 0) / 2 });
+        const half = Math.max(...caption.lines.map((line) => c.measureText(line).width || 0)) / 2;
+        boxes.push({ id: m.id, frame, half, lines: caption.lines.length });
       }
     }
     c.restore();
@@ -201,12 +287,14 @@ export const measurePainter: MarkupPainter = {
     if (!d || d.pageId !== pageIdOf(view.documentId, view.pageIndex) || !pointer || d.points.length === 0) return null;
     const points = [...d.points, pointer];
     const pts = devicePoints(points, view);
-    const caption = lengthCaption(points, calibrationOf(view.documentId, view.pageIndex), view.userUnit);
+    const live = liveValue(d.tool, points, calibrationOf(view.documentId, view.pageIndex), view.userUnit);
     c.save();
-    strokeMeasure(c, pts, DEFAULT_MEASURE_STYLE, view);
+    if (d.tool === "area") strokeRings(c, [pts], DEFAULT_MEASURE_STYLE, view);
+    else if (d.tool === "count") drawMarkers(c, pts.slice(0, -1), DEFAULT_MEASURE_STYLE, view);
+    else strokeMeasure(c, pts, DEFAULT_MEASURE_STYLE, view);
     c.restore();
-    liveLabel(c, pts[pts.length - 1], caption.text, caption.scaled, view);
-    return caption.text;
+    liveLabel(c, pts[pts.length - 1], live.text, live.scaled, view);
+    return live.text;
   },
 
   get tracking() {
@@ -229,21 +317,26 @@ export const measurePainter: MarkupPainter = {
     // A click on the last point adds nothing (a double-click's second click): keep drawing.
     const last = d.points[d.points.length - 1];
     if (Math.hypot(point.x - last.x, point.y - last.y) <= at.tolerance) return "continue";
-    if (tool === "polylength") {
-      const points = [...d.points, point];
-      setDrawing({ ...d, points });
-      // At the cap the polylength is finished (it cannot take another vertex).
-      return points.length >= MAX_POLYLINE_POINTS ? commit(at.documentId) : "continue";
+    // Story 4.8 (D2): a click on an area's first vertex closes it.
+    const first = d.points[0];
+    if (tool === "area" && d.points.length >= MIN_POINTS.area && Math.hypot(point.x - first.x, point.y - first.y) <= at.tolerance) {
+      return finishDrawing(at.documentId);
     }
-    setDrawing({ ...d, points: [d.points[0], point] });
-    return commit(at.documentId);
+    if (tool === "length") {
+      setDrawing({ ...d, points: [d.points[0], point] });
+      return commit(at.documentId);
+    }
+    const points = [...d.points, point];
+    setDrawing({ ...d, points });
+    // At the cap the drawing is finished (it cannot take another point).
+    return points.length >= MAX_POLYLINE_POINTS ? finishDrawing(at.documentId) : "continue";
   },
 
   finish() {
     const d = drawing();
     const documentId = viewerStore.getState().documentId;
-    if (!d || d.tool !== "polylength" || d.points.length < 2 || !documentId || !d.pageId.startsWith(`${documentId}:`)) return "ignored";
-    return commit(documentId);
+    if (!d || d.tool === "length" || !documentId || !d.pageId.startsWith(`${documentId}:`)) return "ignored";
+    return finishDrawing(documentId);
   },
 
   removeLastPoint() {
@@ -251,8 +344,12 @@ export const measurePainter: MarkupPainter = {
   },
 
   escape() {
-    if (!drawing()) return false;
-    setDrawing(null);
+    const d = drawing();
+    if (!d) return false;
+    // D4: Esc finishes a count (its markers are kept); it cancels the other drawings.
+    const documentId = viewerStore.getState().documentId;
+    if (d.tool === "count" && documentId && d.pageId.startsWith(`${documentId}:`)) commit(documentId);
+    else setDrawing(null);
     return true;
   },
 
@@ -261,15 +358,16 @@ export const measurePainter: MarkupPainter = {
     const slop = CAPTION_SLOP_PX * view.dpr;
     // The topmost (last drawn) first.
     for (let i = boxes.length - 1; i >= 0; i--) {
-      const { id, frame, half } = boxes[i];
+      const { id, frame, half, lines } = boxes[i];
       const dx = at.x - frame.x;
       const dy = at.y - frame.y;
       const cos = Math.cos(frame.angle);
       const sin = Math.sin(frame.angle);
-      // Into the caption's frame: centred on x, text above its baseline (y from -size to 0).
+      // Into the caption's frame: centred on x, the first line above its baseline (y from -size), further lines below.
       const lx = dx * cos + dy * sin;
       const ly = -dx * sin + dy * cos;
-      if (Math.abs(lx) <= half + slop && ly >= -frame.size - slop && ly <= slop) return id;
+      const bottom = (lines - 1) * frame.size * LINE_HEIGHT;
+      if (Math.abs(lx) <= half + slop && ly >= -frame.size - slop && ly <= bottom + slop) return id;
     }
     return null;
   },
@@ -297,14 +395,29 @@ function pageMarkupById(documentId: string, id: string): MeasureMarkup | null {
   return m && isMeasure(m) ? m : null;
 }
 
-/** Adds the drawing as its markup (one undo step) and ends it. */
-function commit(documentId: string): "done" {
+/** Finishes a polylength, area or count when it can be: enough points, an area that does not cross itself (D3). */
+function finishDrawing(documentId: string): "done" | "ignored" {
+  const d = drawing();
+  if (!d || d.points.length < MIN_POINTS[d.tool]) return "ignored";
+  if (d.tool === "area" && selfIntersects(d.points)) return "ignored";
+  return commit(documentId);
+}
+
+/** Adds the drawing as its markup (one undo step, in `tabId`'s history: the active tab by default) and ends it. */
+function commit(documentId: string, tabId?: string): "done" {
   const d = drawing()!;
   const base = { id: uuidv7(), pageId: d.pageId, createdAt: new Date().toISOString(), style: DEFAULT_MEASURE_STYLE };
+  const points = [...d.points];
   const markup: MeasureMarkup =
-    d.tool === "length" ? { ...base, type: "length", points: [d.points[0], d.points[1]] } : { ...base, type: "polylength", points: [...d.points] };
+    d.tool === "length"
+      ? { ...base, type: "length", points: [d.points[0], d.points[1]] }
+      : d.tool === "polylength"
+        ? { ...base, type: "polylength", points }
+        : d.tool === "area"
+          ? { ...base, type: "area", points }
+          : { ...base, type: "count", points };
   setDrawing(null);
-  executeOp({ kind: "markups.add", documentId, markups: [markup] }, ADD_LABEL[d.tool]);
+  executeOp({ kind: "markups.add", documentId, markups: [markup] }, ADD_LABEL[d.tool], tabId);
   return "done";
 }
 
@@ -332,16 +445,22 @@ export function installMeasureTools(): () => void {
       if (s.doc === prev.doc && s.tools === prev.tools) return;
       notifyMarkups({ drawingEnded: prev.tools.drawing !== null && s.tools.drawing === null });
     });
-    // Another tool, page, tab or document cancels the drawing in progress (and a caption move).
+    // Another tool, page, tab or document ends the drawing in progress (and a caption move):
+    // a count is kept (D4), the others are cancelled.
     const offViewer = viewerStore.subscribe((s, prev) => {
       if (s.calibrations !== prev.calibrations) notifyMarkups({});
       const moved = s.tool !== prev.tool || s.pageIndex !== prev.pageIndex || s.tabId !== prev.tabId || s.openSeq !== prev.openSeq || s.documentId !== prev.documentId;
       if (moved) setCaptionDrag(null);
       const d = drawing();
       if (!d) return;
-      if (s.tool !== d.tool || s.pageIndex !== prev.pageIndex || s.tabId !== prev.tabId || s.openSeq !== prev.openSeq || s.documentId !== prev.documentId) {
-        setDrawing(null);
-      }
+      if (s.tool === d.tool && !moved) return;
+      const documentId = d.pageId.slice(0, d.pageId.lastIndexOf(":"));
+      // The count's own tab records it (a tab being closed drops that history; the count stays with its document).
+      const tabId = prev.tabId;
+      const sameTab = s.tabId === prev.tabId && s.openSeq === prev.openSeq && s.documentId === documentId;
+      const otherTab = !sameTab && tabId !== null && prev.documentId === documentId;
+      if (d.tool === "count" && (sameTab || otherTab)) commit(documentId, tabId ?? undefined);
+      else setDrawing(null);
     });
     uninstall = () => {
       setDrawing(null);
@@ -375,4 +494,14 @@ export function armLength(): void {
 /** Shift+Alt+Q and the ToolRail: arms Polylength. */
 export function armPolylength(): void {
   setTool("polylength");
+}
+
+/** Shift+Alt+A and the ToolRail: arms Area. */
+export function armArea(): void {
+  setTool("area");
+}
+
+/** Shift+Alt+C and the ToolRail: arms Count. */
+export function armCount(): void {
+  setTool("count");
 }

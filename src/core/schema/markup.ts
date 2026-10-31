@@ -57,14 +57,35 @@ export const polylengthMarkupSchema = z.object({
   points: z.array(pointSchema).min(2).max(MAX_POLYLINE_POINTS),
 });
 
-/** Every markup type (more join with Stories 4.7-4.10 and Epic 5). */
-export const markupSchema = z.discriminatedUnion("type", [lengthMarkupSchema, polylengthMarkupSchema]);
+/**
+ * Story 4.8: an area, a closed polygon (the outer ring, closing edge
+ * implied) less its holes (cutouts: Story 4.10 and Epic 5 draw them).
+ */
+export const MAX_AREA_HOLES = 1_000;
+export const areaMarkupSchema = z.object({
+  ...measure,
+  type: z.literal("area"),
+  points: z.array(pointSchema).min(3).max(MAX_POLYLINE_POINTS),
+  holes: z.array(z.array(pointSchema).min(3).max(MAX_POLYLINE_POINTS)).max(MAX_AREA_HOLES).optional(),
+});
+
+/** Story 4.8: a count, one marker per point; its value is the number of points. */
+export const countMarkupSchema = z.object({
+  ...measure,
+  type: z.literal("count"),
+  points: z.array(pointSchema).min(1).max(MAX_POLYLINE_POINTS),
+});
+
+/** Every markup type (more join with Stories 4.9-4.10 and Epic 5). */
+export const markupSchema = z.discriminatedUnion("type", [lengthMarkupSchema, polylengthMarkupSchema, areaMarkupSchema, countMarkupSchema]);
 
 export type Markup = z.infer<typeof markupSchema>;
 export type LengthMarkup = z.infer<typeof lengthMarkupSchema>;
 export type PolylengthMarkup = z.infer<typeof polylengthMarkupSchema>;
-/** The measurements with a caption (Stories 4.5, 4.6). */
-export type MeasureMarkup = LengthMarkup | PolylengthMarkup;
+export type AreaMarkup = z.infer<typeof areaMarkupSchema>;
+export type CountMarkup = z.infer<typeof countMarkupSchema>;
+/** The measurements with a caption (Stories 4.5, 4.6, 4.8). */
+export type MeasureMarkup = LengthMarkup | PolylengthMarkup | AreaMarkup | CountMarkup;
 export type MarkupType = Markup["type"];
 
 /** Revu's default measurement style: red, 1 pt, 10 pt captions. */

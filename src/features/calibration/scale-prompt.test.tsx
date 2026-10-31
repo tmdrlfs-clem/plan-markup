@@ -87,6 +87,9 @@ describe("scalePromptFor (Story 4.7)", () => {
   it("only while a measuring tool is armed on a page with no scale", () => {
     expect(needsScale("length")).toBe(true);
     expect(needsScale("polylength")).toBe(true);
+    expect(needsScale("area")).toBe(true);
+    // Story 4.8: a count needs no scale.
+    expect(needsScale("count")).toBe(false);
     expect(needsScale("select")).toBe(false);
     expect(needsScale("calibrate")).toBe(false);
     expect(prompt()).toBeNull(); // Select

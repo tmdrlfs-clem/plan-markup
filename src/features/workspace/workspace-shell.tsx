@@ -15,7 +15,7 @@ import { CalibrateDialog, ScalePrompt, VerifyDialog, openCalibrate, useCalibrati
 import { redoActive, undoActive } from "@/features/editor";
 import { useFirstUseTipsPersistence } from "@/features/tips";
 import { chooseTheme, useWorkspaceTheme } from "@/features/appearance/theme-store";
-import { armLength, armPolylength, useEditorSession, useMeasureTools } from "@/features/editor";
+import { armArea, armCount, armLength, armPolylength, useEditorSession, useMeasureTools } from "@/features/editor";
 import {
   DocumentTabs,
   DocumentViewer,
@@ -171,6 +171,9 @@ function ShellBody({ user, initialTheme }: { user: WorkspaceUser; initialTheme: 
     lengthTool: drawingOpen ? armLength : undefined,
     // Story 4.6: Shift+Alt+Q, the Polylength measurement.
     polylengthTool: drawingOpen ? armPolylength : undefined,
+    // Story 4.8: Shift+Alt+A Area, Shift+Alt+C Count.
+    areaTool: drawingOpen ? armArea : undefined,
+    countTool: drawingOpen ? armCount : undefined,
   });
 
   const panel = leftPanel(left.active);

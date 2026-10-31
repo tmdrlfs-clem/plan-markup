@@ -28,9 +28,9 @@ export function setTabHistory(tabId: string, history: UndoHistory): void {
   setHistory(tabId, history);
 }
 
-/** Runs `command` in the active tab and records it as one undo step. */
-export function executeCommand(command: UndoCommand): void {
-  const key = activeKey();
+/** Runs `command` in the active tab (or `tabId`'s) and records it as one undo step. */
+export function executeCommand(command: UndoCommand, tabId?: string): void {
+  const key = tabId ?? activeKey();
   setHistory(key, execute(historyOf(key), command));
 }
 
@@ -39,9 +39,13 @@ export function commandOf(op: DocOp, label: string): UndoCommand {
   return { label, op, do: () => applyOp(op), undo: () => applyOp(invertOp(op)) };
 }
 
-/** Applies `op` to the active document as one undo step named `label` (AR13: every document mutation). */
-export function executeOp(op: DocOp, label: string): void {
-  executeCommand(commandOf(op, label));
+/**
+ * Applies `op` as one undo step named `label` (AR13: every document mutation)
+ * in the active tab's history, or `tabId`'s (Story 4.8: a count finished by a
+ * tab switch belongs to the tab it was drawn in).
+ */
+export function executeOp(op: DocOp, label: string, tabId?: string): void {
+  executeCommand(commandOf(op, label), tabId);
 }
 
 let drawingUndo: (() => boolean) | null = null;
@@ -74,7 +78,12 @@ export function redoActive(): boolean {
 }
 
 /** 4.5 review R5: what Undo does while a measurement is being drawn (it removes the last placed point). */
-export const DRAWING_POINT_LABEL: Readonly<Record<MeasureTool, string>> = { length: "Length point", polylength: "Polylength point" };
+export const DRAWING_POINT_LABEL: Readonly<Record<MeasureTool, string>> = {
+  length: "Length point",
+  polylength: "Polylength point",
+  area: "Area point",
+  count: "Count point",
+};
 
 /**
  * The active tab's next undo / redo labels (React: useStore(editorStore, …) with viewerStore's tabId).

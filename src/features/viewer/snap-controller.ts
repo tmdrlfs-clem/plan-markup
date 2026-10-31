@@ -15,8 +15,11 @@ import type { SnapIndexResult } from "@/workers/render-protocol";
 import { snapSettings, type SnapSettings } from "./status/snap-settings";
 import type { ViewerTool } from "./viewer-store";
 
-/** Tools that place points (drawing and measuring): they snap; Select, Pan and Zoom never do. */
-const SNAPPING_TOOLS: ReadonlySet<ViewerTool> = new Set<ViewerTool>(["length", "polylength", "calibrate"]);
+/**
+ * Tools that place points (drawing and measuring): they snap; Select, Pan and Zoom never do,
+ * nor Count (Story 4.8, D8: a count marks where it is clicked).
+ */
+const SNAPPING_TOOLS: ReadonlySet<ViewerTool> = new Set<ViewerTool>(["length", "polylength", "area", "calibrate"]);
 
 export function isSnappingTool(tool: ViewerTool): boolean {
   return SNAPPING_TOOLS.has(tool);

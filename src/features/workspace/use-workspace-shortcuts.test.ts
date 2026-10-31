@@ -120,6 +120,16 @@ describe("handleWorkspaceShortcut", () => {
     expect(h.polylengthTool).toHaveBeenCalledTimes(1);
   });
 
+  it("Story 4.8: Shift+Alt+A arms Area and Shift+Alt+C Count (by code), not in fields, not without a drawing", () => {
+    const h = { ...handlers(), areaTool: vi.fn(), countTool: vi.fn() };
+    expect(handleWorkspaceShortcut(key({ shiftKey: true, altKey: true, code: "KeyA", key: "Å" }), h)).toBe(true);
+    expect(handleWorkspaceShortcut(key({ shiftKey: true, altKey: true, code: "KeyC", key: "Ç" }), h)).toBe(true);
+    expect(h.areaTool).toHaveBeenCalledTimes(1);
+    expect(h.countTool).toHaveBeenCalledTimes(1);
+    expect(handleWorkspaceShortcut(key({ shiftKey: true, altKey: true, code: "KeyA" }, document.createElement("input")), h)).toBe(false);
+    expect(handleWorkspaceShortcut(key({ shiftKey: true, altKey: true, code: "KeyC" }), handlers())).toBe(false);
+  });
+
   it("Alt+L toggles the Markups list and Shift+F4 hides all panels", () => {
     const h = handlers();
     handleWorkspaceShortcut(key({ altKey: true, code: "KeyL", key: "l" }), h);

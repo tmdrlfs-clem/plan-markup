@@ -5,7 +5,7 @@ import { setTool, viewerStore, type LayerView } from "@/features/viewer";
 import { onMarkupsChanged } from "@/features/viewer/markup-layer";
 
 import { editorStore, markupsOf, resetEditor } from "./editor-store";
-import { ADD_LENGTH, ADD_POLYLENGTH, MOVE_CAPTION, installMeasureTools, measurePainter } from "./measure-tool";
+import { ADD_AREA, ADD_COUNT, ADD_LENGTH, ADD_POLYLENGTH, CROSSES_ITSELF, MOVE_CAPTION, installMeasureTools, measurePainter } from "./measure-tool";
 import { activeUndoLabels, clearUndo, redoActive, undoActive } from "./undo-store";
 
 const SHA = "e".repeat(64);
@@ -291,5 +291,114 @@ describe("Moving a caption (Story 4.6)", () => {
     // An unknown markup is not dragged.
     measurePainter.dragCaption("nope", SHA, { x: 1, y: 1 });
     expect(editorStore.getState().tools.captionDrag).toBeNull();
+  });
+});
+
+describe("Area tool (Story 4.8)", () => {
+  beforeEach(() => setTool("area"));
+  const square = [
+    { x: 0, y: 0 },
+    { x: 72, y: 0 },
+    { x: 72, y: 72 },
+    { x: 0, y: 72 },
+  ];
+
+  it("needs three vertices; Enter adds it as one undo step 'Add area'; a click on the first vertex closes it too", () => {
+    for (const p of square.slice(0, 2)) measurePainter.place(p, AT);
+    expect(measurePainter.finish()).toBe("ignored"); // two vertices are not an area
+    measurePainter.place(square[2], AT);
+    expect(activeUndoLabels(editorStore.getState(), "t1").undo).toBe("Area point");
+    measurePainter.place(square[3], AT);
+    expect(measurePainter.finish()).toBe("done");
+    expect(markupsOf(editorStore.getState(), SHA)[0]).toMatchObject({ type: "area", points: square });
+    expect(activeUndoLabels(editorStore.getState(), "t1").undo).toBe(ADD_AREA);
+    expect(viewerStore.getState().tool).toBe("area");
+    // Closing on the first vertex (within the tolerance).
+    const near = { ...AT, tolerance: 2 };
+    for (const p of square) measurePainter.place(p, near);
+    expect(measurePainter.place({ x: 1, y: 1 }, near)).toBe("done");
+    expect(markupsOf(editorStore.getState(), SHA)[1].points).toEqual(square);
+  });
+
+  it("a polygon that crosses itself is not added: the live value says so", () => {
+    const bowTie = [
+      { x: 0, y: 0 },
+      { x: 72, y: 72 },
+      { x: 72, y: 0 },
+    ];
+    for (const p of bowTie) measurePainter.place(p, AT);
+    expect(measurePainter.paintActive(recorder().ctx, view, { x: 0, y: 72 })).toBe(CROSSES_ITSELF);
+    measurePainter.place({ x: 0, y: 72 }, AT);
+    expect(measurePainter.finish()).toBe("ignored");
+    expect(measurePainter.tracking).toBe(true);
+    // Backspace and a corner that keeps it simple: then it finishes.
+    measurePainter.removeLastPoint();
+    measurePainter.place({ x: 36, y: -36 }, AT);
+    expect(measurePainter.finish()).toBe("done");
+  });
+
+  it("the caption: area and perimeter at the centroid, two lines; the live area while drawing", () => {
+    viewerStore.setState({ calibrations: { [pageIdOf(SHA, 0)]: cal } });
+    for (const p of square.slice(0, 3)) measurePainter.place(p, AT);
+    // 72 pt at 1:75 = 1905 mm: the square is 3.63 m².
+    expect(measurePainter.paintActive(recorder().ctx, view, square[3])).toBe("3.63 m²");
+    measurePainter.place(square[3], AT);
+    measurePainter.finish();
+    const r = recorder();
+    expect(measurePainter.paintStatic(r.ctx, view)).toEqual(["3.63 m², P 7620 mm"]);
+    expect(r.texts().map((t) => t.args[0])).toEqual(["3.63 m²", "P 7620 mm"]);
+    // Centred on the centroid (36, 36): device (36, -36); the second line one line lower.
+    expect(r.ops.find((o) => o.op === "translate")!.args).toEqual([36, -36]);
+    expect(r.texts()[1].args[2]).toBeCloseTo(10 * 1.15, 9);
+    const [m] = markupsOf(editorStore.getState(), SHA);
+    // Both lines hit; below them does not.
+    expect(measurePainter.captionAt(view, { x: 36, y: -38 })).toBe(m.id);
+    expect(measurePainter.captionAt(view, { x: 36, y: -36 + 10 })).toBe(m.id);
+    expect(measurePainter.captionAt(view, { x: 36, y: -36 + 30 })).toBeNull();
+    // Without a calibration: Scale not set, one line.
+    viewerStore.setState({ calibrations: {} });
+    expect(measurePainter.paintStatic(recorder().ctx, view)).toEqual(["Scale not set"]);
+  });
+});
+
+describe("Count tool (Story 4.8)", () => {
+  beforeEach(() => setTool("count"));
+
+  it("each click places a marker of one count; Enter adds it as 'Add count'; the caption is the total", () => {
+    for (const x of [0, 20, 40, 60]) measurePainter.place({ x, y: 0 }, AT);
+    expect(measurePainter.paintActive(recorder().ctx, view, { x: 80, y: 0 })).toBe("4");
+    expect(activeUndoLabels(editorStore.getState(), "t1").undo).toBe("Count point");
+    expect(measurePainter.finish()).toBe("done");
+    expect(markupsOf(editorStore.getState(), SHA)[0]).toMatchObject({ type: "count", points: [{ x: 0, y: 0 }, { x: 20, y: 0 }, { x: 40, y: 0 }, { x: 60, y: 0 }] });
+    expect(activeUndoLabels(editorStore.getState(), "t1").undo).toBe(ADD_COUNT);
+    const r = recorder();
+    // A count needs no scale.
+    expect(measurePainter.paintStatic(r.ctx, view)).toEqual(["4"]);
+    expect(r.ops.filter((o) => o.op === "arc")).toHaveLength(4);
+    expect(r.texts()[0].fillStyle).toBe("#ff0000");
+  });
+
+  it("Esc, another tool or another page finish it (D4); Backspace removes the last marker", () => {
+    measurePainter.place({ x: 0, y: 0 }, AT);
+    measurePainter.place({ x: 20, y: 0 }, AT);
+    expect(measurePainter.removeLastPoint()).toBe(true);
+    expect(measurePainter.escape()).toBe(true);
+    expect(markupsOf(editorStore.getState(), SHA).map((m) => m.points.length)).toEqual([1]);
+    measurePainter.place({ x: 0, y: 0 }, AT);
+    setTool("select");
+    setTool("count");
+    measurePainter.place({ x: 0, y: 0 }, AT);
+    measurePainter.place({ x: 9, y: 0 }, AT);
+    viewerStore.setState({ pageIndex: 1 });
+    expect(markupsOf(editorStore.getState(), SHA).map((m) => m.points.length)).toEqual([1, 1, 2]);
+    expect(measurePainter.escape()).toBe(false); // idle: the viewer leaves the tool
+  });
+
+  it("a tab switch keeps the count in its own tab's history", () => {
+    measurePainter.place({ x: 0, y: 0 }, AT);
+    viewerStore.setState({ tabId: "t2", documentId: "f".repeat(64), openSeq: 2 });
+    expect(markupsOf(editorStore.getState(), SHA)).toHaveLength(1);
+    expect(activeUndoLabels(editorStore.getState(), "t1").undo).toBe(ADD_COUNT);
+    expect(activeUndoLabels(editorStore.getState(), "t2").undo).toBeNull();
   });
 });

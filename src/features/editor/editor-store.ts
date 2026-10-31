@@ -16,7 +16,7 @@ import { viewerStore, type MeasureTool } from "@/features/viewer";
 
 type Point = { x: number; y: number };
 
-/** A measurement being drawn (Length 4.5, Polylength 4.6): its tool, its page and the points placed so far (user space). */
+/** A measurement being drawn (Length 4.5, Polylength 4.6, Area and Count 4.8): its tool, its page and the points placed so far (user space). */
 export type Drawing = { tool: MeasureTool; pageId: string; pageIndex: number; points: readonly Point[] };
 
 /** Story 4.6: a caption being moved: its markup and the offset change so far (user space). */

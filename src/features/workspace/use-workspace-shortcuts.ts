@@ -26,6 +26,9 @@ export interface WorkspaceShortcutHandlers {
   lengthTool?: () => void;
   /** Story 4.6: Shift+Alt+Q arms Polylength (Revu's shortcut; same rules). */
   polylengthTool?: () => void;
+  /** Story 4.8: Shift+Alt+A arms Area, Shift+Alt+C Count (Revu's shortcuts; same rules). */
+  areaTool?: () => void;
+  countTool?: () => void;
 }
 
 /** Dialogs and forms that are not the workspace: their text fields keep the browser's Ctrl+F and F3. */
@@ -85,6 +88,8 @@ function resolve(event: KeyboardEvent, handlers: WorkspaceShortcutHandlers): (()
   }
   if (event.shiftKey && event.altKey && !ctrl && event.code === "KeyL" && handlers.lengthTool && !inDialog(event.target)) return handlers.lengthTool;
   if (event.shiftKey && event.altKey && !ctrl && event.code === "KeyQ" && handlers.polylengthTool && !inDialog(event.target)) return handlers.polylengthTool;
+  if (event.shiftKey && event.altKey && !ctrl && event.code === "KeyA" && handlers.areaTool && !inDialog(event.target)) return handlers.areaTool;
+  if (event.shiftKey && event.altKey && !ctrl && event.code === "KeyC" && handlers.countTool && !inDialog(event.target)) return handlers.countTool;
   if (event.shiftKey && !ctrl && !event.altKey && event.key === "F4") return handlers.hideAllPanels;
   return null;
 }
