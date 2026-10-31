@@ -21,7 +21,8 @@ export type LayerView = {
   /** The canvas in device px: markups wholly outside it are not drawn (review R6). */
   width: number;
   height: number;
-  colors: { halo: string; warning: string; fontFamily: string };
+  /** `selection`: the selected markups' outline (Story 4.11, UX-DR13). */
+  colors: { halo: string; warning: string; selection: string; fontFamily: string };
 };
 
 /** Story 4.10: where a press-and-hold tool (Dynamic fill) works, as the engine sees it at the press. */

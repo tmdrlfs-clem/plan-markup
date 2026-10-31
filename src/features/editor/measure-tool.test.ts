@@ -4,7 +4,7 @@ import { factorForRatio, pageIdOf, type Calibration } from "@/core/calibration/c
 import { setTool, viewerStore, type LayerView } from "@/features/viewer";
 import { onMarkupsChanged } from "@/features/viewer/markup-layer";
 
-import { editorStore, markupsOf, resetEditor } from "./editor-store";
+import { editorStore, markupsOf, resetEditor, setSelection } from "./editor-store";
 import {
   ADD_ANGLE,
   ADD_AREA,
@@ -50,7 +50,7 @@ const view: LayerView = {
   dpr: 1,
   width: 0,
   height: 0,
-  colors: { halo: "#ffffff", warning: "#8a6400", fontFamily: "sans-serif" },
+  colors: { halo: "#ffffff", warning: "#8a6400", selection: "#ff7a1a", fontFamily: "sans-serif" },
 };
 
 let uninstall: () => void;
@@ -492,5 +492,47 @@ describe("Angle, Radius and Diameter tools (Story 4.9)", () => {
     setTool("angle");
     expect(measurePainter.tracking).toBe(false);
     expect(markupsOf(editorStore.getState(), SHA)).toEqual([]);
+  });
+});
+
+describe("Selection (Story 4.11)", () => {
+  function addLength() {
+    measurePainter.place({ x: 0, y: 0 }, AT);
+    measurePainter.place({ x: 72, y: 0 }, AT);
+    return markupsOf(editorStore.getState(), SHA)[0];
+  }
+  const outlines = (ops: Op[]) => ops.filter((o) => o.op === "strokeRect");
+
+  it("a selected measurement gets the outline (halo, then accent) around it", () => {
+    const m = addLength();
+    expect(outlines(recorder().ops)).toEqual([]);
+    setSelection([m.id]);
+    const r = recorder();
+    measurePainter.paintStatic(r.ctx, { ...view, width: 1000, height: 1000 });
+    // 4 px around the line (0, 0)–(72, 0), stroked twice.
+    expect(outlines(r.ops).map((o) => o.args)).toEqual([
+      [-4, -4, 80, 8],
+      [-4, -4, 80, 8],
+    ]);
+  });
+
+  it("Esc with Select, another tool, another tab or the measurement going away clears it", () => {
+    const m = addLength();
+    setTool("select");
+    setSelection([m.id]);
+    expect(measurePainter.escape()).toBe(true);
+    expect(editorStore.getState().selection.ids).toEqual([]);
+    expect(measurePainter.escape()).toBe(false);
+    setSelection([m.id]);
+    setTool("pan");
+    expect(editorStore.getState().selection.ids).toEqual([]);
+    setTool("select");
+    setSelection([m.id]);
+    viewerStore.setState({ tabId: "t2" });
+    expect(editorStore.getState().selection.ids).toEqual([]);
+    viewerStore.setState({ tabId: "t1" });
+    setSelection([m.id]);
+    undoActive();
+    expect(editorStore.getState().selection.ids).toEqual([]);
   });
 });

@@ -15,7 +15,7 @@ import { CalibrateDialog, ScalePrompt, VerifyDialog, openCalibrate, useCalibrati
 import { redoActive, undoActive } from "@/features/editor";
 import { useFirstUseTipsPersistence } from "@/features/tips";
 import { chooseTheme, useWorkspaceTheme } from "@/features/appearance/theme-store";
-import { armArea, armCount, armLength, armPolylength, useEditorSession, useMeasureTools } from "@/features/editor";
+import { MeasurementsPanel, armArea, armCount, armLength, armPolylength, useEditorSession, useMeasureTools } from "@/features/editor";
 import {
   DocumentTabs,
   DocumentViewer,
@@ -77,6 +77,8 @@ function LeftPanelBody() {
   const panel = useLayout((s) => leftPanel(s.left.active));
   if (panel.id === "thumbnails") return <ThumbnailsPanel emptyText={panel.empty} />;
   if (panel.id === "search") return <SearchPanel emptyText={panel.empty} />;
+  // Story 4.11: measurements grouped by type with totals.
+  if (panel.id === "measurements") return <MeasurementsPanel emptyText={panel.empty} noDrawingText="No drawing open" />;
   return (
     <div className="flex flex-col gap-1 p-3 text-ws-md">
       <p>{panel.empty}</p>

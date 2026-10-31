@@ -22,7 +22,7 @@ const view: LayerView = {
   dpr: 1,
   width: 0,
   height: 0,
-  colors: { halo: "#ffffff", warning: "#8a6400", fontFamily: "sans-serif" },
+  colors: { halo: "#ffffff", warning: "#8a6400", selection: "#ff7a1a", fontFamily: "sans-serif" },
 };
 
 /** snap.pdf's rectangle (100, 100)-(300, 250) as linework; an optional gap in its bottom edge. */

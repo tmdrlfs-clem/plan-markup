@@ -19,6 +19,9 @@
 // With Select, Shift + drag on a caption moves the caption only ("Move
 // caption", a markups.update op); the offset is stored in user space.
 //
+// Selected markups (the Measurements panel selects one, Story 4.11) get the
+// selection outline; Esc with Select, another tool, tab or document clears it.
+//
 // The editor paints the viewer's layers 2 and 3 through the viewer's markup
 // painter interface (AR10): layer 2 the page's markups, layer 3 the drawing.
 
@@ -42,7 +45,7 @@ import {
   type MeasureTool,
 } from "@/features/viewer";
 
-import { editorStore, pageMarkups, setCaptionDrag, setDrawing, type Drawing } from "./editor-store";
+import { editorStore, markupsOf, pageMarkups, setCaptionDrag, setDrawing, setSelection, type Drawing } from "./editor-store";
 import { discardFill, fillAreaUser, fillPress, paintFill, takeFillRings, undoFillStroke } from "./fill-tool";
 import { executeOp, registerDrawingUndo } from "./undo-store";
 
@@ -79,6 +82,10 @@ const LIVE_FONT_PX = 12;
 const LIVE_OFFSET_PX = { x: 14, y: 22 };
 /** Story 4.8: a count marker's radius in points (page units: it scales with the zoom). */
 const COUNT_MARKER_PT = 4;
+/** Story 4.11: the selection outline's gap around a markup and its widths, in CSS px. */
+const SELECTION_GAP_PX = 4;
+const SELECTION_PX = 1.5;
+const SELECTION_HALO_PX = 4;
 /** Line spacing of a two-line caption, in caption sizes. */
 const LINE_HEIGHT = 1.15;
 
@@ -94,6 +101,27 @@ function stroke(c: CanvasRenderingContext2D, style: MarkupStyle, view: LayerView
   c.lineJoin = "miter";
   c.strokeStyle = style.color;
   c.stroke();
+}
+
+/** Story 4.11: the selection outline (UX-DR13: accent with a white halo) around device points, under the markup. */
+function strokeSelection(c: CanvasRenderingContext2D, pts: readonly Point[], view: LayerView): void {
+  const gap = SELECTION_GAP_PX * view.dpr;
+  const xs = pts.map((p) => p.x);
+  const ys = pts.map((p) => p.y);
+  const x = Math.min(...xs) - gap;
+  const y = Math.min(...ys) - gap;
+  const w = Math.max(...xs) + gap - x;
+  const h = Math.max(...ys) + gap - y;
+  c.save();
+  c.setLineDash([]);
+  c.lineJoin = "miter";
+  c.strokeStyle = view.colors.halo;
+  c.lineWidth = SELECTION_HALO_PX * view.dpr;
+  c.strokeRect(x, y, w, h);
+  c.strokeStyle = view.colors.selection;
+  c.lineWidth = SELECTION_PX * view.dpr;
+  c.strokeRect(x, y, w, h);
+  c.restore();
 }
 
 /** A polyline in page units with short end ticks across its first and last segments (a dimension line). */
@@ -373,6 +401,7 @@ export const measurePainter: MarkupPainter = {
     const calibration = calibrationOf(view.documentId, view.pageIndex);
     const captions: string[] = [];
     const boxes: CaptionBox[] = [];
+    const selected = new Set(editorStore.getState().selection.ids);
     c.save();
     for (const stored of markups) {
       if (!isMeasure(stored)) continue;
@@ -389,6 +418,7 @@ export const measurePainter: MarkupPainter = {
           ]
         : [];
       if (!onCanvas(pts, m.style, view, [frame, ...extent])) continue;
+      if (selected.has(m.id)) strokeSelection(c, circle ? extent : pts, view);
       if (m.type === "area") strokeRings(c, [pts, ...(m.holes ?? []).map((h) => devicePoints(h, view))], m.style, view);
       else if (m.type === "count") drawMarkers(c, pts, m.style, view);
       else if (m.type === "angle") strokeAngle(c, pts, m.style, view);
@@ -479,7 +509,8 @@ export const measurePainter: MarkupPainter = {
 
   escape() {
     const d = drawing();
-    if (!d) return false;
+    // Story 4.11: with nothing being drawn, Esc clears the selection.
+    if (!d) return setSelection([]);
     // D4: Esc finishes a count (its markers are kept); it cancels the other drawings.
     const documentId = viewerStore.getState().documentId;
     if (d.tool === "count" && documentId && d.pageId.startsWith(`${documentId}:`)) commit(documentId);
@@ -619,7 +650,12 @@ export function installMeasureTools(): () => void {
     // Markups, the drawing or a calibration changed: the viewer paints again (captions follow
     // a recalibration: values are never stored, 4.5 AC 2).
     const offEditor = editorStore.subscribe((s, prev) => {
-      if (s.doc === prev.doc && s.tools === prev.tools) return;
+      if (s.doc === prev.doc && s.tools === prev.tools && s.selection === prev.selection) return;
+      // Story 4.11: a selected measurement that goes away (undo) leaves the selection.
+      if (s.doc !== prev.doc && s.selection.ids.length > 0) {
+        const ids = new Set(markupsOf(s, s.view.documentId).map((m) => m.id));
+        if (s.selection.ids.some((id) => !ids.has(id))) return void setSelection(s.selection.ids.filter((id) => ids.has(id)));
+      }
       notifyMarkups({ drawingEnded: prev.tools.drawing !== null && s.tools.drawing === null });
     });
     // Another tool, page, tab or document ends the drawing in progress (and a caption move):
@@ -628,6 +664,9 @@ export function installMeasureTools(): () => void {
       if (s.calibrations !== prev.calibrations) notifyMarkups({});
       const moved = s.tool !== prev.tool || s.pageIndex !== prev.pageIndex || s.tabId !== prev.tabId || s.openSeq !== prev.openSeq || s.documentId !== prev.documentId;
       if (moved) setCaptionDrag(null);
+      // Story 4.11 (D5): arming another tool, another tab or document clears the selection.
+      const otherDocument = s.tabId !== prev.tabId || s.openSeq !== prev.openSeq || s.documentId !== prev.documentId;
+      if (otherDocument || (s.tool !== prev.tool && s.tool !== "select")) setSelection([]);
       const d = drawing();
       if (!d) return;
       if (s.tool === d.tool && !moved) return;

@@ -106,9 +106,10 @@ describe("measurementGroups (Story 4.11)", () => {
 });
 
 describe("panelPrecision (Story 4.11)", () => {
-  it("keeps the calibration's precision when it suits the unit", () => {
-    expect(panelPrecision("mm", { precision: "0.0" })).toBe("0.0");
-    expect(panelPrecision("m", { precision: "1/8" })).toBe("0.00");
+  it("keeps the calibration's precision only in its own unit", () => {
+    expect(panelPrecision("mm", { unit: "mm", precision: "0.0" })).toBe("0.0");
+    expect(panelPrecision("m", { unit: "mm", precision: "0" })).toBe("0.00");
+    expect(panelPrecision("ft-in", { unit: "ft-in", precision: "1/16" })).toBe("1/16");
     expect(panelPrecision("ft-in", null)).toBe("1/8");
   });
 });

@@ -377,11 +377,15 @@ export class ViewerInput {
       const handled = e.key === "Enter" ? this.target.finishTool?.() : this.target.removeToolPoint?.();
       if (handled) e.preventDefault();
     }
-    if (e.key === "Escape" && this.active() && isMeasureTool(viewerStore.getState().tool)) {
+    // Story 4.11: Esc with Select clears the selection (the painter's escape), only when the Esc is the canvas's.
+    const select = viewerStore.getState().tool === "select";
+    if (e.key === "Escape" && this.active() && (isMeasureTool(viewerStore.getState().tool) || select)) {
       const doc = this.canvas.ownerDocument;
       // An Esc meant for a menu, field or dialog never leaves the tool.
       const leave = !e.defaultPrevented && (doc.activeElement === this.canvas || doc.activeElement === doc.body || this.pointer !== null);
-      if (this.target.escapeTool) this.target.escapeTool(leave);
+      if (select) {
+        if (leave) this.target.escapeTool?.(false);
+      } else if (this.target.escapeTool) this.target.escapeTool(leave);
       else this.target.clearSnapFrom?.();
     }
     // Story 4.3: Esc while picking calibration points cancels the pick (the dialog comes back).

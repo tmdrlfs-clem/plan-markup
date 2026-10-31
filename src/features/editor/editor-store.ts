@@ -5,7 +5,7 @@
 //   doc        markups by document (sha256), shared by the tabs (a document is open in one tab)
 //   view       the active document tab, mirrored from the viewer
 //   tools      the drawing in progress (Length, Story 4.5; more tools with Epic 5) and a caption being moved (4.6)
-//   selection  selected markup ids (Epic 5)
+//   selection  selected markup ids (the Measurements panel, Story 4.11; Epic 5)
 //   history    undo histories by document tab (the Story 4.3 undo stack)
 
 import { createStore } from "zustand/vanilla";
@@ -68,6 +68,14 @@ export function setDrawing(drawing: Drawing | null): void {
 export function setCaptionDrag(captionDrag: CaptionDrag | null): void {
   if (editorStore.getState().tools.captionDrag === captionDrag) return;
   editorStore.setState((s) => ({ tools: { ...s.tools, captionDrag } }));
+}
+
+/** Story 4.11: selects markups by id (none: clears); false when nothing changed. */
+export function setSelection(ids: readonly string[]): boolean {
+  const current = editorStore.getState().selection.ids;
+  if (current.length === ids.length && current.every((id, i) => id === ids[i])) return false;
+  editorStore.setState({ selection: { ids } });
+  return true;
 }
 
 /** Forgets everything (another user's workspace, tests). */

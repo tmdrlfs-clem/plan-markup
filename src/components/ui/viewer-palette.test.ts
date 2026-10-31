@@ -17,6 +17,7 @@ describe("viewer palette (Story 3.8)", () => {
       snap: blueprint["--canvas-snap"],
       halo: blueprint["--canvas-halo"],
       canvasWarning: blueprint["--canvas-warning"],
+      selection: blueprint["--accent"],
       fontFamily: "sans-serif", // not a theme token: the browser's own fallback
     });
   });

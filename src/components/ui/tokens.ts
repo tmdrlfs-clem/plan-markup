@@ -75,7 +75,7 @@ export function readCanvasTokens(
 /** The viewer's canvas colours (Story 3.8): the theme's, read from its tokens. */
 export type ViewerPalette = Pick<
   CanvasTokens,
-  "backdrop" | "zoomRect" | "failedFill" | "failedStroke" | "searchHit" | "searchCurrent" | "searchOutline" | "snap" | "halo" | "canvasWarning" | "fontFamily"
+  "backdrop" | "zoomRect" | "failedFill" | "failedStroke" | "searchHit" | "searchCurrent" | "searchOutline" | "snap" | "halo" | "canvasWarning" | "selection" | "fontFamily"
 >;
 
 /**
@@ -96,6 +96,8 @@ export const VIEWER_PALETTE_FALLBACK: Readonly<ViewerPalette> = Object.freeze({
   halo: "#ffffff",
   // Story 4.5: "Scale not set" captions (dark amber, readable on the white sheet).
   canvasWarning: "#8a6400",
+  // Story 4.11: the selection outline (the accent, UX-DR13).
+  selection: "#ff7a1a",
   fontFamily: "sans-serif",
 });
 

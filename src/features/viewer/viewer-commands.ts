@@ -28,6 +28,8 @@ export interface ViewerCommandTarget {
   startCalibrationPick?(listener: CalibrationPickListener): void;
   cancelCalibrationPick?(): void;
   clearCalibrationLine?(): void;
+  /** Story 4.11 (absent on test doubles): see ViewerEngine.revealUserRect. */
+  revealUserRect?(page: number, rect: { x: number; y: number; width: number; height: number }): void;
 }
 
 let target: ViewerCommandTarget | null = null;
@@ -63,6 +65,8 @@ export const viewerCommands = {
   goToPage: (index: number) => target?.goToPage(index),
   /** Back to the canvas (Escape in the page input). */
   focusCanvas: () => target?.focusCanvas(),
+  /** Story 4.11: shows a measurement (its page, a user-space box) from the Measurements panel. */
+  revealMarkup: (page: number, rect: { x: number; y: number; width: number; height: number }) => target?.revealUserRect?.(page, rect),
 };
 
 /** The Thumbnails panel's access to the mounted engine (nothing happens without one). */
@@ -84,4 +88,4 @@ export const viewerCalibration = {
 };
 
 /** The commands without arguments (toolbar buttons and menu items). */
-export type ViewerCommand = Exclude<keyof typeof viewerCommands, "goToPage" | "zoomTo">;
+export type ViewerCommand = Exclude<keyof typeof viewerCommands, "goToPage" | "zoomTo" | "revealMarkup">;

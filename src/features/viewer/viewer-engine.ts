@@ -112,6 +112,9 @@ const SHEET = "#ffffff";
 export const MIN_HIT_PX = 24;
 /** Space kept around a hit brought into view (CSS px). */
 const HIT_MARGIN = 32;
+/** Story 4.11: a measurement shown from the Measurements panel: at most this zoom (400 %), and at least this box in points (a count marker). */
+const REVEAL_MAX_ZOOM = 4 * ACTUAL_SIZE;
+const REVEAL_MIN_PT = 72;
 
 export type ViewerCanvases = { tiles: HTMLCanvasElement; markups: HTMLCanvasElement; active: HTMLCanvasElement };
 
@@ -1529,6 +1532,44 @@ export class ViewerEngine {
   }
 
   /**
+   * Story 4.11: shows page `page` (0-based) and fits a user-space rectangle (a measurement)
+   * with HIT_MARGIN around it (at least REVEAL_MIN_PT a side). The zoom goes up to the fit
+   * but not past REVEAL_MAX_ZOOM, and never down while the rectangle is already fully in view.
+   */
+  revealUserRect(page: number, rect: Rect): void {
+    if (page !== this.pageIndex) this.goToPage(page);
+    const geometry = this.page;
+    if (!geometry || page !== this.pageIndex) return;
+    const m = userToPageMatrix(geometry);
+    const corners = [
+      { x: rect.x, y: rect.y },
+      { x: rect.x + rect.width, y: rect.y },
+      { x: rect.x + rect.width, y: rect.y + rect.height },
+      { x: rect.x, y: rect.y + rect.height },
+    ].map((p) => applyMatrix(m, p));
+    const px = corners.map((p) => p.x);
+    const py = corners.map((p) => p.y);
+    const cx = (Math.min(...px) + Math.max(...px)) / 2;
+    const cy = (Math.min(...py) + Math.max(...py)) / 2;
+    const w = Math.max(REVEAL_MIN_PT, Math.max(...px) - Math.min(...px));
+    const h = Math.max(REVEAL_MIN_PT, Math.max(...py) - Math.min(...py));
+    const screen = [
+      { x: cx - w / 2, y: cy - h / 2 },
+      { x: cx + w / 2, y: cy - h / 2 },
+      { x: cx + w / 2, y: cy + h / 2 },
+      { x: cx - w / 2, y: cy + h / 2 },
+    ].map((p) => pageToScreen(this.view, this.viewport, p));
+    const xs = screen.map((p) => p.x);
+    const ys = screen.map((p) => p.y);
+    const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+    const { width, height } = this.viewport;
+    const fit = this.view.zoom * Math.min(Math.max(1, width - 2 * HIT_MARGIN) / (x1 - x0), Math.max(1, height - 2 * HIT_MARGIN) / (y1 - y0));
+    const inView = x0 >= HIT_MARGIN && y0 >= HIT_MARGIN && x1 <= width - HIT_MARGIN && y1 <= height - HIT_MARGIN;
+    const zoom = clampZoom(Math.min(fit, inView ? Math.max(this.view.zoom, REVEAL_MAX_ZOOM) : REVEAL_MAX_ZOOM));
+    this.setView({ ...this.view, zoom, centerX: cx, centerY: cy });
+  }
+
+  /**
    * Brings a page-space rectangle into view with HIT_MARGIN around it. The zoom
    * only increases, and only when the text (`textHeight` points tall; without
    * it, the rectangle's smaller side on screen) would be under MIN_HIT_PX on
@@ -1971,7 +2012,7 @@ export class ViewerEngine {
       dpr: k,
       width: this.canvases.markups.width,
       height: this.canvases.markups.height,
-      colors: { halo: palette.halo, warning: palette.canvasWarning, fontFamily: palette.fontFamily },
+      colors: { halo: palette.halo, warning: palette.canvasWarning, selection: palette.selection, fontFamily: palette.fontFamily },
     };
   }
 

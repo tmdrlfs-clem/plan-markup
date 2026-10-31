@@ -206,6 +206,21 @@ describe("ViewerInput", () => {
     setTool("select");
   });
 
+  it("Story 4.11: Esc with Select goes to the painter (clears the selection) only when it is the canvas's", () => {
+    const escapeTool = vi.fn();
+    Object.assign(t, { escapeTool });
+    canvas.dispatchEvent(pointer("pointerleave", { x: 5, y: 6 }));
+    const field = document.createElement("input");
+    document.body.appendChild(field);
+    field.focus();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    expect(escapeTool).not.toHaveBeenCalled();
+    field.remove();
+    canvas.dispatchEvent(pointer("pointermove", { x: 5, y: 6 }));
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    expect(escapeTool).toHaveBeenCalledWith(false);
+  });
+
   it("Story 4.6: Enter, Backspace and a double-click go to the measuring tool, only when the keys are the canvas's", () => {
     const finishTool = vi.fn(() => true);
     const removeToolPoint = vi.fn(() => true);

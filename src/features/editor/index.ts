@@ -2,6 +2,7 @@
 export { editorStore, markupsOf, pageMarkups, resetEditor, type CaptionDrag, type Drawing, type EditorState } from "./editor-store";
 export { activeUndoLabels, clearUndo, executeCommand, executeOp, redoActive, undoActive } from "./undo-store";
 export { useEditorSession } from "./session";
+export { MEASUREMENTS_HINT, MeasurementsPanel } from "./measurements-panel";
 export {
   ADD_ANGLE,
   ADD_AREA,

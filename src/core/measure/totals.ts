@@ -79,9 +79,12 @@ export type PanelUnits = { unit: DisplayUnit; precision: Precision };
 /** Defaults per unit when the active page's precision does not suit it (D4). */
 export const DEFAULT_PRECISION: Record<DisplayUnit, Precision> = { mm: "0", m: "0.00", in: "0.0", "ft-in": "1/8" };
 
-/** The precision for `unit`: the calibration's when it suits the unit, else the unit's default. */
-export function panelPrecision(unit: DisplayUnit, calibration: Pick<Calibration, "precision"> | null): Precision {
-  return calibration && precisionsFor(unit).includes(calibration.precision) ? calibration.precision : DEFAULT_PRECISION[unit];
+/**
+ * The precision for `unit`: the calibration's when it is in that unit (its 0 mm would be 0 m),
+ * else the unit's default.
+ */
+export function panelPrecision(unit: DisplayUnit, calibration: Pick<Calibration, "unit" | "precision"> | null): Precision {
+  return calibration && calibration.unit === unit && precisionsFor(unit).includes(calibration.precision) ? calibration.precision : DEFAULT_PRECISION[unit];
 }
 
 /** A value as the panel shows it (as its caption reads, in `units`). */
