@@ -1,6 +1,6 @@
 # Story 4.7: Prompt for scale and never show unscaled numbers
 
-Status: in-progress
+Status: review
 
 ## Story
 
@@ -26,7 +26,7 @@ so that I never copy a wrong number.
 
 - [x] **Task 1: Prompt state** — `src/features/calibration/scale-prompt-store.ts`: the session's dismissed pages, `scalePromptFor(...)` (pure: shown or not and its contents from the viewer state, the dialogs' state and the dismissals), `applyDetectedScale()` and `dismissScalePrompt()`; unit tests.
 - [x] **Task 2: ScalePrompt** — `scale-prompt.tsx` (warning bar like the PickBar: ⚠, text, Use it, Calibrate…, ×), mounted by the workspace shell; component tests.
-- [ ] **Task 3: Tests** — `e2e/scale-prompt.spec.ts` (AC 7); update specs that arm Length on an uncalibrated page if the prompt gets in their way.
+- [x] **Task 3: Tests** — `e2e/scale-prompt.spec.ts` (AC 7); update specs that arm Length on an uncalibrated page if the prompt gets in their way.
 
 ## Dev Notes
 
@@ -45,12 +45,26 @@ so that I never copy a wrong number.
 
 ### Agent Model Used
 
+Claude Opus 5.5
+
 ### Debug Log References
 
 ### Completion Notes List
 
+- `scalePromptFor` is pure (viewer state, dialogs open, dismissals) so the component and the tests share it; `needsScale(tool)` is the one predicate Area, Count and the zone tools will join.
+- "Use it" goes through `applyCalibration` with the dialog's detected-scale input and the user's unit and precision: one "Calibrate page N" undo step; undoing it brings the prompt back (the tool is still armed).
+- The prompt sits where the calibration PickBar does (fixed, top centre) and is a labelled region with a polite status line; it never takes the focus (the e2e checks the canvas keeps it).
+- Existing measuring specs (measure-length, measure-polylength, viewer-snap, workspace-shell, calibrate, verify-calibration) pass unchanged with the prompt shown: it does not cover their clicks.
+- Local: `E2E_PROD=1 npx playwright test scale-prompt` passes; unit 147 files / 1679 tests.
+- Open for the founder: "Use it" applies directly (FR82) although the ScaleIndicator never does (4.3 decision); Calibrate… cancelled brings the prompt back (not a dismissal).
+
 ### File List
+
+- src/features/calibration/scale-prompt-store.ts, scale-prompt.tsx, scale-prompt.test.tsx, index.ts
+- src/features/workspace/workspace-shell.tsx
+- e2e/scale-prompt.spec.ts
 
 ### Change Log
 
 - 2026-10-31: Story 4.7 created from the epics (Claude Opus 5.5). Status → ready-for-dev.
+- 2026-10-31: Tasks 1-3 done; Status → review (Claude Opus 5.5).
