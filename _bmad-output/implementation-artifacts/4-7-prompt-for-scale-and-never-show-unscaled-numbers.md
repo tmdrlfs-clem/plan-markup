@@ -1,6 +1,6 @@
 # Story 4.7: Prompt for scale and never show unscaled numbers
 
-Status: ready-for-dev
+Status: in-progress
 
 ## Story
 
@@ -24,8 +24,8 @@ so that I never copy a wrong number.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Prompt state** — `src/features/calibration/scale-prompt-store.ts`: the session's dismissed pages, `scalePromptFor(...)` (pure: shown or not and its contents from the viewer state, the dialogs' state and the dismissals), `useDetectedScale()` and `dismissScalePrompt()`; unit tests.
-- [ ] **Task 2: ScalePrompt** — `scale-prompt.tsx` (warning bar like the PickBar: ⚠, text, Use it, Calibrate…, ×), mounted by the workspace shell; component tests.
+- [x] **Task 1: Prompt state** — `src/features/calibration/scale-prompt-store.ts`: the session's dismissed pages, `scalePromptFor(...)` (pure: shown or not and its contents from the viewer state, the dialogs' state and the dismissals), `applyDetectedScale()` and `dismissScalePrompt()`; unit tests.
+- [x] **Task 2: ScalePrompt** — `scale-prompt.tsx` (warning bar like the PickBar: ⚠, text, Use it, Calibrate…, ×), mounted by the workspace shell; component tests.
 - [ ] **Task 3: Tests** — `e2e/scale-prompt.spec.ts` (AC 7); update specs that arm Length on an uncalibrated page if the prompt gets in their way.
 
 ## Dev Notes

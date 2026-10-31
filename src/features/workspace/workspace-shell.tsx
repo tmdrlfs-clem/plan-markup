@@ -11,7 +11,7 @@ import { toast } from "@/components/ui/toast-store";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { signOut } from "@/features/account/actions";
 import { pageIdOf } from "@/core/calibration/calibration";
-import { CalibrateDialog, VerifyDialog, openCalibrate, useCalibrationPrefsPersistence } from "@/features/calibration";
+import { CalibrateDialog, ScalePrompt, VerifyDialog, openCalibrate, useCalibrationPrefsPersistence } from "@/features/calibration";
 import { redoActive, undoActive } from "@/features/editor";
 import { useFirstUseTipsPersistence } from "@/features/tips";
 import { chooseTheme, useWorkspaceTheme } from "@/features/appearance/theme-store";
@@ -273,6 +273,8 @@ function ShellBody({ user, initialTheme }: { user: WorkspaceUser; initialTheme: 
       </footer>
       <CalibrateDialog />
       <VerifyDialog />
+      {/* Story 4.7: a measuring tool on a page with no scale offers the detected scale or Calibrate. */}
+      <ScalePrompt />
 
       <input
         ref={fileInput}
