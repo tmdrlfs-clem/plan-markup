@@ -1,6 +1,6 @@
 # Story 4.6: Polylength and measurement captions
 
-Status: review
+Status: done
 
 ## Story
 
@@ -24,6 +24,13 @@ so that I can measure pipe runs and keep labels readable.
 - [x] **Task 2: Polylength tool** — `polylength` viewer tool (snapping, crosshair), engine finish hook (`Enter`, double-click) and `Backspace`, the measuring painter generalised to both tools (`src/features/editor/measure-tool.ts`), `Shift+Alt+Q`, ToolRail Polylength (live) and hint, undo labels; unit tests.
 - [x] **Task 3: Caption move** — caption hit boxes from the painter, engine caption drag (preview, commit, cancel), `Shift`+drag with Select in `viewer-input`, "Move caption" as a `markups.update` op; unit tests.
 - [x] **Task 4: Tests** — `e2e/measure-polylength.spec.ts` (AC 7); local L17/L21 check (a polylength along L17's "1905" dimension through its midpoint reads 1905 mm; L21's "1491" likewise); screenshot `fixtures/private/traces/4-6-polylength.png` (never commit private files).
+
+### Review Follow-ups (2026-10-31)
+
+- [x] R1: a caption drag repainted layer 2 on every pointermove (synchronously): now at most once a frame, the release applying the last move at once.
+- [x] R2: caption hit boxes were kept for every page ever painted: now the last painted page's only (cleared when it has no markups).
+- Checked, no change: Esc during a caption drag vs other Esc handlers (none on window), `markups.update` session validation (both sides' pages), the tie rule of the caption anchor (founder: keep the first of equals), the polylength cap committing at 10 000 vertices.
+- Founder decision: equal segments keep the caption on the first one (longest-segment rule as written).
 
 ## Dev Notes
 
@@ -66,3 +73,4 @@ Claude Opus 5.5
 - 2026-10-25: Story 4.6 created from the epics (Claude Opus 5.5). Status → ready-for-dev.
 - 2026-10-30: Tasks 2-3 done, Task 4 e2e green in CI (40941465553); local L17/L21 check and screenshot pending (Claude Opus 5.5).
 - 2026-10-30: Local L17/L21 check passed (1905 / 1491 mm); Status → review (Claude Opus 5.5).
+- 2026-10-31: Review R1-R2 fixed; Status → done (Claude Opus 5.5).

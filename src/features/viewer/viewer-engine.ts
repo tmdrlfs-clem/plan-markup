@@ -314,7 +314,9 @@ export class ViewerEngine {
   /** The pointer over the canvas (viewport CSS px), for the status bar's X/Y (Story 3.7). */
   private pointerScreen: Point | null = null;
   /** Story 4.6: a caption being moved: its markup and where the drag started (user space). */
-  private captionDrag: { id: string; documentId: string; start: Point } | null = null;
+  private captionDrag: { id: string; documentId: string; start: Point; pending: Point | null } | null = null;
+  /** 4.6 review R1: the frame that previews the latest caption move (one layer 2 paint per frame). */
+  private captionMoveFrame: number | null = null;
   private cursorFrame: number | null = null;
   /** Story 4.1: Alt / Shift as last seen, the tool's "from" point (user space), the snap shown and its first-use label. */
   private snapMods: SnapModifiers = { alt: false, shift: false };
@@ -1690,24 +1692,38 @@ export class ViewerEngine {
     if (!painter || !view || !start) return false;
     const id = painter.captionAt(view, { x: at.x * this.dpr, y: at.y * this.dpr });
     if (!id) return false;
-    this.captionDrag = { id, documentId: view.documentId, start };
+    this.captionDrag = { id, documentId: view.documentId, start, pending: null };
     painter.dragCaption(id, view.documentId, { x: 0, y: 0 });
     return true;
   }
 
-  /** Story 4.6: the caption follows the pointer (a live preview). */
+  /** Story 4.6: the caption follows the pointer (a live preview, review R1: at most once a frame). */
   moveCaptionDrag(at: Point): void {
     const drag = this.captionDrag;
     const p = this.screenToUser(at);
     if (!drag || !p) return;
-    markupPainter()?.dragCaption(drag.id, drag.documentId, { x: p.x - drag.start.x, y: p.y - drag.start.y });
+    drag.pending = { x: p.x - drag.start.x, y: p.y - drag.start.y };
+    if (this.captionMoveFrame !== null || this.destroyed) return;
+    this.captionMoveFrame = this.requestFrame(() => {
+      this.captionMoveFrame = null;
+      this.flushCaptionMove();
+    });
   }
 
   /** Story 4.6: the drag ends: `commit` keeps the move ("Move caption"), otherwise (Esc) the caption goes back. */
   endCaptionDrag(commit: boolean): void {
     if (!this.captionDrag) return;
+    // The last move counts even when its frame has not come yet.
+    if (commit) this.flushCaptionMove();
     this.captionDrag = null;
     markupPainter()?.endCaptionDrag(commit);
+  }
+
+  private flushCaptionMove(): void {
+    const drag = this.captionDrag;
+    if (!drag?.pending) return;
+    markupPainter()?.dragCaption(drag.id, drag.documentId, drag.pending);
+    drag.pending = null;
   }
 
   /** A viewport point in PDF user space, on the page or off it. */

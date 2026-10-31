@@ -149,8 +149,8 @@ const devicePoints = (pts: readonly Point[], view: LayerView) => pts.map((p) => 
 
 /** A caption as last painted (device px): its frame and half its text width, for hits. */
 type CaptionBox = { id: string; frame: CaptionFrame; half: number };
-/** By page id: the captions of the page last painted (in drawing order). */
-const captionBoxes = new Map<string, CaptionBox[]>();
+/** The captions of the page last painted, in drawing order (review R2: that page only, not every page ever painted). */
+let captionBoxes: { pageId: string; boxes: CaptionBox[] } | null = null;
 /** CSS px around a caption that still hit it. */
 const CAPTION_SLOP_PX = 3;
 
@@ -167,7 +167,10 @@ const isMeasure = (m: { type: string }): m is MeasureMarkup => m.type === "lengt
 export const measurePainter: MarkupPainter = {
   paintStatic(c, view) {
     const markups = pageMarkups(editorStore.getState(), view.documentId, pageIdOf(view.documentId, view.pageIndex));
-    if (markups.length === 0) return [];
+    if (markups.length === 0) {
+      captionBoxes = null;
+      return [];
+    }
     const pageId = pageIdOf(view.documentId, view.pageIndex);
     const calibration = calibrationOf(view.documentId, view.pageIndex);
     const captions: string[] = [];
@@ -189,7 +192,7 @@ export const measurePainter: MarkupPainter = {
       }
     }
     c.restore();
-    captionBoxes.set(pageId, boxes);
+    captionBoxes = { pageId, boxes };
     return captions;
   },
 
@@ -254,7 +257,7 @@ export const measurePainter: MarkupPainter = {
   },
 
   captionAt(view, at) {
-    const boxes = captionBoxes.get(pageIdOf(view.documentId, view.pageIndex)) ?? [];
+    const boxes = captionBoxes?.pageId === pageIdOf(view.documentId, view.pageIndex) ? captionBoxes.boxes : [];
     const slop = CAPTION_SLOP_PX * view.dpr;
     // The topmost (last drawn) first.
     for (let i = boxes.length - 1; i >= 0; i--) {
@@ -343,7 +346,7 @@ export function installMeasureTools(): () => void {
     uninstall = () => {
       setDrawing(null);
       setCaptionDrag(null);
-      captionBoxes.clear();
+      captionBoxes = null;
       offViewer();
       offEditor();
       offUndo();

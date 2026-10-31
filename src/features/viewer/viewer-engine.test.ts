@@ -1612,13 +1612,26 @@ describe("snapping (Story 4.1)", () => {
     expect(r.engine.startCaptionDrag(screenOf(100, 100))).toBe(true);
     expect(hits.at(-1)).toEqual(screenOf(100, 100)); // DPR 1: device px = CSS px
     expect(deltas.at(-1)).toEqual({ x: 0, y: 0 });
+    // Review R1: moves are previewed once a frame, the latest one.
+    r.engine.moveCaptionDrag(screenOf(120, 95));
     r.engine.moveCaptionDrag(screenOf(130, 90));
+    expect(deltas).toHaveLength(1);
+    paint();
+    expect(deltas).toHaveLength(2);
     expect(deltas.at(-1)!.x).toBeCloseTo(30, 9);
     expect(deltas.at(-1)!.y).toBeCloseTo(-10, 9);
     r.engine.endCaptionDrag(false);
     expect(ends).toEqual([false]);
+    // Released before its frame: the last move is kept.
+    r.engine.startCaptionDrag(screenOf(100, 100));
+    r.engine.moveCaptionDrag(screenOf(110, 100));
+    r.engine.endCaptionDrag(true);
+    expect(deltas.at(-1)!.x).toBeCloseTo(10, 9);
+    expect(ends).toEqual([false, true]);
+    paint();
+    expect(deltas.at(-1)!.x).toBeCloseTo(10, 9);
     r.engine.endCaptionDrag(true); // no drag: nothing ends
-    expect(ends).toEqual([false]);
+    expect(ends).toEqual([false, true]);
     off();
   });
 });
