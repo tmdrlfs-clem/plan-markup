@@ -1,6 +1,6 @@
 # Story 4.10: Dynamic fill area
 
-Status: in-progress
+Status: review
 
 ## Story
 
@@ -25,7 +25,7 @@ so that I get a room area without clicking every corner.
 - [x] **Task 1: Core** — `src/core/fill/` (`grid.ts` window + rasterisation, `spread.ts` session state: seeds, steps, brushes, strokes, leak, `polygon.ts` region → rings in user space); unit tests.
 - [x] **Task 2: Viewer** — viewer tool `fill` (a measuring tool that does not snap or place points), press / move / release with the fill tool forwarded to the painter with the page's segments, the visible window in user space and the cell size; `J`; measure menu entry; HintBar text.
 - [x] **Task 3: Editor** — the fill session (`fill-tool.ts`): barriers from segments + the page's Length / Polylength markups, the frame loop, the overlay on layer 3, the live area, Enter → area markup, Esc / tool / page / tab discard, stroke undo through `registerDrawingUndo`, leak toast; unit tests.
-- [ ] **Task 4: Tests** — `e2e/measure-dynamic-fill.spec.ts` (AC 9); local L17 timing.
+- [x] **Task 4: Tests** — `e2e/measure-dynamic-fill.spec.ts` (AC 9); local L17 timing.
 
 ## Dev Notes
 
@@ -46,12 +46,28 @@ so that I get a room area without clicking every corner.
 
 ### Agent Model Used
 
+Claude Opus 5.5
+
 ### Debug Log References
 
 ### Completion Notes List
 
+- Walls come from the page's snap linework (4.1), not the rendered pixels: the grid is the view at one CSS px per cell (≤ 4 M cells), so the outline is accurate to about a pixel at the zoom it was filled at and the result does not depend on tiles.
+- `core/fill`: `grid.ts` (window, 4-connected Amanatides–Woo wall lines), `spread.ts` (Dial's bucket queue with chamfer 10 / 14 costs, steps per frame, leak = the grid's border, round brushes, stroke history), `polygon.ts` (bridge, islands except erased, diagonal pinches, loop tracing, RDP, half-cell outward offset). Core timing (unit run, 2000 × 2000 grid, 20 000 dashes): 3.1 M cells spread in 337 ms over 54 bands (worst band 18 ms); rings 204 ms.
+- The viewer gained a press drag for the fill tool (`pressTool` → painter `press`) with Shift = paint, Ctrl = erase; `J` arms it; the measure menu lists it. The editor's session (`fill-tool.ts`) is the measure painter's "fill" drawing, so the undo label ("Undo Fill stroke"), Esc and the another-tool / page / tab rules come with it.
+- Local: snap.pdf rectangle at 1:100 completes in ~220 ms of holding and reads 37.34 m², P 24694 mm (exact: its edges sit on cell lines, the half-cell offset restores them). L17 at 1:75, 163 %: the meeting room by "1905" (ceiling texture, furniture, a dimension line inside) completes in **809 ms**, 18.41 m², P 21559 mm (screenshots fixtures/private/traces/4-10-l17-fill.png / -area.png, not committed). No printed area to compare with.
+- The live value counts filled cells only; enclosed islands (furniture, texture dashes) join at Enter, so the added area is larger than the last live value (L17: 15.62 → 18.41 m²).
+- Unit 152 files / 1728+ tests; related e2e 18 passed.
+
 ### File List
+
+- src/core/fill/grid.ts, spread.ts, polygon.ts, fill.test.ts
+- src/features/editor/fill-tool.ts, fill-tool.test.ts, measure-tool.ts, undo-store.ts
+- src/features/viewer/viewer-store.ts, markup-layer.ts, index.ts, snap-controller.ts, viewer-input.ts, viewer-input.test.ts, viewer-engine.ts
+- src/features/workspace/tool-rail.tsx, workspace-shell.test.tsx
+- e2e/measure-dynamic-fill.spec.ts
 
 ### Change Log
 
 - 2026-11-01: Story 4.10 created from the epics (Claude Opus 5.5). Status → ready-for-dev.
+- 2026-11-01: Tasks 1-4 done (L17 room 809 ms); Status → review (Claude Opus 5.5).
