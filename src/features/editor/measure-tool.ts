@@ -13,6 +13,8 @@
 // D4: a count is never thrown away). Angle (the first leg's start, the
 // vertex, the second leg's end), Radius and Diameter (three points on the
 // circle): the third click adds them (Story 4.9), as Length's second does.
+// Dynamic fill (Story 4.10, fill-tool.ts) is pressed and held, not clicked;
+// Enter adds its area like Area's.
 //
 // With Select, Shift + drag on a caption moves the caption only ("Move
 // caption", a markups.update op); the offset is stored in user space.
@@ -25,7 +27,7 @@ import { useLayoutEffect } from "react";
 import { pageIdOf, type Calibration } from "@/core/calibration/calibration";
 import { uuidv7 } from "@/core/ids/uuid";
 import { angleCaption, bisector } from "@/core/measure/angle";
-import { areaCaption, areaCaptionText, polygonCentroid, selfIntersects } from "@/core/measure/area";
+import { areaCaption, areaCaptionText, formatArea, polygonCentroid, selfIntersects } from "@/core/measure/area";
 import { circleCaption, circleThrough } from "@/core/measure/circle";
 import { captionPlacement, lengthCaption, polylineCaptionAnchor } from "@/core/measure/length";
 import { DEFAULT_MEASURE_STYLE, MAX_POLYLINE_POINTS, type MarkupStyle, type MeasureMarkup } from "@/core/schema/markup";
@@ -41,6 +43,7 @@ import {
 } from "@/features/viewer";
 
 import { editorStore, pageMarkups, setCaptionDrag, setDrawing, type Drawing } from "./editor-store";
+import { discardFill, fillAreaUser, fillPress, paintFill, takeFillRings, undoFillStroke } from "./fill-tool";
 import { executeOp, registerDrawingUndo } from "./undo-store";
 
 type Point = { x: number; y: number };
@@ -61,11 +64,12 @@ const ADD_LABEL: Record<MeasureTool, string> = {
   angle: ADD_ANGLE,
   radius: ADD_RADIUS,
   diameter: ADD_DIAMETER,
+  fill: ADD_AREA,
 };
 /** Story 4.8: what the live value says while an area crosses itself (it cannot be added). */
 export const CROSSES_ITSELF = "Crosses itself";
 /** Vertices a drawing needs before it can be finished. */
-const MIN_POINTS: Record<MeasureTool, number> = { length: 2, polylength: 2, area: 3, count: 1, angle: 3, radius: 3, diameter: 3 };
+const MIN_POINTS: Record<MeasureTool, number> = { length: 2, polylength: 2, area: 3, count: 1, angle: 3, radius: 3, diameter: 3, fill: 0 };
 /** Tools with a fixed number of points: the click that places the last one adds the measurement. */
 const FIXED_POINTS: Partial<Record<MeasureTool, number>> = { length: 2, angle: 3, radius: 3, diameter: 3 };
 /** Story 4.9: the arc at an angle's vertex, in CSS px (at most 40 % of the shorter leg). */
@@ -404,6 +408,7 @@ export const measurePainter: MarkupPainter = {
 
   paintActive(c, view, pointer) {
     const d = drawing();
+    if (d?.tool === "fill") return paintFillActive(c, view, pointer);
     if (!d || d.pageId !== pageIdOf(view.documentId, view.pageIndex) || !pointer || d.points.length === 0) return null;
     const points = [...d.points, pointer];
     const pts = devicePoints(points, view);
@@ -430,7 +435,8 @@ export const measurePainter: MarkupPainter = {
 
   place(point, at) {
     const tool = viewerStore.getState().tool;
-    if (!isMeasureTool(tool)) return "ignored";
+    // Dynamic fill is pressed, not clicked (press below).
+    if (!isMeasureTool(tool) || tool === "fill") return "ignored";
     const pageId = pageIdOf(at.documentId, at.pageIndex);
     const d = drawing();
     if (!d || d.pageId !== pageId || d.tool !== tool) {
@@ -460,6 +466,7 @@ export const measurePainter: MarkupPainter = {
 
   finish() {
     const d = drawing();
+    if (d?.tool === "fill") return addFilledArea();
     const documentId = viewerStore.getState().documentId;
     // Fixed-point tools (Length, Angle, Radius, Diameter) finish on their last click only.
     if (!d || FIXED_POINTS[d.tool] !== undefined || !documentId || !d.pageId.startsWith(`${documentId}:`)) return "ignored";
@@ -476,6 +483,7 @@ export const measurePainter: MarkupPainter = {
     // D4: Esc finishes a count (its markers are kept); it cancels the other drawings.
     const documentId = viewerStore.getState().documentId;
     if (d.tool === "count" && documentId && d.pageId.startsWith(`${documentId}:`)) commit(documentId);
+    else if (d.tool === "fill") discardFill();
     else setDrawing(null);
     return true;
   },
@@ -514,7 +522,46 @@ export const measurePainter: MarkupPainter = {
     executeOp({ kind: "markups.update", documentId: drag.documentId, before: [before], after: [after] }, MOVE_CAPTION);
     return true;
   },
+
+  press(phase, point, at, brush) {
+    if (viewerStore.getState().tool === "fill") fillPress(phase, point, at, brush);
+  },
 };
+
+/** Story 4.10: layer 3 while filling: the fill and its area so far beside the pointer. */
+function paintFillActive(c: CanvasRenderingContext2D, view: LayerView, pointer: Point | null): string | null {
+  const pageId = pageIdOf(view.documentId, view.pageIndex);
+  const user2 = fillAreaUser(pageId);
+  if (user2 === null) return null;
+  paintFill(c, view);
+  const calibration = calibrationOf(view.documentId, view.pageIndex);
+  const u = view.userUnit > 0 ? view.userUnit : 1;
+  const live = calibration
+    ? { text: formatArea(user2 * u * u * calibration.xFactor * calibration.yFactor, calibration.unit), scaled: true }
+    : { text: areaCaption([], undefined, null).area, scaled: false };
+  if (pointer) liveLabel(c, view.toDevice(pointer), live.text, live.scaled, view);
+  return live.text;
+}
+
+/** Story 4.10: Enter while filling adds the fill as an area markup ("Add area"). */
+function addFilledArea(): "done" | "ignored" {
+  const documentId = viewerStore.getState().documentId;
+  const d = drawing();
+  if (!d || !documentId || !d.pageId.startsWith(`${documentId}:`)) return "ignored";
+  const rings = takeFillRings();
+  if (!rings) return "ignored";
+  const markup: MeasureMarkup = {
+    id: uuidv7(),
+    pageId: rings.pageId,
+    createdAt: new Date().toISOString(),
+    style: DEFAULT_MEASURE_STYLE,
+    type: "area",
+    points: rings.outer,
+    ...(rings.holes.length > 0 ? { holes: rings.holes } : {}),
+  };
+  executeOp({ kind: "markups.add", documentId, markups: [markup] }, ADD_AREA);
+  return "done";
+}
 
 /** A document's measurement by id, if it has it. */
 function pageMarkupById(documentId: string, id: string): MeasureMarkup | null {
@@ -541,7 +588,9 @@ function commit(documentId: string, tabId?: string): "done" {
       ? { ...base, type: "length", points: [a, b] }
       : d.tool === "angle" || d.tool === "radius" || d.tool === "diameter"
         ? { ...base, type: d.tool, points: [a, b, c] }
-        : { ...base, type: d.tool, points };
+        : d.tool === "fill"
+          ? { ...base, type: "area", points }
+          : { ...base, type: d.tool, points };
   setDrawing(null);
   executeOp({ kind: "markups.add", documentId, markups: [markup] }, ADD_LABEL[d.tool], tabId);
   return "done";
@@ -551,6 +600,8 @@ function commit(documentId: string, tabId?: string): "done" {
 function undoDrawingPoint(): boolean {
   const d = drawing();
   if (!d) return false;
+  // Story 4.10: while filling, the last stroke.
+  if (d.tool === "fill") return undoFillStroke();
   const points = d.points.slice(0, -1);
   setDrawing(points.length > 0 ? { ...d, points } : null);
   return true;
@@ -586,9 +637,11 @@ export function installMeasureTools(): () => void {
       const sameTab = s.tabId === prev.tabId && s.openSeq === prev.openSeq && s.documentId === documentId;
       const otherTab = !sameTab && tabId !== null && prev.documentId === documentId;
       if (d.tool === "count" && (sameTab || otherTab)) commit(documentId, tabId ?? undefined);
+      else if (d.tool === "fill") discardFill();
       else setDrawing(null);
     });
     uninstall = () => {
+      discardFill();
       setDrawing(null);
       setCaptionDrag(null);
       captionBoxes = null;

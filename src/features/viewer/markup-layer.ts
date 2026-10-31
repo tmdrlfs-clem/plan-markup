@@ -24,6 +24,21 @@ export type LayerView = {
   colors: { halo: string; warning: string; fontFamily: string };
 };
 
+/** Story 4.10: where a press-and-hold tool (Dynamic fill) works, as the engine sees it at the press. */
+export type PressContext = {
+  documentId: string;
+  pageIndex: number;
+  view: LayerView;
+  /** The part of the page in view, in user space. */
+  window: { x0: number; y0: number; x1: number; y1: number };
+  /** One CSS px in user units at this zoom. */
+  cell: number;
+  /** The page's linework (x1, y1, x2, y2 per segment, user space); null while it is still being read. */
+  segments: { coords: ArrayLike<number>; count: number } | null;
+};
+/** Story 4.10: what a press does: spread (a plain press), paint (Shift) or erase (Ctrl). */
+export type PressBrush = "grow" | "paint" | "erase";
+
 export interface MarkupPainter {
   /** Layer 2: the page's markups. Returns the captions drawn, in drawing order (e2e, diagnostics). */
   paintStatic(c: CanvasRenderingContext2D, view: LayerView): readonly string[];
@@ -51,6 +66,8 @@ export interface MarkupPainter {
   dragCaption(id: string, documentId: string, delta: Point): void;
   /** Story 4.6: ends a caption move; `commit` keeps it (one undo step). True when it moved one. */
   endCaptionDrag(commit: boolean): boolean;
+  /** Story 4.10: a press-and-hold tool's press, drag and release at `point` (user space). */
+  press?(phase: "start" | "move" | "end", point: Point, at: PressContext, brush: PressBrush): void;
 }
 
 export type MarkupChange = { drawingEnded?: boolean };

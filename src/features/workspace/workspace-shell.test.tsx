@@ -110,6 +110,7 @@ describe("Length snapping preview (Story 4.1)", () => {
       "Angle",
       "Radius",
       "Diameter",
+      expect.stringContaining("Dynamic fill"),
     ]);
     await user.click(screen.getByRole("menuitemradio", { name: "Radius" }));
     expect(viewerStore.getState().tool).toBe("radius");

@@ -50,6 +50,9 @@ describe("resolveViewerKey (focus rule)", () => {
     expect(resolveViewerKey(key({ key: "v", code: "KeyV" }), FOCUSED)).toEqual({ type: "tool", tool: "select" });
     expect(resolveViewerKey(key({ key: "V", code: "KeyV", shiftKey: true }), FOCUSED)).toEqual({ type: "tool", tool: "pan" });
     expect(resolveViewerKey(key({ key: " ", code: "Space" }), FOCUSED)).toEqual({ type: "temp-pan" });
+    // Story 4.10: J arms Dynamic fill.
+    expect(resolveViewerKey(key({ key: "j", code: "KeyJ" }), FOCUSED)).toEqual({ type: "tool", tool: "fill" });
+    expect(resolveViewerKey(key({ key: "j", code: "KeyJ" }), OVER)).toBeNull();
     for (const k of [{ key: "+" }, { key: "-" }, { key: "z", code: "KeyZ" }, { key: "v", code: "KeyV" }, { key: " ", code: "Space" }]) {
       expect(resolveViewerKey(key(k), OVER)).toBeNull();
       expect(resolveViewerKey(key(k), ELSEWHERE)).toBeNull();
@@ -121,8 +124,8 @@ function target() {
   return Object.assign(fns, { currentPage: 0, pageCount: 1 });
 }
 
-function pointer(type: string, init: { x: number; y: number; button?: number; altKey?: boolean; shiftKey?: boolean; pointerId?: number }) {
-  const e = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: init.x, clientY: init.y, button: init.button ?? 0, altKey: init.altKey, shiftKey: init.shiftKey });
+function pointer(type: string, init: { x: number; y: number; button?: number; altKey?: boolean; shiftKey?: boolean; ctrlKey?: boolean; pointerId?: number }) {
+  const e = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: init.x, clientY: init.y, button: init.button ?? 0, altKey: init.altKey, shiftKey: init.shiftKey, ctrlKey: init.ctrlKey });
   Object.defineProperty(e, "pointerId", { value: init.pointerId ?? 1 });
   return e;
 }
@@ -230,6 +233,30 @@ describe("ViewerInput", () => {
     expect(removeToolPoint).toHaveBeenCalledTimes(1);
     expect(finishTool).toHaveBeenCalledTimes(2);
     field.remove();
+    setTool("select");
+  });
+
+  it("Story 4.10: Dynamic fill presses, drags and releases (Shift paints, Ctrl erases); it places no point", () => {
+    const pressTool = vi.fn();
+    Object.assign(t, { pressTool });
+    setTool("fill");
+    canvas.dispatchEvent(pointer("pointerdown", { x: 5, y: 6, button: 0 }));
+    expect(pressTool).toHaveBeenLastCalledWith("start", { x: 5, y: 6 }, "grow");
+    expect(t.snapClick).not.toHaveBeenCalled();
+    canvas.dispatchEvent(pointer("pointermove", { x: 9, y: 6 }));
+    expect(pressTool).toHaveBeenLastCalledWith("move", { x: 9, y: 6 }, "grow");
+    canvas.dispatchEvent(pointer("pointerup", { x: 9, y: 6 }));
+    expect(pressTool).toHaveBeenLastCalledWith("end", { x: 9, y: 6 }, "grow");
+    canvas.dispatchEvent(pointer("pointerdown", { x: 5, y: 6, button: 0, shiftKey: true }));
+    expect(pressTool).toHaveBeenLastCalledWith("start", { x: 5, y: 6 }, "paint");
+    canvas.dispatchEvent(pointer("pointerup", { x: 5, y: 6 }));
+    canvas.dispatchEvent(pointer("pointerdown", { x: 5, y: 6, button: 0, ctrlKey: true }));
+    expect(pressTool).toHaveBeenLastCalledWith("start", { x: 5, y: 6 }, "erase");
+    canvas.dispatchEvent(pointer("pointerup", { x: 5, y: 6 }));
+    // A move without a press is not a stroke.
+    pressTool.mockClear();
+    canvas.dispatchEvent(pointer("pointermove", { x: 20, y: 20 }));
+    expect(pressTool).not.toHaveBeenCalled();
     setTool("select");
   });
 

@@ -19,15 +19,15 @@ export const VIEWER_ERROR_TEXT: Record<ViewerErrorCode, string> = {
 /**
  * Navigation tools of the viewer (Story 3.2), and the measuring tools Length
  * (Story 4.1: armed for snapping; it measures from Story 4.5), Polylength (Story 4.6), Area and Count (Story 4.8),
- * Angle, Radius and Diameter (Story 4.9).
+ * Angle, Radius and Diameter (Story 4.9), Dynamic fill (Story 4.10).
  * Calibrate (Story 4.3) is the Calibrate dialog's two-point pick, never
  * chosen from the ToolRail. Markup tools arrive with the editor.
  */
-export type ViewerTool = "select" | "pan" | "zoom" | "length" | "polylength" | "area" | "count" | "angle" | "radius" | "diameter" | "calibrate";
+export type ViewerTool = "select" | "pan" | "zoom" | "length" | "polylength" | "area" | "count" | "angle" | "radius" | "diameter" | "fill" | "calibrate";
 
-/** Stories 4.6, 4.8, 4.9: the measuring tools (they draw markups through the editor's painter). */
-export type MeasureTool = "length" | "polylength" | "area" | "count" | "angle" | "radius" | "diameter";
-const MEASURE_TOOLS: ReadonlySet<ViewerTool> = new Set<ViewerTool>(["length", "polylength", "area", "count", "angle", "radius", "diameter"]);
+/** Stories 4.6, 4.8, 4.9, 4.10: the measuring tools (they draw markups through the editor's painter). */
+export type MeasureTool = "length" | "polylength" | "area" | "count" | "angle" | "radius" | "diameter" | "fill";
+const MEASURE_TOOLS: ReadonlySet<ViewerTool> = new Set<ViewerTool>(["length", "polylength", "area", "count", "angle", "radius", "diameter", "fill"]);
 export function isMeasureTool(tool: ViewerTool): tool is MeasureTool {
   return MEASURE_TOOLS.has(tool);
 }

@@ -92,7 +92,7 @@ import type { SnapModifiers } from "./viewer-input";
 import type { PageScales } from "@/core/scale/detect";
 import { setCursor } from "./status/cursor-store";
 import { searchUi } from "./search-ui";
-import { markupPainter, onMarkupsChanged, type LayerView } from "./markup-layer";
+import { markupPainter, onMarkupsChanged, type LayerView, type PressBrush } from "./markup-layer";
 import { isMeasureTool, setTool, viewerStore, type ViewerErrorCode, type ViewerState, type ViewerTool } from "./viewer-store";
 
 /** Story 4.6: a click this close (CSS px) to the last vertex repeats it (a double-click's second click). */
@@ -1726,6 +1726,47 @@ export class ViewerEngine {
     if (!drag?.pending) return;
     markupPainter()?.dragCaption(drag.id, drag.documentId, drag.pending);
     drag.pending = null;
+  }
+
+  /**
+   * Story 4.10: Dynamic fill's press, drag and release (viewport CSS px): the painter gets the
+   * point in user space, the page's linework and the part of the page in view.
+   */
+  pressTool(phase: "start" | "move" | "end", at: Point, brush: PressBrush): void {
+    const painter = markupPainter();
+    const view = this.layerView();
+    const point = this.screenToUser(at);
+    if (!painter?.press || !view || !point) return;
+    const w = this.canvases.markups.width / this.dpr;
+    const h = this.canvases.markups.height / this.dpr;
+    const corners = [
+      { x: 0, y: 0 },
+      { x: w, y: 0 },
+      { x: 0, y: h },
+      { x: w, y: h },
+    ]
+      .map((c) => this.screenToUser(c))
+      .filter((p): p is Point => p !== null);
+    if (corners.length < 4) return;
+    const linear = this.userToScreenLinear();
+    painter.press(
+      phase,
+      point,
+      {
+        documentId: view.documentId,
+        pageIndex: view.pageIndex,
+        view,
+        window: {
+          x0: Math.min(...corners.map((p) => p.x)),
+          y0: Math.min(...corners.map((p) => p.y)),
+          x1: Math.max(...corners.map((p) => p.x)),
+          y1: Math.max(...corners.map((p) => p.y)),
+        },
+        cell: 1 / (Math.hypot(linear[0], linear[1]) || 1),
+        segments: this.snap.segments(this.pageIndex),
+      },
+      brush,
+    );
   }
 
   /** A viewport point in PDF user space, on the page or off it. */

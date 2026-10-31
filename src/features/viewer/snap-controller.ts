@@ -165,6 +165,12 @@ export class SnapController {
     return this.sha !== null && cache.has(`${this.sha}:${page}`);
   }
 
+  /** Story 4.10: the page's linework (Dynamic fill's walls), null until its index is built. */
+  segments(page: number): { coords: Float64Array; count: number } | null {
+    const entry = this.sha === null ? undefined : cache.get(`${this.sha}:${page}`);
+    return entry ? { coords: entry.index.data.coords, count: entry.index.data.count } : null;
+  }
+
   stats(page: number): SnapIndexStats | null {
     return this.sha === null ? null : (cache.get(`${this.sha}:${page}`)?.stats ?? null);
   }

@@ -13,6 +13,7 @@ import {
   Hash,
   Highlighter,
   MousePointer2,
+  PaintBucket,
   Pen,
   Pentagon,
   Radius,
@@ -65,6 +66,9 @@ export const ANGLE_HINT =
   "Angle: click the start of the first leg, the corner, then the end of the second leg. Backspace removes the last point. Points snap to the drawing (Alt: off, Shift: 45° steps). Esc cancels; Esc again returns to Select.";
 export const CIRCLE_HINT =
   "Radius / Diameter: click three points on the circle or arc. Backspace removes the last point. Points snap to the drawing (Alt: off, Shift: 45° steps). Esc cancels; Esc again returns to Select.";
+/** Story 4.10: the HintBar while Dynamic fill is armed. */
+export const FILL_HINT =
+  "Dynamic fill: press and hold inside a room; the fill spreads to the drawing's lines. Shift + drag paints, Ctrl + drag erases, Ctrl+Z undoes a stroke. Enter adds the area; Esc discards the fill, Esc again returns to Select.";
 const TOOL_HINTS: Partial<Record<ViewerTool, string>> = {
   length: SNAP_PREVIEW_HINT,
   polylength: POLYLENGTH_HINT,
@@ -73,6 +77,7 @@ const TOOL_HINTS: Partial<Record<ViewerTool, string>> = {
   angle: ANGLE_HINT,
   radius: CIRCLE_HINT,
   diameter: CIRCLE_HINT,
+  fill: FILL_HINT,
 };
 export const EDITOR_LATER = "Arrives with the markup editor";
 
@@ -124,6 +129,7 @@ export const MEASURE_TOOLS: readonly (Tool & { id: MeasureTool })[] = [
   { id: "angle", label: "Angle", icon: Angle },
   { id: "radius", label: "Radius", icon: Radius },
   { id: "diameter", label: "Diameter", icon: Diameter },
+  { id: "fill", label: "Dynamic fill", icon: PaintBucket, shortcut: "J" },
 ];
 export const MORE_MEASURE_TOOLS = "More measure tools";
 

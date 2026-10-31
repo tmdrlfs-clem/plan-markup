@@ -19,6 +19,7 @@
 import type { Point, Rect } from "@/core/render/view";
 
 import { hasDocument, isMeasureTool, setTempPan, setTool, viewerStore, type ViewerTool } from "./viewer-store";
+import type { PressBrush } from "./markup-layer";
 
 /** CSS px per wheel "line" (deltaMode 1, e.g. Firefox: 3 lines per notch). */
 export const WHEEL_LINE_PX = 40;
@@ -95,6 +96,8 @@ export function resolveViewerKey(
   if (event.code === "Space" && !event.shiftKey) return { type: "temp-pan" };
   if (isLetter(event, "v")) return { type: "tool", tool: event.shiftKey ? "pan" : "select" };
   if (isLetter(event, "z") && !event.shiftKey) return { type: "tool", tool: "zoom" };
+  // Story 4.10: J, Dynamic fill (the UX shortcut table; the 4541 zone tool shares it later).
+  if (isLetter(event, "j") && !event.shiftKey) return { type: "tool", tool: "fill" };
   return null;
 }
 
@@ -145,6 +148,8 @@ export interface ViewerInputTarget {
   moveCaptionDrag?(at: Point): void;
   /** Story 4.6: the caption drag ends: kept (`commit`) or put back (Esc, a cancelled pointer). */
   endCaptionDrag?(commit: boolean): void;
+  /** Story 4.10: press, drag and release with Dynamic fill (viewport CSS px). */
+  pressTool?(phase: "start" | "move" | "end", at: Point, brush: PressBrush): void;
 }
 
 /** Tools that place points (Length, Polylength, the calibration pick): a click places one, Alt suspends snapping. */
@@ -158,7 +163,8 @@ export type SnapModifiers = { alt: boolean; shift: boolean };
 type Drag =
   | { kind: "pan"; pointerId: number; last: Point }
   | { kind: "zoom"; pointerId: number; start: Point; zoomOut: boolean }
-  | { kind: "caption"; pointerId: number };
+  | { kind: "caption"; pointerId: number }
+  | { kind: "press"; pointerId: number; brush: PressBrush };
 
 /** Normalised rectangle between two points. */
 function rectOf(a: Point, b: Point): Rect {
@@ -270,6 +276,12 @@ export class ViewerInput {
       this.drag = { kind: "pan", pointerId: e.pointerId, last: this.point(e) };
     } else if (e.button === 0 && tool === "zoom") {
       this.drag = { kind: "zoom", pointerId: e.pointerId, start: this.point(e), zoomOut: e.altKey };
+    } else if (e.button === 0 && tool === "fill" && this.target.pressTool) {
+      // Story 4.10: Dynamic fill spreads while held; Shift paints, Ctrl erases.
+      e.preventDefault();
+      const brush: PressBrush = e.ctrlKey || e.metaKey ? "erase" : e.shiftKey ? "paint" : "grow";
+      this.drag = { kind: "press", pointerId: e.pointerId, brush };
+      this.target.pressTool("start", this.point(e), brush);
     } else if (e.button === 0 && e.shiftKey && tool === "select" && this.target.startCaptionDrag?.(this.point(e))) {
       // Story 4.6: Shift + drag on a measurement's caption moves the caption only.
       e.preventDefault();
@@ -302,6 +314,8 @@ export class ViewerInput {
       drag.last = p;
     } else if (drag.kind === "caption") {
       this.target.moveCaptionDrag?.(p);
+    } else if (drag.kind === "press") {
+      this.target.pressTool?.("move", p, drag.brush);
     } else {
       this.target.setZoomRect(rectOf(drag.start, p));
     }
@@ -323,6 +337,7 @@ export class ViewerInput {
     if (!drag) return;
     this.drag = null;
     if (drag.kind === "caption") this.target.endCaptionDrag?.(commit);
+    if (drag.kind === "press" && this.pointer) this.target.pressTool?.("end", this.pointer, drag.brush);
     if (drag.kind === "zoom") {
       this.target.setZoomRect(null);
       const end = this.pointer;
