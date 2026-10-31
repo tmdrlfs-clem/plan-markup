@@ -1,6 +1,6 @@
 # Story 4.9: Angle, radius and diameter measurements
 
-Status: in-progress
+Status: review
 
 ## Story
 
@@ -25,7 +25,7 @@ so that I can measure splays and round elements.
 
 - [x] **Task 1: Core** — `angle.ts` (angle between legs under X / Y factors, `formatAngle`, bisector), `circle.ts` (circumcircle, collinear check, radius / diameter in mm, captions); `angle`, `radius`, `diameter` markups (exactly three points, `captionOffset`) in the schema; unit tests.
 - [x] **Task 2: Tools** — viewer tools `angle`, `radius`, `diameter` (snapping, crosshair); the measure painter draws them (legs + arc, circle + radius / diameter line, captions and hit boxes, live values, "Points in a line" refusal); commit on the third click; undo labels; `needsScale` excludes Angle; ToolRail entries live with hints; unit tests.
-- [ ] **Task 3: Tests** — `e2e/measure-angle-circle.spec.ts` (AC 7).
+- [x] **Task 3: Tests** — `e2e/measure-angle-circle.spec.ts` (AC 7).
 
 ## Dev Notes
 
@@ -45,12 +45,28 @@ so that I can measure splays and round elements.
 
 ### Agent Model Used
 
+Claude Opus 5.5
+
 ### Debug Log References
 
 ### Completion Notes List
 
+- The measure painter draws the three new types: an angle's legs with an arc at the vertex (the short way round, at most 14 CSS px or 40 % of the shorter leg) and its caption on the bisector past the arc; a radius's / diameter's circle and line (centre to the first point, or across through the centre) with the caption along that line.
+- `FIXED_POINTS` (Length 2, Angle / Radius / Diameter 3) replaces Length's special case: the last click commits; Enter and the double-click do not finish them. A third click that leaves the circle's points in a line adds nothing.
+- Live values only from the third point on (an angle or a circle has no value with two); before that the leg / line is drawn without a label.
+- ToolRail: Angle, Radius, Diameter live (lucide Angle / Radius / Diameter icons) without shortcuts (D5); the rail has 20 tools.
+- Local: unit 149 files / 1711 tests; `measure-angle-circle` e2e passes (90.0°, R 4410 mm, Ø 8819 mm); related e2e 17 passed.
+
 ### File List
+
+- src/core/measure/angle.ts, circle.ts, angle-circle.test.ts; src/core/schema/markup.ts
+- src/features/editor/measure-tool.ts, measure-tool.test.ts, undo-store.ts, index.ts
+- src/features/viewer/viewer-store.ts, snap-controller.ts
+- src/features/calibration/scale-prompt-store.ts, scale-prompt.test.tsx
+- src/features/workspace/tool-rail.tsx, workspace-shell.test.tsx
+- e2e/measure-angle-circle.spec.ts
 
 ### Change Log
 
 - 2026-11-01: Story 4.9 created from the epics (Claude Opus 5.5). Status → ready-for-dev.
+- 2026-11-01: Tasks 1-3 done; Status → review (Claude Opus 5.5).
