@@ -83,6 +83,9 @@ export const DRAWING_POINT_LABEL: Readonly<Record<MeasureTool, string>> = {
   polylength: "Polylength point",
   area: "Area point",
   count: "Count point",
+  angle: "Angle point",
+  radius: "Radius point",
+  diameter: "Diameter point",
 };
 
 /**

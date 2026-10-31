@@ -24,7 +24,7 @@ so that I can measure splays and round elements.
 ## Tasks / Subtasks
 
 - [x] **Task 1: Core** — `angle.ts` (angle between legs under X / Y factors, `formatAngle`, bisector), `circle.ts` (circumcircle, collinear check, radius / diameter in mm, captions); `angle`, `radius`, `diameter` markups (exactly three points, `captionOffset`) in the schema; unit tests.
-- [ ] **Task 2: Tools** — viewer tools `angle`, `radius`, `diameter` (snapping, crosshair); the measure painter draws them (legs + arc, circle + radius / diameter line, captions and hit boxes, live values, "Points in a line" refusal); commit on the third click; undo labels; `needsScale` excludes Angle; ToolRail entries live with hints; unit tests.
+- [x] **Task 2: Tools** — viewer tools `angle`, `radius`, `diameter` (snapping, crosshair); the measure painter draws them (legs + arc, circle + radius / diameter line, captions and hit boxes, live values, "Points in a line" refusal); commit on the third click; undo labels; `needsScale` excludes Angle; ToolRail entries live with hints; unit tests.
 - [ ] **Task 3: Tests** — `e2e/measure-angle-circle.spec.ts` (AC 7).
 
 ## Dev Notes

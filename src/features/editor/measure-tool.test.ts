@@ -5,7 +5,19 @@ import { setTool, viewerStore, type LayerView } from "@/features/viewer";
 import { onMarkupsChanged } from "@/features/viewer/markup-layer";
 
 import { editorStore, markupsOf, resetEditor } from "./editor-store";
-import { ADD_AREA, ADD_COUNT, ADD_LENGTH, ADD_POLYLENGTH, CROSSES_ITSELF, MOVE_CAPTION, installMeasureTools, measurePainter } from "./measure-tool";
+import {
+  ADD_ANGLE,
+  ADD_AREA,
+  ADD_COUNT,
+  ADD_DIAMETER,
+  ADD_LENGTH,
+  ADD_POLYLENGTH,
+  ADD_RADIUS,
+  CROSSES_ITSELF,
+  MOVE_CAPTION,
+  installMeasureTools,
+  measurePainter,
+} from "./measure-tool";
 import { activeUndoLabels, clearUndo, redoActive, undoActive } from "./undo-store";
 
 const SHA = "e".repeat(64);
@@ -403,5 +415,82 @@ describe("Count tool (Story 4.8)", () => {
     expect(markupsOf(editorStore.getState(), SHA)).toHaveLength(1);
     expect(activeUndoLabels(editorStore.getState(), "t1").undo).toBe(ADD_COUNT);
     expect(activeUndoLabels(editorStore.getState(), "t2").undo).toBeNull();
+  });
+});
+
+describe("Angle, Radius and Diameter tools (Story 4.9)", () => {
+  const corner = [
+    { x: 72, y: 0 },
+    { x: 0, y: 0 },
+    { x: 0, y: 72 },
+  ];
+
+  it("Angle: the third click adds it as 'Add angle'; no scale needed; the live angle; Enter does not finish it", () => {
+    setTool("angle");
+    measurePainter.place(corner[0], AT);
+    // One leg: drawn, no value yet.
+    expect(measurePainter.paintActive(recorder().ctx, view, corner[1])).toBeNull();
+    measurePainter.place(corner[1], AT);
+    expect(measurePainter.paintActive(recorder().ctx, view, corner[2])).toBe("90.0°");
+    expect(measurePainter.finish()).toBe("ignored");
+    expect(activeUndoLabels(editorStore.getState(), "t1").undo).toBe("Angle point");
+    expect(measurePainter.place(corner[2], AT)).toBe("done");
+    expect(markupsOf(editorStore.getState(), SHA)[0]).toMatchObject({ type: "angle", points: corner });
+    expect(activeUndoLabels(editorStore.getState(), "t1").undo).toBe(ADD_ANGLE);
+    expect(viewerStore.getState().tool).toBe("angle");
+    const r = recorder();
+    expect(measurePainter.paintStatic(r.ctx, view)).toEqual(["90.0°"]);
+    expect(r.texts()[0].fillStyle).toBe("#ff0000");
+    // The legs and the arc at the vertex.
+    expect(r.ops.filter((o) => o.op === "arc")).toHaveLength(1);
+    // The caption inside the angle: device x > 0, y < 0 (the page's y up is device y down).
+    const [tx, ty] = r.ops.find((o) => o.op === "translate")!.args as number[];
+    expect(tx).toBeGreaterThan(0);
+    expect(ty).toBeLessThan(0);
+    const [m] = markupsOf(editorStore.getState(), SHA);
+    expect(measurePainter.captionAt(view, { x: tx, y: ty - 3 })).toBe(m.id);
+  });
+
+  it("Radius and Diameter: three points on the circle; R / Ø in the calibration's units; Scale not set without one", () => {
+    setTool("radius");
+    const arc = [
+      { x: 0, y: 0 },
+      { x: 72, y: 0 },
+      { x: 72, y: 72 },
+    ];
+    for (const p of arc) measurePainter.place(p, AT);
+    setTool("diameter");
+    for (const p of arc) measurePainter.place(p, AT);
+    expect(markupsOf(editorStore.getState(), SHA).map((m) => m.type)).toEqual(["radius", "diameter"]);
+    expect(activeUndoLabels(editorStore.getState(), "t1").undo).toBe(ADD_DIAMETER);
+    expect(measurePainter.paintStatic(recorder().ctx, view)).toEqual(["Scale not set", "Scale not set"]);
+    viewerStore.setState({ calibrations: { [pageIdOf(SHA, 0)]: cal } });
+    // Centre (36, 36), radius 36√2 pt at 1:75.
+    const r = recorder();
+    expect(measurePainter.paintStatic(r.ctx, view)).toEqual(["R 1347 mm", "Ø 2694 mm"]);
+    expect(r.ops.filter((o) => o.op === "arc")).toHaveLength(2);
+    undoActive();
+    expect(activeUndoLabels(editorStore.getState(), "t1").undo).toBe(ADD_RADIUS);
+  });
+
+  it("three points in a line: 'Points in a line', the click adds nothing; Backspace and Esc as Length", () => {
+    viewerStore.setState({ calibrations: { [pageIdOf(SHA, 0)]: cal } });
+    setTool("diameter");
+    measurePainter.place({ x: 0, y: 0 }, AT);
+    measurePainter.place({ x: 10, y: 0 }, AT);
+    expect(measurePainter.paintActive(recorder().ctx, view, { x: 20, y: 0 })).toBe("Points in a line");
+    expect(measurePainter.place({ x: 20, y: 0 }, AT)).toBe("continue");
+    expect(markupsOf(editorStore.getState(), SHA)).toEqual([]);
+    expect(measurePainter.removeLastPoint()).toBe(true);
+    expect(measurePainter.tracking).toBe(true);
+    expect(measurePainter.escape()).toBe(true);
+    expect(measurePainter.tracking).toBe(false);
+    expect(markupsOf(editorStore.getState(), SHA)).toEqual([]);
+    // Another tool cancels a radius (only a count is kept).
+    setTool("radius");
+    measurePainter.place({ x: 0, y: 0 }, AT);
+    setTool("angle");
+    expect(measurePainter.tracking).toBe(false);
+    expect(markupsOf(editorStore.getState(), SHA)).toEqual([]);
   });
 });

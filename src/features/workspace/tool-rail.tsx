@@ -1,9 +1,11 @@
 "use client";
 
 import {
+  Angle,
   ArrowUpRight,
   Circle,
   Cloud,
+  Diameter,
   Droplets,
   Eraser,
   Hand,
@@ -12,6 +14,7 @@ import {
   MousePointer2,
   Pen,
   Pentagon,
+  Radius,
   Route,
   Ruler,
   Slash,
@@ -33,14 +36,15 @@ interface Tool {
   id: string;
   label: string;
   icon: LucideIcon;
-  shortcut: string;
+  /** None for tools without a default key (Story 4.9, D5: Angle, Radius, Diameter). */
+  shortcut?: string;
 }
 
 /**
  * Tools that work today: Select and Pan (Story 3.2), and Length (snapping from
  * Story 4.1, measuring from Story 4.5). The others arrive with the editor.
  */
-const LIVE_TOOLS: ReadonlySet<string> = new Set<ViewerTool>(["select", "pan", "length", "polylength", "area", "count"]);
+const LIVE_TOOLS: ReadonlySet<string> = new Set<ViewerTool>(["select", "pan", "length", "polylength", "area", "count", "angle", "radius", "diameter"]);
 
 export const SNAP_PREVIEW_HINT_ID = "snap-preview";
 /** Review S3: a page past the segment cap. */
@@ -54,7 +58,20 @@ export const POLYLENGTH_HINT =
 export const AREA_HINT =
   "Area: click each corner; double-click, Enter or a click on the first corner closes it. Backspace removes the last corner. Points snap to the drawing (Alt: off, Shift: 45° steps). Esc cancels; Esc again returns to Select.";
 export const COUNT_HINT = "Count: click each item. Enter, a double-click or Esc finishes the count. Backspace removes the last marker.";
-const TOOL_HINTS: Partial<Record<ViewerTool, string>> = { length: SNAP_PREVIEW_HINT, polylength: POLYLENGTH_HINT, area: AREA_HINT, count: COUNT_HINT };
+/** Story 4.9: the HintBar while Angle, Radius or Diameter is armed. */
+export const ANGLE_HINT =
+  "Angle: click the start of the first leg, the corner, then the end of the second leg. Backspace removes the last point. Points snap to the drawing (Alt: off, Shift: 45° steps). Esc cancels; Esc again returns to Select.";
+export const CIRCLE_HINT =
+  "Radius / Diameter: click three points on the circle or arc. Backspace removes the last point. Points snap to the drawing (Alt: off, Shift: 45° steps). Esc cancels; Esc again returns to Select.";
+const TOOL_HINTS: Partial<Record<ViewerTool, string>> = {
+  length: SNAP_PREVIEW_HINT,
+  polylength: POLYLENGTH_HINT,
+  area: AREA_HINT,
+  count: COUNT_HINT,
+  angle: ANGLE_HINT,
+  radius: CIRCLE_HINT,
+  diameter: CIRCLE_HINT,
+};
 export const EDITOR_LATER = "Arrives with the markup editor";
 
 /** UX-DR6 groups. Select and Pan work with a drawing open; the rest arrive with the editor. */
@@ -87,6 +104,9 @@ const GROUPS: { label: string; tools: Tool[] }[] = [
       { id: "polylength", label: "Polylength", icon: Route, shortcut: "Shift+Alt+Q" },
       { id: "area", label: "Area", icon: Pentagon, shortcut: "Shift+Alt+A" },
       { id: "count", label: "Count", icon: Hash, shortcut: "Shift+Alt+C" },
+      { id: "angle", label: "Angle", icon: Angle },
+      { id: "radius", label: "Radius", icon: Radius },
+      { id: "diameter", label: "Diameter", icon: Diameter },
     ],
   },
   {

@@ -90,6 +90,10 @@ describe("scalePromptFor (Story 4.7)", () => {
     expect(needsScale("area")).toBe(true);
     // Story 4.8: a count needs no scale.
     expect(needsScale("count")).toBe(false);
+    // Story 4.9 (D4): an angle needs no scale; a radius or diameter does.
+    expect(needsScale("angle")).toBe(false);
+    expect(needsScale("radius")).toBe(true);
+    expect(needsScale("diameter")).toBe(true);
     expect(needsScale("select")).toBe(false);
     expect(needsScale("calibrate")).toBe(false);
     expect(prompt()).toBeNull(); // Select

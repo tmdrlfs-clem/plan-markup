@@ -15,9 +15,12 @@ import { applyCalibration, calibrateStore, calibrationOf, openCalibrate } from "
 import { calibrationPrefs } from "./calibration-prefs";
 import { verifyStore } from "./verify-store";
 
-/** Tools that need a scale: Length, Polylength, Area (the 4541 zones join with their stories); Count does not (Story 4.8). */
+/**
+ * Tools that need a scale: Length, Polylength, Area, Radius, Diameter (the 4541 zones join with
+ * their stories); Count (Story 4.8) and Angle (Story 4.9, D4) do not.
+ */
 export function needsScale(tool: ViewerTool): boolean {
-  return isMeasureTool(tool) && tool !== "count";
+  return isMeasureTool(tool) && tool !== "count" && tool !== "angle";
 }
 
 export type ScalePrompt = {

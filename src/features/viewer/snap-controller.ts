@@ -19,7 +19,7 @@ import type { ViewerTool } from "./viewer-store";
  * Tools that place points (drawing and measuring): they snap; Select, Pan and Zoom never do,
  * nor Count (Story 4.8, D8: a count marks where it is clicked).
  */
-const SNAPPING_TOOLS: ReadonlySet<ViewerTool> = new Set<ViewerTool>(["length", "polylength", "area", "calibrate"]);
+const SNAPPING_TOOLS: ReadonlySet<ViewerTool> = new Set<ViewerTool>(["length", "polylength", "area", "angle", "radius", "diameter", "calibrate"]);
 
 export function isSnappingTool(tool: ViewerTool): boolean {
   return SNAPPING_TOOLS.has(tool);

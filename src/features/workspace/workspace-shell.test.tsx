@@ -166,7 +166,7 @@ describe("WorkspaceShell layout", () => {
     setup();
     const rail = screen.getByRole("toolbar", { name: "Drawing tools" });
     const tools = within(rail).getAllByRole("radio");
-    expect(tools.length).toBe(17);
+    expect(tools.length).toBe(20);
     for (const tool of tools) expect(tool).toHaveAttribute("aria-disabled", "true");
     expect(screen.getByText("Select a tool to see its options")).toBeInTheDocument();
   });

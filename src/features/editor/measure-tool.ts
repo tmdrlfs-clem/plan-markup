@@ -10,7 +10,9 @@
 // (Revu). Esc while drawing cancels it, Ctrl+Z removes its last point; another
 // tool, page or tab cancels it. Count: each click places a marker of one count;
 // Enter, a double-click, Esc and leaving the tool finish it (founder default
-// D4: a count is never thrown away).
+// D4: a count is never thrown away). Angle (the first leg's start, the
+// vertex, the second leg's end), Radius and Diameter (three points on the
+// circle): the third click adds them (Story 4.9), as Length's second does.
 //
 // With Select, Shift + drag on a caption moves the caption only ("Move
 // caption", a markups.update op); the offset is stored in user space.
@@ -22,7 +24,9 @@ import { useLayoutEffect } from "react";
 
 import { pageIdOf, type Calibration } from "@/core/calibration/calibration";
 import { uuidv7 } from "@/core/ids/uuid";
+import { angleCaption, bisector } from "@/core/measure/angle";
 import { areaCaption, areaCaptionText, polygonCentroid, selfIntersects } from "@/core/measure/area";
+import { circleCaption, circleThrough } from "@/core/measure/circle";
 import { captionPlacement, lengthCaption, polylineCaptionAnchor } from "@/core/measure/length";
 import { DEFAULT_MEASURE_STYLE, MAX_POLYLINE_POINTS, type MarkupStyle, type MeasureMarkup } from "@/core/schema/markup";
 import {
@@ -45,12 +49,27 @@ export const ADD_LENGTH = "Add length";
 export const ADD_POLYLENGTH = "Add polylength";
 export const ADD_AREA = "Add area";
 export const ADD_COUNT = "Add count";
+export const ADD_ANGLE = "Add angle";
+export const ADD_RADIUS = "Add radius";
+export const ADD_DIAMETER = "Add diameter";
 export const MOVE_CAPTION = "Move caption";
-const ADD_LABEL: Record<MeasureTool, string> = { length: ADD_LENGTH, polylength: ADD_POLYLENGTH, area: ADD_AREA, count: ADD_COUNT };
+const ADD_LABEL: Record<MeasureTool, string> = {
+  length: ADD_LENGTH,
+  polylength: ADD_POLYLENGTH,
+  area: ADD_AREA,
+  count: ADD_COUNT,
+  angle: ADD_ANGLE,
+  radius: ADD_RADIUS,
+  diameter: ADD_DIAMETER,
+};
 /** Story 4.8: what the live value says while an area crosses itself (it cannot be added). */
 export const CROSSES_ITSELF = "Crosses itself";
 /** Vertices a drawing needs before it can be finished. */
-const MIN_POINTS: Record<MeasureTool, number> = { length: 2, polylength: 2, area: 3, count: 1 };
+const MIN_POINTS: Record<MeasureTool, number> = { length: 2, polylength: 2, area: 3, count: 1, angle: 3, radius: 3, diameter: 3 };
+/** Tools with a fixed number of points: the click that places the last one adds the measurement. */
+const FIXED_POINTS: Partial<Record<MeasureTool, number>> = { length: 2, angle: 3, radius: 3, diameter: 3 };
+/** Story 4.9: the arc at an angle's vertex, in CSS px (at most 40 % of the shorter leg). */
+const ANGLE_ARC_PX = 14;
 /** The live label beside the pointer, in screen px (not page units: it is UI, not the markup). */
 const LIVE_FONT_PX = 12;
 const LIVE_OFFSET_PX = { x: 14, y: 22 };
@@ -119,6 +138,70 @@ function drawMarkers(c: CanvasRenderingContext2D, pts: readonly Point[], style: 
 
 const markerRadius = (view: LayerView) => Math.max(2 * view.dpr, COUNT_MARKER_PT * view.devicePerPt);
 
+/** Story 4.9: the arc's radius at an angle's vertex (device px). */
+function angleArcRadius(pts: readonly Point[], view: LayerView): number {
+  const shorter = Math.min(Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y), Math.hypot(pts[2].x - pts[1].x, pts[2].y - pts[1].y));
+  return Math.min(ANGLE_ARC_PX * view.dpr, 0.4 * shorter);
+}
+
+/** Story 4.9: an angle's legs (device points: start, vertex, end) and the arc between them at the vertex. */
+function strokeAngle(c: CanvasRenderingContext2D, pts: readonly Point[], style: MarkupStyle, view: LayerView): void {
+  c.beginPath();
+  c.moveTo(pts[0].x, pts[0].y);
+  for (let i = 1; i < pts.length; i++) c.lineTo(pts[i].x, pts[i].y);
+  if (pts.length >= 3) {
+    const [a, v, b] = pts;
+    const r = angleArcRadius(pts, view);
+    if (r > 0) {
+      const from = Math.atan2(a.y - v.y, a.x - v.x);
+      let sweep = Math.atan2(b.y - v.y, b.x - v.x) - from;
+      // The short way round (the angle measured, at most 180°).
+      if (sweep > Math.PI) sweep -= 2 * Math.PI;
+      else if (sweep < -Math.PI) sweep += 2 * Math.PI;
+      c.moveTo(v.x + r * Math.cos(from), v.y + r * Math.sin(from));
+      c.arc(v.x, v.y, r, from, from + sweep, sweep < 0);
+    }
+  }
+  stroke(c, style, view);
+}
+
+/** Story 4.9: the circle through three user space points, in device px (null in a line). */
+function deviceCircle(points: readonly Point[], view: LayerView): { centre: Point; radius: number } | null {
+  const circle = points.length >= 3 ? circleThrough(points[0], points[1], points[2]) : null;
+  if (!circle) return null;
+  const centre = view.toDevice(circle.centre);
+  const p = view.toDevice(points[0]);
+  return { centre, radius: Math.hypot(p.x - centre.x, p.y - centre.y) };
+}
+
+/** Story 4.9: the line a radius or diameter caption sits along (device px): centre to the first point, or across. */
+function circleLine(kind: "radius" | "diameter", first: Point, circle: { centre: Point }): [Point, Point] {
+  return kind === "radius" ? [circle.centre, first] : [first, { x: 2 * circle.centre.x - first.x, y: 2 * circle.centre.y - first.y }];
+}
+
+/** Story 4.9: a radius or diameter: the circle and its line; while fewer than three points, the line so far. */
+function strokeCircle(
+  c: CanvasRenderingContext2D,
+  kind: "radius" | "diameter",
+  pts: readonly Point[],
+  circle: { centre: Point; radius: number } | null,
+  style: MarkupStyle,
+  view: LayerView,
+): void {
+  c.beginPath();
+  if (circle) {
+    c.moveTo(circle.centre.x + circle.radius, circle.centre.y);
+    c.arc(circle.centre.x, circle.centre.y, circle.radius, 0, Math.PI * 2);
+    const [a, b] = circleLine(kind, pts[0], circle);
+    c.moveTo(a.x, a.y);
+    c.lineTo(b.x, b.y);
+  } else {
+    c.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) c.lineTo(pts[i].x, pts[i].y);
+  }
+  stroke(c, style, view);
+}
+
 /**
  * Review R6 (4.5): whether a measurement (with its ticks and caption) can
  * touch the canvas. Zoomed in, most markups are off screen and their captions
@@ -150,7 +233,8 @@ export type CaptionFrame = { x: number; y: number; angle: number; size: number }
  * Where a measurement's caption is drawn, moved by its offset: a length's and
  * a polylength's along their (longest) segment, above it; an area's at its
  * centroid, horizontal, the first line above the centre; a count's above its
- * first marker.
+ * first marker; an angle's inside it at the vertex; a radius's and a
+ * diameter's along their line.
  */
 export function captionFrame(m: MeasureMarkup, view: LayerView): CaptionFrame {
   const size = m.style.fontSize * view.devicePerPt;
@@ -161,6 +245,21 @@ export function captionFrame(m: MeasureMarkup, view: LayerView): CaptionFrame {
   } else if (m.type === "count") {
     const p = view.toDevice(m.points[0]);
     at = { x: p.x, y: p.y - markerRadius(view) - size * 0.2, angle: 0 };
+  } else if (m.type === "angle") {
+    // Inside the angle along its bisector, past the arc; horizontal, the text roughly centred there.
+    const pts = devicePoints(m.points, view);
+    const v = pts[1];
+    const u = bisector(m.points[0], m.points[1], m.points[2]);
+    const tip = view.toDevice({ x: m.points[1].x + u.x, y: m.points[1].y + u.y });
+    const d = Math.hypot(tip.x - v.x, tip.y - v.y) || 1;
+    const reach = angleArcRadius(pts, view) + size * 0.9;
+    at = { x: v.x + ((tip.x - v.x) / d) * reach, y: v.y + ((tip.y - v.y) / d) * reach + size * 0.4, angle: 0 };
+  } else if (m.type === "radius" || m.type === "diameter") {
+    const gap = Math.max(1, m.style.width * view.devicePerPt) / 2 + size * 0.2;
+    const circle = deviceCircle(m.points, view);
+    const first = view.toDevice(m.points[0]);
+    const [a, b] = circle ? circleLine(m.type, first, circle) : [first, view.toDevice(m.points[1])];
+    at = captionPlacement(a, b, gap);
   } else {
     const [ua, ub] = m.type === "length" ? m.points : polylineCaptionAnchor(m.points);
     at = captionPlacement(view.toDevice(ua), view.toDevice(ub), Math.max(1, m.style.width * view.devicePerPt) / 2 + size * 0.2);
@@ -222,12 +321,16 @@ function shown(m: MeasureMarkup): MeasureMarkup {
   return drag && drag.id === m.id ? { ...m, captionOffset: addOffset(m.captionOffset, drag.delta) } : m;
 }
 
-const MEASURE_TYPES: ReadonlySet<string> = new Set(["length", "polylength", "area", "count"]);
+const MEASURE_TYPES: ReadonlySet<string> = new Set(["length", "polylength", "area", "count", "angle", "radius", "diameter"]);
 const isMeasure = (m: { type: string }): m is MeasureMarkup => MEASURE_TYPES.has(m.type);
 
 /** A measurement's caption: its lines on the canvas, its one-line text (layer 2's list) and whether it is scaled. */
 function captionOf(m: MeasureMarkup, calibration: Calibration | null, userUnit: number): { lines: string[]; text: string; scaled: boolean } {
   if (m.type === "count") return { lines: [String(m.points.length)], text: String(m.points.length), scaled: true };
+  if (m.type === "angle" || m.type === "radius" || m.type === "diameter") {
+    const a = m.type === "angle" ? angleCaption(m.points, calibration) : circleCaption(m.type, m.points, calibration, userUnit);
+    return { lines: [a.text], text: a.text, scaled: a.scaled };
+  }
   if (m.type === "area") {
     const a = areaCaption(m.points, m.holes, calibration, userUnit);
     return { lines: a.perimeter ? [a.area, `P ${a.perimeter}`] : [a.area], text: areaCaptionText(a), scaled: a.scaled };
@@ -237,8 +340,11 @@ function captionOf(m: MeasureMarkup, calibration: Calibration | null, userUnit: 
 }
 
 /** The live value of a drawing with the tool point added (or null when there is none to show). */
-function liveValue(tool: MeasureTool, points: readonly Point[], calibration: Calibration | null, userUnit: number): { text: string; scaled: boolean } {
+function liveValue(tool: MeasureTool, points: readonly Point[], calibration: Calibration | null, userUnit: number): { text: string; scaled: boolean } | null {
   if (tool === "count") return { text: String(points.length - 1), scaled: true };
+  // Story 4.9: an angle or a circle has a value from its third point on.
+  if (tool === "angle") return points.length >= 3 ? angleCaption(points, calibration) : null;
+  if (tool === "radius" || tool === "diameter") return points.length >= 3 ? circleCaption(tool, points, calibration, userUnit) : null;
   if (tool === "area") {
     // Review R1: the tool point on the last vertex (just clicked) or on the first (about to
     // close it) adds no vertex; it must not read as a crossing.
@@ -271,9 +377,18 @@ export const measurePainter: MarkupPainter = {
       captions.push(caption.text);
       const pts = devicePoints(m.points, view);
       const frame = captionFrame(m, view);
-      if (!onCanvas(pts, m.style, view, [frame])) continue;
+      const circle = m.type === "radius" || m.type === "diameter" ? deviceCircle(m.points, view) : null;
+      const extent = circle
+        ? [
+            { x: circle.centre.x - circle.radius, y: circle.centre.y - circle.radius },
+            { x: circle.centre.x + circle.radius, y: circle.centre.y + circle.radius },
+          ]
+        : [];
+      if (!onCanvas(pts, m.style, view, [frame, ...extent])) continue;
       if (m.type === "area") strokeRings(c, [pts, ...(m.holes ?? []).map((h) => devicePoints(h, view))], m.style, view);
       else if (m.type === "count") drawMarkers(c, pts, m.style, view);
+      else if (m.type === "angle") strokeAngle(c, pts, m.style, view);
+      else if (m.type === "radius" || m.type === "diameter") strokeCircle(c, m.type, pts, circle, m.style, view);
       else strokeMeasure(c, pts, m.style, view);
       drawCaption(c, frame, caption.lines, caption.scaled, m.style, view);
       if (frame.size >= 1) {
@@ -296,8 +411,11 @@ export const measurePainter: MarkupPainter = {
     c.save();
     if (d.tool === "area") strokeRings(c, [pts], DEFAULT_MEASURE_STYLE, view);
     else if (d.tool === "count") drawMarkers(c, pts.slice(0, -1), DEFAULT_MEASURE_STYLE, view);
+    else if (d.tool === "angle") strokeAngle(c, pts, DEFAULT_MEASURE_STYLE, view);
+    else if (d.tool === "radius" || d.tool === "diameter") strokeCircle(c, d.tool, pts, deviceCircle(points, view), DEFAULT_MEASURE_STYLE, view);
     else strokeMeasure(c, pts, DEFAULT_MEASURE_STYLE, view);
     c.restore();
+    if (!live) return null;
     liveLabel(c, pts[pts.length - 1], live.text, live.scaled, view);
     return live.text;
   },
@@ -327,11 +445,14 @@ export const measurePainter: MarkupPainter = {
     if (tool === "area" && d.points.length >= MIN_POINTS.area && Math.hypot(point.x - first.x, point.y - first.y) <= at.tolerance) {
       return finishDrawing(at.documentId);
     }
-    if (tool === "length") {
-      setDrawing({ ...d, points: [d.points[0], point] });
+    const points = [...d.points, point];
+    const fixed = FIXED_POINTS[tool];
+    if (fixed !== undefined && points.length >= fixed) {
+      // Story 4.9: three points in a line make no circle; the click adds nothing.
+      if ((tool === "radius" || tool === "diameter") && !circleThrough(points[0], points[1], points[2])) return "continue";
+      setDrawing({ ...d, points: points.slice(0, fixed) });
       return commit(at.documentId);
     }
-    const points = [...d.points, point];
     setDrawing({ ...d, points });
     // At the cap the drawing is finished (it cannot take another point).
     return points.length >= MAX_POLYLINE_POINTS ? finishDrawing(at.documentId) : "continue";
@@ -340,7 +461,8 @@ export const measurePainter: MarkupPainter = {
   finish() {
     const d = drawing();
     const documentId = viewerStore.getState().documentId;
-    if (!d || d.tool === "length" || !documentId || !d.pageId.startsWith(`${documentId}:`)) return "ignored";
+    // Fixed-point tools (Length, Angle, Radius, Diameter) finish on their last click only.
+    if (!d || FIXED_POINTS[d.tool] !== undefined || !documentId || !d.pageId.startsWith(`${documentId}:`)) return "ignored";
     return finishDrawing(documentId);
   },
 
@@ -413,14 +535,13 @@ function commit(documentId: string, tabId?: string): "done" {
   const d = drawing()!;
   const base = { id: uuidv7(), pageId: d.pageId, createdAt: new Date().toISOString(), style: DEFAULT_MEASURE_STYLE };
   const points = [...d.points];
+  const [a, b, c] = points;
   const markup: MeasureMarkup =
     d.tool === "length"
-      ? { ...base, type: "length", points: [d.points[0], d.points[1]] }
-      : d.tool === "polylength"
-        ? { ...base, type: "polylength", points }
-        : d.tool === "area"
-          ? { ...base, type: "area", points }
-          : { ...base, type: "count", points };
+      ? { ...base, type: "length", points: [a, b] }
+      : d.tool === "angle" || d.tool === "radius" || d.tool === "diameter"
+        ? { ...base, type: d.tool, points: [a, b, c] }
+        : { ...base, type: d.tool, points };
   setDrawing(null);
   executeOp({ kind: "markups.add", documentId, markups: [markup] }, ADD_LABEL[d.tool], tabId);
   return "done";

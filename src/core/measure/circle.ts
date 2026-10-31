@@ -53,7 +53,7 @@ export function radiusMm(points: readonly Point[], calibration: Pick<Calibration
 export function circleCaption(
   kind: "radius" | "diameter",
   points: readonly Point[],
-  calibration: Calibration | null,
+  calibration: Pick<Calibration, "xFactor" | "yFactor" | "unit" | "precision"> | null,
   userUnit = 1,
 ): { text: string; scaled: boolean } {
   if (points.length >= 3 && !circleThrough(points[0], points[1], points[2])) return { text: POINTS_IN_A_LINE, scaled: false };

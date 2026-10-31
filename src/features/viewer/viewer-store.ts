@@ -18,16 +18,18 @@ export const VIEWER_ERROR_TEXT: Record<ViewerErrorCode, string> = {
 
 /**
  * Navigation tools of the viewer (Story 3.2), and the measuring tools Length
- * (Story 4.1: armed for snapping; it measures from Story 4.5), Polylength (Story 4.6), Area and Count (Story 4.8).
+ * (Story 4.1: armed for snapping; it measures from Story 4.5), Polylength (Story 4.6), Area and Count (Story 4.8),
+ * Angle, Radius and Diameter (Story 4.9).
  * Calibrate (Story 4.3) is the Calibrate dialog's two-point pick, never
  * chosen from the ToolRail. Markup tools arrive with the editor.
  */
-export type ViewerTool = "select" | "pan" | "zoom" | "length" | "polylength" | "area" | "count" | "calibrate";
+export type ViewerTool = "select" | "pan" | "zoom" | "length" | "polylength" | "area" | "count" | "angle" | "radius" | "diameter" | "calibrate";
 
-/** Stories 4.6, 4.8: the measuring tools (they draw markups through the editor's painter). */
-export type MeasureTool = "length" | "polylength" | "area" | "count";
+/** Stories 4.6, 4.8, 4.9: the measuring tools (they draw markups through the editor's painter). */
+export type MeasureTool = "length" | "polylength" | "area" | "count" | "angle" | "radius" | "diameter";
+const MEASURE_TOOLS: ReadonlySet<ViewerTool> = new Set<ViewerTool>(["length", "polylength", "area", "count", "angle", "radius", "diameter"]);
 export function isMeasureTool(tool: ViewerTool): tool is MeasureTool {
-  return tool === "length" || tool === "polylength" || tool === "area" || tool === "count";
+  return MEASURE_TOOLS.has(tool);
 }
 
 export type ViewerTimings = {
