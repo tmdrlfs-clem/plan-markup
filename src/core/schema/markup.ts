@@ -76,16 +76,36 @@ export const countMarkupSchema = z.object({
   points: z.array(pointSchema).min(1).max(MAX_POLYLINE_POINTS),
 });
 
-/** Every markup type (more join with Stories 4.9-4.10 and Epic 5). */
-export const markupSchema = z.discriminatedUnion("type", [lengthMarkupSchema, polylengthMarkupSchema, areaMarkupSchema, countMarkupSchema]);
+/**
+ * Story 4.9: an angle (the first leg's start, the vertex, the second leg's end) and a
+ * radius or diameter (three points on the circle); their values are computed, never stored.
+ */
+const threePoints = z.tuple([pointSchema, pointSchema, pointSchema]);
+export const angleMarkupSchema = z.object({ ...measure, type: z.literal("angle"), points: threePoints });
+export const radiusMarkupSchema = z.object({ ...measure, type: z.literal("radius"), points: threePoints });
+export const diameterMarkupSchema = z.object({ ...measure, type: z.literal("diameter"), points: threePoints });
+
+/** Every markup type (more join with Story 4.10 and Epic 5). */
+export const markupSchema = z.discriminatedUnion("type", [
+  lengthMarkupSchema,
+  polylengthMarkupSchema,
+  areaMarkupSchema,
+  countMarkupSchema,
+  angleMarkupSchema,
+  radiusMarkupSchema,
+  diameterMarkupSchema,
+]);
 
 export type Markup = z.infer<typeof markupSchema>;
 export type LengthMarkup = z.infer<typeof lengthMarkupSchema>;
 export type PolylengthMarkup = z.infer<typeof polylengthMarkupSchema>;
 export type AreaMarkup = z.infer<typeof areaMarkupSchema>;
 export type CountMarkup = z.infer<typeof countMarkupSchema>;
-/** The measurements with a caption (Stories 4.5, 4.6, 4.8). */
-export type MeasureMarkup = LengthMarkup | PolylengthMarkup | AreaMarkup | CountMarkup;
+export type AngleMarkup = z.infer<typeof angleMarkupSchema>;
+export type RadiusMarkup = z.infer<typeof radiusMarkupSchema>;
+export type DiameterMarkup = z.infer<typeof diameterMarkupSchema>;
+/** The measurements with a caption (Stories 4.5, 4.6, 4.8, 4.9). */
+export type MeasureMarkup = LengthMarkup | PolylengthMarkup | AreaMarkup | CountMarkup | AngleMarkup | RadiusMarkup | DiameterMarkup;
 export type MarkupType = Markup["type"];
 
 /** Revu's default measurement style: red, 1 pt, 10 pt captions. */
