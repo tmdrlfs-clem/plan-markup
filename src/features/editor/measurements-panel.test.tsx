@@ -128,6 +128,16 @@ describe("MeasurementsPanel (Story 4.11)", () => {
     expect(reveal).toHaveBeenLastCalledWith(1, { x: 100, y: 100, width: 200, height: 150 });
   });
 
+  it("Story 5.3 review R3: a click on a grouped measurement selects its group", async () => {
+    const groupId = "00000000-0000-7000-8000-0000000000aa";
+    const a = { ...markup("length", [{ x: 0, y: 0 }, { x: 72, y: 0 }]), groupId };
+    const b = { ...markup("length", [{ x: 0, y: 10 }, { x: 36, y: 10 }]), groupId };
+    const c = markup("length", [{ x: 0, y: 20 }, { x: 36, y: 20 }]);
+    const user = setup([a, b, c]);
+    await user.click(screen.getAllByTestId("measurements-row")[1]);
+    expect(editorStore.getState().selection.ids).toEqual([b.id, a.id]);
+  });
+
   it("updates live: undoing a measurement removes its row, a calibration scales it", () => {
     const a = markup("length", [{ x: 0, y: 0 }, { x: 72, y: 0 }]);
     setup([a], {});

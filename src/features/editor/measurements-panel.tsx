@@ -14,6 +14,7 @@ import { cx } from "@/components/ui/cx";
 import { Select } from "@/components/ui/select";
 import { DISPLAY_UNITS, pageIdOf, type DisplayUnit } from "@/core/calibration/calibration";
 import { formatMeasured } from "@/core/calibration/units";
+import { withGroups } from "@/core/markup/arrange";
 import { sheetLabelOf } from "@/core/pdf/sheet-label";
 import type { MeasureMarkup } from "@/core/schema/markup";
 import {
@@ -52,7 +53,9 @@ function reveal(row: MeasurementRow): void {
   if (viewerStore.getState().tool !== "select") setTool("select");
   // The page first: another page clears the selection (Story 5.1 D4).
   viewerCommands.revealMarkup(row.pageIndex, markupBounds(row.markup));
-  setSelection([row.markup.id]);
+  // Story 5.3 review R3: with the rest of its group (a drag then moves the group as one).
+  const markups = markupsOf(editorStore.getState(), viewerStore.getState().documentId);
+  setSelection(withGroups(markups.filter((m) => m.pageId === row.markup.pageId), [row.markup.id]));
 }
 
 export function MeasurementsPanel({ emptyText, noDrawingText }: { emptyText: string; noDrawingText: string }) {

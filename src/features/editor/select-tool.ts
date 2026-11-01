@@ -158,7 +158,7 @@ function grouped(at: { documentId: string; pageIndex: number }, ids: readonly st
 let lockedNoteAt = -Infinity;
 
 /** Story 5.3 (UX: locked markups never fail silently): says why nothing changed, not too often. */
-function lockedNote(): void {
+export function lockedNote(): void {
   const now = Date.now();
   if (now - lockedNoteAt < LOCKED_NOTE_MS) return;
   lockedNoteAt = now;
@@ -312,8 +312,9 @@ export function selectGesture(phase: "start" | "move" | "end" | "cancel", point:
       const selected = editorStore.getState().selection.ids;
       const ids = selected.includes(g.hit.id) ? selected : grouped(g.at, [g.hit.id]);
       setSelection(ids);
-      // Story 5.3: locked markups stay; with nothing else to move the drag only says so.
-      if (editableOnPage(g.at).length === 0) {
+      // Story 5.3: locked markups stay; a drag from a locked one (its cursor says so, review R2)
+      // or with nothing else to move only says so.
+      if (g.hit.locked || editableOnPage(g.at).length === 0) {
         lockedNote();
         g.kind = "locked";
       } else g.kind = "move";
@@ -615,5 +616,6 @@ export function paintSelectGesture(c: CanvasRenderingContext2D, view: LayerView)
 export function resetSelectTool({ clipboard: clear = false } = {}): void {
   gesture = null;
   cached = null;
+  lockedNoteAt = -Infinity;
   if (clear) clipboard = [];
 }

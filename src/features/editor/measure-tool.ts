@@ -51,7 +51,7 @@ import {
 import { editorStore, markupsOf, pageMarkups, setCaptionDrag, setDrawing, setMarkupMenu, setMoveDrag, setPreview, setSelection, type Drawing, type MoveDrag } from "./editor-store";
 import { discardFill, fillAreaUser, fillPress, paintFill, takeFillRings, undoFillStroke } from "./fill-tool";
 import { handlesOf, paintHandles } from "./handles";
-import { openMarkupMenu, paintSelectGesture, resetSelectTool, selectCursorAt, selectGesture, selectionKey, toggleSelected } from "./select-tool";
+import { lockedNote, openMarkupMenu, paintSelectGesture, resetSelectTool, selectCursorAt, selectGesture, selectionKey, toggleSelected } from "./select-tool";
 import { executeOp, registerDrawingUndo } from "./undo-store";
 
 type Point = { x: number; y: number };
@@ -565,7 +565,15 @@ export const measurePainter: MarkupPainter = {
   },
 
   dragCaption(id, documentId, delta) {
-    if (!pageMarkupById(documentId, id)) return;
+    const m = pageMarkupById(documentId, id);
+    if (!m) return;
+    // Story 5.3 review R1: a locked markup's caption stays (Shift + click still selects it).
+    if (m.locked) {
+      if (delta.x !== 0 || delta.y !== 0) lockedNote();
+      const drag = editorStore.getState().tools.captionDrag;
+      if (drag?.id !== id) setCaptionDrag({ id, documentId, delta: { x: 0, y: 0 } });
+      return;
+    }
     setCaptionDrag({ id, documentId, delta: { x: delta.x, y: delta.y } });
   },
 

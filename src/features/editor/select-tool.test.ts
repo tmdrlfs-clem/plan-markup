@@ -398,6 +398,20 @@ describe("Group, align, reorder and lock (Story 5.3)", () => {
     expect(key({ kind: "lock", locked: false })).toBe(false);
   });
 
+  it("review R1-R2: a drag from a locked markup moves nothing; its caption stays (Shift + click still selects)", () => {
+    setSelection([a.id]);
+    key({ kind: "lock", locked: true });
+    setSelection([a.id, b.id]);
+    drag({ x: 50, y: 0 }, { x: 50, y: -40 });
+    expect(stored(b.id).points[0]).toEqual({ x: 0, y: 50 });
+    expect(toastStore.getState().visible.map((t) => t.title)).toEqual([LOCKED_NOTE]);
+    measurePainter.dragCaption(a.id, SHA, { x: 10, y: 0 });
+    expect(editorStore.getState().tools.captionDrag?.delta).toEqual({ x: 0, y: 0 });
+    expect(measurePainter.endCaptionDrag(true)).toBe(false);
+    expect(stored(a.id).captionOffset).toBeUndefined();
+    expect(ids()).toEqual([b.id]);
+  });
+
   it("a right-click selects the markup under it (its group) and opens the menu; empty space clears", () => {
     setSelection([a.id]);
     expect(measurePainter.contextMenu!({ x: 50, y: 50 }, at(), { x: 300, y: 200 }, false)).toBe(true);
