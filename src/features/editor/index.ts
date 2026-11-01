@@ -3,6 +3,8 @@ export { editorStore, markupsOf, pageMarkups, resetEditor, type CaptionDrag, typ
 export { activeUndoLabels, clearUndo, executeCommand, executeOp, redoActive, undoActive } from "./undo-store";
 export { useEditorSession } from "./session";
 export { MEASUREMENTS_HINT, MeasurementsPanel } from "./measurements-panel";
+export { MarkupContextMenu, useSelectionState } from "./markup-context-menu";
+export { hasClipboard } from "./select-tool";
 export {
   ADD_ANGLE,
   ADD_AREA,

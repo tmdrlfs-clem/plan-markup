@@ -15,7 +15,7 @@ import { CalibrateDialog, ScalePrompt, VerifyDialog, openCalibrate, useCalibrati
 import { redoActive, undoActive } from "@/features/editor";
 import { useFirstUseTipsPersistence } from "@/features/tips";
 import { chooseTheme, useWorkspaceTheme } from "@/features/appearance/theme-store";
-import { MeasurementsPanel, armArea, armCount, armLength, armPolylength, useEditorSession, useMeasureTools } from "@/features/editor";
+import { MarkupContextMenu, MeasurementsPanel, armArea, armCount, armLength, armPolylength, useEditorSession, useMeasureTools } from "@/features/editor";
 import {
   DocumentTabs,
   DocumentViewer,
@@ -233,6 +233,8 @@ function ShellBody({ user, initialTheme }: { user: WorkspaceUser; initialTheme: 
           )}
           {/* Story 4.7: a measuring tool on a page with no scale offers the detected scale or Calibrate (under the tabs). */}
           <ScalePrompt />
+          {/* Story 5.3: the markups' context menu (a right-click with Select). */}
+          <MarkupContextMenu />
         </main>
         <aside aria-label="Tools" data-region="tool-rail" className="w-11 shrink-0 border-l border-border bg-surface-2">
           <ToolRail />

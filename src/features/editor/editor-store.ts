@@ -5,7 +5,8 @@
 //   doc        markups by document (sha256), shared by the tabs (a document is open in one tab)
 //   view       the active document tab, mirrored from the viewer
 //   tools      the drawing in progress (Length, Story 4.5; more tools with Epic 5), a caption being moved (4.6)
-//              and markups being moved (a drag or an arrow key held, 5.1), resized, rotated or copied (5.2)
+//              and markups being moved (a drag or an arrow key held, 5.1), resized, rotated or copied (5.2),
+//              the markups' context menu (5.3)
 //   selection  selected markup ids (the Measurements panel, Story 4.11; Epic 5)
 //   history    undo histories by document tab (the Story 4.3 undo stack)
 
@@ -13,7 +14,7 @@ import { createStore } from "zustand/vanilla";
 
 import type { Markup } from "@/core/schema/markup";
 import type { UndoHistory } from "@/core/undo/stack";
-import { viewerStore, type MeasureTool } from "@/features/viewer";
+import { viewerStore, type LayerView, type MeasureTool } from "@/features/viewer";
 
 type Point = { x: number; y: number };
 
@@ -29,10 +30,13 @@ export type MoveDrag = { ids: readonly string[]; documentId: string; delta: Poin
 /** Story 5.2: a resize, rotation, vertex drag or copy in progress: markups changed (by id) and added, as they would be. */
 export type Preview = { documentId: string; changed: Readonly<Record<string, Markup>>; added: readonly Markup[] };
 
+/** Story 5.3: the markups' context menu, open: its page as shown, the right-click (user space) and where it opens (client px). */
+export type MarkupMenu = { documentId: string; pageIndex: number; view: LayerView; point: Point; client: Point };
+
 export type EditorState = {
   doc: { markups: Readonly<Record<string, readonly Markup[]>> };
   view: { tabId: string | null; documentId: string | null };
-  tools: { drawing: Drawing | null; captionDrag: CaptionDrag | null; moveDrag: MoveDrag | null; preview: Preview | null };
+  tools: { drawing: Drawing | null; captionDrag: CaptionDrag | null; moveDrag: MoveDrag | null; preview: Preview | null; menu: MarkupMenu | null };
   selection: { ids: readonly string[] };
   /** Histories by tab id ("" outside tabs). */
   history: { histories: Readonly<Record<string, UndoHistory>> };
@@ -41,7 +45,7 @@ export type EditorState = {
 export const EMPTY_EDITOR: EditorState = {
   doc: { markups: {} },
   view: { tabId: null, documentId: null },
-  tools: { drawing: null, captionDrag: null, moveDrag: null, preview: null },
+  tools: { drawing: null, captionDrag: null, moveDrag: null, preview: null, menu: null },
   selection: { ids: [] },
   history: { histories: {} },
 };
@@ -87,6 +91,12 @@ export function setMoveDrag(moveDrag: MoveDrag | null): void {
 export function setPreview(preview: Preview | null): void {
   if (editorStore.getState().tools.preview === preview) return;
   editorStore.setState((s) => ({ tools: { ...s.tools, preview } }));
+}
+
+/** Story 5.3: opens (or with null closes) the markups' context menu. */
+export function setMarkupMenu(menu: MarkupMenu | null): void {
+  if (editorStore.getState().tools.menu === menu) return;
+  editorStore.setState((s) => ({ tools: { ...s.tools, menu } }));
 }
 
 /** Story 4.11: selects markups by id (none: clears); false when nothing changed. */

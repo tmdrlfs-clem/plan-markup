@@ -19,7 +19,7 @@
 import type { Point, Rect } from "@/core/render/view";
 
 import { hasDocument, isMeasureTool, setTempPan, setTool, viewerStore, type ViewerTool } from "./viewer-store";
-import type { PressBrush } from "./markup-layer";
+import { LOCKED_CURSOR, LOCKED_TOOLTIP, type PressBrush, type SelectionCommand } from "./markup-layer";
 
 /** CSS px per wheel "line" (deltaMode 1, e.g. Firefox: 3 lines per notch). */
 export const WHEEL_LINE_PX = 40;
@@ -155,7 +155,9 @@ export interface ViewerInputTarget {
   /** Story 5.1 / 5.2: the Select cursor at the pointer (a markup: move; a handle: its action); null: the default. */
   selectCursor?(at: Point, mods?: { ctrl: boolean }): string | null;
   /** Stories 5.1 / 5.2: Delete / Backspace, Ctrl+A, an arrow's nudge (screen px) and its release, Ctrl+C, Ctrl+V, Ctrl+Shift+V; true when it acted. */
-  selectionKey?(key: "delete" | "all" | "nudge-end" | "copy" | "paste" | "paste-in-place" | { dx: number; dy: number }): boolean;
+  selectionKey?(key: SelectionCommand): boolean;
+  /** Story 5.3: a right-click with Select (viewport CSS px; null: the menu key) opening the context menu at `client`. */
+  selectContextMenu?(at: Point | null, client: Point, keyboard: boolean): boolean;
 }
 
 /** Story 5.1: arrow keys' nudge directions on screen. */
@@ -218,6 +220,8 @@ export class ViewerInput {
     this.on(canvas, "auxclick", (e) => {
       if ((e as MouseEvent).button === 1) e.preventDefault();
     });
+    // Story 5.3: with Select, a right-click (or the menu key, Shift+F10) opens the markups' context menu.
+    this.on(canvas, "contextmenu", (e) => this.onContextMenu(e as MouseEvent));
     // Story 4.6: a double-click finishes a polylength (its clicks placed the last vertex once).
     this.on(canvas, "dblclick", (e) => {
       if (this.active() && isMeasureTool(viewerStore.getState().tool) && this.target.finishTool?.()) e.preventDefault();
@@ -275,6 +279,24 @@ export class ViewerInput {
     const over = !this.drag && !tempPan && tool === "select" ? this.overCursor : null;
     const cursor = this.drag?.kind === "caption" ? "move" : (over ?? cursorFor({ tool, tempPan, dragging: this.drag?.kind === "pan", zoomOut }));
     if (this.canvas.style.cursor !== cursor) this.canvas.style.cursor = cursor;
+    // Story 5.3 (UX: never fail silently): a locked markup says so.
+    const title = cursor === LOCKED_CURSOR ? LOCKED_TOOLTIP : "";
+    if (this.canvas.title !== title) this.canvas.title = title;
+  }
+
+  /** Story 5.3: the context menu with Select; elsewhere (and without a page) the browser keeps its own. */
+  private onContextMenu(e: MouseEvent): void {
+    if (!this.active() || viewerStore.getState().tool !== "select" || this.drag || !this.target.selectContextMenu) return;
+    // The menu key and Shift+F10 come with no pointer position over the canvas (or a stale one).
+    const rect = this.canvas.getBoundingClientRect();
+    const inside = e.clientX > rect.left && e.clientX < rect.right && e.clientY > rect.top && e.clientY < rect.bottom;
+    const keyboard = e.button !== 2 || !inside;
+    const client = keyboard
+      ? this.pointer
+        ? { x: rect.left + this.pointer.x, y: rect.top + this.pointer.y }
+        : { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+      : { x: e.clientX, y: e.clientY };
+    if (this.target.selectContextMenu(keyboard ? null : this.point(e), client, keyboard)) e.preventDefault();
   }
 
   private onWheel(e: WheelEvent): void {
@@ -488,6 +510,13 @@ export class ViewerInput {
     // Story 5.2: Ctrl+C copies the selection, Ctrl+V pastes at the pointer, Ctrl+Shift+V in place.
     if (ctrl && !e.altKey && !e.shiftKey && isLetter(e, "c")) return e.repeat || this.target.selectionKey("copy");
     if (ctrl && !e.altKey && isLetter(e, "v")) return e.repeat || this.target.selectionKey(e.shiftKey ? "paste-in-place" : "paste");
+    // Story 5.3: Ctrl+G groups, Ctrl+Shift+G ungroups (also over the browser's find next / previous).
+    if (ctrl && !e.altKey && isLetter(e, "g")) return e.repeat || this.target.selectionKey(e.shiftKey ? "ungroup" : "group") || true;
+    // Story 5.3: Ctrl+Shift+] to the front, Ctrl+] forward, Ctrl+[ backward, Ctrl+Shift+[ to the back (by key position).
+    if (ctrl && !e.altKey && (e.code === "BracketRight" || e.code === "BracketLeft")) {
+      const step = e.code === "BracketRight" ? (e.shiftKey ? "order:front" : "order:forward") : e.shiftKey ? "order:back" : "order:backward";
+      return e.repeat || this.target.selectionKey(step) || true;
+    }
     if (ctrl || e.altKey) return false;
     if ((e.key === "Delete" || e.key === "Backspace") && !e.shiftKey) return e.repeat || this.target.selectionKey("delete");
     const dir = NUDGE[e.key];

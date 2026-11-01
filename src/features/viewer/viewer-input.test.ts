@@ -11,6 +11,7 @@ import {
   wheelZoomFactor,
   type ViewerInputTarget,
 } from "./viewer-input";
+import { LOCKED_TOOLTIP } from "./markup-layer";
 import { setTempPan, setTool, viewerStore } from "./viewer-store";
 import { openDocument, resetViewer } from "./viewer-tabs";
 
@@ -564,5 +565,50 @@ describe("ViewerInput", () => {
     // Only the focus leaving the canvas (a held nudge is kept).
     expect(selectionKey.mock.calls).toEqual([["nudge-end"]]);
     field.remove();
+  });
+
+  it("Story 5.3: Ctrl+G / Ctrl+Shift+G and the bracket keys (by position); the lock tooltip; the context menu", () => {
+    const selectionKey = vi.fn(() => false);
+    const selectCursor = vi.fn(() => "not-allowed");
+    const selectContextMenu = vi.fn(() => true);
+    Object.assign(t, { selectionKey, selectCursor, selectContextMenu });
+    canvas.dispatchEvent(pointer("pointermove", { x: 5, y: 6 }));
+    expect(canvas.title).toBe(LOCKED_TOOLTIP);
+    selectCursor.mockReturnValue("move");
+    canvas.dispatchEvent(pointer("pointermove", { x: 7, y: 6 }));
+    expect(canvas.title).toBe("");
+    canvas.focus();
+    const key = (init: KeyboardEventInit) => {
+      const e = new KeyboardEvent("keydown", { cancelable: true, ...init });
+      window.dispatchEvent(e);
+      return e;
+    };
+    // The browser's find next stays blocked even when nothing is grouped.
+    expect(key({ key: "g", ctrlKey: true }).defaultPrevented).toBe(true);
+    expect(selectionKey).toHaveBeenLastCalledWith("group");
+    key({ key: "G", ctrlKey: true, shiftKey: true });
+    expect(selectionKey).toHaveBeenLastCalledWith("ungroup");
+    key({ key: "}", code: "BracketRight", ctrlKey: true, shiftKey: true });
+    expect(selectionKey).toHaveBeenLastCalledWith("order:front");
+    key({ key: "]", code: "BracketRight", ctrlKey: true });
+    expect(selectionKey).toHaveBeenLastCalledWith("order:forward");
+    key({ key: "[", code: "BracketLeft", ctrlKey: true });
+    expect(selectionKey).toHaveBeenLastCalledWith("order:backward");
+    key({ key: "{", code: "BracketLeft", ctrlKey: true, shiftKey: true });
+    expect(selectionKey).toHaveBeenLastCalledWith("order:back");
+    // A right-click over the canvas: the point and where the menu opens; the browser's menu is kept off.
+    canvas.getBoundingClientRect = () => ({ left: 10, top: 20, right: 210, bottom: 220, width: 200, height: 200, x: 10, y: 20, toJSON: () => ({}) });
+    const menu = pointer("contextmenu", { x: 60, y: 70, button: 2 });
+    canvas.dispatchEvent(menu);
+    expect(menu.defaultPrevented).toBe(true);
+    expect(selectContextMenu).toHaveBeenLastCalledWith({ x: 50, y: 50 }, { x: 60, y: 70 }, false);
+    // The menu key (no pointer position over the canvas): at the last pointer, nothing hit.
+    canvas.dispatchEvent(pointer("contextmenu", { x: 0, y: 0, button: 0 }));
+    expect(selectContextMenu).toHaveBeenLastCalledWith(null, { x: 17, y: 26 }, true);
+    // Another tool: the browser's own menu.
+    setTool("pan");
+    const other = pointer("contextmenu", { x: 60, y: 70, button: 2 });
+    canvas.dispatchEvent(other);
+    expect(other.defaultPrevented).toBe(false);
   });
 });

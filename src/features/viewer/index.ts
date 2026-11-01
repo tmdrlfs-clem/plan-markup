@@ -25,7 +25,7 @@ export { requestSearchFocus, searchUi } from "./search-ui";
 export { ThumbnailsPanel } from "./thumbnails-panel";
 export { activeSearch, viewerCalibration, viewerCommands, type ViewerCommand } from "./viewer-commands";
 export type { CalibrationPick, CalibrationPickListener } from "./viewer-engine";
-export { notifyMarkups, registerMarkupPainter, type LayerView, type MarkupPainter, type PressBrush, type PressContext, type SelectContext, type SelectionKey } from "./markup-layer";
+export { LOCKED_CURSOR, LOCKED_TOOLTIP, notifyMarkups, registerMarkupPainter, type LayerView, type MarkupPainter, type PressBrush, type PressContext, type SelectContext, type SelectionCommand, type SelectionKey } from "./markup-layer";
 export {
   hasDocument,
   isMeasureTool,

@@ -48,10 +48,10 @@ import {
   type MeasureTool,
 } from "@/features/viewer";
 
-import { editorStore, markupsOf, pageMarkups, setCaptionDrag, setDrawing, setMoveDrag, setPreview, setSelection, type Drawing, type MoveDrag } from "./editor-store";
+import { editorStore, markupsOf, pageMarkups, setCaptionDrag, setDrawing, setMarkupMenu, setMoveDrag, setPreview, setSelection, type Drawing, type MoveDrag } from "./editor-store";
 import { discardFill, fillAreaUser, fillPress, paintFill, takeFillRings, undoFillStroke } from "./fill-tool";
 import { handlesOf, paintHandles } from "./handles";
-import { paintSelectGesture, resetSelectTool, selectCursorAt, selectGesture, selectionKey, toggleSelected } from "./select-tool";
+import { openMarkupMenu, paintSelectGesture, resetSelectTool, selectCursorAt, selectGesture, selectionKey, toggleSelected } from "./select-tool";
 import { executeOp, registerDrawingUndo } from "./undo-store";
 
 type Point = { x: number; y: number };
@@ -454,7 +454,7 @@ export const measurePainter: MarkupPainter = {
     }
     c.restore();
     // Story 5.2: the selection's handles, over everything.
-    const handles = handlesOf(selectedShown, view);
+    const handles = handlesOf(selectedShown.filter((m) => !m.locked), view);
     if (handles) paintHandles(c, handles, view);
     captionBoxes = { pageId, boxes };
     return captions;
@@ -597,6 +597,10 @@ export const measurePainter: MarkupPainter = {
   selectionKey(key, at) {
     return selectionKey(key, at);
   },
+
+  contextMenu(point, at, client, keyboard) {
+    return openMarkupMenu(point, at, client, keyboard, (view, device) => measurePainter.captionAt(view, device));
+  },
 };
 
 /** Story 4.10: layer 3 while filling: the fill and its area so far beside the pointer. */
@@ -711,6 +715,7 @@ export function installMeasureTools(): () => void {
       if (moved) {
         setMoveDrag(null);
         setPreview(null);
+        setMarkupMenu(null);
       }
       const d = drawing();
       if (!d) return;
@@ -729,6 +734,7 @@ export function installMeasureTools(): () => void {
       resetSelectTool();
       setMoveDrag(null);
       setPreview(null);
+      setMarkupMenu(null);
       setDrawing(null);
       setCaptionDrag(null);
       captionBoxes = null;

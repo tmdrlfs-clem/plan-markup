@@ -5,6 +5,7 @@
 import { createStore } from "zustand/vanilla";
 
 import type { DocumentSearch } from "./document-search";
+import type { SelectionCommand } from "./markup-layer";
 import type { CalibrationPickListener, ThumbnailBox, ThumbnailListener } from "./viewer-engine";
 
 export interface ViewerCommandTarget {
@@ -30,6 +31,8 @@ export interface ViewerCommandTarget {
   clearCalibrationLine?(): void;
   /** Story 4.11 (absent on test doubles): see ViewerEngine.revealUserRect. */
   revealUserRect?(page: number, rect: { x: number; y: number; width: number; height: number }): void;
+  /** Story 5.3 (absent on test doubles): see ViewerEngine.selectionKey. */
+  selectionKey?(key: SelectionCommand): boolean;
 }
 
 let target: ViewerCommandTarget | null = null;
@@ -67,6 +70,8 @@ export const viewerCommands = {
   focusCanvas: () => target?.focusCanvas(),
   /** Story 4.11: shows a measurement (its page, a user-space box) from the Measurements panel. */
   revealMarkup: (page: number, rect: { x: number; y: number; width: number; height: number }) => target?.revealUserRect?.(page, rect),
+  /** Story 5.3: a selection command from the Edit menu or the context menu, on the shown page. */
+  selection: (key: SelectionCommand): boolean => target?.selectionKey?.(key) ?? false,
 };
 
 /** The Thumbnails panel's access to the mounted engine (nothing happens without one). */
@@ -88,4 +93,4 @@ export const viewerCalibration = {
 };
 
 /** The commands without arguments (toolbar buttons and menu items). */
-export type ViewerCommand = Exclude<keyof typeof viewerCommands, "goToPage" | "zoomTo" | "revealMarkup">;
+export type ViewerCommand = Exclude<keyof typeof viewerCommands, "goToPage" | "zoomTo" | "revealMarkup" | "selection">;

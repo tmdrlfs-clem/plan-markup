@@ -92,7 +92,8 @@ import type { SnapModifiers } from "./viewer-input";
 import type { PageScales } from "@/core/scale/detect";
 import { setCursor } from "./status/cursor-store";
 import { searchUi } from "./search-ui";
-import { markupPainter, onMarkupsChanged, type LayerView, type PressBrush, type SelectContext } from "./markup-layer";
+import type { AlignTo, OrderStep } from "@/core/markup/arrange";
+import { markupPainter, onMarkupsChanged, type LayerView, type PressBrush, type SelectContext, type SelectionCommand } from "./markup-layer";
 import { isMeasureTool, setTool, viewerStore, type ViewerErrorCode, type ViewerState, type ViewerTool } from "./viewer-store";
 
 /** Story 4.6: a click this close (CSS px) to the last vertex repeats it (a double-click's second click). */
@@ -1809,19 +1810,37 @@ export class ViewerEngine {
   }
 
   /**
+   * Story 5.3: a right-click at `at` (viewport CSS px) with Select, or the menu key (`keyboard`:
+   * the pointer when it is over the canvas, else the view's centre); `client`: where the menu opens.
+   */
+  selectContextMenu(at: Point | null, client: Point, keyboard: boolean): boolean {
+    const painter = markupPainter();
+    const s = this.selectContext(at ?? this.pointerScreen ?? { x: this.viewport.width / 2, y: this.viewport.height / 2 }, {
+      shift: false,
+      alt: false,
+      ctrl: false,
+    });
+    return !!painter?.contextMenu && !!s && painter.contextMenu(s.point, s.context, client, keyboard);
+  }
+
+  /**
    * Story 5.1 / 5.2: a selection key; a nudge comes in screen px and goes to the painter in user
    * space; a paste goes to the pointer (the view's centre when it is off the canvas).
    */
-  selectionKey(key: "delete" | "all" | "nudge-end" | "copy" | "paste" | "paste-in-place" | { dx: number; dy: number }): boolean {
+  selectionKey(key: SelectionCommand): boolean {
     const painter = markupPainter();
     const view = this.layerView();
     if (!painter?.selectionKey || !view) return false;
-    const at = { documentId: view.documentId, pageIndex: view.pageIndex };
+    const at = { documentId: view.documentId, pageIndex: view.pageIndex, view };
     if (key === "paste" || key === "paste-in-place") {
       const where = this.screenToUser(this.pointerScreen ?? { x: this.viewport.width / 2, y: this.viewport.height / 2 });
       return !!where && painter.selectionKey({ kind: "paste", inPlace: key === "paste-in-place", at: where }, at);
     }
-    if (typeof key === "string") return painter.selectionKey({ kind: key }, at);
+    // Story 5.3: lock / unlock, the drawing order, align.
+    if (key === "lock" || key === "unlock") return painter.selectionKey({ kind: "lock", locked: key === "lock" }, at);
+    if (typeof key === "string" && key.startsWith("order:")) return painter.selectionKey({ kind: "order", step: key.slice(6) as OrderStep }, at);
+    if (typeof key === "string" && key.startsWith("align:")) return painter.selectionKey({ kind: "align", to: key.slice(6) as AlignTo }, at);
+    if (typeof key === "string") return painter.selectionKey({ kind: key as "delete" | "all" | "nudge-end" | "copy" | "group" | "ungroup" }, at);
     const a = this.screenToUser({ x: 0, y: 0 });
     const b = this.screenToUser({ x: key.dx, y: key.dy });
     if (!a || !b) return false;

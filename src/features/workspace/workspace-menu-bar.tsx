@@ -19,8 +19,8 @@ import {
 } from "@/components/ui/menu-bar";
 import { TAB_SHORTCUTS } from "@/core/documents/tabs";
 import { calibrationOf, openCalibrate, openVerify } from "@/features/calibration";
-import { activeUndoLabels, redoActive, undoActive, editorStore } from "@/features/editor";
-import { hasDocument, tabsStore, viewerCommands, viewerStore, viewerTabs, type ViewerCommand } from "@/features/viewer";
+import { activeUndoLabels, hasClipboard, redoActive, undoActive, editorStore, useSelectionState } from "@/features/editor";
+import { hasDocument, tabsStore, viewerCommands, viewerStore, viewerTabs, type SelectionCommand, type ViewerCommand } from "@/features/viewer";
 import { THEMES, THEME_LABELS, isTheme, type Theme } from "@/lib/theme";
 
 import { useLayout } from "./layout-context";
@@ -124,6 +124,29 @@ function VerifyItem() {
   );
 }
 
+/** Edit > Copy, Paste, Delete, Select all, Group, Ungroup (Story 5.3): the shown page's selection. */
+function SelectionItems() {
+  const documentId = useStore(viewerStore, (s) => (hasDocument(s) ? s.documentId : null));
+  const pageIndex = useStore(viewerStore, (s) => s.pageIndex);
+  const s = useSelectionState(documentId, pageIndex);
+  const item = (label: string, shortcut: string, command: SelectionCommand, enabled: boolean) => (
+    <MenuBarItem disabled={!documentId || !enabled} shortcut={shortcut} onSelect={() => viewerCommands.selection(command)}>
+      {label}
+    </MenuBarItem>
+  );
+  return (
+    <>
+      {item("Copy", "Ctrl+C", "copy", s.selected > 0)}
+      {item("Paste", "Ctrl+V", "paste", hasClipboard())}
+      {item("Delete", "Del", "delete", s.editable > 0)}
+      {item("Select all", "Ctrl+A", "all", s.any)}
+      <MenuBarSeparator />
+      {item("Group", "Ctrl+G", "group", s.units > 1)}
+      {item("Ungroup", "Ctrl+Shift+G", "ungroup", s.grouped)}
+    </>
+  );
+}
+
 /** Edit > Undo / Redo (Story 4.3): the active drawing's next step, named ("Undo Calibrate page 1"). */
 function UndoItems() {
   const tabId = useStore(viewerStore, (s) => s.tabId);
@@ -170,10 +193,7 @@ export function WorkspaceMenuBar({ onOpen, onSignOut, theme, onThemeChange }: Wo
         <MenuBarContent>
           <UndoItems />
           <MenuBarSeparator />
-          <Disabled label="Copy" shortcut="Ctrl+C" />
-          <Disabled label="Paste" shortcut="Ctrl+V" />
-          <Disabled label="Delete" shortcut="Del" />
-          <Disabled label="Select all" shortcut="Ctrl+A" />
+          <SelectionItems />
         </MenuBarContent>
       </MenuBarMenu>
 

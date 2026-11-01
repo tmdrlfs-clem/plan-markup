@@ -8,16 +8,23 @@ import { setTool, viewerStore, type LayerView, type SelectContext } from "@/feat
 import { editorStore, markupsOf, resetEditor, setDocMarkups, setSelection } from "./editor-store";
 import { installMeasureTools, measurePainter } from "./measure-tool";
 import {
+  ALIGN_MARKUPS,
   COPY_MARKUP,
   CROSSING_AREA,
   DELETE_MARKUPS,
+  GROUP_MARKUPS,
+  LOCK_MARKUP,
+  LOCKED_NOTE,
   MOVE_MARKUP,
   MOVE_MARKUPS,
   MOVE_VERTEX,
+  ORDER_LABEL,
   PASTE_MARKUP,
   RESIZE_MARKUP,
   RESTORE_MARKUPS,
   ROTATE_MARKUP,
+  UNGROUP_MARKUPS,
+  UNLOCK_MARKUP,
   resetSelectTool,
 } from "./select-tool";
 import { activeUndoLabels, clearUndo, redoActive, undoActive } from "./undo-store";
@@ -285,5 +292,128 @@ describe("Resize, rotate, vertices, copy and paste (Story 5.2)", () => {
     key({ kind: "paste", inPlace: true, at: { x: 0, y: 0 } }, { documentId: SHA, pageIndex: 1 });
     expect(stored()[2]).toMatchObject({ pageId: pageIdOf(SHA, 1), points: RECT });
     expect(ids()).toEqual([stored()[2].id]);
+  });
+});
+
+describe("Group, align, reorder and lock (Story 5.3)", () => {
+  const key = (k: Parameters<NonNullable<typeof measurePainter.selectionKey>>[0]) => measurePainter.selectionKey!(k, { documentId: SHA, pageIndex: 0, view });
+  const stored = (id: string) => markupsOf(editorStore.getState(), SHA).find((m) => m.id === id)!;
+  const order = () => markupsOf(editorStore.getState(), SHA).map((m) => m.id);
+  const undoLabel = () => activeUndoLabels(editorStore.getState(), "t1").undo;
+
+  it("Ctrl+G groups the selection; a click on one member selects the group; ungroup; each one step", () => {
+    setSelection([a.id, b.id]);
+    expect(key({ kind: "group" })).toBe(true);
+    expect(undoLabel()).toBe(GROUP_MARKUPS);
+    expect(stored(a.id).groupId).toBeDefined();
+    expect(stored(a.id).groupId).toBe(stored(b.id).groupId);
+    // One group already: nothing more.
+    expect(key({ kind: "group" })).toBe(false);
+    click(50, 200);
+    click(50, 0);
+    expect(ids()).toEqual([a.id, b.id]);
+    // The group moves as one.
+    drag({ x: 50, y: 0 }, { x: 50, y: 20 });
+    expect(stored(b.id).points[0]).toEqual({ x: 0, y: 70 });
+    undoActive();
+    expect(key({ kind: "ungroup" })).toBe(true);
+    expect(undoLabel()).toBe(UNGROUP_MARKUPS);
+    expect("groupId" in stored(a.id)).toBe(false);
+    click(50, 0);
+    expect(ids()).toEqual([a.id]);
+    undoActive();
+    expect(stored(a.id).groupId).toBe(stored(b.id).groupId);
+  });
+
+  it("reorders within the page: front / backward change what is hit first; no change, no step", () => {
+    const c = length(0, 0, 100, 0);
+    setDocMarkups(SHA, [...markupsOf(editorStore.getState(), SHA), c]);
+    click(50, 0);
+    expect(ids()).toEqual([c.id]);
+    setSelection([a.id]);
+    expect(key({ kind: "order", step: "front" })).toBe(true);
+    expect(undoLabel()).toBe(ORDER_LABEL.front);
+    click(50, 0);
+    expect(ids()).toEqual([a.id]);
+    // On top already: nothing.
+    expect(key({ kind: "order", step: "forward" })).toBe(false);
+    expect(key({ kind: "order", step: "backward" })).toBe(true);
+    click(50, 0);
+    expect(ids()).toEqual([c.id]);
+    undoActive();
+    undoActive();
+    expect(order()[0]).toBe(a.id);
+    // The other page's markup keeps its slot.
+    expect(order()[2]).not.toBe(c.id);
+  });
+
+  it("aligns units with the selection's box as the screen shows it (y down); locked units stay", () => {
+    const d = length(200, 100, 300, 100);
+    setDocMarkups(SHA, [...markupsOf(editorStore.getState(), SHA), d]);
+    setSelection([a.id, d.id]);
+    expect(key({ kind: "align", to: "left" })).toBe(true);
+    expect(undoLabel()).toBe(ALIGN_MARKUPS);
+    expect(stored(d.id).points[0]).toEqual({ x: 0, y: 100 });
+    // Top on screen is the highest y in user space here.
+    expect(key({ kind: "align", to: "top" })).toBe(true);
+    expect(stored(a.id).points[0]).toEqual({ x: 0, y: 100 });
+    undoActive();
+    key({ kind: "lock", locked: true });
+    setSelection([a.id, d.id]);
+    // Both locked: nothing moves.
+    expect(key({ kind: "align", to: "top" })).toBe(false);
+    // One unit only: nothing.
+    setSelection([a.id]);
+    expect(key({ kind: "align", to: "right" })).toBe(false);
+  });
+
+  it("locked markups are selected but not moved, nudged or deleted, with a note; mixed: only the others change", () => {
+    setSelection([a.id]);
+    expect(key({ kind: "lock", locked: true })).toBe(true);
+    expect(undoLabel()).toBe(LOCK_MARKUP);
+    expect(measurePainter.cursorAt!({ x: 50, y: 0 }, at())).toBe("not-allowed");
+    expect(measurePainter.cursorAt!({ x: 50, y: 0 }, at({ ctrl: true }))).toBe("copy");
+    drag({ x: 50, y: 0 }, { x: 50, y: -40 });
+    expect(stored(a.id).points[0]).toEqual({ x: 0, y: 0 });
+    expect(ids()).toEqual([a.id]);
+    expect(toastStore.getState().visible.map((t) => t.title)).toEqual([LOCKED_NOTE]);
+    expect(key({ kind: "nudge", dx: 1, dy: 0 })).toBe(true);
+    expect(editorStore.getState().tools.moveDrag).toBeNull();
+    expect(key({ kind: "delete" })).toBe(true);
+    expect(stored(a.id)).toBeDefined();
+    setSelection([a.id, b.id]);
+    key({ kind: "delete" });
+    expect(markupsOf(editorStore.getState(), SHA).some((m) => m.id === b.id)).toBe(false);
+    expect(toastStore.getState().visible.at(-1)?.title ?? toastStore.getState().queue.at(-1)?.title).toBe("Deleted 1 markup, kept 1 locked");
+    // Copies are unlocked.
+    setSelection([a.id]);
+    key({ kind: "copy" });
+    key({ kind: "paste", inPlace: true, at: { x: 0, y: 0 } });
+    expect(stored(ids()[0]).locked).toBeUndefined();
+    setSelection([a.id]);
+    expect(key({ kind: "lock", locked: false })).toBe(true);
+    expect(undoLabel()).toBe(UNLOCK_MARKUP);
+    expect("locked" in stored(a.id)).toBe(false);
+    // Nothing to unlock: no step.
+    expect(key({ kind: "lock", locked: false })).toBe(false);
+  });
+
+  it("a right-click selects the markup under it (its group) and opens the menu; empty space clears", () => {
+    setSelection([a.id]);
+    expect(measurePainter.contextMenu!({ x: 50, y: 50 }, at(), { x: 300, y: 200 }, false)).toBe(true);
+    expect(ids()).toEqual([b.id]);
+    expect(editorStore.getState().tools.menu).toMatchObject({ documentId: SHA, pageIndex: 0, point: { x: 50, y: 50 }, client: { x: 300, y: 200 } });
+    // On the selection: kept.
+    setSelection([a.id, b.id]);
+    measurePainter.contextMenu!({ x: 50, y: 50 }, at(), { x: 0, y: 0 }, false);
+    expect(ids()).toEqual([a.id, b.id]);
+    // The menu key keeps the selection; empty space clears it.
+    measurePainter.contextMenu!({ x: 500, y: 500 }, at(), { x: 0, y: 0 }, true);
+    expect(ids()).toEqual([a.id, b.id]);
+    measurePainter.contextMenu!({ x: 500, y: 500 }, at(), { x: 0, y: 0 }, false);
+    expect(ids()).toEqual([]);
+    // Another tool closes it.
+    setTool("pan");
+    expect(editorStore.getState().tools.menu).toBeNull();
   });
 });

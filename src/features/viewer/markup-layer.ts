@@ -64,7 +64,44 @@ export type SelectionKey =
   | { kind: "all" }
   // Story 5.2: Ctrl+C; Ctrl+V at `at` (user space), Ctrl+Shift+V in place.
   | { kind: "copy" }
-  | { kind: "paste"; inPlace: boolean; at: Point };
+  | { kind: "paste"; inPlace: boolean; at: Point }
+  // Story 5.3: Ctrl+G / Ctrl+Shift+G, the drawing order, align, lock / unlock.
+  | { kind: "group" }
+  | { kind: "ungroup" }
+  | { kind: "order"; step: "front" | "forward" | "backward" | "back" }
+  | { kind: "align"; to: "left" | "centre" | "right" | "top" | "middle" | "bottom" }
+  | { kind: "lock"; locked: boolean };
+
+/** Story 5.3: the cursor over a locked markup with Select, and the canvas's tooltip with it. */
+export const LOCKED_CURSOR = "not-allowed";
+export const LOCKED_TOOLTIP = "Locked: right-click to unlock";
+
+/**
+ * Story 5.3: a selection command as the keys, the menus and the context menu name it (the
+ * engine turns it into a SelectionKey on the shown page); a nudge in screen px.
+ */
+export type SelectionCommand =
+  | "delete"
+  | "all"
+  | "nudge-end"
+  | "copy"
+  | "paste"
+  | "paste-in-place"
+  | "group"
+  | "ungroup"
+  | "lock"
+  | "unlock"
+  | "order:front"
+  | "order:forward"
+  | "order:backward"
+  | "order:back"
+  | "align:left"
+  | "align:centre"
+  | "align:right"
+  | "align:top"
+  | "align:middle"
+  | "align:bottom"
+  | { dx: number; dy: number };
 
 export interface MarkupPainter {
   /** Layer 2: the page's markups. Returns the captions drawn, in drawing order (e2e, diagnostics). */
@@ -99,8 +136,14 @@ export interface MarkupPainter {
   select?(phase: "start" | "move" | "end" | "cancel", point: Point, at: SelectContext): void;
   /** Story 5.1 / 5.2: the cursor at `point` with Select (a markup: move; a handle: its action); null: the default. */
   cursorAt?(point: Point, at: SelectContext): string | null;
-  /** Story 5.1: a selection key on the shown page; true when it acted. */
-  selectionKey?(key: SelectionKey, at: { documentId: string; pageIndex: number }): boolean;
+  /** Story 5.1: a selection key on the shown page (5.3: as shown in `view`, for align); true when it acted. */
+  selectionKey?(key: SelectionKey, at: { documentId: string; pageIndex: number; view?: LayerView }): boolean;
+  /**
+   * Story 5.3: a right-click (or the menu key: `keyboard`, nothing is hit) at `point` with Select:
+   * selects what is under it as needed and opens the context menu at `client` (viewport CSS px of
+   * the window); true when it opened.
+   */
+  contextMenu?(point: Point, at: SelectContext, client: Point, keyboard: boolean): boolean;
 }
 
 /** `activeOnly`: only the drawing in progress changed (review 4.10 R2: layer 2 is not painted again). */
