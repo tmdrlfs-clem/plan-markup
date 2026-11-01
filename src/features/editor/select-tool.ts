@@ -7,16 +7,37 @@
 // Backspace delete it (one undo step, a toast with Undo), Ctrl+A selects the
 // page's markups. The measure painter delegates its Select calls here and
 // paints the move preview (tools.moveDrag) and the marquee / lasso.
+//
+// Story 5.2: the selection's handles resize it (Shift proportional, Alt from
+// the centre), rotate it (15° steps, Shift 1°) or move one vertex; Ctrl + drag
+// on a markup copies the selection (Ctrl + Shift: along 0° / 45° / 90°);
+// Ctrl+C copies, Ctrl+V pastes at the pointer, Ctrl+Shift+V in place. Each is
+// one undo step, previewed in place (tools.preview) while dragging.
 
 import { toast } from "@/components/ui/toast-store";
 import { invertOp, removeMarkupsOp, type DocOp } from "@/core/commands/ops";
 import { pageIdOf } from "@/core/calibration/calibration";
-import { rectOf, translateMarkup, type Point } from "@/core/markup/geometry";
+import { uuidv7 } from "@/core/ids/uuid";
+import { rectOf, translateMarkup, type Point, type Rect } from "@/core/markup/geometry";
 import { MarkupIndex } from "@/core/markup/markup-index";
+import {
+  constrain45,
+  copiesOf,
+  resizeOf,
+  rotateAbout,
+  rotateVector,
+  rotationOf,
+  scaleAbout,
+  setVertex,
+  transformMarkup,
+  type HandleAt,
+} from "@/core/markup/transform";
+import { selfIntersects } from "@/core/measure/area";
 import type { Markup } from "@/core/schema/markup";
 import { notifyMarkups, type LayerView, type SelectContext, type SelectionKey } from "@/features/viewer";
 
-import { editorStore, markupsOf, setMoveDrag, setSelection } from "./editor-store";
+import { editorStore, markupsOf, setMoveDrag, setPreview, setSelection } from "./editor-store";
+import { boxOf, handleAt, handlesOf } from "./handles";
 import { executeOp, undoActive } from "./undo-store";
 
 /** A press that moves less than this (CSS px) is a click. */
@@ -29,17 +50,42 @@ export const MOVE_MARKUPS = "Move markups";
 export const DELETE_MARKUP = "Delete markup";
 export const DELETE_MARKUPS = "Delete markups";
 export const RESTORE_MARKUPS = "Restore markups";
+export const RESIZE_MARKUP = "Resize markup";
+export const RESIZE_MARKUPS = "Resize markups";
+export const ROTATE_MARKUP = "Rotate markup";
+export const ROTATE_MARKUPS = "Rotate markups";
+export const MOVE_VERTEX = "Move vertex";
+export const COPY_MARKUP = "Copy markup";
+export const COPY_MARKUPS = "Copy markups";
+export const PASTE_MARKUP = "Paste markup";
+export const PASTE_MARKUPS = "Paste markups";
+export const CROSSING_AREA = "The area would cross itself, so the vertex went back.";
+
+/** Story 5.2: rotation steps in degrees (Shift: fine). */
+const ROTATE_STEP = 15;
+const ROTATE_FINE_STEP = 1;
+
+/** Story 5.2: what a handle drag or a copy works on: the markups as they were, their box, and the copies' ids. */
+type Edit =
+  | { kind: "resize"; at: HandleAt; box: Rect; before: Markup[] }
+  | { kind: "rotate"; box: Rect; before: Markup[] }
+  | { kind: "vertex"; index: number; before: Markup[] }
+  | { kind: "copy"; before: Markup[]; ids: string[] };
 
 type Gesture = {
   at: SelectContext;
   start: Point;
   /** The markup pressed on (geometry or caption); null on empty space. */
   hit: Markup | null;
-  kind: "press" | "move" | "marquee" | "lasso";
+  kind: "press" | "move" | "marquee" | "lasso" | "edit";
   /** The marquee's far corner, or the lasso's loop (user space). */
   points: Point[];
   moved: boolean;
+  edit?: Edit;
 };
+
+/** Story 5.2: the app's own clipboard (D4: per browser tab), the markups as copied. */
+let clipboard: readonly Markup[] = [];
 
 let gesture: Gesture | null = null;
 let cached: { markups: readonly Markup[]; pageId: string; userUnit: number; index: MarkupIndex } | null = null;
@@ -63,9 +109,71 @@ function hitAt(point: Point, at: SelectContext, captionAt: CaptionAt): Markup | 
   return (caption ? index.markups.find((m) => m.id === caption) : undefined) ?? index.hit(point, at.tolerance);
 }
 
-/** Story 5.1: whether a markup is under the pointer (the move cursor). */
-export function selectHitAt(point: Point, at: SelectContext, captionAt: CaptionAt): boolean {
-  return hitAt(point, at, captionAt) !== null;
+/** The selected markups on the context's page, as stored, in drawing order. */
+function selectedOnPage(at: { documentId: string; pageIndex: number }): Markup[] {
+  const ids = new Set(editorStore.getState().selection.ids);
+  const pageId = pageIdOf(at.documentId, at.pageIndex);
+  return markupsOf(editorStore.getState(), at.documentId).filter((m) => ids.has(m.id) && m.pageId === pageId);
+}
+
+/** Story 5.1 / 5.2: the Select cursor at the pointer: a handle's, `move` over a markup, else null. */
+export function selectCursorAt(point: Point, at: SelectContext, captionAt: CaptionAt): string | null {
+  const handle = handleAt(handlesOf(selectedOnPage(at), at.view), at.device, at.view.dpr);
+  if (handle) return handle.cursor;
+  return hitAt(point, at, captionAt) ? (at.ctrl ? "copy" : "move") : null;
+}
+
+/** Story 5.2: the markups of an edit as they would be with the pointer at `point`. */
+function edited(e: Edit, g: Gesture, point: Point): Markup[] {
+  const d = { x: point.x - g.start.x, y: point.y - g.start.y };
+  switch (e.kind) {
+    case "resize": {
+      // The handle follows the pointer from where it was pressed (it sits outside the box).
+      const from = { x: e.box.x + e.at.u * e.box.width + d.x, y: e.box.y + e.at.v * e.box.height + d.y };
+      const { anchor, sx, sy } = resizeOf(e.box, e.at, from, g.at.shift, g.at.alt);
+      return e.before.map((m) => transformMarkup(m, scaleAbout(anchor, sx, sy)));
+    }
+    case "rotate": {
+      const centre = { x: e.box.x + e.box.width / 2, y: e.box.y + e.box.height / 2 };
+      const a = rotationOf(centre, g.start, point, g.at.shift ? ROTATE_FINE_STEP : ROTATE_STEP);
+      return e.before.map((m) => transformMarkup(m, rotateAbout(centre, a), rotateVector(a)));
+    }
+    case "vertex": {
+      const [m] = e.before;
+      const v = m.points[e.index];
+      return [setVertex(m, e.index, { x: v.x + d.x, y: v.y + d.y })];
+    }
+    case "copy": {
+      const move = g.at.shift ? constrain45(d) : d;
+      let i = 0;
+      return copiesOf(e.before, move, pageIdOf(g.at.documentId, g.at.pageIndex), () => e.ids[i++], new Date().toISOString());
+    }
+  }
+}
+
+function showEdit(e: Edit, g: Gesture, point: Point): void {
+  const after = edited(e, g, point);
+  if (e.kind === "copy") setPreview({ documentId: g.at.documentId, changed: {}, added: after });
+  else setPreview({ documentId: g.at.documentId, changed: Object.fromEntries(after.map((m) => [m.id, m])), added: [] });
+}
+
+/** Story 5.2: keeps an edit as one undo step (an area edited into a crossing outline goes back, D6). */
+function commitEdit(e: Edit, g: Gesture, point: Point): void {
+  setPreview(null);
+  const after = edited(e, g, point);
+  const many = e.before.length > 1;
+  const documentId = g.at.documentId;
+  if (e.kind === "copy") {
+    executeOp({ kind: "markups.add", documentId, markups: after }, many ? COPY_MARKUPS : COPY_MARKUP);
+    setSelection(after.map((m) => m.id));
+    return;
+  }
+  if (e.kind === "vertex" && after[0].type === "area" && selfIntersects(after[0].points)) {
+    toast({ title: CROSSING_AREA, variant: "info" });
+    return;
+  }
+  const label = e.kind === "vertex" ? MOVE_VERTEX : e.kind === "resize" ? (many ? RESIZE_MARKUPS : RESIZE_MARKUP) : many ? ROTATE_MARKUPS : ROTATE_MARKUP;
+  executeOp({ kind: "markups.update", documentId, before: e.before, after }, label);
 }
 
 /** The selection with `ids` added (`add`) or replacing it, in selection order. */
@@ -103,6 +211,20 @@ export function selectGesture(phase: "start" | "move" | "end" | "cancel", point:
   if (phase === "start") {
     // A nudge still held is kept before anything else.
     commitMove();
+    // Story 5.2: a handle of the selection.
+    const selected = selectedOnPage(at);
+    const handles = handlesOf(selected, at.view);
+    const handle = handleAt(handles, at.device, at.view.dpr);
+    if (handle && handles) {
+      const edit: Edit =
+        handle.kind === "resize"
+          ? { kind: "resize", at: handle.at, box: handles.box, before: selected }
+          : handle.kind === "rotate"
+            ? { kind: "rotate", box: handles.box, before: selected }
+            : { kind: "vertex", index: handle.index, before: selected };
+      gesture = { at, start: point, hit: null, kind: "edit", points: [point], moved: false, edit };
+      return;
+    }
     const hit = at.alt ? null : hitAt(point, at, captionAt);
     gesture = { at, start: point, hit, kind: at.alt ? "lasso" : hit ? "press" : "marquee", points: [point], moved: false };
     return;
@@ -112,6 +234,7 @@ export function selectGesture(phase: "start" | "move" | "end" | "cancel", point:
   if (phase === "cancel") {
     gesture = null;
     setMoveDrag(null);
+    setPreview(null);
     notifyMarkups({ activeOnly: true });
     return;
   }
@@ -119,7 +242,14 @@ export function selectGesture(phase: "start" | "move" | "end" | "cancel", point:
   if (!g.moved && Math.hypot(point.x - g.start.x, point.y - g.start.y) >= CLICK_PX * px) g.moved = true;
   if (phase === "move") {
     if (!g.moved) return;
-    if (g.kind === "press" && g.hit && !g.at.shift) {
+    if (g.kind === "press" && g.hit && g.at.ctrl) {
+      // Story 5.2: Ctrl + drag copies the selection (a markup not selected is selected first).
+      const selected = editorStore.getState().selection.ids;
+      if (!selected.includes(g.hit.id)) setSelection([g.hit.id]);
+      const before = selectedOnPage(g.at);
+      g.kind = "edit";
+      g.edit = { kind: "copy", before, ids: before.map(() => uuidv7()) };
+    } else if (g.kind === "press" && g.hit && !g.at.shift) {
       // A markup not selected is selected first; a selected one moves the whole selection.
       const selected = editorStore.getState().selection.ids;
       const ids = selected.includes(g.hit.id) ? selected : [g.hit.id];
@@ -127,6 +257,7 @@ export function selectGesture(phase: "start" | "move" | "end" | "cancel", point:
       g.kind = "move";
     }
     if (g.kind === "move") setMoveDrag({ ids: editorStore.getState().selection.ids, documentId: g.at.documentId, delta: { x: point.x - g.start.x, y: point.y - g.start.y } });
+    else if (g.kind === "edit" && g.edit) showEdit(g.edit, g, point);
     else if (g.kind === "marquee") g.points = [point];
     else if (g.kind === "lasso") {
       const last = g.points[g.points.length - 1];
@@ -141,6 +272,10 @@ export function selectGesture(phase: "start" | "move" | "end" | "cancel", point:
   if (g.kind === "move") {
     setMoveDrag({ ids: editorStore.getState().selection.ids, documentId: g.at.documentId, delta: { x: point.x - g.start.x, y: point.y - g.start.y } });
     commitMove();
+  } else if (g.kind === "edit") {
+    // A handle pressed without moving does nothing.
+    setPreview(null);
+    if (g.moved && g.edit) commitEdit(g.edit, g, point);
   } else if (g.kind === "press" && g.hit) {
     if (g.at.shift) toggle(g.hit.id);
     else setSelection([g.hit.id]);
@@ -180,6 +315,23 @@ export function selectionKey(key: SelectionKey, at: { documentId: string; pageIn
       const drag = state.tools.moveDrag;
       const delta = drag && drag.documentId === at.documentId ? drag.delta : { x: 0, y: 0 };
       setMoveDrag({ ids, documentId: at.documentId, delta: { x: delta.x + key.dx, y: delta.y + key.dy } });
+      return true;
+    }
+    case "copy": {
+      if (ids.length === 0) return false;
+      const wanted = new Set(ids);
+      clipboard = markups.filter((m) => wanted.has(m.id));
+      return true;
+    }
+    case "paste": {
+      if (clipboard.length === 0 || gesture) return false;
+      commitMove();
+      // D5: centred at the pointer; in place: the same coordinates.
+      const box = boxOf(clipboard);
+      const d = key.inPlace ? { x: 0, y: 0 } : { x: key.at.x - (box.x + box.width / 2), y: key.at.y - (box.y + box.height / 2) };
+      const copies = copiesOf(clipboard, d, pageIdOf(at.documentId, at.pageIndex), uuidv7, new Date().toISOString());
+      executeOp({ kind: "markups.add", documentId: at.documentId, markups: copies }, copies.length === 1 ? PASTE_MARKUP : PASTE_MARKUPS);
+      setSelection(copies.map((m) => m.id));
       return true;
     }
     case "delete": {
@@ -238,8 +390,9 @@ export function paintSelectGesture(c: CanvasRenderingContext2D, view: LayerView)
   c.restore();
 }
 
-/** Forgets the gesture in progress (the tools are uninstalled, tests). */
-export function resetSelectTool(): void {
+/** Forgets the gesture in progress (the tools are uninstalled, tests); `clipboard` too. */
+export function resetSelectTool({ clipboard: clear = false } = {}): void {
   gesture = null;
   cached = null;
+  if (clear) clipboard = [];
 }

@@ -53,9 +53,18 @@ export type SelectContext = {
   tolerance: number;
   shift: boolean;
   alt: boolean;
+  /** Story 5.2: Ctrl (or Cmd) + drag copies. */
+  ctrl: boolean;
 };
 /** Story 5.1: a selection key: Delete / Backspace, an arrow's nudge (user space) and its release, Ctrl+A. */
-export type SelectionKey = { kind: "delete" } | { kind: "nudge"; dx: number; dy: number } | { kind: "nudge-end" } | { kind: "all" };
+export type SelectionKey =
+  | { kind: "delete" }
+  | { kind: "nudge"; dx: number; dy: number }
+  | { kind: "nudge-end" }
+  | { kind: "all" }
+  // Story 5.2: Ctrl+C; Ctrl+V at `at` (user space), Ctrl+Shift+V in place.
+  | { kind: "copy" }
+  | { kind: "paste"; inPlace: boolean; at: Point };
 
 export interface MarkupPainter {
   /** Layer 2: the page's markups. Returns the captions drawn, in drawing order (e2e, diagnostics). */
@@ -88,8 +97,8 @@ export interface MarkupPainter {
   press?(phase: "start" | "move" | "end", point: Point, at: PressContext, brush: PressBrush): void;
   /** Story 5.1: a Select press, drag, release or cancel at `point` (user space). */
   select?(phase: "start" | "move" | "end" | "cancel", point: Point, at: SelectContext): void;
-  /** Story 5.1: whether a markup is under `point` (the move cursor). */
-  hitAt?(point: Point, at: SelectContext): boolean;
+  /** Story 5.1 / 5.2: the cursor at `point` with Select (a markup: move; a handle: its action); null: the default. */
+  cursorAt?(point: Point, at: SelectContext): string | null;
   /** Story 5.1: a selection key on the shown page; true when it acted. */
   selectionKey?(key: SelectionKey, at: { documentId: string; pageIndex: number }): boolean;
 }

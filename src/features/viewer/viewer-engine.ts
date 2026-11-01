@@ -1772,7 +1772,7 @@ export class ViewerEngine {
   }
 
   /** Story 5.1: the Select context at a viewport point (CSS px); null without a page. */
-  private selectContext(at: Point, mods: { shift: boolean; alt: boolean }): { point: Point; context: SelectContext } | null {
+  private selectContext(at: Point, mods: { shift: boolean; alt: boolean; ctrl: boolean }): { point: Point; context: SelectContext } | null {
     const view = this.layerView();
     const point = this.screenToUser(at);
     if (!view || !point) return null;
@@ -1793,7 +1793,7 @@ export class ViewerEngine {
   }
 
   /** Story 5.1: a Select press, drag, release or cancel (viewport CSS px); false when there is no page to select on. */
-  selectGesture(phase: "start" | "move" | "end" | "cancel", at: Point, mods: { shift: boolean; alt: boolean }): boolean {
+  selectGesture(phase: "start" | "move" | "end" | "cancel", at: Point, mods: { shift: boolean; alt: boolean; ctrl: boolean }): boolean {
     const painter = markupPainter();
     const s = this.selectContext(at, mods);
     if (!painter?.select || !s) return false;
@@ -1801,19 +1801,26 @@ export class ViewerEngine {
     return true;
   }
 
-  /** Story 5.1: whether a markup is under the pointer (viewport CSS px). */
-  selectHover(at: Point): boolean {
+  /** Story 5.1 / 5.2: the Select cursor at the pointer (viewport CSS px); null: the default. */
+  selectCursor(at: Point): string | null {
     const painter = markupPainter();
-    const s = this.selectContext(at, { shift: false, alt: false });
-    return !!painter?.hitAt && !!s && painter.hitAt(s.point, s.context);
+    const s = this.selectContext(at, { shift: false, alt: false, ctrl: false });
+    return painter?.cursorAt && s ? painter.cursorAt(s.point, s.context) : null;
   }
 
-  /** Story 5.1: a selection key; a nudge comes in screen px and goes to the painter in user space. */
-  selectionKey(key: "delete" | "all" | "nudge-end" | { dx: number; dy: number }): boolean {
+  /**
+   * Story 5.1 / 5.2: a selection key; a nudge comes in screen px and goes to the painter in user
+   * space; a paste goes to the pointer (the view's centre when it is off the canvas).
+   */
+  selectionKey(key: "delete" | "all" | "nudge-end" | "copy" | "paste" | "paste-in-place" | { dx: number; dy: number }): boolean {
     const painter = markupPainter();
     const view = this.layerView();
     if (!painter?.selectionKey || !view) return false;
     const at = { documentId: view.documentId, pageIndex: view.pageIndex };
+    if (key === "paste" || key === "paste-in-place") {
+      const where = this.screenToUser(this.pointerScreen ?? { x: this.viewport.width / 2, y: this.viewport.height / 2 });
+      return !!where && painter.selectionKey({ kind: "paste", inPlace: key === "paste-in-place", at: where }, at);
+    }
     if (typeof key === "string") return painter.selectionKey({ kind: key }, at);
     const a = this.screenToUser({ x: 0, y: 0 });
     const b = this.screenToUser({ x: key.dx, y: key.dy });

@@ -7,7 +7,19 @@ import { setTool, viewerStore, type LayerView, type SelectContext } from "@/feat
 
 import { editorStore, markupsOf, resetEditor, setDocMarkups, setSelection } from "./editor-store";
 import { installMeasureTools, measurePainter } from "./measure-tool";
-import { DELETE_MARKUPS, MOVE_MARKUP, MOVE_MARKUPS, RESTORE_MARKUPS } from "./select-tool";
+import {
+  COPY_MARKUP,
+  CROSSING_AREA,
+  DELETE_MARKUPS,
+  MOVE_MARKUP,
+  MOVE_MARKUPS,
+  MOVE_VERTEX,
+  PASTE_MARKUP,
+  RESIZE_MARKUP,
+  RESTORE_MARKUPS,
+  ROTATE_MARKUP,
+  resetSelectTool,
+} from "./select-tool";
 import { activeUndoLabels, clearUndo, redoActive, undoActive } from "./undo-store";
 
 const SHA = "f".repeat(64);
@@ -27,7 +39,7 @@ const view: LayerView = {
 
 /** A context 1 user unit per CSS px; the device point far from any caption. */
 function at(mods: Partial<SelectContext> = {}): SelectContext {
-  return { documentId: SHA, pageIndex: 0, view, device: { x: -9999, y: -9999 }, px: 1, tolerance: 5, shift: false, alt: false, ...mods };
+  return { documentId: SHA, pageIndex: 0, view, device: { x: -9999, y: -9999 }, px: 1, tolerance: 5, shift: false, alt: false, ctrl: false, ...mods };
 }
 
 let n = 0;
@@ -70,6 +82,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   uninstall();
+  resetSelectTool({ clipboard: true });
   resetEditor();
   clearUndo();
   toastStore.setState({ visible: [], queue: [] });
@@ -90,8 +103,9 @@ describe("Select tool (Story 5.1)", () => {
     expect(ids()).toEqual([a.id]);
     click(50, 25);
     expect(ids()).toEqual([]);
-    expect(measurePainter.hitAt!({ x: 50, y: 4 }, at())).toBe(true);
-    expect(measurePainter.hitAt!({ x: 50, y: 25 }, at())).toBe(false);
+    expect(measurePainter.cursorAt!({ x: 50, y: 4 }, at())).toBe("move");
+    expect(measurePainter.cursorAt!({ x: 50, y: 4 }, at({ ctrl: true }))).toBe("copy");
+    expect(measurePainter.cursorAt!({ x: 50, y: 25 }, at())).toBeNull();
   });
 
   it("a marquee selects markups wholly inside (Shift adds); Alt + drag lassoes", () => {
@@ -188,5 +202,88 @@ describe("Select tool (Story 5.1)", () => {
     setSelection([a.id]);
     setTool("length");
     expect(ids()).toEqual([]);
+  });
+});
+
+describe("Resize, rotate, vertices, copy and paste (Story 5.2)", () => {
+  const RECT = [
+    { x: 100, y: 100 },
+    { x: 300, y: 100 },
+    { x: 300, y: 250 },
+    { x: 100, y: 250 },
+  ];
+  let area: Markup;
+  beforeEach(() => {
+    area = { ...length(0, 0, 1, 1), type: "area", points: RECT } as Markup;
+    setDocMarkups(SHA, [area]);
+    setSelection([area.id]);
+  });
+  /** A drag from user point `from` with the pointer's device point at its toDevice (x, -y). */
+  const dragAt = (from: { x: number; y: number }, to: { x: number; y: number }, mods: Partial<SelectContext> = {}) => {
+    const ctx = (p: { x: number; y: number }) => at({ device: { x: p.x, y: -p.y }, ...mods });
+    measurePainter.select!("start", from, ctx(from));
+    measurePainter.select!("move", to, ctx(to));
+    measurePainter.select!("end", to, ctx(to));
+  };
+  const stored = () => markupsOf(editorStore.getState(), SHA);
+
+  it("a corner handle (outside the box) resizes from the opposite corner; one undo step", () => {
+    // The top-right handle sits 8 px out from the corner (300, 250).
+    expect(measurePainter.cursorAt!({ x: 308, y: 258 }, at({ device: { x: 308, y: -258 } }))).toBe("nesw-resize");
+    dragAt({ x: 308, y: 258 }, { x: 508, y: 408 });
+    expect(stored()[0].points).toEqual([{ x: 100, y: 100 }, { x: 500, y: 100 }, { x: 500, y: 400 }, { x: 100, y: 400 }]);
+    expect(activeUndoLabels(editorStore.getState(), "t1").undo).toBe(RESIZE_MARKUP);
+    undoActive();
+    expect(stored()[0].points).toEqual(RECT);
+  });
+
+  it("the rotate handle turns about the box's centre in 15° steps", () => {
+    expect(measurePainter.cursorAt!({ x: 200, y: 274 }, at({ device: { x: 200, y: -274 } }))).toBe("crosshair");
+    dragAt({ x: 200, y: 274 }, { x: 103, y: 178 });
+    const [p] = stored()[0].points;
+    expect(p.x).toBeCloseTo(275, 9);
+    expect(p.y).toBeCloseTo(75, 9);
+    expect(activeUndoLabels(editorStore.getState(), "t1").undo).toBe(ROTATE_MARKUP);
+  });
+
+  it("a vertex handle moves one vertex; a crossing area goes back with a note", () => {
+    dragAt({ x: 300, y: 100 }, { x: 320, y: 90 });
+    expect(stored()[0].points[1]).toEqual({ x: 320, y: 90 });
+    expect(activeUndoLabels(editorStore.getState(), "t1").undo).toBe(MOVE_VERTEX);
+    dragAt({ x: 100, y: 100 }, { x: 350, y: 200 });
+    expect(stored()[0].points[0]).toEqual({ x: 100, y: 100 });
+    expect(toastStore.getState().visible[0].title).toBe(CROSSING_AREA);
+  });
+
+  it("the preview follows the drag and a cancel puts it back", () => {
+    const ctx = at({ device: { x: 308, y: -258 } });
+    measurePainter.select!("start", { x: 308, y: 258 }, ctx);
+    measurePainter.select!("move", { x: 408, y: 258 }, ctx);
+    expect(editorStore.getState().tools.preview?.changed[area.id].points[1]).toEqual({ x: 400, y: 100 });
+    measurePainter.select!("cancel", { x: 408, y: 258 }, ctx);
+    expect(editorStore.getState().tools.preview).toBeNull();
+    expect(stored()[0].points).toEqual(RECT);
+  });
+
+  it("Ctrl + drag copies (Shift: along 45° steps) and selects the copy", () => {
+    dragAt({ x: 150, y: 175 }, { x: 200, y: 180 }, { ctrl: true, shift: true });
+    expect(stored()).toHaveLength(2);
+    expect(stored()[1].points[0]).toEqual({ x: 150, y: 100 });
+    expect(stored()[1].id).not.toBe(area.id);
+    expect(ids()).toEqual([stored()[1].id]);
+    expect(activeUndoLabels(editorStore.getState(), "t1").undo).toBe(COPY_MARKUP);
+  });
+
+  it("Ctrl+C / Ctrl+V pastes centred at the pointer; Ctrl+Shift+V in place; on the shown page", () => {
+    const key = measurePainter.selectionKey!;
+    const page = { documentId: SHA, pageIndex: 0 };
+    expect(key({ kind: "paste", inPlace: false, at: { x: 0, y: 0 } }, page)).toBe(false);
+    expect(key({ kind: "copy" }, page)).toBe(true);
+    expect(key({ kind: "paste", inPlace: false, at: { x: 500, y: 500 } }, page)).toBe(true);
+    expect(stored()[1].points[0]).toEqual({ x: 400, y: 425 });
+    expect(activeUndoLabels(editorStore.getState(), "t1").undo).toBe(PASTE_MARKUP);
+    key({ kind: "paste", inPlace: true, at: { x: 0, y: 0 } }, { documentId: SHA, pageIndex: 1 });
+    expect(stored()[2]).toMatchObject({ pageId: pageIdOf(SHA, 1), points: RECT });
+    expect(ids()).toEqual([stored()[2].id]);
   });
 });

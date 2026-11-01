@@ -513,21 +513,21 @@ describe("ViewerInput", () => {
     canvas.dispatchEvent(pointer("pointermove", { x: 15, y: 16, shiftKey: true }));
     canvas.dispatchEvent(pointer("pointerup", { x: 15, y: 16 }));
     expect(selectGesture.mock.calls).toEqual([
-      ["start", { x: 5, y: 6 }, { shift: true, alt: false }],
-      ["move", { x: 15, y: 16 }, { shift: true, alt: false }],
-      ["end", { x: 15, y: 16 }, { shift: true, alt: false }],
+      ["start", { x: 5, y: 6 }, { shift: true, alt: false, ctrl: false }],
+      ["move", { x: 15, y: 16 }, { shift: true, alt: false, ctrl: false }],
+      ["end", { x: 15, y: 16 }, { shift: true, alt: false, ctrl: false }],
     ]);
     canvas.dispatchEvent(pointer("pointerdown", { x: 5, y: 6, altKey: true }));
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
-    expect(selectGesture).toHaveBeenLastCalledWith("cancel", { x: 5, y: 6 }, { shift: false, alt: true });
+    expect(selectGesture).toHaveBeenLastCalledWith("cancel", { x: 5, y: 6 }, { shift: false, alt: true, ctrl: false });
   });
 
   it("Story 5.1: the move cursor over a markup; selection keys only with Select and the canvas's keys", () => {
-    const selectHover = vi.fn(() => true);
+    const selectCursor = vi.fn(() => "nwse-resize");
     const selectionKey = vi.fn(() => true);
-    Object.assign(t, { selectHover, selectionKey });
+    Object.assign(t, { selectCursor, selectionKey });
     canvas.dispatchEvent(pointer("pointermove", { x: 5, y: 6 }));
-    expect(canvas.style.cursor).toBe("move");
+    expect(canvas.style.cursor).toBe("nwse-resize");
     canvas.focus();
     const key = (init: KeyboardEventInit) => {
       const e = new KeyboardEvent("keydown", { cancelable: true, ...init });
@@ -542,6 +542,13 @@ describe("ViewerInput", () => {
     expect(selectionKey).toHaveBeenLastCalledWith("nudge-end");
     expect(key({ key: "a", ctrlKey: true }).defaultPrevented).toBe(true);
     expect(selectionKey).toHaveBeenLastCalledWith("all");
+    // Story 5.2: copy, paste, paste in place.
+    key({ key: "c", ctrlKey: true });
+    expect(selectionKey).toHaveBeenLastCalledWith("copy");
+    key({ key: "v", ctrlKey: true });
+    expect(selectionKey).toHaveBeenLastCalledWith("paste");
+    key({ key: "V", ctrlKey: true, shiftKey: true });
+    expect(selectionKey).toHaveBeenLastCalledWith("paste-in-place");
     selectionKey.mockClear();
     setTool("pan");
     key({ key: "Delete" });

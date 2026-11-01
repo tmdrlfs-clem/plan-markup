@@ -5,7 +5,7 @@
 //   doc        markups by document (sha256), shared by the tabs (a document is open in one tab)
 //   view       the active document tab, mirrored from the viewer
 //   tools      the drawing in progress (Length, Story 4.5; more tools with Epic 5), a caption being moved (4.6)
-//              and markups being moved (a drag or an arrow key held, 5.1)
+//              and markups being moved (a drag or an arrow key held, 5.1), resized, rotated or copied (5.2)
 //   selection  selected markup ids (the Measurements panel, Story 4.11; Epic 5)
 //   history    undo histories by document tab (the Story 4.3 undo stack)
 
@@ -26,10 +26,13 @@ export type CaptionDrag = { id: string; documentId: string; delta: Point };
 /** Story 5.1: markups being moved (a drag or a held arrow key): their ids and the move so far (user space). */
 export type MoveDrag = { ids: readonly string[]; documentId: string; delta: Point };
 
+/** Story 5.2: a resize, rotation, vertex drag or copy in progress: markups changed (by id) and added, as they would be. */
+export type Preview = { documentId: string; changed: Readonly<Record<string, Markup>>; added: readonly Markup[] };
+
 export type EditorState = {
   doc: { markups: Readonly<Record<string, readonly Markup[]>> };
   view: { tabId: string | null; documentId: string | null };
-  tools: { drawing: Drawing | null; captionDrag: CaptionDrag | null; moveDrag: MoveDrag | null };
+  tools: { drawing: Drawing | null; captionDrag: CaptionDrag | null; moveDrag: MoveDrag | null; preview: Preview | null };
   selection: { ids: readonly string[] };
   /** Histories by tab id ("" outside tabs). */
   history: { histories: Readonly<Record<string, UndoHistory>> };
@@ -38,7 +41,7 @@ export type EditorState = {
 export const EMPTY_EDITOR: EditorState = {
   doc: { markups: {} },
   view: { tabId: null, documentId: null },
-  tools: { drawing: null, captionDrag: null, moveDrag: null },
+  tools: { drawing: null, captionDrag: null, moveDrag: null, preview: null },
   selection: { ids: [] },
   history: { histories: {} },
 };
@@ -78,6 +81,12 @@ export function setCaptionDrag(captionDrag: CaptionDrag | null): void {
 export function setMoveDrag(moveDrag: MoveDrag | null): void {
   if (editorStore.getState().tools.moveDrag === moveDrag) return;
   editorStore.setState((s) => ({ tools: { ...s.tools, moveDrag } }));
+}
+
+/** Story 5.2: the edit in progress shown in place (the select tool only). */
+export function setPreview(preview: Preview | null): void {
+  if (editorStore.getState().tools.preview === preview) return;
+  editorStore.setState((s) => ({ tools: { ...s.tools, preview } }));
 }
 
 /** Story 4.11: selects markups by id (none: clears); false when nothing changed. */

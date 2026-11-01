@@ -48,9 +48,10 @@ import {
   type MeasureTool,
 } from "@/features/viewer";
 
-import { editorStore, markupsOf, pageMarkups, setCaptionDrag, setDrawing, setMoveDrag, setSelection, type Drawing, type MoveDrag } from "./editor-store";
+import { editorStore, markupsOf, pageMarkups, setCaptionDrag, setDrawing, setMoveDrag, setPreview, setSelection, type Drawing, type MoveDrag } from "./editor-store";
 import { discardFill, fillAreaUser, fillPress, paintFill, takeFillRings, undoFillStroke } from "./fill-tool";
-import { paintSelectGesture, resetSelectTool, selectGesture, selectHitAt, selectionKey, toggleSelected } from "./select-tool";
+import { handlesOf, paintHandles } from "./handles";
+import { paintSelectGesture, resetSelectTool, selectCursorAt, selectGesture, selectionKey, toggleSelected } from "./select-tool";
 import { executeOp, registerDrawingUndo } from "./undo-store";
 
 type Point = { x: number; y: number };
@@ -355,8 +356,11 @@ let moving: { drag: MoveDrag; ids: ReadonlySet<string> } | null = null;
 
 /** The markup as painted: a caption being moved, or markups being moved (Story 5.1), show where they go. */
 function shown(m: MeasureMarkup): MeasureMarkup {
-  const { captionDrag: drag, moveDrag } = editorStore.getState().tools;
-  let out = drag && drag.id === m.id ? { ...m, captionOffset: addOffset(m.captionOffset, drag.delta) } : m;
+  const { captionDrag: drag, moveDrag, preview } = editorStore.getState().tools;
+  // Story 5.2: a resize, rotation or vertex drag in progress.
+  const changed = preview && m.pageId.startsWith(`${preview.documentId}:`) ? (preview.changed[m.id] as MeasureMarkup | undefined) : undefined;
+  let out = changed ?? m;
+  out = drag && drag.id === m.id ? { ...out, captionOffset: addOffset(out.captionOffset, drag.delta) } : out;
   if (moveDrag) {
     if (moving?.drag !== moveDrag) moving = { drag: moveDrag, ids: new Set(moveDrag.ids) };
     if (moving.ids.has(m.id) && m.pageId.startsWith(`${moveDrag.documentId}:`)) out = translateMarkup(out, moveDrag.delta);
@@ -403,7 +407,11 @@ function liveValue(tool: MeasureTool, points: readonly Point[], calibration: Cal
 
 export const measurePainter: MarkupPainter = {
   paintStatic(c, view) {
-    const markups = pageMarkups(editorStore.getState(), view.documentId, pageIdOf(view.documentId, view.pageIndex));
+    const stored = pageMarkups(editorStore.getState(), view.documentId, pageIdOf(view.documentId, view.pageIndex));
+    // Story 5.2: copies being dragged are painted on top.
+    const preview = editorStore.getState().tools.preview;
+    const added = preview && preview.documentId === view.documentId ? preview.added.filter((m) => m.pageId === pageIdOf(view.documentId, view.pageIndex)) : [];
+    const markups = added.length > 0 ? [...stored, ...added] : stored;
     if (markups.length === 0) {
       captionBoxes = null;
       return [];
@@ -413,10 +421,12 @@ export const measurePainter: MarkupPainter = {
     const captions: string[] = [];
     const boxes: CaptionBox[] = [];
     const selected = new Set(editorStore.getState().selection.ids);
+    const selectedShown: MeasureMarkup[] = [];
     c.save();
-    for (const stored of markups) {
-      if (!isMeasure(stored)) continue;
-      const m = shown(stored);
+    for (const one of markups) {
+      if (!isMeasure(one)) continue;
+      const m = shown(one);
+      if (selected.has(m.id)) selectedShown.push(m);
       const caption = captionOf(m, calibration, view.userUnit);
       captions.push(caption.text);
       const pts = devicePoints(m.points, view);
@@ -443,6 +453,9 @@ export const measurePainter: MarkupPainter = {
       }
     }
     c.restore();
+    // Story 5.2: the selection's handles, over everything.
+    const handles = handlesOf(selectedShown, view);
+    if (handles) paintHandles(c, handles, view);
     captionBoxes = { pageId, boxes };
     return captions;
   },
@@ -577,8 +590,8 @@ export const measurePainter: MarkupPainter = {
     selectGesture(phase, point, at, (view, device) => measurePainter.captionAt(view, device));
   },
 
-  hitAt(point, at) {
-    return selectHitAt(point, at, (view, device) => measurePainter.captionAt(view, device));
+  cursorAt(point, at) {
+    return selectCursorAt(point, at, (view, device) => measurePainter.captionAt(view, device));
   },
 
   selectionKey(key, at) {
@@ -695,7 +708,10 @@ export function installMeasureTools(): () => void {
       // Story 5.1 (D4): another page too. A move in progress is dropped.
       const otherDocument = s.tabId !== prev.tabId || s.openSeq !== prev.openSeq || s.documentId !== prev.documentId;
       if (otherDocument || s.pageIndex !== prev.pageIndex || (s.tool !== prev.tool && s.tool !== "select")) setSelection([]);
-      if (moved) setMoveDrag(null);
+      if (moved) {
+        setMoveDrag(null);
+        setPreview(null);
+      }
       const d = drawing();
       if (!d) return;
       if (s.tool === d.tool && !moved) return;
@@ -712,6 +728,7 @@ export function installMeasureTools(): () => void {
       discardFill();
       resetSelectTool();
       setMoveDrag(null);
+      setPreview(null);
       setDrawing(null);
       setCaptionDrag(null);
       captionBoxes = null;

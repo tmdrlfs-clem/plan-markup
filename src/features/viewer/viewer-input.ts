@@ -151,11 +151,11 @@ export interface ViewerInputTarget {
   /** Story 4.10: press, drag and release with Dynamic fill (viewport CSS px). */
   pressTool?(phase: "start" | "move" | "end", at: Point, brush: PressBrush): void;
   /** Story 5.1: a Select press, drag, release or cancel (viewport CSS px); false when there is nothing to select on. */
-  selectGesture?(phase: "start" | "move" | "end" | "cancel", at: Point, mods: { shift: boolean; alt: boolean }): boolean;
-  /** Story 5.1: whether a markup is under the pointer (the move cursor). */
-  selectHover?(at: Point): boolean;
-  /** Story 5.1: Delete / Backspace, Ctrl+A, an arrow's nudge (screen px) and its release; true when it acted. */
-  selectionKey?(key: "delete" | "all" | "nudge-end" | { dx: number; dy: number }): boolean;
+  selectGesture?(phase: "start" | "move" | "end" | "cancel", at: Point, mods: { shift: boolean; alt: boolean; ctrl: boolean }): boolean;
+  /** Story 5.1 / 5.2: the Select cursor at the pointer (a markup: move; a handle: its action); null: the default. */
+  selectCursor?(at: Point): string | null;
+  /** Stories 5.1 / 5.2: Delete / Backspace, Ctrl+A, an arrow's nudge (screen px) and its release, Ctrl+C, Ctrl+V, Ctrl+Shift+V; true when it acted. */
+  selectionKey?(key: "delete" | "all" | "nudge-end" | "copy" | "paste" | "paste-in-place" | { dx: number; dy: number }): boolean;
 }
 
 /** Story 5.1: arrow keys' nudge directions on screen. */
@@ -179,7 +179,7 @@ type Drag =
   | { kind: "zoom"; pointerId: number; start: Point; zoomOut: boolean }
   | { kind: "caption"; pointerId: number }
   | { kind: "press"; pointerId: number; brush: PressBrush }
-  | { kind: "select"; pointerId: number; shift: boolean; alt: boolean };
+  | { kind: "select"; pointerId: number; shift: boolean; alt: boolean; ctrl: boolean };
 
 /** Normalised rectangle between two points. */
 function rectOf(a: Point, b: Point): Rect {
@@ -191,8 +191,8 @@ export class ViewerInput {
   private drag: Drag | null = null;
   private pointer: Point | null = null;
   private altDown = false;
-  /** Story 5.1: the pointer is over a markup with Select (the move cursor). */
-  private overMarkup = false;
+  /** Story 5.1 / 5.2: the Select cursor at the pointer (a markup or a handle), null elsewhere. */
+  private overCursor: string | null = null;
   private readonly removers: (() => void)[] = [];
 
   constructor(
@@ -272,8 +272,8 @@ export class ViewerInput {
   private updateCursor(): void {
     const { tool, tempPan } = viewerStore.getState();
     const zoomOut = this.drag?.kind === "zoom" ? this.drag.zoomOut : this.altDown;
-    const moveCursor = this.drag?.kind === "caption" || (!this.drag && !tempPan && tool === "select" && this.overMarkup);
-    const cursor = moveCursor ? "move" : cursorFor({ tool, tempPan, dragging: this.drag?.kind === "pan", zoomOut });
+    const over = !this.drag && !tempPan && tool === "select" ? this.overCursor : null;
+    const cursor = this.drag?.kind === "caption" ? "move" : (over ?? cursorFor({ tool, tempPan, dragging: this.drag?.kind === "pan", zoomOut }));
     if (this.canvas.style.cursor !== cursor) this.canvas.style.cursor = cursor;
   }
 
@@ -306,10 +306,10 @@ export class ViewerInput {
       // Story 4.6: Shift + drag on a measurement's caption moves the caption only.
       e.preventDefault();
       this.drag = { kind: "caption", pointerId: e.pointerId };
-    } else if (e.button === 0 && tool === "select" && this.target.selectGesture?.("start", this.point(e), { shift: e.shiftKey, alt: e.altKey })) {
-      // Story 5.1: click, Shift + click, marquee, Alt + drag lasso, or a drag that moves markups.
+    } else if (e.button === 0 && tool === "select" && this.target.selectGesture?.("start", this.point(e), { shift: e.shiftKey, alt: e.altKey, ctrl: e.ctrlKey || e.metaKey })) {
+      // Story 5.1: click, Shift + click, marquee, Alt + drag lasso, or a drag that moves markups (5.2: handles, Ctrl copies).
       e.preventDefault();
-      this.drag = { kind: "select", pointerId: e.pointerId, shift: e.shiftKey, alt: e.altKey };
+      this.drag = { kind: "select", pointerId: e.pointerId, shift: e.shiftKey, alt: e.altKey, ctrl: e.ctrlKey || e.metaKey };
     } else {
       // Story 4.1: a snapping tool's click places its point (the snapped one).
       if (e.button === 0 && pointTool(tool)) {
@@ -332,11 +332,11 @@ export class ViewerInput {
     this.pointer = p;
     this.target.pointerAt?.(p, { alt: e.altKey, shift: e.shiftKey });
     const drag = this.drag;
-    // Story 5.1: the move cursor over a markup with Select.
-    if (!drag && this.active() && viewerStore.getState().tool === "select" && this.target.selectHover) {
-      const over = this.target.selectHover(p);
-      if (over !== this.overMarkup) {
-        this.overMarkup = over;
+    // Story 5.1 / 5.2: the move cursor over a markup, a handle's cursor over a handle, with Select.
+    if (!drag && this.active() && viewerStore.getState().tool === "select" && this.target.selectCursor) {
+      const over = this.target.selectCursor(p);
+      if (over !== this.overCursor) {
+        this.overCursor = over;
         this.updateCursor();
       }
     }
@@ -349,7 +349,7 @@ export class ViewerInput {
     } else if (drag.kind === "press") {
       this.target.pressTool?.("move", p, drag.brush);
     } else if (drag.kind === "select") {
-      this.target.selectGesture?.("move", p, { shift: drag.shift, alt: drag.alt });
+      this.target.selectGesture?.("move", p, { shift: drag.shift, alt: drag.alt, ctrl: drag.ctrl });
     } else {
       this.target.setZoomRect(rectOf(drag.start, p));
     }
@@ -372,7 +372,7 @@ export class ViewerInput {
     this.drag = null;
     if (drag.kind === "caption") this.target.endCaptionDrag?.(commit);
     if (drag.kind === "press" && this.pointer) this.target.pressTool?.("end", this.pointer, drag.brush);
-    if (drag.kind === "select" && this.pointer) this.target.selectGesture?.(commit ? "end" : "cancel", this.pointer, { shift: drag.shift, alt: drag.alt });
+    if (drag.kind === "select" && this.pointer) this.target.selectGesture?.(commit ? "end" : "cancel", this.pointer, { shift: drag.shift, alt: drag.alt, ctrl: drag.ctrl });
     if (drag.kind === "zoom") {
       this.target.setZoomRect(null);
       const end = this.pointer;
@@ -484,6 +484,9 @@ export class ViewerInput {
       if (!e.repeat) this.target.selectionKey("all");
       return true;
     }
+    // Story 5.2: Ctrl+C copies the selection, Ctrl+V pastes at the pointer, Ctrl+Shift+V in place.
+    if (ctrl && !e.altKey && !e.shiftKey && isLetter(e, "c")) return e.repeat || this.target.selectionKey("copy");
+    if (ctrl && !e.altKey && isLetter(e, "v")) return e.repeat || this.target.selectionKey(e.shiftKey ? "paste-in-place" : "paste");
     if (ctrl || e.altKey) return false;
     if ((e.key === "Delete" || e.key === "Backspace") && !e.shiftKey) return e.repeat || this.target.selectionKey("delete");
     const dir = NUDGE[e.key];

@@ -510,7 +510,8 @@ describe("Selection (Story 4.11)", () => {
     const r = recorder();
     measurePainter.paintStatic(r.ctx, { ...view, width: 1000, height: 1000 });
     // 4 px around the line (0, 0)–(72, 0), stroked twice.
-    expect(outlines(r.ops).map((o) => o.args)).toEqual([
+    // The outline (then the 5.2 vertex handles).
+    expect(outlines(r.ops).slice(0, 2).map((o) => o.args)).toEqual([
       [-4, -4, 80, 8],
       [-4, -4, 80, 8],
     ]);
