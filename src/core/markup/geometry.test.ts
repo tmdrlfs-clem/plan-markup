@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_MEASURE_STYLE, type Markup } from "@/core/schema/markup";
+import { DEFAULT_MEASURE_STYLE, isMeasureMarkup, markupSchema, type Markup, type MeasureMarkup } from "@/core/schema/markup";
 
 import { hitMarkup, insideLoop, insidePolygon, insideRect, markupBounds, rectOf, segmentDistance, translateMarkup } from "./geometry";
 import { MarkupIndex } from "./markup-index";
@@ -83,7 +83,7 @@ describe("markup geometry (Story 5.1)", () => {
     const moved = translateMarkup(area, { x: 10, y: -5 });
     expect(moved.points[0]).toEqual({ x: 110, y: 95 });
     expect(moved.type === "area" && moved.holes?.[0][0]).toEqual({ x: 160, y: 145 });
-    expect(moved.captionOffset).toEqual({ x: 3, y: 4 });
+    expect((moved as MeasureMarkup).captionOffset).toEqual({ x: 3, y: 4 });
     expect(area.points[0]).toEqual({ x: 100, y: 100 });
   });
 });
@@ -102,5 +102,32 @@ describe("MarkupIndex (Story 5.1, AR15)", () => {
     expect(index.inRect({ x: 0, y: 0, width: 600, height: 600 })).toEqual([a, b, c]);
     expect(index.inLoop([{ x: 110, y: 110 }, { x: 200, y: 110 }, { x: 200, y: 130 }, { x: 110, y: 130 }])).toEqual([b]);
     expect(index.inLoop([{ x: 0, y: 0 }, { x: 1, y: 1 }])).toEqual([]);
+  });
+});
+
+describe("straight-line markups (Story 5.4)", () => {
+  it("validate as their own types; only measurements are measurements", () => {
+    const line = markup("line", [{ x: 0, y: 0 }, { x: 10, y: 0 }]);
+    const polygon = markup("polygon", RECT);
+    expect(markupSchema.safeParse(line).success).toBe(true);
+    expect(markupSchema.safeParse(polygon).success).toBe(true);
+    expect(markupSchema.safeParse(markup("arrow", [{ x: 0, y: 0 }])).success).toBe(false);
+    expect(markupSchema.safeParse(markup("polyline", [{ x: 0, y: 0 }])).success).toBe(false);
+    expect(markupSchema.safeParse(markup("polygon", RECT.slice(0, 2))).success).toBe(false);
+    expect(isMeasureMarkup(line)).toBe(false);
+    expect(isMeasureMarkup(markup("length", [{ x: 0, y: 0 }, { x: 10, y: 0 }]))).toBe(true);
+  });
+
+  it("a line, arrow or polyline is hit on its stroke; a polygon also inside (D2), including its closing edge", () => {
+    const polyline = markup("polyline", RECT);
+    expect(hitMarkup(polyline, { x: 200, y: 175 }, 2)).toBe(false);
+    expect(hitMarkup(polyline, { x: 300, y: 175 }, 2)).toBe(true);
+    // The polyline is open: its last vertex does not join the first.
+    expect(hitMarkup(polyline, { x: 100, y: 175 }, 2)).toBe(false);
+    const polygon = markup("polygon", RECT);
+    expect(hitMarkup(polygon, { x: 200, y: 175 }, 2)).toBe(true);
+    expect(hitMarkup(polygon, { x: 100, y: 175 }, 2)).toBe(true);
+    expect(hitMarkup(polygon, { x: 400, y: 175 }, 2)).toBe(false);
+    expect(hitMarkup(markup("arrow", [{ x: 0, y: 0 }, { x: 100, y: 0 }]), { x: 50, y: 1 }, 2)).toBe(true);
   });
 });

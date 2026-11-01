@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_MEASURE_STYLE, type Markup } from "@/core/schema/markup";
+import { DEFAULT_MEASURE_STYLE, type Markup, type MeasureMarkup } from "@/core/schema/markup";
 
 import { boxPoint, constrain45, copiesOf, resizeOf, rotateAbout, rotateVector, rotationOf, scaleAbout, setVertex, transformMarkup } from "./transform";
 
@@ -31,14 +31,14 @@ describe("markup transforms (Story 5.2)", () => {
     const m = transformMarkup(area, scaleAbout({ x: 100, y: 100 }, 2, 2));
     expect(m.points[2]).toEqual({ x: 500, y: 400 });
     expect(m.type === "area" && m.holes?.[0][0]).toEqual({ x: 200, y: 200 });
-    expect(m.captionOffset).toEqual({ x: 10, y: 0 });
+    expect((m as MeasureMarkup).captionOffset).toEqual({ x: 10, y: 0 });
   });
 
   it("rotates points and, when asked, the caption offset", () => {
     const quarter = Math.PI / 2;
     const m = transformMarkup(area, rotateAbout({ x: 200, y: 175 }, quarter), rotateVector(quarter));
     close(m.points[0], 275, 75);
-    close(m.captionOffset!, 0, 10);
+    close((m as MeasureMarkup).captionOffset!, 0, 10);
   });
 
   it("resizes from the opposite handle, from the centre, proportionally", () => {

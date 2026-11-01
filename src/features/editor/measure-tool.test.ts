@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { factorForRatio, pageIdOf, type Calibration } from "@/core/calibration/calibration";
+import type { MeasureMarkup } from "@/core/schema/markup";
 import { setTool, viewerStore, type LayerView } from "@/features/viewer";
 import { onMarkupsChanged } from "@/features/viewer/markup-layer";
 
@@ -272,7 +273,7 @@ describe("Moving a caption (Story 4.6)", () => {
     const live = translateOf();
     // User y up is device y down (the test view flips y).
     expect([live[0] - before[0], live[1] - before[1]]).toEqual([10, -20]);
-    expect(markupsOf(editorStore.getState(), SHA)[0].captionOffset).toBeUndefined();
+    expect((markupsOf(editorStore.getState(), SHA)[0] as MeasureMarkup).captionOffset).toBeUndefined();
     expect(measurePainter.endCaptionDrag(true)).toBe(true);
     const [moved] = markupsOf(editorStore.getState(), SHA);
     expect(moved).toMatchObject({ id: m.id, points: m.points, captionOffset: { x: 10, y: 20 } });
@@ -280,11 +281,11 @@ describe("Moving a caption (Story 4.6)", () => {
     // A second move adds to the first.
     measurePainter.dragCaption(m.id, SHA, { x: 5, y: 0 });
     measurePainter.endCaptionDrag(true);
-    expect(markupsOf(editorStore.getState(), SHA)[0].captionOffset).toEqual({ x: 15, y: 20 });
+    expect((markupsOf(editorStore.getState(), SHA)[0] as MeasureMarkup).captionOffset).toEqual({ x: 15, y: 20 });
     undoActive();
-    expect(markupsOf(editorStore.getState(), SHA)[0].captionOffset).toEqual({ x: 10, y: 20 });
+    expect((markupsOf(editorStore.getState(), SHA)[0] as MeasureMarkup).captionOffset).toEqual({ x: 10, y: 20 });
     undoActive();
-    expect(markupsOf(editorStore.getState(), SHA)[0].captionOffset).toBeUndefined();
+    expect((markupsOf(editorStore.getState(), SHA)[0] as MeasureMarkup).captionOffset).toBeUndefined();
     expect(activeUndoLabels(editorStore.getState(), "t1").undo).toBe(ADD_LENGTH);
   });
 
@@ -298,7 +299,7 @@ describe("Moving a caption (Story 4.6)", () => {
     viewerStore.setState({ pageIndex: 1 });
     expect(editorStore.getState().tools.captionDrag).toBeNull();
     expect(measurePainter.endCaptionDrag(true)).toBe(false);
-    expect(markupsOf(editorStore.getState(), SHA)[0].captionOffset).toBeUndefined();
+    expect((markupsOf(editorStore.getState(), SHA)[0] as MeasureMarkup).captionOffset).toBeUndefined();
     expect(activeUndoLabels(editorStore.getState(), "t1").undo).toBe(ADD_LENGTH);
     // An unknown markup is not dragged.
     measurePainter.dragCaption("nope", SHA, { x: 1, y: 1 });

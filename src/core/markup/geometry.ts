@@ -85,6 +85,9 @@ export function hitMarkup(m: Markup, p: Point, tol: number, userUnit = 1): boole
       const r = COUNT_MARKER_PT / (userUnit > 0 ? userUnit : 1) + tol;
       return m.points.some((q) => Math.hypot(p.x - q.x, p.y - q.y) <= r);
     }
+    // Story 5.4 (D2): an unfilled polygon is hit inside as well, like an area.
+    case "polygon":
+      return nearPolyline(p, m.points, tol, true) || insidePolygon(p, m.points);
     case "area": {
       const holes = m.holes ?? [];
       if (nearPolyline(p, m.points, tol, true) || holes.some((h) => nearPolyline(p, h, tol, true))) return true;

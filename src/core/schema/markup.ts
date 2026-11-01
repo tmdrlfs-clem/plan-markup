@@ -89,7 +89,16 @@ export const angleMarkupSchema = z.object({ ...measure, type: z.literal("angle")
 export const radiusMarkupSchema = z.object({ ...measure, type: z.literal("radius"), points: threePoints });
 export const diameterMarkupSchema = z.object({ ...measure, type: z.literal("diameter"), points: threePoints });
 
-/** Every markup type (more join with Story 4.10 and Epic 5). */
+/**
+ * Story 5.4: straight-line markups (no caption, not measurements): a line and an arrow (its
+ * head at the second point), a polyline and a polygon (closed, the closing edge implied).
+ */
+export const lineMarkupSchema = z.object({ ...base, type: z.literal("line"), points: z.tuple([pointSchema, pointSchema]) });
+export const arrowMarkupSchema = z.object({ ...base, type: z.literal("arrow"), points: z.tuple([pointSchema, pointSchema]) });
+export const polylineMarkupSchema = z.object({ ...base, type: z.literal("polyline"), points: z.array(pointSchema).min(2).max(MAX_POLYLINE_POINTS) });
+export const polygonMarkupSchema = z.object({ ...base, type: z.literal("polygon"), points: z.array(pointSchema).min(3).max(MAX_POLYLINE_POINTS) });
+
+/** Every markup type (more join with Epic 5). */
 export const markupSchema = z.discriminatedUnion("type", [
   lengthMarkupSchema,
   polylengthMarkupSchema,
@@ -98,6 +107,10 @@ export const markupSchema = z.discriminatedUnion("type", [
   angleMarkupSchema,
   radiusMarkupSchema,
   diameterMarkupSchema,
+  lineMarkupSchema,
+  arrowMarkupSchema,
+  polylineMarkupSchema,
+  polygonMarkupSchema,
 ]);
 
 export type Markup = z.infer<typeof markupSchema>;
@@ -111,6 +124,15 @@ export type DiameterMarkup = z.infer<typeof diameterMarkupSchema>;
 /** The measurements with a caption (Stories 4.5, 4.6, 4.8, 4.9). */
 export type MeasureMarkup = LengthMarkup | PolylengthMarkup | AreaMarkup | CountMarkup | AngleMarkup | RadiusMarkup | DiameterMarkup;
 export type MarkupType = Markup["type"];
+/** Story 5.4: the straight-line markups. */
+export type ShapeMarkup = z.infer<typeof lineMarkupSchema> | z.infer<typeof arrowMarkupSchema> | z.infer<typeof polylineMarkupSchema> | z.infer<typeof polygonMarkupSchema>;
+const MEASURE_TYPES: ReadonlySet<MarkupType> = new Set<MarkupType>(["length", "polylength", "area", "count", "angle", "radius", "diameter"]);
+/** Whether `m` is a measurement (it has a caption and a value). */
+export function isMeasureMarkup(m: Markup): m is MeasureMarkup {
+  return MEASURE_TYPES.has(m.type);
+}
 
 /** Revu's default measurement style: red, 1 pt, 10 pt captions. */
 export const DEFAULT_MEASURE_STYLE: MarkupStyle = { color: "#ff0000", width: 1, fontSize: 10 };
+/** Story 5.4 (D5): the straight-line markups' style until Properties changes it. */
+export const DEFAULT_MARKUP_STYLE: MarkupStyle = { color: "#ff0000", width: 1, fontSize: 10 };

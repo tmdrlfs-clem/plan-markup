@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { toastStore } from "@/components/ui/toast-store";
 import { pageIdOf } from "@/core/calibration/calibration";
-import { DEFAULT_MEASURE_STYLE, type Markup } from "@/core/schema/markup";
+import { DEFAULT_MEASURE_STYLE, type Markup, type MeasureMarkup } from "@/core/schema/markup";
 import { setTool, viewerStore, type LayerView, type SelectContext } from "@/features/viewer";
 
 import { editorStore, markupsOf, resetEditor, setDocMarkups, setSelection } from "./editor-store";
@@ -408,7 +408,7 @@ describe("Group, align, reorder and lock (Story 5.3)", () => {
     measurePainter.dragCaption(a.id, SHA, { x: 10, y: 0 });
     expect(editorStore.getState().tools.captionDrag?.delta).toEqual({ x: 0, y: 0 });
     expect(measurePainter.endCaptionDrag(true)).toBe(false);
-    expect(stored(a.id).captionOffset).toBeUndefined();
+    expect((stored(a.id) as MeasureMarkup).captionOffset).toBeUndefined();
     expect(ids()).toEqual([b.id]);
   });
 
