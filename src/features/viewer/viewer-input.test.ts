@@ -528,6 +528,8 @@ describe("ViewerInput", () => {
     Object.assign(t, { selectCursor, selectionKey });
     canvas.dispatchEvent(pointer("pointermove", { x: 5, y: 6 }));
     expect(canvas.style.cursor).toBe("nwse-resize");
+    canvas.dispatchEvent(pointer("pointermove", { x: 6, y: 6, ctrlKey: true }));
+    expect(selectCursor).toHaveBeenLastCalledWith({ x: 6, y: 6 }, { ctrl: true });
     canvas.focus();
     const key = (init: KeyboardEventInit) => {
       const e = new KeyboardEvent("keydown", { cancelable: true, ...init });

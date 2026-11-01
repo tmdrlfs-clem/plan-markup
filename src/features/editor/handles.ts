@@ -82,7 +82,8 @@ export function handlesOf(markups: readonly Markup[], view: LayerView): Handles 
       handles.push({ kind: "resize", at, device, cursor: resizeCursor(device, centre) });
     }
   }
-  handles.push({ kind: "rotate", device: { x: centre.x, y: d.y0 - ROTATE_GAP_PX * view.dpr }, cursor: "crosshair" });
+  // Review R2: a point (one count marker) has nothing to turn.
+  if (box.width > 0 || box.height > 0) handles.push({ kind: "rotate", device: { x: centre.x, y: d.y0 - ROTATE_GAP_PX * view.dpr }, cursor: "crosshair" });
   if (markups.length === 1) markups[0].points.forEach((p, index) => handles.push({ kind: "vertex", index, device: view.toDevice(p), cursor: "crosshair" }));
   return { box, handles };
 }

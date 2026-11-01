@@ -153,7 +153,7 @@ export interface ViewerInputTarget {
   /** Story 5.1: a Select press, drag, release or cancel (viewport CSS px); false when there is nothing to select on. */
   selectGesture?(phase: "start" | "move" | "end" | "cancel", at: Point, mods: { shift: boolean; alt: boolean; ctrl: boolean }): boolean;
   /** Story 5.1 / 5.2: the Select cursor at the pointer (a markup: move; a handle: its action); null: the default. */
-  selectCursor?(at: Point): string | null;
+  selectCursor?(at: Point, mods?: { ctrl: boolean }): string | null;
   /** Stories 5.1 / 5.2: Delete / Backspace, Ctrl+A, an arrow's nudge (screen px) and its release, Ctrl+C, Ctrl+V, Ctrl+Shift+V; true when it acted. */
   selectionKey?(key: "delete" | "all" | "nudge-end" | "copy" | "paste" | "paste-in-place" | { dx: number; dy: number }): boolean;
 }
@@ -334,7 +334,8 @@ export class ViewerInput {
     const drag = this.drag;
     // Story 5.1 / 5.2: the move cursor over a markup, a handle's cursor over a handle, with Select.
     if (!drag && this.active() && viewerStore.getState().tool === "select" && this.target.selectCursor) {
-      const over = this.target.selectCursor(p);
+      // Review R1: Ctrl over a markup shows the copy cursor.
+      const over = this.target.selectCursor(p, { ctrl: e.ctrlKey || e.metaKey });
       if (over !== this.overCursor) {
         this.overCursor = over;
         this.updateCursor();

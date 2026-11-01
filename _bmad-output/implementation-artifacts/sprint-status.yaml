@@ -90,7 +90,7 @@ development_status:
   # Epic 5: Markup and As-Built Drawing
   epic-5: in-progress
   5-1-select-move-and-delete-markups: done
-  5-2-resize-rotate-copy-and-paste: ready-for-dev
+  5-2-resize-rotate-copy-and-paste: done
   5-3-group-align-reorder-and-lock: backlog
   5-4-line-arrow-polyline-and-polygon-tools: backlog
   5-5-rectangle-ellipse-and-cloud-tools: backlog

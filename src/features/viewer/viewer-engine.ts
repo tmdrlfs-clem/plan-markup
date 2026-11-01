@@ -1802,9 +1802,9 @@ export class ViewerEngine {
   }
 
   /** Story 5.1 / 5.2: the Select cursor at the pointer (viewport CSS px); null: the default. */
-  selectCursor(at: Point): string | null {
+  selectCursor(at: Point, mods: { ctrl: boolean } = { ctrl: false }): string | null {
     const painter = markupPainter();
-    const s = this.selectContext(at, { shift: false, alt: false, ctrl: false });
+    const s = this.selectContext(at, { shift: false, alt: false, ctrl: mods.ctrl });
     return painter?.cursorAt && s ? painter.cursorAt(s.point, s.context) : null;
   }
 

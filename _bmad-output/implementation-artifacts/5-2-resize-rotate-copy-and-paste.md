@@ -1,6 +1,6 @@
 # Story 5.2: Resize, rotate, copy and paste
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -21,10 +21,10 @@ so that I can reuse and adjust them.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Core** — `src/core/markup/transform.ts`; unit tests.
-- [ ] **Task 2: Viewer** — `ctrl` in the Select context; the cursor at a point as a string (`cursorAt`); Ctrl+C / Ctrl+V / Ctrl+Shift+V as selection keys with the pointer in user space.
-- [ ] **Task 3: Editor** — handles (painted with the selection on layer 2, hit in device px), resize / rotate / vertex / copy gestures with a preview (`tools.preview`), the clipboard, paste; unit tests.
-- [ ] **Task 4: Tests** — `e2e/resize-rotate-copy.spec.ts` (AC 8).
+- [x] **Task 1: Core** — `src/core/markup/transform.ts`; unit tests.
+- [x] **Task 2: Viewer** — `ctrl` in the Select context; the cursor at a point as a string (`cursorAt`); Ctrl+C / Ctrl+V / Ctrl+Shift+V as selection keys with the pointer in user space.
+- [x] **Task 3: Editor** — handles (painted with the selection on layer 2, hit in device px), resize / rotate / vertex / copy gestures with a preview (`tools.preview`), the clipboard, paste; unit tests.
+- [x] **Task 4: Tests** — `e2e/resize-rotate-copy.spec.ts` (AC 8).
 
 ## Dev Notes
 
@@ -49,4 +49,18 @@ Claude Opus 5.5
 
 ### Completion Notes List
 
+- Task 1: `core/markup/transform.ts` (transformMarkup, scaleAbout, rotateAbout, rotateVector, setVertex, boxPoint, resizeOf, rotationOf, constrain45, copiesOf); 5 unit tests.
+- Tasks 2-3: `editor/handles.ts` lays out 8 resize handles 8 px outside the box (only when the box is at least 3 handles wide and tall, D2), a rotate handle 24 px above with a stalk, and vertex handles for one markup; hit order vertex, rotate, resize. `select-tool.ts` edits (resize, rotate, vertex, copy) preview through the store's `preview` and commit as one undo step each; a self-crossing area vertex goes back with a toast (D6). Ctrl+drag copies; Ctrl+C / Ctrl+V at the pointer (D5) / Ctrl+Shift+V in place, per-tab clipboard (D4). The painter's `hitAt` became `cursorAt` (each handle carries its cursor).
+- Task 4: `e2e/resize-rotate-copy.spec.ts` (Shift corner resize, rotate 90°, vertex, copy / paste / paste in place, Ctrl+drag; each one undo).
+- Review (adversarial, self): R1 the Ctrl+hover copy cursor never showed (the viewer passed Ctrl as up) - `selectCursor` now takes Ctrl; R2 a single count marker (a point) showed a rotate handle that did nothing - hidden when the box has no extent. Deferred: handles stay painted during a drag (they follow the preview); vertex handles on area holes; paste onto a page with another userUnit is not rescaled; vertex drags do not snap (D3).
+
 ### File List
+
+- src/core/markup/transform.ts, transform.test.ts (new)
+- src/features/editor/handles.ts (new)
+- src/features/editor/select-tool.ts, select-tool.test.ts
+- src/features/editor/measure-tool.ts, measure-tool.test.ts
+- src/features/editor/editor-store.ts
+- src/features/viewer/markup-layer.ts, viewer-engine.ts, viewer-input.ts, viewer-input.test.ts
+- e2e/resize-rotate-copy.spec.ts (new)
+- package.json, package-lock.json (@types/rbush)
