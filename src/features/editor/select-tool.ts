@@ -9,7 +9,7 @@
 // paints the move preview (tools.moveDrag) and the marquee / lasso.
 
 import { toast } from "@/components/ui/toast-store";
-import { removeMarkupsOp } from "@/core/commands/ops";
+import { invertOp, removeMarkupsOp, type DocOp } from "@/core/commands/ops";
 import { pageIdOf } from "@/core/calibration/calibration";
 import { rectOf, translateMarkup, type Point } from "@/core/markup/geometry";
 import { MarkupIndex } from "@/core/markup/markup-index";
@@ -28,6 +28,7 @@ export const MOVE_MARKUP = "Move markup";
 export const MOVE_MARKUPS = "Move markups";
 export const DELETE_MARKUP = "Delete markup";
 export const DELETE_MARKUPS = "Delete markups";
+export const RESTORE_MARKUPS = "Restore markups";
 
 type Gesture = {
   at: SelectContext;
@@ -188,10 +189,28 @@ export function selectionKey(key: SelectionKey, at: { documentId: string; pageIn
       if (!op) return false;
       executeOp(op, ids.length === 1 ? DELETE_MARKUP : DELETE_MARKUPS);
       // UX-DR32: an undoable delete does not confirm; the toast offers Undo.
-      toast({ title: `Deleted ${ids.length} ${ids.length === 1 ? "markup" : "markups"}`, action: { label: "Undo", onAction: () => void undoActive() } });
+      const undo = undoDelete(op);
+      toast({ title: `Deleted ${ids.length} ${ids.length === 1 ? "markup" : "markups"}`, action: { label: "Undo", onAction: undo } });
       return true;
     }
   }
+}
+
+/**
+ * The delete toast's Undo (review R1): undoes the delete while it is still the last step of its
+ * tab; after other edits (or in another tab) it puts back the markups still missing as a new step.
+ */
+function undoDelete(op: DocOp): () => void {
+  const tabId = editorStore.getState().view.tabId;
+  const command = editorStore.getState().history.histories[tabId ?? ""]?.past.at(-1);
+  return () => {
+    const state = editorStore.getState();
+    if (command && state.view.tabId === tabId && state.history.histories[tabId ?? ""]?.past.at(-1) === command) return void undoActive();
+    if (op.kind !== "markups.remove") return;
+    const present = new Set(markupsOf(state, op.documentId).map((m) => m.id));
+    if (op.markups.some((m) => present.has(m.id))) return;
+    executeOp(invertOp(op), RESTORE_MARKUPS, tabId ?? undefined);
+  };
 }
 
 /** Layer 3 with Select: the marquee or the lasso in progress (the accent, dashed, over a white halo). */

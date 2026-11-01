@@ -7,7 +7,7 @@ import { setTool, viewerStore, type LayerView, type SelectContext } from "@/feat
 
 import { editorStore, markupsOf, resetEditor, setDocMarkups, setSelection } from "./editor-store";
 import { installMeasureTools, measurePainter } from "./measure-tool";
-import { DELETE_MARKUPS, MOVE_MARKUP, MOVE_MARKUPS } from "./select-tool";
+import { DELETE_MARKUPS, MOVE_MARKUP, MOVE_MARKUPS, RESTORE_MARKUPS } from "./select-tool";
 import { activeUndoLabels, clearUndo, redoActive, undoActive } from "./undo-store";
 
 const SHA = "f".repeat(64);
@@ -160,6 +160,24 @@ describe("Select tool (Story 5.1)", () => {
     expect(shown.title).toBe("Deleted 2 markups");
     shown.action!.onAction();
     expect(markupsOf(editorStore.getState(), SHA).map((m) => m.id)).toEqual([a.id, b.id, expect.any(String)]);
+  });
+
+  it("review R1: the toast's Undo after another edit restores the deleted markups, not the other edit", () => {
+    const key = measurePainter.selectionKey!;
+    const page = { documentId: SHA, pageIndex: 0 };
+    setSelection([a.id]);
+    key({ kind: "delete" }, page);
+    const [shown] = toastStore.getState().visible;
+    drag({ x: 50, y: 50 }, { x: 50, y: 60 });
+    expect(activeUndoLabels(editorStore.getState(), "t1").undo).toBe(MOVE_MARKUP);
+    shown.action!.onAction();
+    const list = markupsOf(editorStore.getState(), SHA);
+    expect(list.map((m) => m.id)).toEqual([a.id, b.id, expect.any(String)]);
+    expect(list[1].points[0]).toEqual({ x: 0, y: 60 });
+    expect(activeUndoLabels(editorStore.getState(), "t1").undo).toBe(RESTORE_MARKUPS);
+    // Again: nothing is missing any more.
+    shown.action!.onAction();
+    expect(markupsOf(editorStore.getState(), SHA)).toHaveLength(3);
   });
 
   it("another page or tool clears the selection", () => {

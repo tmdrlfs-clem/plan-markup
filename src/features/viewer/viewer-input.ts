@@ -399,7 +399,9 @@ export class ViewerInput {
     if (e.key === "Alt" || e.key === "Shift") {
       this.target.setSnapModifiers?.({ alt: e.altKey, shift: e.shiftKey });
       // Alt over the canvas with a snapping tool only suspends snapping: no browser menu.
-      if (e.key === "Alt" && this.pointer && pointTool(viewerStore.getState().tool)) e.preventDefault();
+      // Story 5.1: with Select, Alt + drag is the lasso.
+      const tool = viewerStore.getState().tool;
+      if (e.key === "Alt" && this.pointer && (pointTool(tool) || tool === "select")) e.preventDefault();
     }
     // Story 4.6 / 5.1: Esc during a caption or Select drag puts things back (and nothing else).
     if (e.key === "Escape" && (this.drag?.kind === "caption" || this.drag?.kind === "select")) {
