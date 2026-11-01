@@ -18,8 +18,6 @@ import { areaMm2, formatArea, perimeterMm } from "./area";
 import { POINTS_IN_A_LINE, circleThrough, radiusMm } from "./circle";
 import { SCALE_NOT_SET, lengthMm } from "./length";
 
-type Point = { x: number; y: number };
-export type Rect = { x: number; y: number; width: number; height: number };
 
 export type MeasureType = MeasureMarkup["type"];
 
@@ -167,22 +165,5 @@ export function formatTotal(group: MeasurementGroup, units: PanelUnits): string 
   return formatMeasured(group.total, units.unit, units.precision);
 }
 
-/** The user-space box of a measurement: its points, or a radius's / diameter's whole circle. */
-export function markupBounds(m: MeasureMarkup): Rect {
-  let points: readonly Point[] = m.points;
-  if (m.type === "radius" || m.type === "diameter") {
-    const circle = circleThrough(m.points[0], m.points[1], m.points[2]);
-    if (circle) {
-      const { centre, radius } = circle;
-      points = [
-        { x: centre.x - radius, y: centre.y - radius },
-        { x: centre.x + radius, y: centre.y + radius },
-      ];
-    }
-  }
-  const xs = points.map((p) => p.x);
-  const ys = points.map((p) => p.y);
-  const x = Math.min(...xs);
-  const y = Math.min(...ys);
-  return { x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y };
-}
+/** The user-space box of a measurement (Story 5.1 moved it to core/markup). */
+export { markupBounds } from "@/core/markup/geometry";
