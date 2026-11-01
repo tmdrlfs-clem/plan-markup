@@ -16,7 +16,7 @@ import { DISPLAY_UNITS, pageIdOf, type DisplayUnit } from "@/core/calibration/ca
 import { formatMeasured } from "@/core/calibration/units";
 import { withGroups } from "@/core/markup/arrange";
 import { sheetLabelOf } from "@/core/pdf/sheet-label";
-import type { MeasureMarkup } from "@/core/schema/markup";
+import { isMeasureMarkup } from "@/core/schema/markup";
 import {
   MEASURE_NAMES,
   formatTotal,
@@ -40,8 +40,6 @@ const UNIT_LABELS: Record<DisplayUnit, string> = { mm: "mm", m: "m", in: "in", "
 
 /** D4: the unit chosen in the panel for this session (null: the active page's calibration unit). */
 export const measurementUnits = createStore<{ unit: DisplayUnit | null }>(() => ({ unit: null }));
-
-const MEASURE_TYPES: ReadonlySet<string> = new Set(["length", "polylength", "area", "count", "angle", "radius", "diameter"]);
 
 /** The page of a row: its sheet label when known, else "Page n". */
 function pageText(index: number, pageLabels: readonly string[] | null, sheetLabels: Readonly<Record<number, string | null>>): string {
@@ -78,7 +76,7 @@ export function MeasurementsPanel({ emptyText, noDrawingText }: { emptyText: str
       const u = pages[index].userUnit;
       return { pageIndex: index, calibration: calibrations[pageId] ?? null, userUnit: u && u > 0 ? u : 1 };
     };
-    const measures = markups.filter((m): m is MeasureMarkup => MEASURE_TYPES.has(m.type));
+    const measures = markups.filter(isMeasureMarkup);
     return measurementGroups(measures, pageOf);
   }, [documentId, markups, pages, calibrations]);
 

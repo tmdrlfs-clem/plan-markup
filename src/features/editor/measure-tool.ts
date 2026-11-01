@@ -121,6 +121,8 @@ const CLOSED: ReadonlySet<DrawTool> = new Set<DrawTool>(["area", "polygon"]);
 /** Story 5.4 (D1): an arrow head's length in line widths, and its least length, in points (page units). */
 const ARROW_HEAD_WIDTHS = 6;
 const ARROW_HEAD_MIN_PT = 6;
+/** Review R1: zoomed out, the head stays at least this long on screen (CSS px), as the ticks do. */
+const ARROW_HEAD_MIN_PX = 8;
 /** The head's half-angle. */
 const ARROW_HEAD_ANGLE = Math.PI / 7;
 /** Story 5.4: what a shape adds to layer 2's list (it has no caption). */
@@ -221,7 +223,7 @@ function strokeShape(c: CanvasRenderingContext2D, type: ShapeMarkup["type"], pts
     const tip = pts[n - 1];
     const d = Math.hypot(tip.x - from.x, tip.y - from.y);
     if (d > 1e-6) {
-      const length = Math.min(d, Math.max(ARROW_HEAD_MIN_PT, ARROW_HEAD_WIDTHS * style.width) * view.devicePerPt);
+      const length = Math.min(d, Math.max(ARROW_HEAD_MIN_PX * view.dpr, Math.max(ARROW_HEAD_MIN_PT, ARROW_HEAD_WIDTHS * style.width) * view.devicePerPt));
       const ux = (tip.x - from.x) / d;
       const uy = (tip.y - from.y) / d;
       const half = length * Math.tan(ARROW_HEAD_ANGLE);

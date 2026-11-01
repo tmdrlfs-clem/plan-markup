@@ -572,8 +572,12 @@ describe("Line, Arrow, Polyline and Polygon tools (Story 5.4)", () => {
     measurePainter.place({ x: 72, y: 0 }, AT);
     const r = recorder();
     measurePainter.paintStatic(r.ctx, view);
-    // Head length max(6 pt, 6 × 1 pt) at 1 device px a point: the line ends 6 px short of the tip.
-    expect(r.ops.filter((o) => o.op === "lineTo")[0].args).toEqual([66, -0]);
+    // Head length max(6 pt, 6 × 1 pt) at 1 device px a point, but at least 8 px on screen (review R1).
+    expect(r.ops.filter((o) => o.op === "lineTo")[0].args).toEqual([64, -0]);
+    // Zoomed in, the head is in page units: 6 pt at 4 device px a point.
+    const near = recorder();
+    measurePainter.paintStatic(near.ctx, { ...view, devicePerPt: 4, toDevice: (p) => ({ x: 4 * p.x, y: -4 * p.y }) });
+    expect(near.ops.filter((o) => o.op === "lineTo")[0].args).toEqual([264, -0]);
     const fill = r.ops.find((o) => o.op === "fill");
     expect(fill?.fillStyle).toBe("#ff0000");
     expect(r.ops.filter((o) => o.op === "moveTo")[1].args).toEqual([72, -0]);

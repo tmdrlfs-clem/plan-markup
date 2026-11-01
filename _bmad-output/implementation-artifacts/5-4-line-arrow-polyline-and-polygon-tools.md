@@ -1,6 +1,6 @@
 # Story 5.4: Line, arrow, polyline and polygon tools
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -18,10 +18,10 @@ so that I can draw pipework and outlines.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Core** — schemas for `line`, `arrow`, `polyline`, `polygon`; hit tests (polygon inside); unit tests.
-- [ ] **Task 2: Viewer** — the markup tools as draw tools (snapping, clicks, Enter / Backspace / double-click / Esc, crosshair); keys `L`, `A`, `Shift+N`, `Shift+P`.
-- [ ] **Task 3: Editor and rail** — drawing, committing and painting the new types (the arrow head); the rail's line slot with its menu and hints; unit tests.
-- [ ] **Task 4: Tests** — `e2e/line-tools.spec.ts` (AC 5).
+- [x] **Task 1: Core** — schemas for `line`, `arrow`, `polyline`, `polygon`; hit tests (polygon inside); unit tests.
+- [x] **Task 2: Viewer** — the markup tools as draw tools (snapping, clicks, Enter / Backspace / double-click / Esc, crosshair); keys `L`, `A`, `Shift+N`, `Shift+P`.
+- [x] **Task 3: Editor and rail** — drawing, committing and painting the new types (the arrow head); the rail's line slot with its menu and hints; unit tests.
+- [x] **Task 4: Tests** — `e2e/line-tools.spec.ts` (AC 5).
 
 ## Dev Notes
 
@@ -47,4 +47,16 @@ Claude Opus 5.5
 
 ### Completion Notes List
 
+- Task 1: `line`, `arrow` (2 points), `polyline` (2+), `polygon` (3+) schemas on the markup base (no caption offset); `ShapeMarkup`, `isMeasureMarkup`, `DEFAULT_MARKUP_STYLE`; a polygon is hit inside and on its closing edge (D2). Unit tests.
+- Task 2: the viewer's draw tools (`DrawTool` = measuring tools + `MarkupTool`; `isDrawTool`) snap, place clicks, finish on Enter / double-click, take Backspace and Esc, and show the crosshair; keys `L`, `A`, `Shift+N`, `Shift+P` (canvas focused). The Scale prompt stays with the measuring tools.
+- Task 3: measure-tool draws and commits the new types (`markupOf`), paints them (`strokeShape`: the polygon closed, the arrow's line stopping at a filled head, D1), lists them in layer 2's labels ("Line", "Arrow", "Polyline", "Polygon") and has no live value for them (D6); a polygon closes on its first vertex and may cross itself (D3); Undo while drawing names the point. The rail's Measure slot became `FlyoutGroup`, also used by the new Lines slot (D4) with the tools' hints. Select, handles, copy / paste, group, order, align and lock work on them unchanged.
+- Task 4: `e2e/line-tools.spec.ts`. Screenshot: fixtures/private/traces/5-4-line-tools.png.
+- Review (adversarial, self): R1 zoomed out the arrow head (page units only) shrank to a few pixels and vanished - it keeps at least 8 CSS px on screen, as the ticks do; the Measurements panel uses the shared `isMeasureMarkup`. Deferred: style changes (Properties, a later story); arrow head styles; Esc finishing (not cancelling) a polyline, as Revu does, stays as the measuring tools' cancel (UX-DR35).
+
 ### File List
+
+- src/core/schema/markup.ts, src/core/markup/geometry.ts, geometry.test.ts, transform.test.ts
+- src/features/viewer/viewer-store.ts, index.ts, snap-controller.ts, viewer-engine.ts, viewer-input.ts, viewer-input.test.ts
+- src/features/editor/measure-tool.ts, measure-tool.test.ts, editor-store.ts, undo-store.ts, measurements-panel.tsx, select-tool.test.ts
+- src/features/workspace/tool-rail.tsx, workspace-shell.test.tsx
+- e2e/line-tools.spec.ts (new)
