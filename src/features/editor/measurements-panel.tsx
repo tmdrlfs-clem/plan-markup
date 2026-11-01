@@ -50,8 +50,9 @@ function pageText(index: number, pageLabels: readonly string[] | null, sheetLabe
 /** Shows a row's measurement and selects it (AC 5); a tool in use gives way to Select (review R1). */
 function reveal(row: MeasurementRow): void {
   if (viewerStore.getState().tool !== "select") setTool("select");
-  setSelection([row.markup.id]);
+  // The page first: another page clears the selection (Story 5.1 D4).
   viewerCommands.revealMarkup(row.pageIndex, markupBounds(row.markup));
+  setSelection([row.markup.id]);
 }
 
 export function MeasurementsPanel({ emptyText, noDrawingText }: { emptyText: string; noDrawingText: string }) {

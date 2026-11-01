@@ -4,7 +4,8 @@
 //
 //   doc        markups by document (sha256), shared by the tabs (a document is open in one tab)
 //   view       the active document tab, mirrored from the viewer
-//   tools      the drawing in progress (Length, Story 4.5; more tools with Epic 5) and a caption being moved (4.6)
+//   tools      the drawing in progress (Length, Story 4.5; more tools with Epic 5), a caption being moved (4.6)
+//              and markups being moved (a drag or an arrow key held, 5.1)
 //   selection  selected markup ids (the Measurements panel, Story 4.11; Epic 5)
 //   history    undo histories by document tab (the Story 4.3 undo stack)
 
@@ -22,10 +23,13 @@ export type Drawing = { tool: MeasureTool; pageId: string; pageIndex: number; po
 /** Story 4.6: a caption being moved: its markup and the offset change so far (user space). */
 export type CaptionDrag = { id: string; documentId: string; delta: Point };
 
+/** Story 5.1: markups being moved (a drag or a held arrow key): their ids and the move so far (user space). */
+export type MoveDrag = { ids: readonly string[]; documentId: string; delta: Point };
+
 export type EditorState = {
   doc: { markups: Readonly<Record<string, readonly Markup[]>> };
   view: { tabId: string | null; documentId: string | null };
-  tools: { drawing: Drawing | null; captionDrag: CaptionDrag | null };
+  tools: { drawing: Drawing | null; captionDrag: CaptionDrag | null; moveDrag: MoveDrag | null };
   selection: { ids: readonly string[] };
   /** Histories by tab id ("" outside tabs). */
   history: { histories: Readonly<Record<string, UndoHistory>> };
@@ -34,7 +38,7 @@ export type EditorState = {
 export const EMPTY_EDITOR: EditorState = {
   doc: { markups: {} },
   view: { tabId: null, documentId: null },
-  tools: { drawing: null, captionDrag: null },
+  tools: { drawing: null, captionDrag: null, moveDrag: null },
   selection: { ids: [] },
   history: { histories: {} },
 };
@@ -68,6 +72,12 @@ export function setDrawing(drawing: Drawing | null): void {
 export function setCaptionDrag(captionDrag: CaptionDrag | null): void {
   if (editorStore.getState().tools.captionDrag === captionDrag) return;
   editorStore.setState((s) => ({ tools: { ...s.tools, captionDrag } }));
+}
+
+/** Story 5.1: markups being moved (the select tool only). */
+export function setMoveDrag(moveDrag: MoveDrag | null): void {
+  if (editorStore.getState().tools.moveDrag === moveDrag) return;
+  editorStore.setState((s) => ({ tools: { ...s.tools, moveDrag } }));
 }
 
 /** Story 4.11: selects markups by id (none: clears); false when nothing changed. */

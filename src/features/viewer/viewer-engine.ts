@@ -92,7 +92,7 @@ import type { SnapModifiers } from "./viewer-input";
 import type { PageScales } from "@/core/scale/detect";
 import { setCursor } from "./status/cursor-store";
 import { searchUi } from "./search-ui";
-import { markupPainter, onMarkupsChanged, type LayerView, type PressBrush } from "./markup-layer";
+import { markupPainter, onMarkupsChanged, type LayerView, type PressBrush, type SelectContext } from "./markup-layer";
 import { isMeasureTool, setTool, viewerStore, type ViewerErrorCode, type ViewerState, type ViewerTool } from "./viewer-store";
 
 /** Story 4.6: a click this close (CSS px) to the last vertex repeats it (a double-click's second click). */
@@ -115,6 +115,8 @@ const HIT_MARGIN = 32;
 /** Story 4.11: a measurement shown from the Measurements panel: at most this zoom (400 %), and at least this box in points (a count marker). */
 const REVEAL_MAX_ZOOM = 4 * ACTUAL_SIZE;
 const REVEAL_MIN_PT = 72;
+/** Story 5.1: a Select click hits a markup within this many CSS px. */
+const SELECT_TOLERANCE_PX = 5;
 
 export type ViewerCanvases = { tiles: HTMLCanvasElement; markups: HTMLCanvasElement; active: HTMLCanvasElement };
 
@@ -1767,6 +1769,56 @@ export class ViewerEngine {
     if (!drag?.pending) return;
     markupPainter()?.dragCaption(drag.id, drag.documentId, drag.pending);
     drag.pending = null;
+  }
+
+  /** Story 5.1: the Select context at a viewport point (CSS px); null without a page. */
+  private selectContext(at: Point, mods: { shift: boolean; alt: boolean }): { point: Point; context: SelectContext } | null {
+    const view = this.layerView();
+    const point = this.screenToUser(at);
+    if (!view || !point) return null;
+    const linear = this.userToScreenLinear();
+    const px = 1 / (Math.hypot(linear[0], linear[1]) || 1);
+    return {
+      point,
+      context: {
+        documentId: view.documentId,
+        pageIndex: view.pageIndex,
+        view,
+        device: { x: at.x * this.dpr, y: at.y * this.dpr },
+        px,
+        tolerance: SELECT_TOLERANCE_PX * px,
+        ...mods,
+      },
+    };
+  }
+
+  /** Story 5.1: a Select press, drag, release or cancel (viewport CSS px); false when there is no page to select on. */
+  selectGesture(phase: "start" | "move" | "end" | "cancel", at: Point, mods: { shift: boolean; alt: boolean }): boolean {
+    const painter = markupPainter();
+    const s = this.selectContext(at, mods);
+    if (!painter?.select || !s) return false;
+    painter.select(phase, s.point, s.context);
+    return true;
+  }
+
+  /** Story 5.1: whether a markup is under the pointer (viewport CSS px). */
+  selectHover(at: Point): boolean {
+    const painter = markupPainter();
+    const s = this.selectContext(at, { shift: false, alt: false });
+    return !!painter?.hitAt && !!s && painter.hitAt(s.point, s.context);
+  }
+
+  /** Story 5.1: a selection key; a nudge comes in screen px and goes to the painter in user space. */
+  selectionKey(key: "delete" | "all" | "nudge-end" | { dx: number; dy: number }): boolean {
+    const painter = markupPainter();
+    const view = this.layerView();
+    if (!painter?.selectionKey || !view) return false;
+    const at = { documentId: view.documentId, pageIndex: view.pageIndex };
+    if (typeof key === "string") return painter.selectionKey({ kind: key }, at);
+    const a = this.screenToUser({ x: 0, y: 0 });
+    const b = this.screenToUser({ x: key.dx, y: key.dy });
+    if (!a || !b) return false;
+    return painter.selectionKey({ kind: "nudge", dx: b.x - a.x, dy: b.y - a.y }, at);
   }
 
   /**

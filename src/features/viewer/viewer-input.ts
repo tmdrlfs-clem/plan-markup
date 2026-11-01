@@ -150,7 +150,21 @@ export interface ViewerInputTarget {
   endCaptionDrag?(commit: boolean): void;
   /** Story 4.10: press, drag and release with Dynamic fill (viewport CSS px). */
   pressTool?(phase: "start" | "move" | "end", at: Point, brush: PressBrush): void;
+  /** Story 5.1: a Select press, drag, release or cancel (viewport CSS px); false when there is nothing to select on. */
+  selectGesture?(phase: "start" | "move" | "end" | "cancel", at: Point, mods: { shift: boolean; alt: boolean }): boolean;
+  /** Story 5.1: whether a markup is under the pointer (the move cursor). */
+  selectHover?(at: Point): boolean;
+  /** Story 5.1: Delete / Backspace, Ctrl+A, an arrow's nudge (screen px) and its release; true when it acted. */
+  selectionKey?(key: "delete" | "all" | "nudge-end" | { dx: number; dy: number }): boolean;
 }
+
+/** Story 5.1: arrow keys' nudge directions on screen. */
+const NUDGE: Readonly<Record<string, Point>> = {
+  ArrowLeft: { x: -1, y: 0 },
+  ArrowRight: { x: 1, y: 0 },
+  ArrowUp: { x: 0, y: -1 },
+  ArrowDown: { x: 0, y: 1 },
+};
 
 /** Tools that place points (Length, Polylength, the calibration pick): a click places one, Alt suspends snapping. */
 function pointTool(tool: ViewerTool): boolean {
@@ -164,7 +178,8 @@ type Drag =
   | { kind: "pan"; pointerId: number; last: Point }
   | { kind: "zoom"; pointerId: number; start: Point; zoomOut: boolean }
   | { kind: "caption"; pointerId: number }
-  | { kind: "press"; pointerId: number; brush: PressBrush };
+  | { kind: "press"; pointerId: number; brush: PressBrush }
+  | { kind: "select"; pointerId: number; shift: boolean; alt: boolean };
 
 /** Normalised rectangle between two points. */
 function rectOf(a: Point, b: Point): Rect {
@@ -176,6 +191,8 @@ export class ViewerInput {
   private drag: Drag | null = null;
   private pointer: Point | null = null;
   private altDown = false;
+  /** Story 5.1: the pointer is over a markup with Select (the move cursor). */
+  private overMarkup = false;
   private readonly removers: (() => void)[] = [];
 
   constructor(
@@ -214,6 +231,8 @@ export class ViewerInput {
       this.altDown = false;
       this.target.setSnapModifiers?.({ alt: false, shift: false });
       this.endDrag(false);
+      // Story 5.1: a nudge whose key release never arrives here is kept.
+      this.target.selectionKey?.("nudge-end");
     });
     this.removers.push(viewerStore.subscribe(() => this.updateCursor()));
     this.updateCursor();
@@ -253,7 +272,8 @@ export class ViewerInput {
   private updateCursor(): void {
     const { tool, tempPan } = viewerStore.getState();
     const zoomOut = this.drag?.kind === "zoom" ? this.drag.zoomOut : this.altDown;
-    const cursor = this.drag?.kind === "caption" ? "move" : cursorFor({ tool, tempPan, dragging: this.drag?.kind === "pan", zoomOut });
+    const moveCursor = this.drag?.kind === "caption" || (!this.drag && !tempPan && tool === "select" && this.overMarkup);
+    const cursor = moveCursor ? "move" : cursorFor({ tool, tempPan, dragging: this.drag?.kind === "pan", zoomOut });
     if (this.canvas.style.cursor !== cursor) this.canvas.style.cursor = cursor;
   }
 
@@ -286,6 +306,10 @@ export class ViewerInput {
       // Story 4.6: Shift + drag on a measurement's caption moves the caption only.
       e.preventDefault();
       this.drag = { kind: "caption", pointerId: e.pointerId };
+    } else if (e.button === 0 && tool === "select" && this.target.selectGesture?.("start", this.point(e), { shift: e.shiftKey, alt: e.altKey })) {
+      // Story 5.1: click, Shift + click, marquee, Alt + drag lasso, or a drag that moves markups.
+      e.preventDefault();
+      this.drag = { kind: "select", pointerId: e.pointerId, shift: e.shiftKey, alt: e.altKey };
     } else {
       // Story 4.1: a snapping tool's click places its point (the snapped one).
       if (e.button === 0 && pointTool(tool)) {
@@ -308,6 +332,14 @@ export class ViewerInput {
     this.pointer = p;
     this.target.pointerAt?.(p, { alt: e.altKey, shift: e.shiftKey });
     const drag = this.drag;
+    // Story 5.1: the move cursor over a markup with Select.
+    if (!drag && this.active() && viewerStore.getState().tool === "select" && this.target.selectHover) {
+      const over = this.target.selectHover(p);
+      if (over !== this.overMarkup) {
+        this.overMarkup = over;
+        this.updateCursor();
+      }
+    }
     if (!drag || drag.pointerId !== e.pointerId) return;
     if (drag.kind === "pan") {
       this.target.panBy(p.x - drag.last.x, p.y - drag.last.y);
@@ -316,6 +348,8 @@ export class ViewerInput {
       this.target.moveCaptionDrag?.(p);
     } else if (drag.kind === "press") {
       this.target.pressTool?.("move", p, drag.brush);
+    } else if (drag.kind === "select") {
+      this.target.selectGesture?.("move", p, { shift: drag.shift, alt: drag.alt });
     } else {
       this.target.setZoomRect(rectOf(drag.start, p));
     }
@@ -338,6 +372,7 @@ export class ViewerInput {
     this.drag = null;
     if (drag.kind === "caption") this.target.endCaptionDrag?.(commit);
     if (drag.kind === "press" && this.pointer) this.target.pressTool?.("end", this.pointer, drag.brush);
+    if (drag.kind === "select" && this.pointer) this.target.selectGesture?.(commit ? "end" : "cancel", this.pointer, { shift: drag.shift, alt: drag.alt });
     if (drag.kind === "zoom") {
       this.target.setZoomRect(null);
       const end = this.pointer;
@@ -366,8 +401,8 @@ export class ViewerInput {
       // Alt over the canvas with a snapping tool only suspends snapping: no browser menu.
       if (e.key === "Alt" && this.pointer && pointTool(viewerStore.getState().tool)) e.preventDefault();
     }
-    // Story 4.6: Esc during a caption drag puts the caption back (and nothing else).
-    if (e.key === "Escape" && this.drag?.kind === "caption") {
+    // Story 4.6 / 5.1: Esc during a caption or Select drag puts things back (and nothing else).
+    if (e.key === "Escape" && (this.drag?.kind === "caption" || this.drag?.kind === "select")) {
       e.preventDefault();
       this.endDrag(false);
       return;
@@ -390,6 +425,10 @@ export class ViewerInput {
     }
     // Story 4.3: Esc while picking calibration points cancels the pick (the dialog comes back).
     if (e.key === "Escape" && viewerStore.getState().tool === "calibrate") this.target.cancelCalibrationPick?.();
+    if (this.selectionKeys(e)) {
+      e.preventDefault();
+      return;
+    }
     if (e.defaultPrevented || !this.documentArea()) return;
     const doc = this.canvas.ownerDocument;
     const action = resolveViewerKey(e, {
@@ -429,7 +468,30 @@ export class ViewerInput {
     }
   }
 
+  /**
+   * Story 5.1: with Select and the canvas's keys: Delete / Backspace delete the selection, the
+   * arrows nudge it (Shift x10; the hold is committed on release), Ctrl+A (canvas focused)
+   * selects the page's markups. True when the key was used.
+   */
+  private selectionKeys(e: KeyboardEvent): boolean {
+    if (e.defaultPrevented || e.isComposing || !this.target.selectionKey || !this.active()) return false;
+    if (viewerStore.getState().tool !== "select" || this.drag || !this.canvasKeys()) return false;
+    const ctrl = e.ctrlKey || e.metaKey;
+    if (ctrl && !e.altKey && !e.shiftKey && isLetter(e, "a")) {
+      if (this.canvas.ownerDocument.activeElement !== this.canvas) return false;
+      if (!e.repeat) this.target.selectionKey("all");
+      return true;
+    }
+    if (ctrl || e.altKey) return false;
+    if ((e.key === "Delete" || e.key === "Backspace") && !e.shiftKey) return e.repeat || this.target.selectionKey("delete");
+    const dir = NUDGE[e.key];
+    if (!dir) return false;
+    const step = e.shiftKey ? 10 : 1;
+    return this.target.selectionKey({ dx: dir.x * step, dy: dir.y * step });
+  }
+
   private onKeyUp(e: KeyboardEvent): void {
+    if (NUDGE[e.key]) this.target.selectionKey?.("nudge-end");
     if (e.key === "Alt") {
       this.altDown = false;
       this.updateCursor();

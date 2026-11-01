@@ -19,8 +19,10 @@
 // With Select, Shift + drag on a caption moves the caption only ("Move
 // caption", a markups.update op); the offset is stored in user space.
 //
-// Selected markups (the Measurements panel selects one, Story 4.11) get the
-// selection outline; Esc with Select, another tool, tab or document clears it.
+// Selected markups (the Measurements panel selects one, Story 4.11; the
+// Select tool, Story 5.1, select-tool.ts) get the selection outline; Esc with
+// Select, another tool, page, tab or document clears it. Markups being moved
+// are painted where they go.
 //
 // The editor paints the viewer's layers 2 and 3 through the viewer's markup
 // painter interface (AR10): layer 2 the page's markups, layer 3 the drawing.
@@ -33,6 +35,7 @@ import { angleCaption, bisector } from "@/core/measure/angle";
 import { areaCaption, areaCaptionText, formatArea, polygonCentroid, selfIntersects } from "@/core/measure/area";
 import { circleCaption, circleThrough } from "@/core/measure/circle";
 import { SCALE_NOT_SET, captionPlacement, lengthCaption, polylineCaptionAnchor } from "@/core/measure/length";
+import { translateMarkup } from "@/core/markup/geometry";
 import { DEFAULT_MEASURE_STYLE, MAX_POLYLINE_POINTS, type MarkupStyle, type MeasureMarkup } from "@/core/schema/markup";
 import {
   isMeasureTool,
@@ -45,8 +48,9 @@ import {
   type MeasureTool,
 } from "@/features/viewer";
 
-import { editorStore, markupsOf, pageMarkups, setCaptionDrag, setDrawing, setSelection, type Drawing } from "./editor-store";
+import { editorStore, markupsOf, pageMarkups, setCaptionDrag, setDrawing, setMoveDrag, setSelection, type Drawing, type MoveDrag } from "./editor-store";
 import { discardFill, fillAreaUser, fillPress, paintFill, takeFillRings, undoFillStroke } from "./fill-tool";
+import { paintSelectGesture, resetSelectTool, selectGesture, selectHitAt, selectionKey, toggleSelected } from "./select-tool";
 import { executeOp, registerDrawingUndo } from "./undo-store";
 
 type Point = { x: number; y: number };
@@ -347,10 +351,17 @@ const CAPTION_SLOP_PX = 3;
 
 const addOffset = (a: Point | undefined, b: Point): Point => ({ x: (a?.x ?? 0) + b.x, y: (a?.y ?? 0) + b.y });
 
-/** The markup as painted: a caption being moved shows where it goes. */
+let moving: { drag: MoveDrag; ids: ReadonlySet<string> } | null = null;
+
+/** The markup as painted: a caption being moved, or markups being moved (Story 5.1), show where they go. */
 function shown(m: MeasureMarkup): MeasureMarkup {
-  const drag = editorStore.getState().tools.captionDrag;
-  return drag && drag.id === m.id ? { ...m, captionOffset: addOffset(m.captionOffset, drag.delta) } : m;
+  const { captionDrag: drag, moveDrag } = editorStore.getState().tools;
+  let out = drag && drag.id === m.id ? { ...m, captionOffset: addOffset(m.captionOffset, drag.delta) } : m;
+  if (moveDrag) {
+    if (moving?.drag !== moveDrag) moving = { drag: moveDrag, ids: new Set(moveDrag.ids) };
+    if (moving.ids.has(m.id) && m.pageId.startsWith(`${moveDrag.documentId}:`)) out = translateMarkup(out, moveDrag.delta);
+  }
+  return out;
 }
 
 const MEASURE_TYPES: ReadonlySet<string> = new Set(["length", "polylength", "area", "count", "angle", "radius", "diameter"]);
@@ -437,6 +448,8 @@ export const measurePainter: MarkupPainter = {
   },
 
   paintActive(c, view, pointer) {
+    // Story 5.1: the marquee or lasso in progress.
+    if (viewerStore.getState().tool === "select") paintSelectGesture(c, view);
     const d = drawing();
     if (d?.tool === "fill") return paintFillActive(c, view, pointer);
     if (!d || d.pageId !== pageIdOf(view.documentId, view.pageIndex) || !pointer || d.points.length === 0) return null;
@@ -546,6 +559,8 @@ export const measurePainter: MarkupPainter = {
   endCaptionDrag(commit) {
     const drag = editorStore.getState().tools.captionDrag;
     setCaptionDrag(null);
+    // Story 5.1: Shift + click on a caption (it did not move) adds its markup to the selection or takes it out.
+    if (drag && commit && drag.delta.x === 0 && drag.delta.y === 0) toggleSelected(drag.id);
     if (!drag || !commit || (drag.delta.x === 0 && drag.delta.y === 0)) return false;
     const before = pageMarkupById(drag.documentId, drag.id);
     if (!before) return false;
@@ -556,6 +571,18 @@ export const measurePainter: MarkupPainter = {
 
   press(phase, point, at, brush) {
     if (viewerStore.getState().tool === "fill") fillPress(phase, point, at, brush);
+  },
+
+  select(phase, point, at) {
+    selectGesture(phase, point, at, (view, device) => measurePainter.captionAt(view, device));
+  },
+
+  hitAt(point, at) {
+    return selectHitAt(point, at, (view, device) => measurePainter.captionAt(view, device));
+  },
+
+  selectionKey(key, at) {
+    return selectionKey(key, at);
   },
 };
 
@@ -664,9 +691,11 @@ export function installMeasureTools(): () => void {
       if (s.calibrations !== prev.calibrations) notifyMarkups({});
       const moved = s.tool !== prev.tool || s.pageIndex !== prev.pageIndex || s.tabId !== prev.tabId || s.openSeq !== prev.openSeq || s.documentId !== prev.documentId;
       if (moved) setCaptionDrag(null);
-      // Story 4.11 (D5): arming another tool, another tab or document clears the selection.
+      // Story 4.11 (D5): arming another tool, another tab or document clears the selection;
+      // Story 5.1 (D4): another page too. A move in progress is dropped.
       const otherDocument = s.tabId !== prev.tabId || s.openSeq !== prev.openSeq || s.documentId !== prev.documentId;
-      if (otherDocument || (s.tool !== prev.tool && s.tool !== "select")) setSelection([]);
+      if (otherDocument || s.pageIndex !== prev.pageIndex || (s.tool !== prev.tool && s.tool !== "select")) setSelection([]);
+      if (moved) setMoveDrag(null);
       const d = drawing();
       if (!d) return;
       if (s.tool === d.tool && !moved) return;
@@ -681,6 +710,8 @@ export function installMeasureTools(): () => void {
     });
     uninstall = () => {
       discardFill();
+      resetSelectTool();
+      setMoveDrag(null);
       setDrawing(null);
       setCaptionDrag(null);
       captionBoxes = null;

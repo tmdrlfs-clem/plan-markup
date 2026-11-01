@@ -506,4 +506,54 @@ describe("ViewerInput", () => {
     expect(t.zoomStep).not.toHaveBeenCalled();
     other.remove();
   });
+  it("Story 5.1: Select press / drag / release go to the select gesture with their modifiers; Esc cancels", () => {
+    const selectGesture = vi.fn(() => true);
+    Object.assign(t, { selectGesture });
+    canvas.dispatchEvent(pointer("pointerdown", { x: 5, y: 6, shiftKey: true }));
+    canvas.dispatchEvent(pointer("pointermove", { x: 15, y: 16, shiftKey: true }));
+    canvas.dispatchEvent(pointer("pointerup", { x: 15, y: 16 }));
+    expect(selectGesture.mock.calls).toEqual([
+      ["start", { x: 5, y: 6 }, { shift: true, alt: false }],
+      ["move", { x: 15, y: 16 }, { shift: true, alt: false }],
+      ["end", { x: 15, y: 16 }, { shift: true, alt: false }],
+    ]);
+    canvas.dispatchEvent(pointer("pointerdown", { x: 5, y: 6, altKey: true }));
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    expect(selectGesture).toHaveBeenLastCalledWith("cancel", { x: 5, y: 6 }, { shift: false, alt: true });
+  });
+
+  it("Story 5.1: the move cursor over a markup; selection keys only with Select and the canvas's keys", () => {
+    const selectHover = vi.fn(() => true);
+    const selectionKey = vi.fn(() => true);
+    Object.assign(t, { selectHover, selectionKey });
+    canvas.dispatchEvent(pointer("pointermove", { x: 5, y: 6 }));
+    expect(canvas.style.cursor).toBe("move");
+    canvas.focus();
+    const key = (init: KeyboardEventInit) => {
+      const e = new KeyboardEvent("keydown", { cancelable: true, ...init });
+      window.dispatchEvent(e);
+      return e;
+    };
+    expect(key({ key: "Delete" }).defaultPrevented).toBe(true);
+    expect(selectionKey).toHaveBeenLastCalledWith("delete");
+    key({ key: "ArrowLeft", shiftKey: true });
+    expect(selectionKey).toHaveBeenLastCalledWith({ dx: -10, dy: 0 });
+    window.dispatchEvent(new KeyboardEvent("keyup", { key: "ArrowLeft" }));
+    expect(selectionKey).toHaveBeenLastCalledWith("nudge-end");
+    expect(key({ key: "a", ctrlKey: true }).defaultPrevented).toBe(true);
+    expect(selectionKey).toHaveBeenLastCalledWith("all");
+    selectionKey.mockClear();
+    setTool("pan");
+    key({ key: "Delete" });
+    expect(selectionKey).not.toHaveBeenCalled();
+    setTool("select");
+    const field = document.createElement("input");
+    document.body.appendChild(field);
+    field.focus();
+    key({ key: "Delete" });
+    key({ key: "a", ctrlKey: true });
+    // Only the focus leaving the canvas (a held nudge is kept).
+    expect(selectionKey.mock.calls).toEqual([["nudge-end"]]);
+    field.remove();
+  });
 });

@@ -40,6 +40,23 @@ export type PressContext = {
 /** Story 4.10: what a press does: spread (a plain press), paint (Shift) or erase (Ctrl). */
 export type PressBrush = "grow" | "paint" | "erase";
 
+/** Story 5.1: where a Select gesture works, as the engine sees it. */
+export type SelectContext = {
+  documentId: string;
+  pageIndex: number;
+  view: LayerView;
+  /** The pointer in canvas device px (captions are hit there). */
+  device: Point;
+  /** One CSS px in user units at this zoom. */
+  px: number;
+  /** The hit tolerance in user units. */
+  tolerance: number;
+  shift: boolean;
+  alt: boolean;
+};
+/** Story 5.1: a selection key: Delete / Backspace, an arrow's nudge (user space) and its release, Ctrl+A. */
+export type SelectionKey = { kind: "delete" } | { kind: "nudge"; dx: number; dy: number } | { kind: "nudge-end" } | { kind: "all" };
+
 export interface MarkupPainter {
   /** Layer 2: the page's markups. Returns the captions drawn, in drawing order (e2e, diagnostics). */
   paintStatic(c: CanvasRenderingContext2D, view: LayerView): readonly string[];
@@ -69,6 +86,12 @@ export interface MarkupPainter {
   endCaptionDrag(commit: boolean): boolean;
   /** Story 4.10: a press-and-hold tool's press, drag and release at `point` (user space). */
   press?(phase: "start" | "move" | "end", point: Point, at: PressContext, brush: PressBrush): void;
+  /** Story 5.1: a Select press, drag, release or cancel at `point` (user space). */
+  select?(phase: "start" | "move" | "end" | "cancel", point: Point, at: SelectContext): void;
+  /** Story 5.1: whether a markup is under `point` (the move cursor). */
+  hitAt?(point: Point, at: SelectContext): boolean;
+  /** Story 5.1: a selection key on the shown page; true when it acted. */
+  selectionKey?(key: SelectionKey, at: { documentId: string; pageIndex: number }): boolean;
 }
 
 /** `activeOnly`: only the drawing in progress changed (review 4.10 R2: layer 2 is not painted again). */
