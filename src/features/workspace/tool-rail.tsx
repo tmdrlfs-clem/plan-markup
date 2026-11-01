@@ -11,6 +11,7 @@ import {
   Eraser,
   Hand,
   Hash,
+  Hexagon,
   Highlighter,
   MousePointer2,
   PaintBucket,
@@ -20,6 +21,7 @@ import {
   Route,
   Ruler,
   Slash,
+  Spline,
   Square,
   Stamp,
   Type,
@@ -31,7 +33,7 @@ import { useStore } from "zustand";
 import { Menu, MenuContent, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "@/components/ui/menu";
 import { Toolbar, ToolbarButton, ToolbarSeparator, ToolbarToggleGroup, ToolbarToggleItem } from "@/components/ui/toolbar";
 import { dismissHint, showHint } from "@/components/ui/hint-store";
-import { hasDocument, isMeasureTool, setTool, viewerStore, type MeasureTool, type ViewerTool } from "@/features/viewer";
+import { hasDocument, isMarkupTool, isMeasureTool, setTool, viewerStore, type MarkupTool, type MeasureTool, type ViewerTool } from "@/features/viewer";
 
 import { NO_DRAWING } from "./workspace-toolbar";
 
@@ -47,7 +49,7 @@ interface Tool {
  * Tools that work today: Select and Pan (Story 3.2), and Length (snapping from
  * Story 4.1, measuring from Story 4.5). The others arrive with the editor.
  */
-const LIVE_TOOLS: ReadonlySet<string> = new Set<ViewerTool>(["select", "pan", "length", "polylength", "area", "count", "angle", "radius", "diameter"]);
+const LIVE_TOOLS: ReadonlySet<string> = new Set<ViewerTool>(["select", "pan", "length", "polylength", "area", "count", "angle", "radius", "diameter", "line", "arrow", "polyline", "polygon"]);
 
 export const SNAP_PREVIEW_HINT_ID = "snap-preview";
 /** Review S3: a page past the segment cap. */
@@ -69,6 +71,12 @@ export const CIRCLE_HINT =
 /** Story 4.10: the HintBar while Dynamic fill is armed. */
 export const FILL_HINT =
   "Dynamic fill: press and hold inside a room; the fill spreads to the drawing's lines. Shift + drag paints, Ctrl + drag erases, Ctrl+Z undoes a stroke. Enter adds the area; Esc discards the fill, Esc again returns to Select.";
+/** Story 5.4: the HintBar while a straight-line markup tool is armed. */
+const SNAPS = "Points snap to the drawing (Alt: off, Shift: 45° steps).";
+export const LINE_HINT = `Line: click the start and the end point. ${SNAPS} Esc cancels; Esc again returns to Select.`;
+export const ARROW_HINT = `Arrow: click the start, then the point the arrow points to. ${SNAPS} Esc cancels; Esc again returns to Select.`;
+export const POLYLINE_HINT = `Polyline: click each vertex; double-click or Enter finishes. Backspace removes the last vertex. ${SNAPS} Esc cancels; Esc again returns to Select.`;
+export const POLYGON_HINT = `Polygon: click each corner; double-click, Enter or a click on the first corner closes it. Backspace removes the last corner. ${SNAPS} Esc cancels; Esc again returns to Select.`;
 const TOOL_HINTS: Partial<Record<ViewerTool, string>> = {
   length: SNAP_PREVIEW_HINT,
   polylength: POLYLENGTH_HINT,
@@ -78,6 +86,10 @@ const TOOL_HINTS: Partial<Record<ViewerTool, string>> = {
   radius: CIRCLE_HINT,
   diameter: CIRCLE_HINT,
   fill: FILL_HINT,
+  line: LINE_HINT,
+  arrow: ARROW_HINT,
+  polyline: POLYLINE_HINT,
+  polygon: POLYGON_HINT,
 };
 export const EDITOR_LATER = "Arrives with the markup editor";
 
@@ -90,11 +102,11 @@ const GROUPS: { label: string; tools: Tool[] }[] = [
       { id: "pan", label: "Pan", icon: Hand, shortcut: "Shift+V" },
     ],
   },
+  // Story 5.4 (D4): Line, Arrow, Polyline and Polygon share one button and a menu (LINE_TOOLS).
+  { label: "Lines", tools: [] },
   {
     label: "Markup",
     tools: [
-      { id: "line", label: "Line", icon: Slash, shortcut: "L" },
-      { id: "arrow", label: "Arrow", icon: ArrowUpRight, shortcut: "A" },
       { id: "rectangle", label: "Rectangle", icon: Square, shortcut: "R" },
       { id: "ellipse", label: "Ellipse", icon: Circle, shortcut: "E" },
       { id: "cloud", label: "Cloud", icon: Cloud, shortcut: "C" },
@@ -104,7 +116,7 @@ const GROUPS: { label: string; tools: Tool[] }[] = [
       { id: "stamp", label: "Stamp", icon: Stamp, shortcut: "S" },
     ],
   },
-  // The measuring tools share one button and a menu (MeasureGroup).
+  // The measuring tools share one button and a menu (FlyoutGroup).
   { label: "Measure", tools: [] },
   {
     label: "White-out",
@@ -133,17 +145,44 @@ export const MEASURE_TOOLS: readonly (Tool & { id: MeasureTool })[] = [
 ];
 export const MORE_MEASURE_TOOLS = "More measure tools";
 
-function MeasureGroup({ open, active }: { open: boolean; active: ViewerTool }) {
-  const [last, setLast] = useState<MeasureTool>("length");
-  // The slot follows the armed measuring tool, whatever armed it (rail, menu or shortcut).
-  if (isMeasureTool(active) && active !== last) setLast(active);
+/** Story 5.4 (D4): the straight-line markup tools, in one slot as the measuring tools are. */
+export const LINE_TOOLS: readonly (Tool & { id: MarkupTool })[] = [
+  { id: "line", label: "Line", icon: Slash, shortcut: "L" },
+  { id: "arrow", label: "Arrow", icon: ArrowUpRight, shortcut: "A" },
+  { id: "polyline", label: "Polyline", icon: Spline, shortcut: "Shift+N" },
+  { id: "polygon", label: "Polygon", icon: Hexagon, shortcut: "Shift+P" },
+];
+export const MORE_LINE_TOOLS = "More line tools";
+
+/**
+ * Tools sharing one rail slot (Measure, Story 4.11; Lines, Story 5.4): the slot shows the armed
+ * (or last armed) one and a menu lists them all.
+ */
+function FlyoutGroup<T extends ViewerTool>({
+  label,
+  more,
+  tools,
+  member,
+  open,
+  active,
+}: {
+  label: string;
+  more: string;
+  tools: readonly (Tool & { id: T })[];
+  member: (tool: ViewerTool) => tool is T;
+  open: boolean;
+  active: ViewerTool;
+}) {
+  const [last, setLast] = useState<T>(tools[0].id);
+  // The slot follows the armed tool, whatever armed it (rail, menu or shortcut).
+  if (member(active) && active !== last) setLast(active);
   const [menuOpen, setMenuOpen] = useState(false);
-  const shown = MEASURE_TOOLS.find((t) => t.id === last) ?? MEASURE_TOOLS[0];
+  const shown = tools.find((t) => t.id === last) ?? tools[0];
   return (
     <>
       <ToolbarToggleGroup
         type="single"
-        aria-label="Measure"
+        aria-label={label}
         className="flex-col"
         value={open && active === shown.id ? active : ""}
         onValueChange={(value: string) => {
@@ -162,11 +201,11 @@ function MeasureGroup({ open, active }: { open: boolean; active: ViewerTool }) {
       </ToolbarToggleGroup>
       <Menu open={open && menuOpen} onOpenChange={(next) => setMenuOpen(open && next)}>
         <MenuTrigger asChild>
-          <ToolbarButton label={MORE_MEASURE_TOOLS} icon={ChevronDown} size="xs" className="h-4 w-8" disabled={!open} disabledReason={NO_DRAWING} />
+          <ToolbarButton label={more} icon={ChevronDown} size="xs" className="h-4 w-8" disabled={!open} disabledReason={NO_DRAWING} />
         </MenuTrigger>
         <MenuContent side="left" align="start">
-          <MenuRadioGroup value={isMeasureTool(active) ? active : ""} onValueChange={(value) => setTool(value as ViewerTool)}>
-            {MEASURE_TOOLS.map((tool) => (
+          <MenuRadioGroup value={member(active) ? active : ""} onValueChange={(value) => setTool(value as ViewerTool)}>
+            {tools.map((tool) => (
               <MenuRadioItem key={tool.id} value={tool.id} shortcut={tool.shortcut}>
                 {tool.label}
               </MenuRadioItem>
@@ -196,7 +235,9 @@ export function ToolRail() {
         <Fragment key={group.label}>
           {index > 0 ? <ToolbarSeparator className="my-1" /> : null}
           {group.label === "Measure" ? (
-            <MeasureGroup open={open} active={active} />
+            <FlyoutGroup label="Measure" more={MORE_MEASURE_TOOLS} tools={MEASURE_TOOLS} member={isMeasureTool} open={open} active={active} />
+          ) : group.label === "Lines" ? (
+            <FlyoutGroup label="Lines" more={MORE_LINE_TOOLS} tools={LINE_TOOLS} member={isMarkupTool} open={open} active={active} />
           ) : (
             <ToolbarToggleGroup
               type="single"

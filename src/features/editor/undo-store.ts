@@ -11,7 +11,7 @@
 
 import { invertOp, type DocOp } from "@/core/commands/ops";
 import { EMPTY_HISTORY, execute, nextLabels, redo, undo, type UndoCommand, type UndoHistory } from "@/core/undo/stack";
-import { tabsStore, viewerStore, type MeasureTool } from "@/features/viewer";
+import { tabsStore, viewerStore, type DrawTool } from "@/features/viewer";
 
 import { editorStore, type EditorState } from "./editor-store";
 import { applyOp } from "./commands";
@@ -78,7 +78,7 @@ export function redoActive(): boolean {
 }
 
 /** 4.5 review R5: what Undo does while a measurement is being drawn (it removes the last placed point). */
-export const DRAWING_POINT_LABEL: Readonly<Record<MeasureTool, string>> = {
+export const DRAWING_POINT_LABEL: Readonly<Record<DrawTool, string>> = {
   length: "Length point",
   polylength: "Polylength point",
   area: "Area point",
@@ -88,6 +88,11 @@ export const DRAWING_POINT_LABEL: Readonly<Record<MeasureTool, string>> = {
   diameter: "Diameter point",
   // Story 4.10: while filling, Undo takes back the last stroke.
   fill: "Fill stroke",
+  // Story 5.4.
+  line: "Line point",
+  arrow: "Arrow point",
+  polyline: "Polyline point",
+  polygon: "Polygon point",
 };
 
 /**

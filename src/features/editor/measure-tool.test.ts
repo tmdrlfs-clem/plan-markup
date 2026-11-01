@@ -9,10 +9,14 @@ import { editorStore, markupsOf, resetEditor, setSelection } from "./editor-stor
 import {
   ADD_ANGLE,
   ADD_AREA,
+  ADD_ARROW,
   ADD_COUNT,
   ADD_DIAMETER,
   ADD_LENGTH,
+  ADD_LINE,
+  ADD_POLYGON,
   ADD_POLYLENGTH,
+  ADD_POLYLINE,
   ADD_RADIUS,
   CROSSES_ITSELF,
   MOVE_CAPTION,
@@ -536,5 +540,68 @@ describe("Selection (Story 4.11)", () => {
     setSelection([m.id]);
     undoActive();
     expect(editorStore.getState().selection.ids).toEqual([]);
+  });
+});
+
+describe("Line, Arrow, Polyline and Polygon tools (Story 5.4)", () => {
+  const added = () => markupsOf(editorStore.getState(), SHA);
+  const undoLabel = () => activeUndoLabels(editorStore.getState(), "t1").undo;
+
+  it("Line and Arrow: two clicks add the markup (red, 1 pt), one undo step; the tool stays armed", () => {
+    setTool("line");
+    measurePainter.place({ x: 0, y: 0 }, AT);
+    expect(measurePainter.place({ x: 72, y: 0 }, AT)).toBe("done");
+    expect(added()[0]).toMatchObject({ type: "line", points: [{ x: 0, y: 0 }, { x: 72, y: 0 }], style: { color: "#ff0000", width: 1 } });
+    expect("captionOffset" in added()[0]).toBe(false);
+    expect(undoLabel()).toBe(ADD_LINE);
+    expect(viewerStore.getState().tool).toBe("line");
+    setTool("arrow");
+    measurePainter.place({ x: 0, y: 10 }, AT);
+    measurePainter.place({ x: 72, y: 10 }, AT);
+    expect(added()[1]).toMatchObject({ type: "arrow", points: [{ x: 0, y: 10 }, { x: 72, y: 10 }] });
+    expect(undoLabel()).toBe(ADD_ARROW);
+    // No caption: layer 2 lists the shapes by type; no live value while drawing (D6).
+    expect(measurePainter.paintStatic(recorder().ctx, view)).toEqual(["Line", "Arrow"]);
+    measurePainter.place({ x: 0, y: 0 }, AT);
+    expect(measurePainter.paintActive(recorder().ctx, view, { x: 50, y: 0 })).toBeNull();
+  });
+
+  it("the arrow's line stops at its head, a filled triangle at the end point (D1)", () => {
+    setTool("arrow");
+    measurePainter.place({ x: 0, y: 0 }, AT);
+    measurePainter.place({ x: 72, y: 0 }, AT);
+    const r = recorder();
+    measurePainter.paintStatic(r.ctx, view);
+    // Head length max(6 pt, 6 × 1 pt) at 1 device px a point: the line ends 6 px short of the tip.
+    expect(r.ops.filter((o) => o.op === "lineTo")[0].args).toEqual([66, -0]);
+    const fill = r.ops.find((o) => o.op === "fill");
+    expect(fill?.fillStyle).toBe("#ff0000");
+    expect(r.ops.filter((o) => o.op === "moveTo")[1].args).toEqual([72, -0]);
+  });
+
+  it("Polyline: Enter finishes (2+ vertices); Polygon closes on its first vertex (3+) and may cross itself (D3)", () => {
+    setTool("polyline");
+    measurePainter.place({ x: 0, y: 0 }, AT);
+    expect(measurePainter.finish()).toBe("ignored");
+    measurePainter.place({ x: 10, y: 0 }, AT);
+    measurePainter.place({ x: 10, y: 10 }, AT);
+    expect(measurePainter.finish()).toBe("done");
+    expect(added()[0]).toMatchObject({ type: "polyline", points: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }] });
+    expect(undoLabel()).toBe(ADD_POLYLINE);
+    setTool("polygon");
+    const bow = [{ x: 0, y: 0 }, { x: 10, y: 10 }, { x: 10, y: 0 }, { x: 0, y: 10 }];
+    for (const p of bow) measurePainter.place(p, { ...AT, tolerance: 1 });
+    expect(measurePainter.place({ x: 0.5, y: 0 }, { ...AT, tolerance: 1 })).toBe("done");
+    expect(added()[1]).toMatchObject({ type: "polygon", points: bow });
+    expect(undoLabel()).toBe(ADD_POLYGON);
+    // Backspace removes the last vertex; Esc cancels.
+    measurePainter.place({ x: 0, y: 0 }, AT);
+    measurePainter.place({ x: 5, y: 0 }, AT);
+    expect(measurePainter.removeLastPoint()).toBe(true);
+    expect(editorStore.getState().tools.drawing?.points).toEqual([{ x: 0, y: 0 }]);
+    expect(activeUndoLabels(editorStore.getState(), "t1").undo).toBe("Polygon point");
+    expect(measurePainter.escape()).toBe(true);
+    expect(measurePainter.tracking).toBe(false);
+    expect(added()).toHaveLength(2);
   });
 });

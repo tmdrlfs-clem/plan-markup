@@ -18,7 +18,7 @@
 
 import type { Point, Rect } from "@/core/render/view";
 
-import { hasDocument, isMeasureTool, setTempPan, setTool, viewerStore, type ViewerTool } from "./viewer-store";
+import { hasDocument, isDrawTool, setTempPan, setTool, viewerStore, type ViewerTool } from "./viewer-store";
 import { LOCKED_CURSOR, LOCKED_TOOLTIP, type PressBrush, type SelectionCommand } from "./markup-layer";
 
 /** CSS px per wheel "line" (deltaMode 1, e.g. Firefox: 3 lines per notch). */
@@ -98,6 +98,11 @@ export function resolveViewerKey(
   if (isLetter(event, "z") && !event.shiftKey) return { type: "tool", tool: "zoom" };
   // Story 4.10: J, Dynamic fill (the UX shortcut table; the 4541 zone tool shares it later).
   if (isLetter(event, "j") && !event.shiftKey) return { type: "tool", tool: "fill" };
+  // Story 5.4: L Line, A Arrow, Shift+N Polyline, Shift+P Polygon (Revu's keys).
+  if (isLetter(event, "l") && !event.shiftKey) return { type: "tool", tool: "line" };
+  if (isLetter(event, "a") && !event.shiftKey) return { type: "tool", tool: "arrow" };
+  if (isLetter(event, "n") && event.shiftKey) return { type: "tool", tool: "polyline" };
+  if (isLetter(event, "p") && event.shiftKey) return { type: "tool", tool: "polygon" };
   return null;
 }
 
@@ -170,7 +175,7 @@ const NUDGE: Readonly<Record<string, Point>> = {
 
 /** Tools that place points (Length, Polylength, the calibration pick): a click places one, Alt suspends snapping. */
 function pointTool(tool: ViewerTool): boolean {
-  return isMeasureTool(tool) || tool === "calibrate";
+  return isDrawTool(tool) || tool === "calibrate";
 }
 
 /** Alt turns snapping off while held; Shift holds the direction from the "from" point at 45° steps. */
@@ -224,7 +229,7 @@ export class ViewerInput {
     this.on(canvas, "contextmenu", (e) => this.onContextMenu(e as MouseEvent));
     // Story 4.6: a double-click finishes a polylength (its clicks placed the last vertex once).
     this.on(canvas, "dblclick", (e) => {
-      if (this.active() && isMeasureTool(viewerStore.getState().tool) && this.target.finishTool?.()) e.preventDefault();
+      if (this.active() && isDrawTool(viewerStore.getState().tool) && this.target.finishTool?.()) e.preventDefault();
     });
     this.on(win, "keydown", (e) => this.onKeyDown(e as KeyboardEvent));
     this.on(win, "keyup", (e) => this.onKeyUp(e as KeyboardEvent));
@@ -433,13 +438,13 @@ export class ViewerInput {
       return;
     }
     // Story 4.6: Enter finishes a polylength, Backspace removes its last vertex (the canvas's keys only).
-    if ((e.key === "Enter" || e.key === "Backspace") && this.active() && isMeasureTool(viewerStore.getState().tool) && !e.defaultPrevented && this.canvasKeys()) {
+    if ((e.key === "Enter" || e.key === "Backspace") && this.active() && isDrawTool(viewerStore.getState().tool) && !e.defaultPrevented && this.canvasKeys()) {
       const handled = e.key === "Enter" ? this.target.finishTool?.() : this.target.removeToolPoint?.();
       if (handled) e.preventDefault();
     }
     // Story 4.11: Esc with Select clears the selection (the painter's escape), only when the Esc is the canvas's.
     const select = viewerStore.getState().tool === "select";
-    if (e.key === "Escape" && this.active() && (isMeasureTool(viewerStore.getState().tool) || select)) {
+    if (e.key === "Escape" && this.active() && (isDrawTool(viewerStore.getState().tool) || select)) {
       const doc = this.canvas.ownerDocument;
       // An Esc meant for a menu, field or dialog never leaves the tool.
       const leave = !e.defaultPrevented && (doc.activeElement === this.canvas || doc.activeElement === doc.body || this.pointer !== null);

@@ -94,7 +94,7 @@ import { setCursor } from "./status/cursor-store";
 import { searchUi } from "./search-ui";
 import type { AlignTo, OrderStep } from "@/core/markup/arrange";
 import { markupPainter, onMarkupsChanged, type LayerView, type PressBrush, type SelectContext, type SelectionCommand } from "./markup-layer";
-import { isMeasureTool, setTool, viewerStore, type ViewerErrorCode, type ViewerState, type ViewerTool } from "./viewer-store";
+import { isDrawTool, setTool, viewerStore, type ViewerErrorCode, type ViewerState, type ViewerTool } from "./viewer-store";
 
 /** Story 4.6: a click this close (CSS px) to the last vertex repeats it (a double-click's second click). */
 const DOUBLE_CLICK_SLOP_PX = 3;
@@ -1699,14 +1699,14 @@ export class ViewerEngine {
   snapClick(): void {
     // Story 4.8: Count places points without snapping (the raw point).
     const tool = viewerStore.getState().tool;
-    if (!(isSnappingTool(tool) || isMeasureTool(tool)) || !this.pointerScreen || !this.page) return;
+    if (!(isSnappingTool(tool) || isDrawTool(tool)) || !this.pointerScreen || !this.page) return;
     this.updateCursor();
     // The snapped point, else the Shift-held one (review R1: never the raw pointer while Shift holds a direction).
     const point = this.toolPoint;
     this.snapFrom = point ? { x: point.x, y: point.y } : null;
     if (this.pick && point) this.pickPoint({ x: point.x, y: point.y });
-    else if (point && this.sha256 && isMeasureTool(viewerStore.getState().tool)) {
-      // Story 4.5 / 4.6: the measuring tool places the point; a finished measurement starts the next one afresh.
+    else if (point && this.sha256 && isDrawTool(viewerStore.getState().tool)) {
+      // Story 4.5 / 4.6 (5.4: and the markup tools): the measuring tool places the point; a finished measurement starts the next one afresh.
       const linear = this.userToScreenLinear();
       const tolerance = DOUBLE_CLICK_SLOP_PX / (Math.hypot(linear[0], linear[1]) || 1);
       const placed = markupPainter()?.place({ x: point.x, y: point.y }, { documentId: this.sha256, pageIndex: this.pageIndex, tolerance });

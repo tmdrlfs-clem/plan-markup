@@ -54,6 +54,13 @@ describe("resolveViewerKey (focus rule)", () => {
     // Story 4.10: J arms Dynamic fill.
     expect(resolveViewerKey(key({ key: "j", code: "KeyJ" }), FOCUSED)).toEqual({ type: "tool", tool: "fill" });
     expect(resolveViewerKey(key({ key: "j", code: "KeyJ" }), OVER)).toBeNull();
+    // Story 5.4: L Line, A Arrow, Shift+N Polyline, Shift+P Polygon (canvas focused only).
+    expect(resolveViewerKey(key({ key: "l", code: "KeyL" }), FOCUSED)).toEqual({ type: "tool", tool: "line" });
+    expect(resolveViewerKey(key({ key: "a", code: "KeyA" }), FOCUSED)).toEqual({ type: "tool", tool: "arrow" });
+    expect(resolveViewerKey(key({ key: "N", code: "KeyN", shiftKey: true }), FOCUSED)).toEqual({ type: "tool", tool: "polyline" });
+    expect(resolveViewerKey(key({ key: "P", code: "KeyP", shiftKey: true }), FOCUSED)).toEqual({ type: "tool", tool: "polygon" });
+    expect(resolveViewerKey(key({ key: "n", code: "KeyN" }), FOCUSED)).toBeNull();
+    expect(resolveViewerKey(key({ key: "l", code: "KeyL" }), OVER)).toBeNull();
     for (const k of [{ key: "+" }, { key: "-" }, { key: "z", code: "KeyZ" }, { key: "v", code: "KeyV" }, { key: " ", code: "Space" }]) {
       expect(resolveViewerKey(key(k), OVER)).toBeNull();
       expect(resolveViewerKey(key(k), ELSEWHERE)).toBeNull();

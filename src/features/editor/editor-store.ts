@@ -14,12 +14,15 @@ import { createStore } from "zustand/vanilla";
 
 import type { Markup } from "@/core/schema/markup";
 import type { UndoHistory } from "@/core/undo/stack";
-import { viewerStore, type LayerView, type MeasureTool } from "@/features/viewer";
+import { viewerStore, type DrawTool, type LayerView } from "@/features/viewer";
 
 type Point = { x: number; y: number };
 
-/** A measurement being drawn (Length 4.5, Polylength 4.6, Area and Count 4.8): its tool, its page and the points placed so far (user space). */
-export type Drawing = { tool: MeasureTool; pageId: string; pageIndex: number; points: readonly Point[] };
+/**
+ * A measurement being drawn (Length 4.5, Polylength 4.6, Area and Count 4.8; 5.4: a line, arrow,
+ * polyline or polygon): its tool, its page and the points placed so far (user space).
+ */
+export type Drawing = { tool: DrawTool; pageId: string; pageIndex: number; points: readonly Point[] };
 
 /** Story 4.6: a caption being moved: its markup and the offset change so far (user space). */
 export type CaptionDrag = { id: string; documentId: string; delta: Point };

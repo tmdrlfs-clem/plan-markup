@@ -16,6 +16,11 @@
 // Dynamic fill (Story 4.10, fill-tool.ts) is pressed and held, not clicked;
 // Enter adds its area like Area's.
 //
+// Story 5.4: Line and Arrow (two clicks), Polyline and Polygon (a polygon
+// closes on its first vertex, D3: it may cross itself) draw the same way,
+// with no live value (D6) and no caption; an arrow has a filled head at its
+// end point (D1).
+//
 // With Select, Shift + drag on a caption moves the caption only ("Move
 // caption", a markups.update op); the offset is stored in user space.
 //
@@ -36,16 +41,26 @@ import { areaCaption, areaCaptionText, formatArea, polygonCentroid, selfIntersec
 import { circleCaption, circleThrough } from "@/core/measure/circle";
 import { SCALE_NOT_SET, captionPlacement, lengthCaption, polylineCaptionAnchor } from "@/core/measure/length";
 import { translateMarkup } from "@/core/markup/geometry";
-import { DEFAULT_MEASURE_STYLE, MAX_POLYLINE_POINTS, type MarkupStyle, type MeasureMarkup } from "@/core/schema/markup";
 import {
-  isMeasureTool,
+  DEFAULT_MARKUP_STYLE,
+  DEFAULT_MEASURE_STYLE,
+  MAX_POLYLINE_POINTS,
+  isMeasureMarkup,
+  type Markup,
+  type MarkupStyle,
+  type MeasureMarkup,
+  type ShapeMarkup,
+} from "@/core/schema/markup";
+import {
+  isDrawTool,
+  isMarkupTool,
   notifyMarkups,
   registerMarkupPainter,
   setTool,
   viewerStore,
   type LayerView,
+  type DrawTool,
   type MarkupPainter,
-  type MeasureTool,
 } from "@/features/viewer";
 
 import { editorStore, markupsOf, pageMarkups, setCaptionDrag, setDrawing, setMarkupMenu, setMoveDrag, setPreview, setSelection, type Drawing, type MoveDrag } from "./editor-store";
@@ -64,7 +79,11 @@ export const ADD_ANGLE = "Add angle";
 export const ADD_RADIUS = "Add radius";
 export const ADD_DIAMETER = "Add diameter";
 export const MOVE_CAPTION = "Move caption";
-const ADD_LABEL: Record<MeasureTool, string> = {
+export const ADD_LINE = "Add line";
+export const ADD_ARROW = "Add arrow";
+export const ADD_POLYLINE = "Add polyline";
+export const ADD_POLYGON = "Add polygon";
+const ADD_LABEL: Record<DrawTool, string> = {
   length: ADD_LENGTH,
   polylength: ADD_POLYLENGTH,
   area: ADD_AREA,
@@ -73,13 +92,39 @@ const ADD_LABEL: Record<MeasureTool, string> = {
   radius: ADD_RADIUS,
   diameter: ADD_DIAMETER,
   fill: ADD_AREA,
+  line: ADD_LINE,
+  arrow: ADD_ARROW,
+  polyline: ADD_POLYLINE,
+  polygon: ADD_POLYGON,
 };
 /** Story 4.8: what the live value says while an area crosses itself (it cannot be added). */
 export const CROSSES_ITSELF = "Crosses itself";
 /** Vertices a drawing needs before it can be finished. */
-const MIN_POINTS: Record<MeasureTool, number> = { length: 2, polylength: 2, area: 3, count: 1, angle: 3, radius: 3, diameter: 3, fill: 0 };
+const MIN_POINTS: Record<DrawTool, number> = {
+  length: 2,
+  polylength: 2,
+  area: 3,
+  count: 1,
+  angle: 3,
+  radius: 3,
+  diameter: 3,
+  fill: 0,
+  line: 2,
+  arrow: 2,
+  polyline: 2,
+  polygon: 3,
+};
 /** Tools with a fixed number of points: the click that places the last one adds the measurement. */
-const FIXED_POINTS: Partial<Record<MeasureTool, number>> = { length: 2, angle: 3, radius: 3, diameter: 3 };
+const FIXED_POINTS: Partial<Record<DrawTool, number>> = { length: 2, angle: 3, radius: 3, diameter: 3, line: 2, arrow: 2 };
+/** Tools whose outline is closed: a click on the first vertex closes it. */
+const CLOSED: ReadonlySet<DrawTool> = new Set<DrawTool>(["area", "polygon"]);
+/** Story 5.4 (D1): an arrow head's length in line widths, and its least length, in points (page units). */
+const ARROW_HEAD_WIDTHS = 6;
+const ARROW_HEAD_MIN_PT = 6;
+/** The head's half-angle. */
+const ARROW_HEAD_ANGLE = Math.PI / 7;
+/** Story 5.4: what a shape adds to layer 2's list (it has no caption). */
+const SHAPE_LABEL: Record<ShapeMarkup["type"], string> = { line: "Line", arrow: "Arrow", polyline: "Polyline", polygon: "Polygon" };
 /** Story 4.9: the arc at an angle's vertex, in CSS px (at most 40 % of the shorter leg). */
 const ANGLE_ARC_PX = 14;
 /** The live label beside the pointer, in screen px (not page units: it is UI, not the markup). */
@@ -160,6 +205,46 @@ function strokeRings(c: CanvasRenderingContext2D, rings: readonly (readonly Poin
     c.closePath();
   }
   stroke(c, style, view);
+}
+
+/**
+ * Story 5.4: a line, arrow, polyline or polygon (device points): its stroke; a polygon closed; an
+ * arrow's line stops at its head, a filled triangle at the end point (D1).
+ */
+function strokeShape(c: CanvasRenderingContext2D, type: ShapeMarkup["type"], pts: readonly Point[], style: MarkupStyle, view: LayerView): void {
+  if (pts.length < 2) return;
+  const n = pts.length;
+  let end = pts[n - 1];
+  let head: Point[] | null = null;
+  if (type === "arrow") {
+    const from = pts[n - 2];
+    const tip = pts[n - 1];
+    const d = Math.hypot(tip.x - from.x, tip.y - from.y);
+    if (d > 1e-6) {
+      const length = Math.min(d, Math.max(ARROW_HEAD_MIN_PT, ARROW_HEAD_WIDTHS * style.width) * view.devicePerPt);
+      const ux = (tip.x - from.x) / d;
+      const uy = (tip.y - from.y) / d;
+      const half = length * Math.tan(ARROW_HEAD_ANGLE);
+      const base = { x: tip.x - ux * length, y: tip.y - uy * length };
+      head = [tip, { x: base.x - uy * half, y: base.y + ux * half }, { x: base.x + uy * half, y: base.y - ux * half }];
+      end = base;
+    }
+  }
+  c.beginPath();
+  c.moveTo(pts[0].x, pts[0].y);
+  for (let i = 1; i < n - 1; i++) c.lineTo(pts[i].x, pts[i].y);
+  c.lineTo(end.x, end.y);
+  if (type === "polygon") c.closePath();
+  stroke(c, style, view);
+  if (head) {
+    c.beginPath();
+    c.moveTo(head[0].x, head[0].y);
+    c.lineTo(head[1].x, head[1].y);
+    c.lineTo(head[2].x, head[2].y);
+    c.closePath();
+    c.fillStyle = style.color;
+    c.fill();
+  }
 }
 
 /** Story 4.8: a count's markers, circles in page units. */
@@ -355,12 +440,12 @@ const addOffset = (a: Point | undefined, b: Point): Point => ({ x: (a?.x ?? 0) +
 let moving: { drag: MoveDrag; ids: ReadonlySet<string> } | null = null;
 
 /** The markup as painted: a caption being moved, or markups being moved (Story 5.1), show where they go. */
-function shown(m: MeasureMarkup): MeasureMarkup {
+function shown(m: Markup): Markup {
   const { captionDrag: drag, moveDrag, preview } = editorStore.getState().tools;
   // Story 5.2: a resize, rotation or vertex drag in progress.
-  const changed = preview && m.pageId.startsWith(`${preview.documentId}:`) ? (preview.changed[m.id] as MeasureMarkup | undefined) : undefined;
+  const changed = preview && m.pageId.startsWith(`${preview.documentId}:`) ? preview.changed[m.id] : undefined;
   let out = changed ?? m;
-  out = drag && drag.id === m.id ? { ...out, captionOffset: addOffset(out.captionOffset, drag.delta) } : out;
+  out = drag && drag.id === m.id && isMeasureMarkup(out) ? { ...out, captionOffset: addOffset(out.captionOffset, drag.delta) } : out;
   if (moveDrag) {
     if (moving?.drag !== moveDrag) moving = { drag: moveDrag, ids: new Set(moveDrag.ids) };
     if (moving.ids.has(m.id) && m.pageId.startsWith(`${moveDrag.documentId}:`)) out = translateMarkup(out, moveDrag.delta);
@@ -368,8 +453,7 @@ function shown(m: MeasureMarkup): MeasureMarkup {
   return out;
 }
 
-const MEASURE_TYPES: ReadonlySet<string> = new Set(["length", "polylength", "area", "count", "angle", "radius", "diameter"]);
-const isMeasure = (m: { type: string }): m is MeasureMarkup => MEASURE_TYPES.has(m.type);
+const isMeasure = isMeasureMarkup;
 
 /** A measurement's caption: its lines on the canvas, its one-line text (layer 2's list) and whether it is scaled. */
 function captionOf(m: MeasureMarkup, calibration: Calibration | null, userUnit: number): { lines: string[]; text: string; scaled: boolean } {
@@ -387,7 +471,9 @@ function captionOf(m: MeasureMarkup, calibration: Calibration | null, userUnit: 
 }
 
 /** The live value of a drawing with the tool point added (or null when there is none to show). */
-function liveValue(tool: MeasureTool, points: readonly Point[], calibration: Calibration | null, userUnit: number): { text: string; scaled: boolean } | null {
+function liveValue(tool: DrawTool, points: readonly Point[], calibration: Calibration | null, userUnit: number): { text: string; scaled: boolean } | null {
+  // Story 5.4 (D6): a markup has no value.
+  if (isMarkupTool(tool)) return null;
   if (tool === "count") return { text: String(points.length - 1), scaled: true };
   // Story 4.9: an angle or a circle has a value from its third point on.
   if (tool === "angle") return points.length >= 3 ? angleCaption(points, calibration) : null;
@@ -421,12 +507,21 @@ export const measurePainter: MarkupPainter = {
     const captions: string[] = [];
     const boxes: CaptionBox[] = [];
     const selected = new Set(editorStore.getState().selection.ids);
-    const selectedShown: MeasureMarkup[] = [];
+    const selectedShown: Markup[] = [];
     c.save();
     for (const one of markups) {
-      if (!isMeasure(one)) continue;
-      const m = shown(one);
-      if (selected.has(m.id)) selectedShown.push(m);
+      const any = shown(one);
+      if (selected.has(any.id)) selectedShown.push(any);
+      if (!isMeasure(any)) {
+        // Story 5.4: a shape, no caption (its label stands in layer 2's list).
+        captions.push(SHAPE_LABEL[any.type]);
+        const pts = devicePoints(any.points, view);
+        if (!onCanvas(pts, any.style, view)) continue;
+        if (selected.has(any.id)) strokeSelection(c, pts, view);
+        strokeShape(c, any.type, pts, any.style, view);
+        continue;
+      }
+      const m = any;
       const caption = captionOf(m, calibration, view.userUnit);
       captions.push(caption.text);
       const pts = devicePoints(m.points, view);
@@ -474,6 +569,7 @@ export const measurePainter: MarkupPainter = {
     else if (d.tool === "count") drawMarkers(c, pts.slice(0, -1), DEFAULT_MEASURE_STYLE, view);
     else if (d.tool === "angle") strokeAngle(c, pts, DEFAULT_MEASURE_STYLE, view);
     else if (d.tool === "radius" || d.tool === "diameter") strokeCircle(c, d.tool, pts, deviceCircle(points, view), DEFAULT_MEASURE_STYLE, view);
+    else if (isMarkupTool(d.tool)) strokeShape(c, d.tool, pts, DEFAULT_MARKUP_STYLE, view);
     else strokeMeasure(c, pts, DEFAULT_MEASURE_STYLE, view);
     c.restore();
     if (!live) return null;
@@ -492,7 +588,7 @@ export const measurePainter: MarkupPainter = {
   place(point, at) {
     const tool = viewerStore.getState().tool;
     // Dynamic fill is pressed, not clicked (press below).
-    if (!isMeasureTool(tool) || tool === "fill") return "ignored";
+    if (!isDrawTool(tool) || tool === "fill") return "ignored";
     const pageId = pageIdOf(at.documentId, at.pageIndex);
     const d = drawing();
     if (!d || d.pageId !== pageId || d.tool !== tool) {
@@ -502,9 +598,9 @@ export const measurePainter: MarkupPainter = {
     // A click on the last point adds nothing (a double-click's second click): keep drawing.
     const last = d.points[d.points.length - 1];
     if (Math.hypot(point.x - last.x, point.y - last.y) <= at.tolerance) return "continue";
-    // Story 4.8 (D2): a click on an area's first vertex closes it.
+    // Story 4.8 (D2): a click on an area's first vertex closes it (5.4: a polygon's too).
     const first = d.points[0];
-    if (tool === "area" && d.points.length >= MIN_POINTS.area && Math.hypot(point.x - first.x, point.y - first.y) <= at.tolerance) {
+    if (CLOSED.has(tool) && d.points.length >= MIN_POINTS[tool] && Math.hypot(point.x - first.x, point.y - first.y) <= at.tolerance) {
       return finishDrawing(at.documentId);
     }
     const points = [...d.points, point];
@@ -660,20 +756,31 @@ function finishDrawing(documentId: string): "done" | "ignored" {
   return commit(documentId);
 }
 
+/** The markup a finished drawing makes (Story 5.4: a shape takes the markup style). */
+function markupOf(d: Drawing): Markup {
+  const base = { id: uuidv7(), pageId: d.pageId, createdAt: new Date().toISOString(), style: isMarkupTool(d.tool) ? DEFAULT_MARKUP_STYLE : DEFAULT_MEASURE_STYLE };
+  const points = [...d.points];
+  const [a, b, c] = points;
+  switch (d.tool) {
+    case "length":
+    case "line":
+    case "arrow":
+      return { ...base, type: d.tool, points: [a, b] };
+    case "angle":
+    case "radius":
+    case "diameter":
+      return { ...base, type: d.tool, points: [a, b, c] };
+    case "fill":
+      return { ...base, type: "area", points };
+    default:
+      return { ...base, type: d.tool, points };
+  }
+}
+
 /** Adds the drawing as its markup (one undo step, in `tabId`'s history: the active tab by default) and ends it. */
 function commit(documentId: string, tabId?: string): "done" {
   const d = drawing()!;
-  const base = { id: uuidv7(), pageId: d.pageId, createdAt: new Date().toISOString(), style: DEFAULT_MEASURE_STYLE };
-  const points = [...d.points];
-  const [a, b, c] = points;
-  const markup: MeasureMarkup =
-    d.tool === "length"
-      ? { ...base, type: "length", points: [a, b] }
-      : d.tool === "angle" || d.tool === "radius" || d.tool === "diameter"
-        ? { ...base, type: d.tool, points: [a, b, c] }
-        : d.tool === "fill"
-          ? { ...base, type: "area", points }
-          : { ...base, type: d.tool, points };
+  const markup = markupOf(d);
   setDrawing(null);
   executeOp({ kind: "markups.add", documentId, markups: [markup] }, ADD_LABEL[d.tool], tabId);
   return "done";

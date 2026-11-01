@@ -201,10 +201,11 @@ describe("WorkspaceShell layout", () => {
     setup();
     const rail = screen.getByRole("toolbar", { name: "Drawing tools" });
     const tools = within(rail).getAllByRole("radio");
-    // The measuring tools share one slot and a menu.
-    expect(tools.length).toBe(14);
+    // The measuring tools share one slot and a menu (Story 5.4: the line tools too).
+    expect(tools.length).toBe(13);
     for (const tool of tools) expect(tool).toHaveAttribute("aria-disabled", "true");
     expect(within(rail).getByRole("button", { name: "More measure tools" })).toHaveAttribute("aria-disabled", "true");
+    expect(within(rail).getByRole("button", { name: "More line tools" })).toHaveAttribute("aria-disabled", "true");
     expect(screen.getByText("Select a tool to see its options")).toBeInTheDocument();
   });
 
@@ -541,7 +542,9 @@ describe("view navigation (Story 3.2)", () => {
     expect(pan).toHaveAttribute("aria-checked", "true");
     await user.click(pan); // clicking the active tool keeps it
     expect(viewerStore.getState().tool).toBe("pan");
-    expect(within(rail).getByRole("radio", { name: "Line" })).toHaveAttribute("aria-disabled", "true");
+    // Story 5.4: Line works; Rectangle arrives later.
+    expect(within(rail).getByRole("radio", { name: "Line" })).not.toHaveAttribute("aria-disabled");
+    expect(within(rail).getByRole("radio", { name: "Rectangle" })).toHaveAttribute("aria-disabled", "true");
   });
 
   it("the status bar shows, in order: file name, pager, page size, scale, snap toggles, cursor X/Y, zoom, save slot (Story 3.7)", () => {

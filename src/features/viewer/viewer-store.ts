@@ -23,13 +23,42 @@ export const VIEWER_ERROR_TEXT: Record<ViewerErrorCode, string> = {
  * Calibrate (Story 4.3) is the Calibrate dialog's two-point pick, never
  * chosen from the ToolRail. Markup tools arrive with the editor.
  */
-export type ViewerTool = "select" | "pan" | "zoom" | "length" | "polylength" | "area" | "count" | "angle" | "radius" | "diameter" | "fill" | "calibrate";
+export type ViewerTool =
+  | "select"
+  | "pan"
+  | "zoom"
+  | "length"
+  | "polylength"
+  | "area"
+  | "count"
+  | "angle"
+  | "radius"
+  | "diameter"
+  | "fill"
+  | "calibrate"
+  | "line"
+  | "arrow"
+  | "polyline"
+  | "polygon";
 
 /** Stories 4.6, 4.8, 4.9, 4.10: the measuring tools (they draw markups through the editor's painter). */
 export type MeasureTool = "length" | "polylength" | "area" | "count" | "angle" | "radius" | "diameter" | "fill";
 const MEASURE_TOOLS: ReadonlySet<ViewerTool> = new Set<ViewerTool>(["length", "polylength", "area", "count", "angle", "radius", "diameter", "fill"]);
 export function isMeasureTool(tool: ViewerTool): tool is MeasureTool {
   return MEASURE_TOOLS.has(tool);
+}
+
+/** Story 5.4: the straight-line markup tools (they draw as the measuring tools do, with no value). */
+export type MarkupTool = "line" | "arrow" | "polyline" | "polygon";
+const MARKUP_TOOLS: ReadonlySet<ViewerTool> = new Set<ViewerTool>(["line", "arrow", "polyline", "polygon"]);
+export function isMarkupTool(tool: ViewerTool): tool is MarkupTool {
+  return MARKUP_TOOLS.has(tool);
+}
+
+/** Story 5.4: the tools that draw markups by clicking points (through the editor's painter). */
+export type DrawTool = MeasureTool | MarkupTool;
+export function isDrawTool(tool: ViewerTool): tool is DrawTool {
+  return MEASURE_TOOLS.has(tool) || MARKUP_TOOLS.has(tool);
 }
 
 export type ViewerTimings = {
