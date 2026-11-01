@@ -34,6 +34,10 @@ const base = {
   /** ISO 8601 creation time. */
   createdAt: z.string().max(40),
   style: markupStyleSchema,
+  /** Story 5.3: the group the markup belongs to (groups do not nest); absent: none. */
+  groupId: z.string().regex(UUID_PATTERN).optional(),
+  /** Story 5.3: a locked markup can be selected but not moved, edited or deleted. */
+  locked: z.boolean().optional(),
 };
 
 /**

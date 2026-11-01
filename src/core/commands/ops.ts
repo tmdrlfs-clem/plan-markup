@@ -24,6 +24,17 @@ export const docOpSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("markups.remove"), documentId, markups: z.array(markupSchema).max(10_000), at: positions }),
   /** Story 4.6: markups changed in place (same ids), as they were and as they are. */
   z.object({ kind: z.literal("markups.update"), documentId, before: z.array(markupSchema).max(10_000), after: z.array(markupSchema).max(10_000) }),
+  /**
+   * Story 5.3: markups moved in the drawing order: `ids`, where they were
+   * (`from`) and where they go (`to`), as positions in the list before and after.
+   */
+  z.object({
+    kind: z.literal("markups.reorder"),
+    documentId,
+    ids: z.array(z.string().min(1).max(64)).max(10_000),
+    from: z.array(z.number().int().min(0).max(1_000_000)).max(10_000),
+    to: z.array(z.number().int().min(0).max(1_000_000)).max(10_000),
+  }),
   /** Calibrations by page id before and after (null: none). */
   z.object({ kind: z.literal("calibrations.set"), documentId, before: calibrationMap, after: calibrationMap }),
 ]);
@@ -39,6 +50,8 @@ export function invertOp(op: DocOp): DocOp {
       return { kind: "markups.add", documentId: op.documentId, markups: op.markups, ...(op.at ? { at: op.at } : {}) };
     case "markups.update":
       return { kind: "markups.update", documentId: op.documentId, before: op.after, after: op.before };
+    case "markups.reorder":
+      return { kind: "markups.reorder", documentId: op.documentId, ids: op.ids, from: op.to, to: op.from };
     case "calibrations.set":
       return { kind: "calibrations.set", documentId: op.documentId, before: op.after, after: op.before };
   }
@@ -60,6 +73,32 @@ export function removeMarkupsOp(documentId: string, markups: readonly Markup[], 
   return removed.length > 0 ? { kind: "markups.remove", documentId, markups: removed, at } : null;
 }
 
+/** Inserts `items` at their positions in the list as it will be (ascending insertion restores it). */
+function insertAt(list: Markup[], items: readonly Markup[], at: readonly number[]): Markup[] {
+  const placed = items.map((m, i) => ({ m, at: at[i] })).sort((a, b) => a.at - b.at);
+  for (const p of placed) list.splice(Math.min(p.at, list.length), 0, p.m);
+  return list;
+}
+
+/**
+ * Story 5.3: the op putting `markups` (the document's list) in `order` (the same ids, another
+ * order), moving only the markups whose position changes; null when none does.
+ */
+export function reorderMarkupsOp(documentId: string, markups: readonly Markup[], order: readonly string[]): DocOp | null {
+  const before = new Map(markups.map((m, i) => [m.id, i]));
+  const ids: string[] = [];
+  const from: number[] = [];
+  const to: number[] = [];
+  order.forEach((id, i) => {
+    const was = before.get(id);
+    if (was === undefined || was === i) return;
+    ids.push(id);
+    from.push(was);
+    to.push(i);
+  });
+  return ids.length > 0 ? { kind: "markups.reorder", documentId, ids, from, to } : null;
+}
+
 /**
  * A document's markups after a markups op. An add puts the markups on top, or
  * back at their positions (`at`, the undo of a removal); an id already present
@@ -72,9 +111,21 @@ export function applyMarkupsOp(markups: readonly Markup[], op: DocOp): Markup[] 
     const at = op.at;
     if (!at || at.length !== op.markups.length) return [...out, ...op.markups];
     // Ascending positions in the list as it was: inserting in that order restores it.
-    const placed = op.markups.map((m, i) => ({ m, at: at[i] })).sort((a, b) => a.at - b.at);
-    for (const p of placed) out.splice(Math.min(p.at, out.length), 0, p.m);
-    return out;
+    return insertAt(out, op.markups, at);
+  }
+  if (op.kind === "markups.reorder") {
+    // The moved markups out, then back at their new positions (ids no longer there are skipped).
+    const byId = new Map(markups.map((m) => [m.id, m]));
+    const moved: Markup[] = [];
+    const at: number[] = [];
+    op.ids.forEach((id, i) => {
+      const m = byId.get(id);
+      if (!m) return;
+      moved.push(m);
+      at.push(op.to[i]);
+    });
+    const ids = new Set(moved.map((m) => m.id));
+    return insertAt(markups.filter((m) => !ids.has(m.id)), moved, at);
   }
   if (op.kind === "markups.update") {
     // In place: the drawing order stays; an id that is not there is not added.

@@ -101,5 +101,13 @@ export function constrain45(d: Point): Point {
 /** Copies of `markups` moved by `d` onto page `pageId`, each with a new id from `newId` and `createdAt`. */
 export function copiesOf(markups: readonly Markup[], d: Point, pageId: string, newId: () => string, createdAt: string): Markup[] {
   const move: Transform = (p) => ({ x: p.x + d.x, y: p.y + d.y });
-  return markups.map((m) => ({ ...transformMarkup(m, move), id: newId(), pageId, createdAt }));
+  // Story 5.3 (D5): copies are unlocked; a copied group becomes a new group (its id from the first copy's).
+  const groups = new Map<string, string>();
+  return markups.map((m) => {
+    const id = newId();
+    const { locked: _locked, groupId, ...rest } = transformMarkup(m, move);
+    void _locked;
+    if (groupId && !groups.has(groupId)) groups.set(groupId, id);
+    return { ...rest, id, pageId, createdAt, ...(groupId ? { groupId: groups.get(groupId) } : {}) } as Markup;
+  });
 }
