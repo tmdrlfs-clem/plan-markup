@@ -74,7 +74,7 @@ development_status:
   3-8-appearance-themes: done
   epic-3-retrospective: optional
   # Epic 4: Calibrate and Measure
-  epic-4: in-progress
+  epic-4: done
   4-1-snap-to-drawing-linework: done
   4-2-detect-printed-scales: done
   4-3-calibrate-a-page: done
@@ -88,8 +88,8 @@ development_status:
   4-11-measurements-panel: done
   epic-4-retrospective: optional
   # Epic 5: Markup and As-Built Drawing
-  epic-5: backlog
-  5-1-select-move-and-delete-markups: backlog
+  epic-5: in-progress
+  5-1-select-move-and-delete-markups: ready-for-dev
   5-2-resize-rotate-copy-and-paste: backlog
   5-3-group-align-reorder-and-lock: backlog
   5-4-line-arrow-polyline-and-polygon-tools: backlog
