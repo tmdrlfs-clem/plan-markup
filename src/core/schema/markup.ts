@@ -31,6 +31,9 @@ export const markupStyleSchema = z.object({
 });
 export type MarkupStyle = z.infer<typeof markupStyleSchema>;
 
+/** Story 5.10: the longest subject. */
+export const MAX_SUBJECT_LENGTH = 200;
+
 const base = {
   id: z.string().regex(UUID_PATTERN),
   /** The stable page id (sha256 + page index until page edits, AR8). */
@@ -42,6 +45,8 @@ const base = {
   groupId: z.string().regex(UUID_PATTERN).optional(),
   /** Story 5.3: a locked markup can be selected but not moved, edited or deleted. */
   locked: z.boolean().optional(),
+  /** Story 5.10: the markup's subject (Properties); absent: its type's name. */
+  subject: z.string().max(MAX_SUBJECT_LENGTH).optional(),
 };
 
 /**

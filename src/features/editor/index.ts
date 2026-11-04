@@ -5,6 +5,7 @@ export { useEditorSession } from "./session";
 export { MEASUREMENTS_HINT, MeasurementsPanel } from "./measurements-panel";
 export { MarkupContextMenu, useSelectionState } from "./markup-context-menu";
 export { TextEditor } from "./text-editor";
+export { PropertiesPanel } from "./properties-panel";
 export { pickImageFile } from "./image-tool";
 export { hasClipboard } from "./select-tool";
 export {

@@ -108,6 +108,7 @@ import { editorStore, markupsOf, pageMarkups, setCaptionDrag, type EditorState, 
 import { discardFill, fillAreaUser, fillPress, paintFill, takeFillRings, undoFillStroke } from "./fill-tool";
 import { handlesOf, paintHandles } from "./handles";
 import { ADD_IMAGE, clearPickedImage, forgetDecodedImages, imageMarkupAt, paintImage, pickedImage } from "./image-tool";
+import { dropFormat } from "./properties";
 import { lockedNote, openMarkupMenu, paintSelectGesture, resetSelectTool, selectCursorAt, selectGesture, selectionKey, toggleSelected } from "./select-tool";
 import {
   ADD_CALLOUT,
@@ -1027,8 +1028,8 @@ export const measurePainter: MarkupPainter = {
   escape() {
     if (textEditing()) return endTextEdit(true) || true;
     const d = drawing();
-    // Story 4.11: with nothing being drawn, Esc clears the selection.
-    if (!d) return setSelection([]);
+    // Story 5.10: Esc puts the format painter away first; 4.11: with nothing being drawn, it clears the selection.
+    if (!d) return dropFormat() || setSelection([]);
     // D4: Esc finishes a count (its markers are kept); it cancels the other drawings.
     const documentId = viewerStore.getState().documentId;
     if (d.tool === "count" && documentId && d.pageId.startsWith(`${documentId}:`)) commit(documentId);
@@ -1365,6 +1366,7 @@ export function installMeasureTools(): () => void {
       forgetDecodedImages();
       discardFill();
       resetSelectTool();
+      dropFormat();
       setMoveDrag(null);
       setPreview(null);
       setMarkupMenu(null);

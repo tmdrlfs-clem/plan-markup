@@ -47,6 +47,7 @@ import { LOCKED_CURSOR, notifyMarkups, type LayerView, type SelectContext, type 
 import { editorStore, markupsOf, setMarkupMenu, setMoveDrag, setPreview, setSelection } from "./editor-store";
 import { boxOf, handleAt, handlesOf } from "./handles";
 import { executeOp, undoActive } from "./undo-store";
+import { paintFormat } from "./properties";
 
 /** A press that moves less than this (CSS px) is a click. */
 export const CLICK_PX = 3;
@@ -284,6 +285,8 @@ export function selectGesture(phase: "start" | "move" | "end" | "cancel", point:
       return;
     }
     const hit = at.alt ? null : hitAt(point, at, captionAt);
+    // Story 5.10: with the format painter out, a press on a markup applies the format (and ends there).
+    if (paintFormat(hit, at.documentId)) return;
     gesture = { at, start: point, hit, kind: at.alt ? "lasso" : hit ? "press" : "marquee", points: [point], moved: false };
     return;
   }
