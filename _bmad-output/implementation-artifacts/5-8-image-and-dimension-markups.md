@@ -1,6 +1,6 @@
 # Story 5.8: Image and dimension markups
 
-Status: review
+Status: done
 
 ## Story
 
@@ -22,7 +22,7 @@ so that I can add photos and dimensioned notes.
 - [x] **Task 1: Core** — `image` and `dimension` schemas; core/markup/image.ts (signature and declared size, refusals, fitting), core/markup/dimension.ts (line, outline); hits, bounds; unit tests.
 - [x] **Task 2: Viewer** — tools `image`, `dimension` (markup tools; Dimension snaps).
 - [x] **Task 3: Editor** — image-tool.ts (pick, check, decode, re-encode, place, decoded-image cache, paint); Dimension placing, preview, painting and caption; rail (Image button with its file input, Dimension in the line tools' menu) and hints; unit tests.
-- [ ] **Task 4: Tests** — `e2e/image-dimension.spec.ts` (AC 6), in CI.
+- [x] **Task 4: Tests** — `e2e/image-dimension.spec.ts` (AC 6), in CI.
 
 ## Dev Notes
 
@@ -49,7 +49,7 @@ Claude Opus 5.5
 - Task 1: `imageMarkupSchema` (4 corners, `src` a PNG / JPEG base64 data URL, at most 12 M characters), `dimensionMarkupSchema` (3 points); `sniffImage`, `imageRefusal`, `fitSize`; `dimensionLine`, `dimensionOutline`; an image is hit inside its box, a dimension by its line and extension lines; bounds and marquee by its outline. Unit tests.
 - Task 2: `image` and `dimension` join `MarkupTool`; Dimension is a snapping tool.
 - Task 3: `pickImageFile` (refusals as toasts; the decoder injectable for tests), `imageMarkupAt` (centred, upright from the page's last painted view, fitted), the decoded-image cache (painted again when loaded; crossed-out box until then), `paintImage` (the image mapped onto its box). measure-tool: Image's click adds it and selects it with Select; leaving Image drops the pick; Dimension (3 fixed points), `paintDimension`, its preview with the live length; layer 2 labels. Rail: Image button and hidden file input; Dimension in the Lines menu; hints.
-- Unit tests: 1863 pass. Local e2e not run (Docker off); CI runs `e2e/image-dimension.spec.ts`.
+- Unit tests: 1863 pass. Local e2e not run (Docker off); CI run 41890505366 green with `e2e/image-dimension.spec.ts`.
 
 ### File List
 
