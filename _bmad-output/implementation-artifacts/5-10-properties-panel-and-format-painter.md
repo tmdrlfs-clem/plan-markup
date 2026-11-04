@@ -1,6 +1,6 @@
 # Story 5.10: Properties panel and format painter
 
-Status: review
+Status: done
 
 ## Story
 
@@ -50,7 +50,7 @@ Claude Opus 5.5
 - Task 1: `subject` (optional, `MAX_SUBJECT_LENGTH` 200); `fieldsOf`, `sharedFields`, `sharedValue`, `sizeLabel`, `subjectOf`, `withChange` (same object when nothing changes), `formatOf`, `withFormat`. Unit tests.
 - Task 2: `changeProperties`, `selectedMarkups`, `formatPainter`, `copyFormat`, `dropFormat`, `paintFormat` (called by `selectGesture` on a press); the measure painter's Esc puts the painter away before clearing the selection. Unit tests.
 - Task 3: `PropertiesPanel` (ColorSwatchGroup, NumberField, text fields committed on Enter / blur, Esc reverts); the custom colour commits on the native change event so a picker drag is one step.
-- Unit tests: 1884 pass. Local e2e not run (Docker off); CI runs `e2e/properties-panel.spec.ts`.
+- Unit tests: 1884 pass. Local e2e not run (Docker off); CI run 41903210479 green with `e2e/properties-panel.spec.ts`.
 
 ### File List
 
