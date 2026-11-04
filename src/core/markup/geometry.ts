@@ -5,12 +5,14 @@
 // count by any marker; a radius or diameter by its circle and its line; a
 // rectangle, ellipse or cloud (Story 5.5) by its outline or inside; a text
 // markup (Story 5.6) by its box, its note icon, its cloud or its leader; a
-// pen or highlight stroke (Story 5.7) within half its width as well. A
+// pen or highlight stroke (Story 5.7) within half its width as well; an
+// image (Story 5.8) inside its box, a dimension by its lines. A
 // marquee or lasso selects a markup when its whole outline is inside.
 
 import { circleThrough } from "@/core/measure/circle";
 import type { Markup } from "@/core/schema/markup";
 
+import { dimensionLine, dimensionOutline } from "./dimension";
 import { NOTE_PT, cloudRingOf, leaderOf, textBoxOf } from "./text";
 import { CLOUD_CHORD_PT, ellipseBounds, ellipseFrame, ellipseLocal, ellipseOutline } from "./shapes";
 
@@ -31,6 +33,7 @@ function circleOf(m: Markup): { centre: Point; radius: number } | null {
 /** The points that outline a markup: its vertices, or a circle's outline (and its points). */
 export function outlinePoints(m: Markup): readonly Point[] {
   if (m.type === "ellipse") return ellipseOutline(ellipseFrame(m.points), ELLIPSE_SAMPLES);
+  if (m.type === "dimension") return dimensionOutline(m.points);
   const circle = circleOf(m);
   if (!circle) return m.points;
   const out: Point[] = [];
@@ -53,7 +56,7 @@ export function markupBounds(m: Markup): Rect {
   let y0 = Infinity;
   let x1 = -Infinity;
   let y1 = -Infinity;
-  for (const p of m.points) {
+  for (const p of m.type === "dimension" ? dimensionOutline(m.points) : m.points) {
     x0 = Math.min(x0, p.x);
     y0 = Math.min(y0, p.y);
     x1 = Math.max(x1, p.x);
@@ -99,6 +102,7 @@ export function hitMarkup(m: Markup, p: Point, tol: number, userUnit = 1): boole
     // Story 5.5 (D2): so are a rectangle and a cloud (its arcs, out of its corners' ring, hit too).
     case "polygon":
     case "rectangle":
+    case "image":
       return nearPolyline(p, m.points, tol, true) || insidePolygon(p, m.points);
     case "cloud":
       return nearPolyline(p, m.points, tol + CLOUD_CHORD_PT / 2 / (userUnit > 0 ? userUnit : 1), true) || insidePolygon(p, m.points);
@@ -124,6 +128,13 @@ export function hitMarkup(m: Markup, p: Point, tol: number, userUnit = 1): boole
     case "pen":
     case "highlight":
       return nearPolyline(p, m.points, tol + m.style.width / 2 / (userUnit > 0 ? userUnit : 1), false);
+    // Story 5.8: the dimension line and the extension lines out to it.
+    case "dimension": {
+      const [a, b, c] = m.points;
+      const line = dimensionLine(a, b, c);
+      if (!line) return nearPolyline(p, [a, b], tol, false);
+      return segmentDistance(p, line.from, line.to) <= tol || segmentDistance(p, a, line.from) <= tol || segmentDistance(p, b, line.to) <= tol;
+    }
     case "ellipse": {
       const local = ellipseLocal(ellipseFrame(m.points), p);
       if (local && Math.hypot(local.x, local.y) <= 1) return true;

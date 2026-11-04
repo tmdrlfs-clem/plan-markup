@@ -14,6 +14,7 @@ import {
   Hash,
   Hexagon,
   Highlighter,
+  ImagePlus,
   MessageSquareText,
   MousePointer2,
   PaintBucket,
@@ -22,6 +23,7 @@ import {
   Radius,
   Route,
   Ruler,
+  RulerDimensionLine,
   Slash,
   Spline,
   Square,
@@ -31,12 +33,13 @@ import {
   TypeOutline,
   type LucideIcon,
 } from "lucide-react";
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { useStore } from "zustand";
 
 import { Menu, MenuContent, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "@/components/ui/menu";
 import { Toolbar, ToolbarButton, ToolbarSeparator, ToolbarToggleGroup, ToolbarToggleItem } from "@/components/ui/toolbar";
 import { dismissHint, showHint } from "@/components/ui/hint-store";
+import { pickImageFile } from "@/features/editor";
 import { hasDocument, isLineTool, isMeasureTool, isTextTool, setTool, viewerStore, type LineTool, type TextTool, type MeasureTool, type ViewerTool } from "@/features/viewer";
 
 import { NO_DRAWING } from "./workspace-toolbar";
@@ -53,7 +56,7 @@ interface Tool {
  * Tools that work today: Select and Pan (Story 3.2), and Length (snapping from
  * Story 4.1, measuring from Story 4.5). The others arrive with the editor.
  */
-const LIVE_TOOLS: ReadonlySet<string> = new Set<ViewerTool>(["select", "pan", "length", "polylength", "area", "count", "angle", "radius", "diameter", "line", "arrow", "polyline", "polygon", "rectangle", "ellipse", "cloud", "text", "callout", "typewriter", "note", "cloudplus", "pen", "highlight"]);
+const LIVE_TOOLS: ReadonlySet<string> = new Set<ViewerTool>(["select", "pan", "length", "polylength", "area", "count", "angle", "radius", "diameter", "line", "arrow", "polyline", "polygon", "rectangle", "ellipse", "cloud", "text", "callout", "typewriter", "note", "cloudplus", "pen", "highlight", "image", "dimension"]);
 
 export const SNAP_PREVIEW_HINT_ID = "snap-preview";
 /** Review S3: a page past the segment cap. */
@@ -97,6 +100,9 @@ export const CLOUD_PLUS_HINT = `Cloud+: click each corner of the cloud and close
 const STROKE = "Shift holds the stroke horizontal or vertical. Esc while drawing drops the stroke; Esc again returns to Select.";
 export const PEN_HINT = `Pen: drag to draw freehand. ${STROKE}`;
 export const HIGHLIGHT_HINT = `Highlight: drag over the sheet to highlight it. ${STROKE}`;
+/** Story 5.8: the HintBar while Image (an image picked) or Dimension is armed. */
+export const IMAGE_HINT = "Image: click where the image goes (its centre); then drag its handles to resize it. Esc cancels.";
+export const DIMENSION_HINT = `Dimension: click the two points to dimension, then where its line goes. ${SNAPS} Esc cancels; Esc again returns to Select.`;
 const TOOL_HINTS: Partial<Record<ViewerTool, string>> = {
   length: SNAP_PREVIEW_HINT,
   polylength: POLYLENGTH_HINT,
@@ -120,6 +126,8 @@ const TOOL_HINTS: Partial<Record<ViewerTool, string>> = {
   cloudplus: CLOUD_PLUS_HINT,
   pen: PEN_HINT,
   highlight: HIGHLIGHT_HINT,
+  image: IMAGE_HINT,
+  dimension: DIMENSION_HINT,
 };
 export const EDITOR_LATER = "Arrives with the markup editor";
 
@@ -141,6 +149,8 @@ const GROUPS: { label: string; tools: Tool[] }[] = [
       { id: "ellipse", label: "Ellipse", icon: Circle, shortcut: "E" },
       { id: "pen", label: "Pen", icon: Pen, shortcut: "P" },
       { id: "highlight", label: "Highlight", icon: Highlighter, shortcut: "H" },
+      // Story 5.8: Image picks a file first (no key, D4).
+      { id: "image", label: "Image", icon: ImagePlus },
       { id: "stamp", label: "Stamp", icon: Stamp, shortcut: "S" },
     ],
   },
@@ -173,12 +183,15 @@ export const MEASURE_TOOLS: readonly (Tool & { id: MeasureTool })[] = [
 ];
 export const MORE_MEASURE_TOOLS = "More measure tools";
 
-/** Story 5.4 (D4): the straight-line markup tools, in one slot as the measuring tools are. */
-export const LINE_TOOLS: readonly (Tool & { id: LineTool })[] = [
+/** Story 5.4 (D4): the straight-line markup tools, in one slot as the measuring tools are; 5.8: Dimension too (no key, D4). */
+type LineSlotTool = LineTool | "dimension";
+const isLineSlotTool = (tool: ViewerTool): tool is LineSlotTool => isLineTool(tool) || tool === "dimension";
+export const LINE_TOOLS: readonly (Tool & { id: LineSlotTool })[] = [
   { id: "line", label: "Line", icon: Slash, shortcut: "L" },
   { id: "arrow", label: "Arrow", icon: ArrowUpRight, shortcut: "A" },
   { id: "polyline", label: "Polyline", icon: Spline, shortcut: "Shift+N" },
   { id: "polygon", label: "Polygon", icon: Hexagon, shortcut: "Shift+P" },
+  { id: "dimension", label: "Dimension", icon: RulerDimensionLine },
 ];
 export const MORE_LINE_TOOLS = "More line tools";
 
@@ -263,8 +276,8 @@ function FlyoutGroup<T extends ViewerTool>({
   );
 }
 
-/** One rail group of buttons (the tools not yet live are disabled). */
-function ToolGroup({ label, tools, open, active }: { label: string; tools: readonly Tool[]; open: boolean; active: ViewerTool }) {
+/** One rail group of buttons (the tools not yet live are disabled); Image (Story 5.8) asks for its file first (`onPickImage`). */
+function ToolGroup({ label, tools, open, active, onPickImage }: { label: string; tools: readonly Tool[]; open: boolean; active: ViewerTool; onPickImage?: () => void }) {
   return (
     <ToolbarToggleGroup
       type="single"
@@ -273,7 +286,8 @@ function ToolGroup({ label, tools, open, active }: { label: string; tools: reado
       value={open && LIVE_TOOLS.has(active) ? active : ""}
       onValueChange={(value: string) => {
         // Clicking the active tool again keeps it: a tool is always active.
-        if (LIVE_TOOLS.has(value)) setTool(value as ViewerTool);
+        if (value === "image") onPickImage?.();
+        else if (LIVE_TOOLS.has(value)) setTool(value as ViewerTool);
       }}
     >
       {tools.map((tool) => (
@@ -299,6 +313,7 @@ export function ToolRail() {
   // Stories 4.1 / 4.5 / 4.6: while a measuring tool is armed (whatever armed it), the HintBar says how it works.
   const hint = open ? (TOOL_HINTS[active] ?? null) : null;
   const partial = useStore(viewerStore, (s) => s.snapPartial);
+  const imageInput = useRef<HTMLInputElement>(null);
   useEffect(() => {
     if (!hint) return;
     showHint({ id: SNAP_PREVIEW_HINT_ID, variant: "info", text: partial ? `${hint} ${SNAP_PARTIAL_NOTE}` : hint });
@@ -312,20 +327,34 @@ export function ToolRail() {
           {group.label === "Measure" ? (
             <FlyoutGroup label="Measure" more={MORE_MEASURE_TOOLS} tools={MEASURE_TOOLS} member={isMeasureTool} open={open} active={active} />
           ) : group.label === "Lines" ? (
-            <FlyoutGroup label="Lines" more={MORE_LINE_TOOLS} tools={LINE_TOOLS} member={isLineTool} open={open} active={active} />
+            <FlyoutGroup label="Lines" more={MORE_LINE_TOOLS} tools={LINE_TOOLS} member={isLineSlotTool} open={open} active={active} />
           ) : group.label === "Markup" ? (
             // Story 5.6 (D4): Rectangle, Ellipse, the Cloud slot, the Text box slot, then Pen, Highlight and Stamp.
             <>
               <ToolGroup label="Markup" tools={group.tools.slice(0, 2)} open={open} active={active} />
               <FlyoutGroup label="Clouds" more={MORE_CLOUD_TOOLS} tools={CLOUD_TOOLS} member={isCloudTool} open={open} active={active} />
               <FlyoutGroup label="Text" more={MORE_TEXT_TOOLS} tools={TEXT_TOOLS} member={isTextSlotTool} open={open} active={active} />
-              <ToolGroup label="Freehand" tools={group.tools.slice(2)} open={open} active={active} />
+              <ToolGroup label="Freehand" tools={group.tools.slice(2)} open={open} active={active} onPickImage={() => imageInput.current?.click()} />
             </>
           ) : (
             <ToolGroup label={group.label} tools={group.tools} open={open} active={active} />
           )}
         </Fragment>
       ))}
+      {/* Story 5.8: the Image tool's file (PNG or JPEG; checked and decoded by the editor). */}
+      <input
+        ref={imageInput}
+        type="file"
+        accept="image/png,image/jpeg"
+        aria-label="Image file"
+        data-testid="image-file-input"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          e.target.value = "";
+          if (file) void pickImageFile(file);
+        }}
+      />
     </Toolbar>
   );
 }

@@ -201,8 +201,8 @@ describe("WorkspaceShell layout", () => {
     setup();
     const rail = screen.getByRole("toolbar", { name: "Drawing tools" });
     const tools = within(rail).getAllByRole("radio");
-    // The measuring tools share one slot and a menu (Story 5.4: the line tools too).
-    expect(tools.length).toBe(13);
+    // The measuring tools share one slot and a menu (Story 5.4: the line tools too; 5.8: Image has its own button).
+    expect(tools.length).toBe(14);
     for (const tool of tools) expect(tool).toHaveAttribute("aria-disabled", "true");
     expect(within(rail).getByRole("button", { name: "More measure tools" })).toHaveAttribute("aria-disabled", "true");
     expect(within(rail).getByRole("button", { name: "More line tools" })).toHaveAttribute("aria-disabled", "true");

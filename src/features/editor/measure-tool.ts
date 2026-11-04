@@ -41,6 +41,11 @@
 // drops it. A highlight is painted under the other markups, multiplied over
 // the sheet (paintUnder), at its style's opacity.
 //
+// Story 5.8: Image places the picked image (image-tool.ts) with one click,
+// then Select has it; Dimension takes its two measured points and a third
+// for its line's offset, and shows the calibrated length ("Scale not set"
+// without a calibration) on its line between extension lines.
+//
 // With Select, Shift + drag on a caption moves the caption only ("Move
 // caption", a markups.update op); the offset is stored in user space.
 //
@@ -61,6 +66,7 @@ import { areaCaption, areaCaptionText, formatArea, polygonCentroid, selfIntersec
 import { circleCaption, circleThrough } from "@/core/measure/circle";
 import { SCALE_NOT_SET, captionPlacement, lengthCaption, polylineCaptionAnchor } from "@/core/measure/length";
 import { outlinePoints, translateMarkup } from "@/core/markup/geometry";
+import { dimensionLine, dimensionOutline } from "@/core/markup/dimension";
 import { simplifyStroke, smoothPath, strokeHasLength } from "@/core/markup/ink";
 import { CLOUD_CHORD_PT, boxCorners, cloudArcs, ellipseFrame } from "@/core/markup/shapes";
 import { NOTE_PT, TEXT_LINE_HEIGHT, TEXT_PAD_PT, cloudRingOf, leaderOf, leaderTo, leaderToRing, textBoxOf, wrapText } from "@/core/markup/text";
@@ -72,6 +78,7 @@ import {
   isInkMarkup,
   isMeasureMarkup,
   isTextMarkup,
+  type DimensionMarkup,
   type InkMarkup,
   type Markup,
   type MarkupStyle,
@@ -97,6 +104,7 @@ import {
 import { editorStore, markupsOf, pageMarkups, setCaptionDrag, type EditorState, setDrawing, setMarkupMenu, setMoveDrag, setPreview, setSelection, type Drawing, type MoveDrag } from "./editor-store";
 import { discardFill, fillAreaUser, fillPress, paintFill, takeFillRings, undoFillStroke } from "./fill-tool";
 import { handlesOf, paintHandles } from "./handles";
+import { ADD_IMAGE, clearPickedImage, forgetDecodedImages, imageMarkupAt, paintImage, pickedImage } from "./image-tool";
 import { lockedNote, openMarkupMenu, paintSelectGesture, resetSelectTool, selectCursorAt, selectGesture, selectionKey, toggleSelected } from "./select-tool";
 import {
   ADD_CALLOUT,
@@ -136,6 +144,7 @@ export const ADD_ELLIPSE = "Add ellipse";
 export const ADD_CLOUD = "Add cloud";
 export const ADD_PEN = "Add pen";
 export const ADD_HIGHLIGHT = "Add highlight";
+export const ADD_DIMENSION = "Add dimension";
 const ADD_LABEL: Record<DrawTool, string> = {
   length: ADD_LENGTH,
   polylength: ADD_POLYLENGTH,
@@ -159,6 +168,8 @@ const ADD_LABEL: Record<DrawTool, string> = {
   cloudplus: ADD_CLOUD_PLUS,
   pen: ADD_PEN,
   highlight: ADD_HIGHLIGHT,
+  image: ADD_IMAGE,
+  dimension: ADD_DIMENSION,
 };
 /** Story 4.8: what the live value says while an area crosses itself (it cannot be added). */
 export const CROSSES_ITSELF = "Crosses itself";
@@ -186,9 +197,11 @@ const MIN_POINTS: Record<DrawTool, number> = {
   cloudplus: 3,
   pen: 2,
   highlight: 2,
+  image: 1,
+  dimension: 3,
 };
 /** Tools with a fixed number of points: the click that places the last one adds the measurement. */
-const FIXED_POINTS: Partial<Record<DrawTool, number>> = { length: 2, angle: 3, radius: 3, diameter: 3, line: 2, arrow: 2, rectangle: 2, ellipse: 2, text: 2, callout: 2, typewriter: 1, note: 1 };
+const FIXED_POINTS: Partial<Record<DrawTool, number>> = { length: 2, angle: 3, radius: 3, diameter: 3, line: 2, arrow: 2, rectangle: 2, ellipse: 2, text: 2, callout: 2, typewriter: 1, note: 1, dimension: 3 };
 /** Tools whose outline is closed: a click on the first vertex closes it. */
 const CLOSED: ReadonlySet<DrawTool> = new Set<DrawTool>(["area", "polygon", "cloud", "cloudplus"]);
 /** Story 5.4 (D1): an arrow head's length in line widths, and its least length, in points (page units). */
@@ -213,6 +226,9 @@ const INK_LABEL: Record<InkMarkup["type"], string> = { pen: "Pen", highlight: "H
 /** Story 5.7: a stroke is captured at points this far apart on screen, and kept within this of its path when simplified (CSS px). */
 const INK_STEP_PX = 1;
 const INK_SIMPLIFY_PX = 0.35;
+/** Story 5.8: an extension line starts this far from its measured point and runs this far past the dimension line, in points. */
+const DIMENSION_GAP_PT = 2;
+const DIMENSION_OVERSHOOT_PT = 3;
 /** Story 5.5: zoomed out, cloud arcs smaller than this on screen (CSS px) are drawn as their chords. */
 const CLOUD_MIN_CHORD_PX = 3;
 /** Story 4.9: the arc at an angle's vertex, in CSS px (at most 40 % of the shorter leg). */
@@ -375,6 +391,38 @@ function strokeInk(c: CanvasRenderingContext2D, pts: readonly Point[], style: Ma
   c.strokeStyle = style.color;
   c.stroke();
   c.restore();
+}
+
+/**
+ * Story 5.8: a dimension (user points: the measured two, then the line's): extension lines from
+ * near the measured points to a little past its line, the line with an arrow head at each end and
+ * its caption above the line's middle, readable.
+ */
+function paintDimension(c: CanvasRenderingContext2D, points: readonly Point[], style: MarkupStyle, view: LayerView, caption: { text: string; scaled: boolean }): void {
+  const [a, b, at] = points;
+  const line = dimensionLine(a, b, at);
+  if (!line) return;
+  const u = view.userUnit > 0 ? view.userUnit : 1;
+  const gap = Math.min(DIMENSION_GAP_PT / u, line.offset);
+  const past = DIMENSION_OVERSHOOT_PT / u;
+  const n = line.normal;
+  const ext = [
+    [a, line.from],
+    [b, line.to],
+  ].map(([p, q]) => devicePoints([{ x: p.x + n.x * gap, y: p.y + n.y * gap }, { x: q.x + n.x * past, y: q.y + n.y * past }], view));
+  c.beginPath();
+  for (const [p, q] of ext) {
+    c.moveTo(p.x, p.y);
+    c.lineTo(q.x, q.y);
+  }
+  stroke(c, style, view);
+  const [from, to] = devicePoints([line.from, line.to], view);
+  const mid = { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 };
+  strokeShape(c, "arrow", [mid, from], style, view);
+  strokeShape(c, "arrow", [mid, to], style, view);
+  const size = style.fontSize * view.devicePerPt;
+  const frame = captionPlacement(from, to, Math.max(1, style.width * view.devicePerPt) / 2 + size * 0.2);
+  drawCaption(c, { ...frame, size }, [caption.text], caption.scaled, style, view);
 }
 
 /** Story 5.6: a text's lines in its box (device corners, p0→p1 along the lines), plain text (NFR27). */
@@ -750,6 +798,25 @@ export const measurePainter: MarkupPainter = {
         if (any.type === "pen") strokeInk(c, pts, any.style, view);
         continue;
       }
+      if (any.type === "image") {
+        // Story 5.8: an image, upright in its box.
+        captions.push("Image");
+        const pts = devicePoints(any.points, view);
+        if (!onCanvas(pts, any.style, view)) continue;
+        if (selected.has(any.id)) strokeSelection(c, pts, view);
+        paintImage(c, any, pts, view);
+        continue;
+      }
+      if (any.type === "dimension") {
+        // Story 5.8: a dimension and its calibrated length (never stored).
+        const caption = dimensionCaption(any, calibration, view.userUnit);
+        captions.push(`Dimension: ${caption.text}`);
+        const pts = devicePoints(dimensionOutline(any.points), view);
+        if (!onCanvas(pts, any.style, view)) continue;
+        if (selected.has(any.id)) strokeSelection(c, pts, view);
+        paintDimension(c, any.points, any.style, view, caption);
+        continue;
+      }
       if (!isMeasure(any)) {
         // Story 5.4: a shape, no caption (its label stands in layer 2's list).
         captions.push(SHAPE_LABEL[any.type]);
@@ -840,6 +907,16 @@ export const measurePainter: MarkupPainter = {
       strokeShape(c, "arrow", devicePoints(leaderTo([pointer, pointer, pointer, pointer], d.points[0]), view), DEFAULT_MARKUP_STYLE, view);
       return null;
     }
+    // Story 5.8: a dimension: its measured line, then its offset, with the live length.
+    if (d.tool === "dimension") {
+      const live = lengthCaption(points.slice(0, 2), calibrationOf(view.documentId, view.pageIndex), view.userUnit);
+      c.save();
+      if (points.length >= 3) paintDimension(c, points, DEFAULT_MARKUP_STYLE, view, live);
+      else strokeShape(c, "line", devicePoints(points, view), DEFAULT_MARKUP_STYLE, view);
+      c.restore();
+      liveLabel(c, view.toDevice(pointer), live.text, live.scaled, view);
+      return live.text;
+    }
     // Story 5.5: a box from its first corner to the pointer (5.6: a text box's too).
     const pts = devicePoints(isBoxTool(d.tool) ? boxCorners(points[0], pointer) : points, view);
     const live = liveValue(d.tool, points, calibrationOf(view.documentId, view.pageIndex), view.userUnit);
@@ -850,7 +927,7 @@ export const measurePainter: MarkupPainter = {
     else if (d.tool === "radius" || d.tool === "diameter") strokeCircle(c, d.tool, pts, deviceCircle(points, view), DEFAULT_MEASURE_STYLE, view);
     else if (d.tool === "text") strokeShape(c, "rectangle", pts, DEFAULT_MARKUP_STYLE, view);
     else if (d.tool === "cloudplus") strokeShape(c, "cloud", pts, DEFAULT_MARKUP_STYLE, view);
-    else if (isMarkupTool(d.tool) && !isTextTool(d.tool) && !isInkTool(d.tool)) strokeShape(c, d.tool, pts, DEFAULT_MARKUP_STYLE, view);
+    else if (isMarkupTool(d.tool) && !isTextTool(d.tool) && !isInkTool(d.tool) && d.tool !== "image") strokeShape(c, d.tool, pts, DEFAULT_MARKUP_STYLE, view);
     else strokeMeasure(c, pts, DEFAULT_MEASURE_STYLE, view);
     c.restore();
     if (!live) return null;
@@ -876,6 +953,8 @@ export const measurePainter: MarkupPainter = {
     // Dynamic fill is pressed, not clicked (press below); Pen and Highlight are dragged (ink below).
     if (!isDrawTool(tool) || tool === "fill" || isInkTool(tool)) return "ignored";
     const pageId = pageIdOf(at.documentId, at.pageIndex);
+    // Story 5.8: the picked image, centred on the click; then Select has it (to resize).
+    if (tool === "image") return placeImage(point, at.documentId, pageId);
     const d = drawing();
     if (!d || d.pageId !== pageId || d.tool !== tool) {
       setDrawing({ tool, pageId, pageIndex: at.pageIndex, points: [point] });
@@ -1100,6 +1179,23 @@ function inkStroke(phase: "start" | "move" | "end" | "cancel", point: Point, at:
   executeOp({ kind: "markups.add", documentId: at.documentId, markups: [markup] }, ADD_LABEL[d.tool]);
 }
 
+/** Story 5.8: a dimension's caption, its measured points' calibrated length. */
+function dimensionCaption(m: DimensionMarkup, calibration: Calibration | null, userUnit: number): { text: string; scaled: boolean } {
+  return lengthCaption(m.points.slice(0, 2), calibration, userUnit);
+}
+
+/** Story 5.8: adds the picked image centred at `point` ("Add image"), then selects it with Select. */
+function placeImage(point: Point, documentId: string, pageId: string): "done" | "ignored" {
+  const picked = pickedImage();
+  if (!picked) return "ignored";
+  const markup = imageMarkupAt(picked, point, pageId);
+  executeOp({ kind: "markups.add", documentId, markups: [markup] }, ADD_IMAGE);
+  clearPickedImage();
+  setTool("select");
+  setSelection([markup.id]);
+  return "done";
+}
+
 /** The markup a finished drawing makes (Story 5.4: a shape takes the markup style). */
 function markupOf(d: Drawing): Markup {
   const base = { id: uuidv7(), pageId: d.pageId, createdAt: new Date().toISOString(), style: isMarkupTool(d.tool) ? DEFAULT_MARKUP_STYLE : DEFAULT_MEASURE_STYLE };
@@ -1122,6 +1218,10 @@ function markupOf(d: Drawing): Markup {
     case "pen":
     case "highlight":
       return { ...base, style: inkStyle(d.tool), type: d.tool, points };
+    case "dimension":
+      return { ...base, type: d.tool, points: [a, b, c] };
+    case "image":
+      throw new Error("an image is placed from its picked file (image-tool.ts)");
     case "text":
     case "callout":
     case "typewriter":
@@ -1206,6 +1306,8 @@ export function installMeasureTools(): () => void {
       if (moved) setCaptionDrag(null);
       // Story 5.6: another tool, page, tab or document ends the typing (its text is kept).
       if (moved && textEditing()) endTextEdit(true);
+      // Story 5.8: leaving Image drops the image waiting for its click.
+      if (prev.tool === "image" && s.tool !== "image") clearPickedImage();
       // Story 4.11 (D5): arming another tool, another tab or document clears the selection;
       // Story 5.1 (D4): another page too. A move in progress is dropped.
       const otherDocument = s.tabId !== prev.tabId || s.openSeq !== prev.openSeq || s.documentId !== prev.documentId;
@@ -1230,6 +1332,8 @@ export function installMeasureTools(): () => void {
     uninstall = () => {
       endTextEdit(false);
       forgetViews();
+      clearPickedImage();
+      forgetDecodedImages();
       discardFill();
       resetSelectTool();
       setMoveDrag(null);

@@ -133,6 +133,20 @@ export const cloudPlusMarkupSchema = z.object({ ...base, type: z.literal("cloudp
 export const penMarkupSchema = z.object({ ...base, type: z.literal("pen"), points: z.array(pointSchema).min(2).max(MAX_POLYLINE_POINTS) });
 export const highlightMarkupSchema = z.object({ ...base, type: z.literal("highlight"), points: z.array(pointSchema).min(2).max(MAX_POLYLINE_POINTS) });
 
+/**
+ * Story 5.8: an image, its box's four corners ordered from the screen's top left when placed
+ * (p0→p1 the image's top edge, p0→p3 its left edge), and the image itself: a PNG or JPEG data URL
+ * the editor decoded, scaled down and re-encoded (never SVG).
+ */
+export const MAX_IMAGE_SRC_LENGTH = 12_000_000;
+export const IMAGE_SRC_PATTERN = /^data:image\/(png|jpeg);base64,[A-Za-z0-9+/]+={0,2}$/;
+export const imageMarkupSchema = z.object({ ...base, type: z.literal("image"), points: fourPoints, src: z.string().max(MAX_IMAGE_SRC_LENGTH).regex(IMAGE_SRC_PATTERN) });
+/**
+ * Story 5.8: a dimension, its two measured points and the point its dimension line runs through
+ * (parallel to them); its length comes from the page's calibration when shown, never stored.
+ */
+export const dimensionMarkupSchema = z.object({ ...base, type: z.literal("dimension"), points: threePoints });
+
 /** Every markup type (more join with Epic 5). */
 export const markupSchema = z.discriminatedUnion("type", [
   lengthMarkupSchema,
@@ -156,6 +170,8 @@ export const markupSchema = z.discriminatedUnion("type", [
   cloudPlusMarkupSchema,
   penMarkupSchema,
   highlightMarkupSchema,
+  imageMarkupSchema,
+  dimensionMarkupSchema,
 ]);
 
 export type Markup = z.infer<typeof markupSchema>;
@@ -178,6 +194,8 @@ export type ShapeMarkup =
   | z.infer<typeof rectangleMarkupSchema>
   | z.infer<typeof ellipseMarkupSchema>
   | z.infer<typeof cloudMarkupSchema>;
+export type ImageMarkup = z.infer<typeof imageMarkupSchema>;
+export type DimensionMarkup = z.infer<typeof dimensionMarkupSchema>;
 /** Story 5.7: the freehand strokes. */
 export type InkMarkup = z.infer<typeof penMarkupSchema> | z.infer<typeof highlightMarkupSchema>;
 /** Whether `m` is a pen or highlight stroke (Story 5.7). */

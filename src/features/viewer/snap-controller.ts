@@ -42,6 +42,8 @@ const SNAPPING_TOOLS: ReadonlySet<ViewerTool> = new Set<ViewerTool>([
   "typewriter",
   "note",
   "cloudplus",
+  // Story 5.8: Dimension (Image's click is where its centre goes, unsnapped).
+  "dimension",
 ]);
 
 export function isSnappingTool(tool: ViewerTool): boolean {

@@ -85,6 +85,10 @@ export function noteView(view: LayerView): void {
 export function forgetViews(): void {
   views.clear();
 }
+/** Story 5.8: the view page `pageId` was last painted with, if any. */
+export function lastViewOf(pageId: string): LayerView | null {
+  return views.get(pageId) ?? null;
+}
 /** Screen as the page was last painted (y down); without a view, the page upright. */
 function toScreenOf(pageId: string): (p: Point) => Point {
   return views.get(pageId)?.toDevice ?? ((p) => ({ x: p.x, y: -p.y }));

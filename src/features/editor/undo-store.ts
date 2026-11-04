@@ -106,6 +106,9 @@ export const DRAWING_POINT_LABEL: Readonly<Record<DrawTool, string>> = {
   // Story 5.7 (a stroke is drawn in one press; Undo during it takes it back).
   pen: "Pen stroke",
   highlight: "Highlight stroke",
+  // Story 5.8.
+  image: "Image point",
+  dimension: "Dimension point",
 };
 
 /**

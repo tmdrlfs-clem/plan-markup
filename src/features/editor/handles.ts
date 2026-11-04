@@ -98,6 +98,7 @@ export function vertexIndices(m: Markup): number[] {
   switch (m.type) {
     case "rectangle":
     case "ellipse":
+    case "image":
     case "text":
     case "typewriter":
     case "note":
