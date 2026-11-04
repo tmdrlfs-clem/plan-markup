@@ -1,6 +1,6 @@
 # Story 5.11: White-out and erase original content
 
-Status: review
+Status: done
 
 ## Story
 
@@ -36,7 +36,7 @@ so that as-built changes replace what was drawn without destroying the original.
 
 - [Source: _bmad-output/planning-artifacts/epics.md#Story 5.11], FR36, AR25
 - [Source: _bmad-output/planning-artifacts/architecture.md] (white-out = visual cover)
-- [Source: _bmad-output/implementation-artifacts/5-7-pen-and-highlight.md] (strokes)
+- [Source: _bmad-output/implementation-artifacts/5-7-pen-and-highlight-tools.md] (strokes)
 
 ## Dev Agent Record
 
@@ -51,7 +51,7 @@ Claude Opus 5.5
 - Task 1: `whiteoutMarkupSchema`, `eraserMarkupSchema` (an `InkMarkup`), `WhiteoutMarkup`, `COVER_COLOR`, `DEFAULT_COVER_STYLE`; a white-out is hit as a filled polygon, an eraser stroke as a pen's; `fieldsOf` for covers; subjects "White-out", "Eraser".
 - Task 2: `whiteout` joins `BoxTool`, `eraser` joins `InkTool`, `whiteoutpolygon` draws as Polygon does (`CLOSED`); `CoverTool` / `isCoverTool`; Shift+W; snapping.
 - Task 3: `ADD_WHITEOUT`, `ADD_ERASER`; `paintCover` (white, filled, no stroke); the preview outlines the cover so far; rail slot "White-out" (`COVER_TOOLS`, "More white-out tools"), hints.
-- Unit tests: 1888 pass. Local e2e not run (Docker off); CI runs `e2e/whiteout.spec.ts`.
+- Unit tests: 1888 pass. Local e2e not run (Docker off); CI run 41909172629 green with `e2e/whiteout.spec.ts`.
 
 ### File List
 
