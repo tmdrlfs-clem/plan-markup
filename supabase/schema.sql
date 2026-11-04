@@ -212,6 +212,25 @@ COMMENT ON COLUMN "public"."profiles"."theme" IS 'Workspace theme: blueprint (de
 
 
 
+CREATE TABLE IF NOT EXISTS "public"."signatures" (
+    "user_id" "uuid" NOT NULL,
+    "storage_path" "text" NOT NULL,
+    "width" integer NOT NULL,
+    "height" integer NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "signatures_height_check" CHECK ((("height" >= 1) AND ("height" <= 2000))),
+    CONSTRAINT "signatures_path_owner" CHECK ((("storage_path" ~~ (("user_id")::"text" || '/%'::"text")) AND ("length"("storage_path") <= 200))),
+    CONSTRAINT "signatures_width_check" CHECK ((("width" >= 1) AND ("width" <= 2000)))
+);
+
+
+ALTER TABLE "public"."signatures" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."signatures" IS 'A user''s signature image (Story 5.13): its object in the private signatures bucket. Owner only.';
+
+
+
 ALTER TABLE ONLY "app"."rate_limits"
     ADD CONSTRAINT "rate_limits_pkey" PRIMARY KEY ("bucket", "key_hash");
 
@@ -222,12 +241,22 @@ ALTER TABLE ONLY "public"."profiles"
 
 
 
+ALTER TABLE ONLY "public"."signatures"
+    ADD CONSTRAINT "signatures_pkey" PRIMARY KEY ("user_id");
+
+
+
 CREATE OR REPLACE TRIGGER "trg_profiles_updated_at" BEFORE UPDATE ON "public"."profiles" FOR EACH ROW EXECUTE FUNCTION "app"."fn_set_updated_at"();
 
 
 
 ALTER TABLE ONLY "public"."profiles"
     ADD CONSTRAINT "fk_profiles_user" FOREIGN KEY ("id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."signatures"
+    ADD CONSTRAINT "signatures_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
 
 
 
@@ -246,6 +275,25 @@ CREATE POLICY "profiles_select_self" ON "public"."profiles" FOR SELECT TO "authe
 
 
 CREATE POLICY "profiles_update_self" ON "public"."profiles" FOR UPDATE TO "authenticated" USING ((("id" = ( SELECT "auth"."uid"() AS "uid")) AND ( SELECT "app"."fn_is_active_user"() AS "fn_is_active_user"))) WITH CHECK ((("id" = ( SELECT "auth"."uid"() AS "uid")) AND ( SELECT "app"."fn_is_active_user"() AS "fn_is_active_user")));
+
+
+
+ALTER TABLE "public"."signatures" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "signatures_delete_own" ON "public"."signatures" FOR DELETE TO "authenticated" USING ((("user_id" = ( SELECT "auth"."uid"() AS "uid")) AND ( SELECT "app"."fn_is_active_user"() AS "fn_is_active_user")));
+
+
+
+CREATE POLICY "signatures_insert_own" ON "public"."signatures" FOR INSERT TO "authenticated" WITH CHECK ((("user_id" = ( SELECT "auth"."uid"() AS "uid")) AND ( SELECT "app"."fn_is_active_user"() AS "fn_is_active_user")));
+
+
+
+CREATE POLICY "signatures_select_own" ON "public"."signatures" FOR SELECT TO "authenticated" USING ((("user_id" = ( SELECT "auth"."uid"() AS "uid")) AND ( SELECT "app"."fn_is_active_user"() AS "fn_is_active_user")));
+
+
+
+CREATE POLICY "signatures_update_own" ON "public"."signatures" FOR UPDATE TO "authenticated" USING ((("user_id" = ( SELECT "auth"."uid"() AS "uid")) AND ( SELECT "app"."fn_is_active_user"() AS "fn_is_active_user"))) WITH CHECK ((("user_id" = ( SELECT "auth"."uid"() AS "uid")) AND ( SELECT "app"."fn_is_active_user"() AS "fn_is_active_user")));
 
 
 
@@ -293,6 +341,11 @@ GRANT UPDATE("name") ON TABLE "public"."profiles" TO "authenticated";
 
 
 GRANT UPDATE("theme") ON TABLE "public"."profiles" TO "authenticated";
+
+
+
+GRANT ALL ON TABLE "public"."signatures" TO "authenticated";
+GRANT ALL ON TABLE "public"."signatures" TO "service_role";
 
 
 

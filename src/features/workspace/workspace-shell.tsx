@@ -44,6 +44,8 @@ import { ToolRail } from "./tool-rail";
 import { useFileDropGuard } from "./use-file-drop-guard";
 import { useRegionCycling } from "./use-region-cycling";
 import { useWorkspaceShortcuts } from "./use-workspace-shortcuts";
+import { SignatureDialog, openSignatureDialog } from "@/features/signature/signature-dialog";
+
 import { WorkspaceMenuBar } from "./workspace-menu-bar";
 import { WorkspaceStatusBar } from "./workspace-status-bar";
 import { WorkspaceToolbar } from "./workspace-toolbar";
@@ -189,10 +191,12 @@ function ShellBody({ user, initialTheme }: { user: WorkspaceUser; initialTheme: 
       <NarrowBanner />
       <header className="shrink-0 bg-surface-2">
         <div data-region="menu-bar" className="flex items-center border-b border-border pr-1">
-          <WorkspaceMenuBar onOpen={open} onSignOut={handleSignOut} theme={theme} onThemeChange={(next) => void chooseTheme(next, theme)} />
+          <WorkspaceMenuBar onOpen={open} onSignOut={handleSignOut} theme={theme} onThemeChange={(next) => void chooseTheme(next, theme)} onAccount={openSignatureDialog} />
           <div className="ml-auto">
             <AccountMenu user={user} onSignOut={handleSignOut} />
           </div>
+          {/* Story 5.13: Settings > Account & signature. */}
+          <SignatureDialog name={user.name} email={user.email} />
         </div>
         <div data-region="toolbar">
           <WorkspaceToolbar onOpen={open} />

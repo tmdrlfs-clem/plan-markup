@@ -7,7 +7,7 @@ export { MarkupContextMenu, useSelectionState } from "./markup-context-menu";
 export { TextEditor } from "./text-editor";
 export { PropertiesPanel } from "./properties-panel";
 export { LayersPanel } from "./layers-panel";
-export { pickImageFile } from "./image-tool";
+export { pickImage, pickImageFile } from "./image-tool";
 export { hasClipboard } from "./select-tool";
 export {
   ADD_ANGLE,

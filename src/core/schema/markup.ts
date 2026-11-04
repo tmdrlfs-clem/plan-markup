@@ -157,7 +157,16 @@ export const COVER_COLOR = "#ffffff";
  */
 export const MAX_IMAGE_SRC_LENGTH = 12_000_000;
 export const IMAGE_SRC_PATTERN = /^data:image\/(png|jpeg);base64,[A-Za-z0-9+/]+={0,2}$/;
-export const imageMarkupSchema = z.object({ ...base, type: z.literal("image"), points: fourPoints, src: z.string().max(MAX_IMAGE_SRC_LENGTH).regex(IMAGE_SRC_PATTERN) });
+/** Story 5.13: a signature stamp is an image of the signature with its caption, and who signed when. */
+export const signatureMetaSchema = z.object({ signer: z.string().max(100), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) });
+export type SignatureMeta = z.infer<typeof signatureMetaSchema>;
+export const imageMarkupSchema = z.object({
+  ...base,
+  type: z.literal("image"),
+  points: fourPoints,
+  src: z.string().max(MAX_IMAGE_SRC_LENGTH).regex(IMAGE_SRC_PATTERN),
+  signature: signatureMetaSchema.optional(),
+});
 /**
  * Story 5.8: a dimension, its two measured points and the point its dimension line runs through
  * (parallel to them); its length comes from the page's calibration when shown, never stored.

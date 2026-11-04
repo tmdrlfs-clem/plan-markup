@@ -111,7 +111,7 @@ import {
 import { editorStore, isLocked, markupsOf, pageMarkups, setCaptionDrag, type EditorState, setDrawing, setMarkupMenu, setMoveDrag, setPreview, setSelection, type Drawing, type MoveDrag } from "./editor-store";
 import { discardFill, fillAreaUser, fillPress, paintFill, takeFillRings, undoFillStroke } from "./fill-tool";
 import { handlesOf, paintHandles } from "./handles";
-import { ADD_IMAGE, clearPickedImage, forgetDecodedImages, imageMarkupAt, paintImage, pickedImage } from "./image-tool";
+import { ADD_IMAGE, ADD_SIGNATURE, clearPickedImage, forgetDecodedImages, imageMarkupAt, paintImage, pickedImage } from "./image-tool";
 import { dropFormat } from "./properties";
 import { lockedNote, openMarkupMenu, paintSelectGesture, resetSelectTool, selectCursorAt, selectGesture, selectionKey, toggleSelected } from "./select-tool";
 import {
@@ -820,8 +820,8 @@ export const measurePainter: MarkupPainter = {
         continue;
       }
       if (any.type === "image") {
-        // Story 5.8: an image, upright in its box.
-        captions.push("Image");
+        // Story 5.8: an image, upright in its box (5.13: a signature stamp says whose).
+        captions.push(any.signature ? `Signature: ${any.signature.signer}` : "Image");
         const pts = devicePoints(any.points, view);
         if (!onCanvas(pts, any.style, view)) continue;
         if (selected.has(any.id)) strokeSelection(c, pts, view);
@@ -1256,7 +1256,7 @@ function placeImage(point: Point, documentId: string, pageId: string): "done" | 
   const picked = pickedImage();
   if (!picked) return "ignored";
   const markup = imageMarkupAt(picked, point, pageId);
-  executeOp({ kind: "markups.add", documentId, markups: [markup] }, ADD_IMAGE);
+  executeOp({ kind: "markups.add", documentId, markups: [markup] }, markup.signature ? ADD_SIGNATURE : ADD_IMAGE);
   clearPickedImage();
   setTool("select");
   setSelection([markup.id]);

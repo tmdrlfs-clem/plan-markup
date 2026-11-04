@@ -26,6 +26,7 @@ const signOut = vi.fn<() => Promise<void>>(async () => {});
 vi.mock("@/features/account/actions", () => ({ signOut: () => signOut() }));
 const saveTheme = vi.fn(async (theme: string) => ({ ok: true as const, data: { theme } }));
 vi.mock("@/features/appearance/actions", () => ({ setTheme: (theme: string) => saveTheme(theme) }));
+vi.mock("@/features/signature/actions", () => ({ getSignature: async () => ({ ok: true, data: null }), saveSignature: vi.fn(), deleteSignature: vi.fn() }));
 
 // The real viewport starts a render worker (none in jsdom); its own tests cover it.
 vi.mock("@/features/viewer/canvas-viewport", () => ({

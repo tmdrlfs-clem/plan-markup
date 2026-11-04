@@ -15,7 +15,7 @@ import { toast } from "@/components/ui/toast-store";
 import { uuidv7 } from "@/core/ids/uuid";
 import { IMAGE_MAX_SIDE_PX, IMAGE_PT_PER_PX, IMAGE_VIEW_SHARE, fitSize, imageRefusal, sniffImage, type ImageKind } from "@/core/markup/image";
 import { boxFrom, screenAxes } from "@/core/markup/text";
-import { DEFAULT_MARKUP_STYLE, IMAGE_SRC_PATTERN, MAX_IMAGE_SRC_LENGTH, type ImageMarkup, type MarkupStyle } from "@/core/schema/markup";
+import { DEFAULT_MARKUP_STYLE, IMAGE_SRC_PATTERN, MAX_IMAGE_SRC_LENGTH, type ImageMarkup, type MarkupStyle, type SignatureMeta } from "@/core/schema/markup";
 import { notifyMarkups, setTool, type LayerView } from "@/features/viewer";
 
 import { lastViewOf } from "./text-tool";
@@ -23,10 +23,11 @@ import { lastViewOf } from "./text-tool";
 type Point = { x: number; y: number };
 
 export const ADD_IMAGE = "Add image";
+export const ADD_SIGNATURE = "Add signature";
 export const IMAGE_FAILED = "The image could not be inserted.";
 
-/** An image picked and ready to place: its data URL and its size in pixels. */
-export type PickedImage = { src: string; width: number; height: number };
+/** An image picked and ready to place: its data URL and its size in pixels (Story 5.13: a signature's, who signed when). */
+export type PickedImage = { src: string; width: number; height: number; signature?: SignatureMeta };
 
 /** The image waiting for its click (the Image tool is armed while there is one). */
 export const imageStore = createStore<{ picked: PickedImage | null }>(() => ({ picked: null }));
@@ -90,6 +91,20 @@ export async function pickImageFile(file: File, decode: ImageDecoder = decodeInB
 }
 
 /**
+ * Story 5.13: arms Image with an image already checked and encoded (a signature stamp); false
+ * (and a toast) when it is not a PNG or JPEG data URL within the limit.
+ */
+export function pickImage(picked: PickedImage): boolean {
+  if (picked.src.length > MAX_IMAGE_SRC_LENGTH || !IMAGE_SRC_PATTERN.test(picked.src)) {
+    toast({ title: IMAGE_FAILED, description: "The image is too large once decoded.", variant: "warning" });
+    return false;
+  }
+  imageStore.setState({ picked });
+  setTool("image");
+  return true;
+}
+
+/**
  * The image markup for `picked` centred at `at` on page `pageId`: upright on screen as the page
  * was last painted, its natural size or smaller to fit in IMAGE_VIEW_SHARE of that view.
  */
@@ -112,6 +127,7 @@ export function imageMarkupAt(picked: PickedImage, at: Point, pageId: string, st
     type: "image",
     points: boxFrom(origin, right, down, size.width, size.height),
     src: picked.src,
+    ...(picked.signature ? { signature: picked.signature } : {}),
   };
 }
 

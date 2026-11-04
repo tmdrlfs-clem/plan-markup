@@ -53,6 +53,20 @@ export type Database = {
                   Relationships: [
 
                   ]
+                },"signatures": {
+                  Row: {
+                    "height": number,"storage_path": string,"updated_at": string,"user_id": string,"width": number
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "height": number,"storage_path": string,"updated_at"?: string,"user_id": string,"width": number
+                  }
+                  Update: {
+                    "height"?: number,"storage_path"?: string,"updated_at"?: string,"user_id"?: string,"width"?: number
+                  }
+                  Relationships: [
+
+                  ]
                 }
           }
           Views: {

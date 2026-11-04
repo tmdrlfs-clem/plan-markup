@@ -32,6 +32,8 @@ export interface WorkspaceMenuBarProps {
   /** The workspace theme (Story 3.8): Settings > Appearance shows it checked and changes it. */
   theme?: Theme;
   onThemeChange?: (theme: Theme) => void;
+  /** Story 5.13: Settings > Account & signature. */
+  onAccount?: () => void;
 }
 
 /** Commands that exist in the menus but need a drawing (or a later story) first. */
@@ -165,7 +167,7 @@ function UndoItems() {
   );
 }
 
-export function WorkspaceMenuBar({ onOpen, onSignOut, theme, onThemeChange }: WorkspaceMenuBarProps) {
+export function WorkspaceMenuBar({ onOpen, onSignOut, theme, onThemeChange, onAccount }: WorkspaceMenuBarProps) {
   return (
     <MenuBar aria-label="Main menu">
       <MenuBarMenu>
@@ -248,6 +250,7 @@ export function WorkspaceMenuBar({ onOpen, onSignOut, theme, onThemeChange }: Wo
       <MenuBarMenu>
         <MenuBarTrigger>Settings</MenuBarTrigger>
         <MenuBarContent>
+          <MenuBarItem onSelect={() => onAccount?.()}>Account &amp; signature…</MenuBarItem>
           <Disabled label="Keyboard shortcuts…" />
           {/* Story 3.8: radio items in a submenu (no dialog): one click, the current theme checked. */}
           <MenuBarSub>
