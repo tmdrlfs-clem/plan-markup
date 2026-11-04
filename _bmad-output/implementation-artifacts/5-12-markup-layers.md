@@ -1,6 +1,6 @@
 # Story 5.12: Markup layers
 
-Status: review
+Status: done
 
 ## Story
 
@@ -52,7 +52,7 @@ Claude Opus 5.5
 - Task 1: `layerSchema`, `layerListSchema`, `layerById`, `layerShown`, `layerLocked`, `nextLayerName`, `moveLayer`; `layerId` on every markup; `layers.set`, `compound`, `SimpleDocOp`, `opParts`, `applyLayersOp`. Unit tests.
 - Task 2: `doc.layers` / `doc.activeLayer`; `pageMarkups` leaves hidden layers out; `setDocLayers` drops the active layer when hidden, locked or gone and hidden markups from the selection; `withActiveLayer` in `executeOp`; the select index and Ctrl+A skip hidden layers; `isLocked` replaces `m.locked` checks (select, nudge, delete, align, handles, caption drag, Properties, the context menu); session `layers` (optional, older records still read); `recordBelongsTo` checks compound parts. Unit tests.
 - Task 3: `LayersPanel`, `DeleteLayerDialog`; Properties' Layer `Select`. Component tests.
-- Unit tests: 1901 pass. Local e2e not run (Docker off); CI runs `e2e/layers.spec.ts`.
+- Unit tests: 1901 pass. Local e2e not run (Docker off); CI run 41911847705 green with `e2e/layers.spec.ts`.
 
 ### File List
 
