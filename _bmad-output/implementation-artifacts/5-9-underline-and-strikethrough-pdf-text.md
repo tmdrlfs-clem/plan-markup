@@ -1,6 +1,6 @@
 # Story 5.9: Underline and strikethrough PDF text
 
-Status: review
+Status: done
 
 ## Story
 
@@ -22,7 +22,7 @@ so that I can mark text changes.
 - [x] **Task 1: Core** — `underline` / `strikethrough` schemas (quads, text); core/markup/text-select.ts (nearest character, whole words, quads, the lines); hits; unit tests.
 - [x] **Task 2: Viewer** — tools `underline`, `strikethrough` (markup tools, text cursor); the input's drag (as a stroke, no Shift); the engine reads the page's text in user space once a page and passes it to the painter's `textMark`.
 - [x] **Task 3: Editor** — text-mark-tool.ts (the drag, the selection preview, committing, painting, labels); no vertex handles; rail slot disabled on image-only pages; hints; unit tests.
-- [ ] **Task 4: Tests** — `e2e/text-markup.spec.ts` (AC 6), in CI.
+- [x] **Task 4: Tests** — `e2e/text-markup.spec.ts` (AC 6), in CI.
 
 ## Dev Notes
 
@@ -34,7 +34,7 @@ so that I can mark text changes.
 ### References
 
 - [Source: _bmad-output/planning-artifacts/epics.md#Story 5.9], FR32
-- [Source: _bmad-output/implementation-artifacts/3-6-search-text.md] (page text)
+- [Source: _bmad-output/implementation-artifacts/3-6-search-text-in-the-drawing.md] (page text)
 - [Source: _bmad-output/implementation-artifacts/5-8-image-and-dimension-markups.md]
 
 ## Dev Agent Record
@@ -50,7 +50,7 @@ Claude Opus 5.5
 - Task 1: `underlineMarkupSchema` / `strikethroughMarkupSchema` (4n points, up to 10 000 quads; optional plain `text`), `TextMarkMarkup`, `isTextMarkMarkup`; `charNear`, `wordSelection` (whole words, not past a space it ends on), `selectionQuads` (search's `matchQuads`), `selectionText`, `decorationLines`, `quadsOf`; hit inside any quad. Unit tests.
 - Task 2: `TextMarkTool` / `isTextMarkTool`; the `text` cursor; Underline / Strikethrough use the stroke's drag with Shift ignored; `ViewerEngine.inkTool` routes them to the painter's `textMark` with `userText(page)` (a `render.text` request, cached, cleared with the document; asked for when the tool is armed; a drag in progress is moved again when it arrives).
 - Task 3: `textMarkDrag` (start on text or nothing; moves keep `Drawing.quads` / `selected`; end adds the markup), `paintTextMark`, `paintTextMarkActive`, `textMarkLabel`; measure-tool wires them into layers 2 and 3 and ignores clicks; rail slot "Text markup" (Underline, Strikethrough) with `unavailable` on image-only pages; hints.
-- Unit tests: 1870 pass. Local e2e not run (Docker off); CI runs `e2e/text-markup.spec.ts`.
+- Unit tests: 1870 pass. Local e2e not run (Docker off); CI run 41899879054 green with `e2e/text-markup.spec.ts`.
 
 ### File List
 
