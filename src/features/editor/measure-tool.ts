@@ -108,7 +108,7 @@ import {
   type MarkupPainter,
 } from "@/features/viewer";
 
-import { editorStore, markupsOf, pageMarkups, setCaptionDrag, type EditorState, setDrawing, setMarkupMenu, setMoveDrag, setPreview, setSelection, type Drawing, type MoveDrag } from "./editor-store";
+import { editorStore, isLocked, markupsOf, pageMarkups, setCaptionDrag, type EditorState, setDrawing, setMarkupMenu, setMoveDrag, setPreview, setSelection, type Drawing, type MoveDrag } from "./editor-store";
 import { discardFill, fillAreaUser, fillPress, paintFill, takeFillRings, undoFillStroke } from "./fill-tool";
 import { handlesOf, paintHandles } from "./handles";
 import { ADD_IMAGE, clearPickedImage, forgetDecodedImages, imageMarkupAt, paintImage, pickedImage } from "./image-tool";
@@ -894,7 +894,7 @@ export const measurePainter: MarkupPainter = {
     }
     c.restore();
     // Story 5.2: the selection's handles, over everything.
-    const handles = handlesOf(selectedShown.filter((m) => !m.locked), view);
+    const handles = handlesOf(selectedShown.filter((m) => !isLocked(m)), view);
     if (handles) paintHandles(c, handles, view);
     captionBoxes = { pageId, boxes };
     return captions;
@@ -1087,7 +1087,7 @@ export const measurePainter: MarkupPainter = {
     const m = pageMarkupById(documentId, id);
     if (!m) return;
     // Story 5.3 review R1: a locked markup's caption stays (Shift + click still selects it).
-    if (m.locked) {
+    if (isLocked(m)) {
       if (delta.x !== 0 || delta.y !== 0) lockedNote();
       const drag = editorStore.getState().tools.captionDrag;
       if (drag?.id !== id) setCaptionDrag({ id, documentId, delta: { x: 0, y: 0 } });

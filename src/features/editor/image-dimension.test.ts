@@ -120,7 +120,7 @@ describe("Image (Story 5.8)", () => {
 
   it("paints its box crossed out until it is decoded", () => {
     const m: Markup = { id: "0190a0f0-0000-7000-8000-000000000009", pageId: pageIdOf(SHA, 0), createdAt: "", style: { color: "#ff0000", width: 1, fontSize: 10 }, type: "image", points: [{ x: 0, y: 10 }, { x: 10, y: 10 }, { x: 10, y: 0 }, { x: 0, y: 0 }], src: PNG_1PX };
-    editorStore.setState((s) => ({ doc: { markups: { ...s.doc.markups, [SHA]: [m] } } }));
+    editorStore.setState((s) => ({ doc: { ...s.doc, markups: { ...s.doc.markups, [SHA]: [m] } } }));
     const r = recorder();
     measurePainter.paintStatic(r.ctx, view);
     expect(r.ops.filter((o) => o.op === "lineTo")).toHaveLength(5);

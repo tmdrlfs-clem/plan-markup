@@ -16,11 +16,13 @@ import { ColorSwatchGroup } from "@/components/ui/color-swatch";
 import { cx } from "@/components/ui/cx";
 import { FieldShell, fieldControlClasses } from "@/components/ui/field";
 import { NumberField } from "@/components/ui/number-field";
+import { Select } from "@/components/ui/select";
 import { MAX_SUBJECT_LENGTH, MAX_TEXT_LENGTH, isTextMarkup, type Markup } from "@/core/schema/markup";
 import { sharedFields, sharedValue, sizeLabel, subjectOf, type PropertyChange } from "@/core/markup/properties";
 import { viewerStore } from "@/features/viewer";
 
-import { editorStore, markupsOf } from "./editor-store";
+import { editorStore, isLocked, layersOf, markupsOf } from "./editor-store";
+import { assignLayer } from "./layers";
 import { changeProperties, copyFormat, dropFormat, formatPainter } from "./properties";
 
 /** D1: the markup colours offered (any other colour can be picked with Custom). */
@@ -40,6 +42,7 @@ export const PAINTER_HINT = "Click a markup to apply the format. Esc cancels.";
 export const LOCKED_HINT = "Locked markups keep their properties.";
 
 const MIXED = Symbol("mixed");
+const NO_LAYER_VALUE = "none";
 
 /** A colour field: the palette and a custom picker; `none` offers no colour (a fill). */
 function ColorField({ label, value, onChange, none }: { label: string; value: string | null | typeof MIXED; onChange: (color: string | null) => void; none?: boolean }) {
@@ -115,6 +118,7 @@ export function PropertiesPanel({ emptyText }: { emptyText: string }) {
   const all = useStore(editorStore, (s) => markupsOf(s, documentId));
   const ids = useStore(editorStore, (s) => s.selection.ids);
   const painting = useStore(formatPainter, (s) => s.format !== null);
+  const layers = useStore(editorStore, (s) => layersOf(s, documentId));
 
   const chosen = new Set(ids);
   const selected = all.filter((m) => chosen.has(m.id));
@@ -129,7 +133,7 @@ export function PropertiesPanel({ emptyText }: { emptyText: string }) {
 
   const fields = new Set(sharedFields(selected));
   const change = (c: PropertyChange) => void changeProperties(documentId, selected, c);
-  const locked = selected.some((m) => m.locked);
+  const locked = selected.some((m) => isLocked(m));
   const value = <T,>(get: (m: Markup) => T) => sharedValue<T | typeof MIXED>(selected, get, MIXED);
   const number = (v: number | typeof MIXED) => (v === MIXED ? null : v);
   const subject = value(subjectOf);
@@ -177,6 +181,16 @@ export function PropertiesPanel({ emptyText }: { emptyText: string }) {
         ) : null}
         {fields.has("fontSize") ? (
           <NumberField label={sizeLabel(selected)} suffix="pt" min={1} max={144} step={1} value={number(value((m) => m.style.fontSize))} onValueChange={(f) => f > 0 && change({ fontSize: f })} />
+        ) : null}
+        {/* Story 5.12: the layer, once the document has layers. */}
+        {layers.length > 0 ? (
+          <Select
+            label="Layer"
+            value={value((m) => m.layerId ?? NO_LAYER_VALUE) === MIXED ? undefined : (value((m) => m.layerId ?? NO_LAYER_VALUE) as string)}
+            placeholder="Mixed"
+            options={[{ value: NO_LAYER_VALUE, label: "No layer" }, ...layers.map((l) => ({ value: l.id, label: l.name }))]}
+            onValueChange={(v) => void assignLayer(documentId, selected, v === NO_LAYER_VALUE ? null : v)}
+          />
         ) : null}
         {fields.has("text") && one && isTextMarkup(one) ? (
           <TextValueField key={`text:${one.id}`} label="Text" multiline value={one.text} maxLength={MAX_TEXT_LENGTH} onCommit={(t) => change({ text: t })} />

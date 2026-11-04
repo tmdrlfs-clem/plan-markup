@@ -15,7 +15,7 @@ import { CalibrateDialog, ScalePrompt, VerifyDialog, openCalibrate, useCalibrati
 import { redoActive, undoActive } from "@/features/editor";
 import { useFirstUseTipsPersistence } from "@/features/tips";
 import { chooseTheme, useWorkspaceTheme } from "@/features/appearance/theme-store";
-import { MarkupContextMenu, MeasurementsPanel, PropertiesPanel, TextEditor, armArea, armCount, armLength, armPolylength, useEditorSession, useMeasureTools } from "@/features/editor";
+import { LayersPanel, MarkupContextMenu, MeasurementsPanel, PropertiesPanel, TextEditor, armArea, armCount, armLength, armPolylength, useEditorSession, useMeasureTools } from "@/features/editor";
 import {
   DocumentTabs,
   DocumentViewer,
@@ -81,6 +81,8 @@ function LeftPanelBody() {
   if (panel.id === "measurements") return <MeasurementsPanel emptyText={panel.empty} noDrawingText="No drawing open" />;
   // Story 5.10: the selected markups' properties and the format painter.
   if (panel.id === "properties") return <PropertiesPanel emptyText={panel.empty} />;
+  // Story 5.12: the document's layers.
+  if (panel.id === "layers") return <LayersPanel emptyText={panel.empty} />;
   return (
     <div className="flex flex-col gap-1 p-3 text-ws-md">
       <p>{panel.empty}</p>

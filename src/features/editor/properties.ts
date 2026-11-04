@@ -12,7 +12,7 @@ import { formatOf, withChange, withFormat, type PropertyChange } from "@/core/ma
 import type { Markup, MarkupStyle } from "@/core/schema/markup";
 import { viewerStore } from "@/features/viewer";
 
-import { editorStore, markupsOf } from "./editor-store";
+import { editorStore, isLocked, markupsOf } from "./editor-store";
 import { lockedNote } from "./select-tool";
 import { executeOp } from "./undo-store";
 
@@ -38,7 +38,7 @@ export function selectedMarkups(documentId: string | null): Markup[] {
 
 /** Applies `change` to `markups` not locked, one undo step; false when nothing changed (a locked selection says why). */
 export function changeProperties(documentId: string, markups: readonly Markup[], change: PropertyChange): boolean {
-  const free = markups.filter((m) => !m.locked);
+  const free = markups.filter((m) => !isLocked(m));
   if (free.length === 0) {
     if (markups.length > 0) lockedNote();
     return false;
@@ -85,7 +85,7 @@ export function paintFormat(hit: Markup | null, documentId: string): boolean {
   const page = markupsOf(editorStore.getState(), documentId).filter((m) => m.pageId === hit.pageId);
   const ids = new Set(withGroups(page, [hit.id]));
   const targets = page.filter((m) => ids.has(m.id));
-  const free = targets.filter((m) => !m.locked);
+  const free = targets.filter((m) => !isLocked(m));
   if (free.length === 0) {
     lockedNote();
     return true;

@@ -45,6 +45,8 @@ const base = {
   groupId: z.string().regex(UUID_PATTERN).optional(),
   /** Story 5.3: a locked markup can be selected but not moved, edited or deleted. */
   locked: z.boolean().optional(),
+  /** Story 5.12: the markup's layer (absent: none). */
+  layerId: z.string().regex(UUID_PATTERN).optional(),
   /** Story 5.10: the markup's subject (Properties); absent: its type's name. */
   subject: z.string().max(MAX_SUBJECT_LENGTH).optional(),
 };

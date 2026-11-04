@@ -2,7 +2,8 @@
 // with the slices the architecture names. Components select from it; document
 // data changes only through commands built from ops (commands.ts).
 //
-//   doc        markups by document (sha256), shared by the tabs (a document is open in one tab)
+//   doc        markups by document (sha256), shared by the tabs (a document is open in one tab);
+//              Story 5.12: its layers, and the active layer new markups go to
 //   view       the active document tab, mirrored from the viewer
 //   tools      the drawing in progress (Length, Story 4.5; more tools with Epic 5), a caption being moved (4.6)
 //              and markups being moved (a drag or an arrow key held, 5.1), resized, rotated or copied (5.2),
@@ -12,6 +13,7 @@
 
 import { createStore } from "zustand/vanilla";
 
+import { layerLocked, layerShown, type Layer } from "@/core/schema/layer";
 import type { Markup, TextMarkup } from "@/core/schema/markup";
 import type { UndoHistory } from "@/core/undo/stack";
 import { viewerStore, type DrawTool, type LayerView } from "@/features/viewer";
@@ -52,7 +54,12 @@ export type Preview = { documentId: string; changed: Readonly<Record<string, Mar
 export type MarkupMenu = { documentId: string; pageIndex: number; view: LayerView; point: Point; client: Point };
 
 export type EditorState = {
-  doc: { markups: Readonly<Record<string, readonly Markup[]>> };
+  doc: {
+    markups: Readonly<Record<string, readonly Markup[]>>;
+    layers: Readonly<Record<string, readonly Layer[]>>;
+    /** Story 5.12: the layer new markups go to, by document (absent or null: none). */
+    activeLayer: Readonly<Record<string, string | null>>;
+  };
   view: { tabId: string | null; documentId: string | null };
   tools: { drawing: Drawing | null; captionDrag: CaptionDrag | null; moveDrag: MoveDrag | null; preview: Preview | null; menu: MarkupMenu | null; textEdit: TextEdit | null };
   selection: { ids: readonly string[] };
@@ -61,7 +68,7 @@ export type EditorState = {
 };
 
 export const EMPTY_EDITOR: EditorState = {
-  doc: { markups: {} },
+  doc: { markups: {}, layers: {}, activeLayer: {} },
   view: { tabId: null, documentId: null },
   tools: { drawing: null, captionDrag: null, moveDrag: null, preview: null, menu: null, textEdit: null },
   selection: { ids: [] },
@@ -79,12 +86,68 @@ export function markupsOf(state: EditorState, documentId: string | null): readon
 
 /** The markups of one page (by stable page id), in drawing order. */
 export function pageMarkups(state: EditorState, documentId: string | null, pageId: string): Markup[] {
-  return markupsOf(state, documentId).filter((m) => m.pageId === pageId);
+  // Story 5.12: a hidden layer's markups are not shown (nor picked, nor walls for a fill).
+  const layers = layersOf(state, documentId);
+  return markupsOf(state, documentId).filter((m) => m.pageId === pageId && layerShown(layers, m.layerId));
 }
 
 /** Sets a document's markups (commands.ts and the session restore only). */
 export function setDocMarkups(documentId: string, markups: readonly Markup[]): void {
-  editorStore.setState((s) => ({ doc: { markups: { ...s.doc.markups, [documentId]: markups } } }));
+  editorStore.setState((s) => ({ doc: { ...s.doc, markups: { ...s.doc.markups, [documentId]: markups } } }));
+}
+
+const NO_LAYERS: readonly Layer[] = [];
+
+/** Story 5.12: a document's layers, top first (empty when it has none). */
+export function layersOf(state: EditorState, documentId: string | null): readonly Layer[] {
+  return (documentId && state.doc.layers[documentId]) || NO_LAYERS;
+}
+
+/** Story 5.12: the document's active layer, if it still has it. */
+export function activeLayerOf(state: EditorState, documentId: string | null): Layer | null {
+  const id = documentId ? state.doc.activeLayer[documentId] : null;
+  return (id && layersOf(state, documentId).find((l) => l.id === id)) || null;
+}
+
+/** Story 5.12: sets a document's layers (commands.ts and the session restore only); the active layer goes with a layer removed, hidden or locked. */
+export function setDocLayers(documentId: string, layers: readonly Layer[]): void {
+  editorStore.setState((s) => {
+    const active = s.doc.activeLayer[documentId] ?? null;
+    const still = active !== null && layers.some((l) => l.id === active && !l.hidden && !l.locked);
+    // A hidden layer's markups leave the selection (they can no longer be seen or picked).
+    const byId = new Map((s.doc.markups[documentId] ?? []).map((m) => [m.id, m]));
+    const ids = s.selection.ids.filter((id) => {
+      const m = byId.get(id);
+      return !m || layerShown(layers, m.layerId);
+    });
+    return {
+      doc: { ...s.doc, layers: { ...s.doc.layers, [documentId]: layers }, activeLayer: { ...s.doc.activeLayer, [documentId]: still ? active : null } },
+      ...(ids.length !== s.selection.ids.length ? { selection: { ids } } : {}),
+    };
+  });
+}
+
+/** Story 5.12: the layer new markups go to (null: none); a hidden or locked layer cannot be active (D2). */
+export function setActiveLayer(documentId: string, layerId: string | null): void {
+  const layer = layerId === null ? null : layersOf(editorStore.getState(), documentId).find((l) => l.id === layerId);
+  const next = layer && !layer.hidden && !layer.locked ? layer.id : null;
+  if ((editorStore.getState().doc.activeLayer[documentId] ?? null) === next) return;
+  editorStore.setState((s) => ({ doc: { ...s.doc, activeLayer: { ...s.doc.activeLayer, [documentId]: next } } }));
+}
+
+/** The document a page id belongs to (`sha256:index`). */
+function documentOf(pageId: string): string {
+  return pageId.slice(0, pageId.lastIndexOf(":"));
+}
+
+/** Story 5.12: whether `m` is shown (its layer is not hidden). */
+export function isShown(m: Markup, state: EditorState = editorStore.getState()): boolean {
+  return layerShown(layersOf(state, documentOf(m.pageId)), m.layerId);
+}
+
+/** Story 5.3: whether `m` is locked: by itself, or (Story 5.12) by its layer. */
+export function isLocked(m: Markup, state: EditorState = editorStore.getState()): boolean {
+  return !!m.locked || layerLocked(layersOf(state, documentOf(m.pageId)), m.layerId);
 }
 
 /** The drawing in progress (the tools only). */

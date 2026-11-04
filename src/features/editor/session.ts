@@ -11,11 +11,12 @@ import { z } from "zod";
 
 import { calibrationSchema, type Calibration } from "@/core/calibration/calibration";
 import { docOpSchema } from "@/core/commands/ops";
+import { layerListSchema } from "@/core/schema/layer";
 import { markupSchema } from "@/core/schema/markup";
 import { EMPTY_HISTORY, UNDO_LIMIT, type UndoHistory } from "@/core/undo/stack";
 import { tabsStore, viewerStore } from "@/features/viewer";
 
-import { editorStore, markupsOf, resetEditor, setDocMarkups } from "./editor-store";
+import { editorStore, layersOf, markupsOf, resetEditor, setDocLayers, setDocMarkups } from "./editor-store";
 import { commandOf, setTabHistory } from "./undo-store";
 
 const entrySchema = z.object({ label: z.string().max(200), op: docOpSchema });
@@ -23,6 +24,8 @@ const recordSchema = z.object({
   v: z.literal(1),
   markups: z.array(markupSchema).max(10_000),
   calibrations: z.record(z.string().min(1).max(200), calibrationSchema),
+  /** Story 5.12: the document's layers (absent in records written before them). */
+  layers: layerListSchema.optional(),
   past: z.array(entrySchema).max(UNDO_LIMIT),
   future: z.array(entrySchema).max(UNDO_LIMIT),
 });
@@ -50,10 +53,15 @@ function storage(): Storage | undefined {
 export function recordBelongsTo(record: SessionRecord, documentId: string): boolean {
   const page = `${documentId}:`;
   const ownPage = (id: string) => id.startsWith(page);
-  const ownOp = (op: SessionRecord["past"][number]["op"]) =>
+  const ownOp = (op: SessionRecord["past"][number]["op"]): boolean =>
     op.documentId === documentId &&
-    (op.kind === "calibrations.set"
-      ? [...Object.keys(op.before), ...Object.keys(op.after)].every(ownPage)
+    (op.kind === "compound"
+      ? op.ops.every((part) => ownOp(part))
+      : // Story 5.12: layers name no pages.
+        op.kind === "layers.set"
+        ? true
+        : op.kind === "calibrations.set"
+          ? [...Object.keys(op.before), ...Object.keys(op.after)].every(ownPage)
       : // Story 5.3: a reorder names only ids of the document's own list.
         op.kind === "markups.reorder" ||
         (op.kind === "markups.update" ? [...op.before, ...op.after] : op.markups).every((m) => ownPage(m.pageId)));
@@ -157,6 +165,7 @@ function restoreActive(): void {
   const record = read(sessionKey(owner!, open.documentId), open.documentId);
   if (!record) return;
   if (markupsOf(editorStore.getState(), open.documentId).length === 0 && record.markups.length > 0) setDocMarkups(open.documentId, record.markups);
+  if (layersOf(editorStore.getState(), open.documentId).length === 0 && record.layers && record.layers.length > 0) setDocLayers(open.documentId, record.layers);
   const calibrations = ownCalibrations(record.calibrations, open.documentId);
   if (Object.keys(viewerStore.getState().calibrations).length === 0 && Object.keys(calibrations).length > 0) viewerStore.setState({ calibrations });
   const history = editorStore.getState().history.histories[open.tabId] ?? EMPTY_HISTORY;
@@ -176,7 +185,8 @@ function writeActive(): void {
   const markups = markupsOf(editor, open.documentId);
   const calibrations = viewerStore.getState().calibrations;
   const history = editor.history.histories[open.tabId] ?? EMPTY_HISTORY;
-  const refs = [markups, calibrations, history];
+  const layers = layersOf(editor, open.documentId);
+  const refs = [markups, calibrations, history, layers];
   const last = written.get(open.documentId);
   if (last && last.every((r, i) => r === refs[i])) return;
   written.set(open.documentId, refs);
@@ -184,6 +194,7 @@ function writeActive(): void {
     v: 1,
     markups: [...markups],
     calibrations: ownCalibrations(calibrations, open.documentId),
+    ...(layers.length > 0 ? { layers: [...layers] } : {}),
     past: entries(history.past),
     future: entries(history.future),
   });

@@ -35,7 +35,7 @@ import { unitsOf, type AlignTo, type OrderStep } from "@/core/markup/arrange";
 import type { Markup } from "@/core/schema/markup";
 import { viewerCommands, type SelectionKey } from "@/features/viewer";
 
-import { editorStore, markupsOf, setMarkupMenu } from "./editor-store";
+import { editorStore, isLocked, markupsOf, setMarkupMenu } from "./editor-store";
 import { hasClipboard, ORDER_LABEL, selectionKey } from "./select-tool";
 
 /** What the selection on a page allows (the context menu and the Edit menu). */
@@ -58,7 +58,7 @@ export function selectionStateOf(ids: readonly string[], markups: readonly Marku
   const pageId = documentId ? pageIdOf(documentId, pageIndex) : "";
   const page = markups.filter((m) => m.pageId === pageId);
   const selected = page.filter((m) => wanted.has(m.id));
-  const locked = selected.filter((m) => m.locked).length;
+  const locked = selected.filter((m) => isLocked(m)).length;
   return {
     selected: selected.length,
     editable: selected.length - locked,
@@ -73,6 +73,8 @@ export function selectionStateOf(ids: readonly string[], markups: readonly Marku
 export function useSelectionState(documentId: string | null, pageIndex: number): SelectionState {
   const ids = useStore(editorStore, (s) => s.selection.ids);
   const markups = useStore(editorStore, (s) => markupsOf(s, documentId));
+  // Story 5.12: a layer locked or unlocked changes what may change.
+  useStore(editorStore, (s) => (documentId ? s.doc.layers[documentId] : undefined));
   return selectionStateOf(ids, markups, documentId, pageIndex);
 }
 

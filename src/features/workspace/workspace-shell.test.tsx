@@ -221,7 +221,7 @@ describe("panels", () => {
   it("the rail switches panels and collapses the active one", async () => {
     const { user } = setup();
     await user.click(screen.getByRole("radio", { name: "Layers" }));
-    expect(screen.getByRole("complementary", { name: "Layers" })).toHaveTextContent("No layers yet");
+    expect(screen.getByRole("complementary", { name: "Layers" })).toHaveTextContent("No drawing open");
     await user.click(screen.getByRole("radio", { name: "Layers" }));
     expect(screen.queryByRole("complementary", { name: "Layers" })).not.toBeInTheDocument();
   });

@@ -13,7 +13,7 @@ import { invertOp, type DocOp } from "@/core/commands/ops";
 import { EMPTY_HISTORY, execute, nextLabels, redo, undo, type UndoCommand, type UndoHistory } from "@/core/undo/stack";
 import { tabsStore, viewerStore, type DrawTool } from "@/features/viewer";
 
-import { editorStore, type EditorState } from "./editor-store";
+import { activeLayerOf, editorStore, type EditorState } from "./editor-store";
 import { applyOp } from "./commands";
 
 const activeKey = () => viewerStore.getState().tabId ?? "";
@@ -45,7 +45,18 @@ export function commandOf(op: DocOp, label: string): UndoCommand {
  * tab switch belongs to the tab it was drawn in).
  */
 export function executeOp(op: DocOp, label: string, tabId?: string): void {
-  executeCommand(commandOf(op, label), tabId);
+  executeCommand(commandOf(withActiveLayer(op), label), tabId);
+}
+
+/**
+ * Story 5.12: new markups (an add with no positions: not a restore) with no layer go to the
+ * document's active layer; copies keep their markups' layers.
+ */
+function withActiveLayer(op: DocOp): DocOp {
+  if (op.kind !== "markups.add" || op.at) return op;
+  const layer = activeLayerOf(editorStore.getState(), op.documentId);
+  if (!layer || op.markups.every((m) => m.layerId)) return op;
+  return { ...op, markups: op.markups.map((m) => (m.layerId ? m : { ...m, layerId: layer.id })) };
 }
 
 let drawingUndo: (() => boolean) | null = null;

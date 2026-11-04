@@ -8,6 +8,7 @@
 import { z } from "zod";
 
 import { calibrationSchema, type Calibration } from "@/core/calibration/calibration";
+import { layerListSchema, type Layer } from "@/core/schema/layer";
 import { markupSchema, type Markup } from "@/core/schema/markup";
 
 const documentId = z.string().min(1).max(128);
@@ -19,7 +20,7 @@ const calibrationMap = z.record(z.string().min(1).max(200), calibrationSchema.nu
  */
 const positions = z.array(z.number().int().min(0).max(1_000_000)).max(10_000).optional();
 
-export const docOpSchema = z.discriminatedUnion("kind", [
+const simpleOps = [
   z.object({ kind: z.literal("markups.add"), documentId, markups: z.array(markupSchema).max(10_000), at: positions }),
   z.object({ kind: z.literal("markups.remove"), documentId, markups: z.array(markupSchema).max(10_000), at: positions }),
   /** Story 4.6: markups changed in place (same ids), as they were and as they are. */
@@ -37,12 +38,29 @@ export const docOpSchema = z.discriminatedUnion("kind", [
   }),
   /** Calibrations by page id before and after (null: none). */
   z.object({ kind: z.literal("calibrations.set"), documentId, before: calibrationMap, after: calibrationMap }),
+  /** Story 5.12: the document's layers before and after (their order, names, shown and locked). */
+  z.object({ kind: z.literal("layers.set"), documentId, before: layerListSchema, after: layerListSchema }),
+] as const;
+
+const simpleOpSchema = z.discriminatedUnion("kind", [...simpleOps]);
+/** An op that is not a compound one. */
+export type SimpleDocOp = z.infer<typeof simpleOpSchema>;
+
+export const docOpSchema = z.discriminatedUnion("kind", [
+  ...simpleOps,
+  /** Story 5.12: ops applied in order as one (a layer deleted with its markups moved or deleted); undone in reverse. */
+  z.object({ kind: z.literal("compound"), documentId, ops: z.array(simpleOpSchema).min(1).max(8) }),
 ]);
 
 export type DocOp = z.infer<typeof docOpSchema>;
 
 /** The op that undoes `op`. */
 export function invertOp(op: DocOp): DocOp {
+  if (op.kind === "compound") return { kind: "compound", documentId: op.documentId, ops: op.ops.map(invertSimple).reverse() };
+  return invertSimple(op);
+}
+
+function invertSimple(op: SimpleDocOp): SimpleDocOp {
   switch (op.kind) {
     case "markups.add":
       return { kind: "markups.remove", documentId: op.documentId, markups: op.markups, ...(op.at ? { at: op.at } : {}) };
@@ -54,7 +72,19 @@ export function invertOp(op: DocOp): DocOp {
       return { kind: "markups.reorder", documentId: op.documentId, ids: op.ids, from: op.to, to: op.from };
     case "calibrations.set":
       return { kind: "calibrations.set", documentId: op.documentId, before: op.after, after: op.before };
+    case "layers.set":
+      return { kind: "layers.set", documentId: op.documentId, before: op.after, after: op.before };
   }
+}
+
+/** Story 5.12: the ops a compound op is made of, or the op itself. */
+export function opParts(op: DocOp): readonly SimpleDocOp[] {
+  return op.kind === "compound" ? op.ops : [op];
+}
+
+/** Story 5.12: a document's layers after an op (`layers.set` sets them; the others leave them). */
+export function applyLayersOp(layers: readonly Layer[], op: SimpleDocOp): readonly Layer[] {
+  return op.kind === "layers.set" ? op.after : layers;
 }
 
 /**

@@ -44,7 +44,7 @@ import { selfIntersects } from "@/core/measure/area";
 import type { Markup } from "@/core/schema/markup";
 import { LOCKED_CURSOR, notifyMarkups, type LayerView, type SelectContext, type SelectionKey } from "@/features/viewer";
 
-import { editorStore, markupsOf, setMarkupMenu, setMoveDrag, setPreview, setSelection } from "./editor-store";
+import { editorStore, isLocked, isShown, markupsOf, setMarkupMenu, setMoveDrag, setPreview, setSelection } from "./editor-store";
 import { boxOf, handleAt, handlesOf } from "./handles";
 import { executeOp, undoActive } from "./undo-store";
 import { paintFormat } from "./properties";
@@ -114,14 +114,17 @@ type Gesture = {
 let clipboard: readonly Markup[] = [];
 
 let gesture: Gesture | null = null;
-let cached: { markups: readonly Markup[]; pageId: string; userUnit: number; index: MarkupIndex } | null = null;
+let cached: { markups: readonly Markup[]; layers: unknown; pageId: string; userUnit: number; index: MarkupIndex } | null = null;
 
 /** The page's markups in an R-tree, built again only when the document's markups change. */
 function indexOf(documentId: string, pageIndex: number, userUnit: number): MarkupIndex {
-  const all = markupsOf(editorStore.getState(), documentId);
+  const state = editorStore.getState();
+  const all = markupsOf(state, documentId);
+  const layers = state.doc.layers[documentId];
   const pageId = pageIdOf(documentId, pageIndex);
-  if (!cached || cached.markups !== all || cached.pageId !== pageId || cached.userUnit !== userUnit) {
-    cached = { markups: all, pageId, userUnit, index: new MarkupIndex(all.filter((m) => m.pageId === pageId), userUnit) };
+  if (!cached || cached.markups !== all || cached.layers !== layers || cached.pageId !== pageId || cached.userUnit !== userUnit) {
+    // Story 5.12: a hidden layer's markups are not picked.
+    cached = { markups: all, layers, pageId, userUnit, index: new MarkupIndex(all.filter((m) => m.pageId === pageId && isShown(m, state)), userUnit) };
   }
   return cached.index;
 }
@@ -144,7 +147,7 @@ function selectedOnPage(at: { documentId: string; pageIndex: number }): Markup[]
 
 /** Story 5.3: the selected markups that may change (not locked). */
 function editableOnPage(at: { documentId: string; pageIndex: number }): Markup[] {
-  return selectedOnPage(at).filter((m) => !m.locked);
+  return selectedOnPage(at).filter((m) => !isLocked(m));
 }
 
 /** Story 5.3: `ids` with the rest of their groups on the page. */
@@ -173,7 +176,7 @@ export function selectCursorAt(point: Point, at: SelectContext, captionAt: Capti
   const hit = hitAt(point, at, captionAt);
   if (!hit) return null;
   if (at.ctrl) return "copy";
-  return hit.locked ? LOCKED_CURSOR : "move";
+  return isLocked(hit) ? LOCKED_CURSOR : "move";
 }
 
 /** Story 5.2: the markups of an edit as they would be with the pointer at `point`. */
@@ -317,7 +320,7 @@ export function selectGesture(phase: "start" | "move" | "end" | "cancel", point:
       setSelection(ids);
       // Story 5.3: locked markups stay; a drag from a locked one (its cursor says so, review R2)
       // or with nothing else to move only says so.
-      if (g.hit.locked || editableOnPage(g.at).length === 0) {
+      if (isLocked(g.hit) || editableOnPage(g.at).length === 0) {
         lockedNote();
         g.kind = "locked";
       } else g.kind = "move";
@@ -377,7 +380,7 @@ export function selectionKey(key: SelectionKey, at: { documentId: string; pageIn
   switch (key.kind) {
     case "all": {
       const pageId = pageIdOf(at.documentId, at.pageIndex);
-      setSelection(markups.filter((m) => m.pageId === pageId).map((m) => m.id));
+      setSelection(markups.filter((m) => m.pageId === pageId && isShown(m)).map((m) => m.id));
       return true;
     }
     case "nudge-end":
@@ -416,7 +419,7 @@ export function selectionKey(key: SelectionKey, at: { documentId: string; pageIn
       if (ids.length === 0 || gesture) return false;
       commitMove();
       // Story 5.3: locked markups are kept (and the toast says so).
-      const locked = new Set(markups.filter((m) => m.locked).map((m) => m.id));
+      const locked = new Set(markups.filter((m) => isLocked(m)).map((m) => m.id));
       const free = ids.filter((id) => !locked.has(id));
       const kept = ids.length - free.length;
       if (free.length === 0) {
@@ -493,7 +496,7 @@ function arrange(key: ArrangeKey, at: { documentId: string; pageIndex: number; v
       const offsets = alignOffsets(
         units.map((u) => screenBox(boxOf(u), at.view)),
         key.to,
-        units.map((u) => u.some((m) => m.locked)),
+        units.map((u) => u.some((m) => isLocked(m))),
       );
       const before: Markup[] = [];
       const after: Markup[] = [];
