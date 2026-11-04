@@ -1,6 +1,6 @@
 # Story 5.5: Rectangle, ellipse and cloud tools
 
-Status: in-progress
+Status: done
 
 ## Story
 
@@ -18,10 +18,10 @@ so that I can highlight areas of change.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Core** — schemas (`rectangle`, `ellipse`, `cloud`; style `fill`, `opacity`); ellipse frame, bounds, outline and hits; cloud arcs; unit tests.
-- [ ] **Task 2: Viewer** — tools `rectangle`, `ellipse`, `cloud` as draw tools; keys `R`, `E`, `C`; press-drag-release for the box tools.
-- [ ] **Task 3: Editor and rail** — drawing, committing and painting (fill, opacity, cloud arcs, ellipse); no vertex handles on boxes; the Markup group's buttons live with their hints; unit tests.
-- [ ] **Task 4: Tests** — `e2e/shape-tools.spec.ts` (AC 5).
+- [x] **Task 1: Core** — schemas (`rectangle`, `ellipse`, `cloud`; style `fill`, `opacity`); ellipse frame, bounds, outline and hits; cloud arcs; unit tests.
+- [x] **Task 2: Viewer** — tools `rectangle`, `ellipse`, `cloud` as draw tools; keys `R`, `E`, `C`; press-drag-release for the box tools.
+- [x] **Task 3: Editor and rail** — drawing, committing and painting (fill, opacity, cloud arcs, ellipse); no vertex handles on boxes; the Markup group's buttons live with their hints; unit tests.
+- [x] **Task 4: Tests** — `e2e/shape-tools.spec.ts` (AC 5).
 
 ## Dev Notes
 
@@ -46,4 +46,16 @@ Claude Opus 5.5
 
 ### Completion Notes List
 
+- Task 1: `rectangle`, `ellipse` (the box's four corners) and `cloud` (3+) schemas; the style's optional `fill` and `opacity`; core/markup/shapes.ts (`boxCorners`, `ellipseFrame` / outline / bounds / local coordinates, `cloudArcs` bulging out of the ring whichever way it turns, `CLOUD_CHORD_PT` = 9); hits on the outline or inside (D2), an ellipse by its own coordinates, a cloud out to half a chord past its corners. Unit tests.
+- Task 2: `rectangle`, `ellipse`, `cloud` are draw tools (`BoxTool`, `isBoxTool`; Story 5.4's straight-line tools became `LineTool` / `isLineTool` for the Lines slot; `MarkupTool` is all of them); they snap; keys `R`, `E`, `C` (canvas focused, Ctrl+C stays copy). A box tool's press that places the first corner starts a "place" drag: the release (4+ px away) places the opposite corner; a click places one corner and the next click the other.
+- Task 3: measure-tool commits a box's four corners (`markupOf`), refuses a box with no width or height, paints the rubber band as the whole box, the ellipse as the unit circle mapped into its box, the cloud's arcs (fixed page size, the same count at every zoom; under 3 CSS px a chord they are drawn as straight edges), a fill under the stroke and the opacity over the whole markup; layer 2 lists "Rectangle", "Ellipse", "Cloud"; Undo while drawing names "Rectangle corner", "Ellipse corner", "Cloud point". No vertex handles on a rectangle or ellipse (D3). The rail's Rectangle, Ellipse and Cloud buttons (Markup group, D4) are live with their hints.
+- Task 4: `e2e/shape-tools.spec.ts` (passes locally with Line tools). Screenshot: fixtures/private/traces/5-5-shape-tools.png.
+- Review (adversarial, self): R1 the R-tree box of a cloud ended at its corners, so a click on an arc's crest past them was never tested against the cloud: the box is padded by half a chord, as a count's by its markers. Deferred: the selection outline and handle box use the corners, a little inside a cloud's arcs; a non-uniform resize of a rotated rectangle skews it (the four corners stay exact, the box is no longer square-cornered), as Story 5.2 does for every markup; fill / opacity / arc size change with Properties (a later story).
+
 ### File List
+
+- src/core/schema/markup.ts, src/core/markup/shapes.ts (new), shapes.test.ts (new), geometry.ts, markup-index.ts
+- src/features/viewer/viewer-store.ts, index.ts, snap-controller.ts, viewer-engine.ts, viewer-input.ts, viewer-input.test.ts
+- src/features/editor/measure-tool.ts, measure-tool.test.ts, undo-store.ts, handles.ts, handles.test.ts (new)
+- src/features/workspace/tool-rail.tsx, workspace-shell.test.tsx
+- e2e/shape-tools.spec.ts (new)

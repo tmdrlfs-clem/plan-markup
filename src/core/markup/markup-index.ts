@@ -8,6 +8,7 @@ import RBush from "rbush";
 import type { Markup } from "@/core/schema/markup";
 
 import { COUNT_MARKER_PT, hitMarkup, insideLoop, insideRect, markupBounds, type Point, type Rect } from "./geometry";
+import { CLOUD_CHORD_PT } from "./shapes";
 
 type Item = { minX: number; minY: number; maxX: number; maxY: number; markup: Markup; order: number };
 
@@ -18,12 +19,12 @@ export class MarkupIndex {
     readonly markups: readonly Markup[],
     private readonly userUnit = 1,
   ) {
-    const pad = COUNT_MARKER_PT / (userUnit > 0 ? userUnit : 1);
+    const unit = userUnit > 0 ? userUnit : 1;
     this.tree.load(
       markups.map((markup, order) => {
         const b = markupBounds(markup);
-        // A count's markers reach past their points.
-        const p = markup.type === "count" ? pad : 0;
+        // A count's markers reach past their points; a cloud's arcs past its corners' ring (Story 5.5 review R1).
+        const p = markup.type === "count" ? COUNT_MARKER_PT / unit : markup.type === "cloud" ? CLOUD_CHORD_PT / 2 / unit : 0;
         return { minX: b.x - p, minY: b.y - p, maxX: b.x + b.width + p, maxY: b.y + b.height + p, markup, order };
       }),
     );

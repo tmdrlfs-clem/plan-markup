@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_MARKUP_STYLE, isMeasureMarkup, markupSchema, type Markup } from "@/core/schema/markup";
 
 import { hitMarkup, insideLoop, insideRect, markupBounds } from "./geometry";
+import { MarkupIndex } from "./markup-index";
 import { boxCorners, cloudArcs, ellipseFrame, ellipseLocal, ellipseOutline } from "./shapes";
 import { rotateAbout, transformMarkup } from "./transform";
 
@@ -73,10 +74,11 @@ describe("box and cloud hits (D2)", () => {
     }
   });
 
-  it("hits a cloud's arcs, out to half a chord beyond its corners' ring", () => {
+  it("hits a cloud's arcs, out to half a chord beyond its corners' ring (the index too, review R1)", () => {
     const m = shape("cloud", BOX);
     expect(hitMarkup(m, { x: 96, y: 175 }, 1)).toBe(true);
     expect(hitMarkup(m, { x: 90, y: 175 }, 1)).toBe(false);
+    expect(new MarkupIndex([m]).hit({ x: 96, y: 175 }, 1)).toBe(m);
   });
 
   it("hits an ellipse inside and near its outline, not in the box's corners", () => {
