@@ -44,6 +44,9 @@ const SNAPPING_TOOLS: ReadonlySet<ViewerTool> = new Set<ViewerTool>([
   "cloudplus",
   // Story 5.8: Dimension (Image's click is where its centre goes, unsnapped).
   "dimension",
+  // Story 5.11: White-out's corners and vertices (the Eraser is freehand).
+  "whiteout",
+  "whiteoutpolygon",
 ]);
 
 export function isSnappingTool(tool: ViewerTool): boolean {

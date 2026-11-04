@@ -105,6 +105,8 @@ export function hitMarkup(m: Markup, p: Point, tol: number, userUnit = 1): boole
     case "polygon":
     case "rectangle":
     case "image":
+    // Story 5.11: a white-out, inside and on its outline.
+    case "whiteout":
       return nearPolyline(p, m.points, tol, true) || insidePolygon(p, m.points);
     case "cloud":
       return nearPolyline(p, m.points, tol + CLOUD_CHORD_PT / 2 / (userUnit > 0 ? userUnit : 1), true) || insidePolygon(p, m.points);
@@ -129,6 +131,7 @@ export function hitMarkup(m: Markup, p: Point, tol: number, userUnit = 1): boole
     // Story 5.7: a stroke as wide as it is painted (a highlight's 12 pt).
     case "pen":
     case "highlight":
+    case "eraser":
       return nearPolyline(p, m.points, tol + m.style.width / 2 / (userUnit > 0 ? userUnit : 1), false);
     // Story 5.9: any of its glyph boxes.
     case "underline":

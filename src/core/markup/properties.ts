@@ -37,6 +37,8 @@ export const SUBJECT_NAMES: Record<MarkupType, string> = {
   dimension: "Dimension",
   underline: "Underline",
   strikethrough: "Strikethrough",
+  whiteout: "White-out",
+  eraser: "Eraser",
 };
 
 /** Closed shapes and the text boxes drawn around text: a fill fills them under their stroke. */
@@ -44,6 +46,9 @@ const FILLED: ReadonlySet<MarkupType> = new Set<MarkupType>(["polygon", "rectang
 
 /** The fields `m` has: an image has only its opacity (and a subject); a typewriter has no frame to give a width. */
 export function fieldsOf(m: Markup): ReadonlySet<PropertyField> {
+  // Story 5.11 (D3): a cover stays opaque white; an eraser's brush width can change.
+  if (m.type === "whiteout") return new Set<PropertyField>(["subject"]);
+  if (m.type === "eraser") return new Set<PropertyField>(["subject", "width"]);
   const fields = new Set<PropertyField>(["subject", "opacity"]);
   if (m.type === "image") return fields;
   fields.add("color");

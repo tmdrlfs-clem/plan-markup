@@ -137,6 +137,16 @@ export const cloudPlusMarkupSchema = z.object({ ...base, type: z.literal("cloudp
  */
 export const penMarkupSchema = z.object({ ...base, type: z.literal("pen"), points: z.array(pointSchema).min(2).max(MAX_POLYLINE_POINTS) });
 export const highlightMarkupSchema = z.object({ ...base, type: z.literal("highlight"), points: z.array(pointSchema).min(2).max(MAX_POLYLINE_POINTS) });
+/** Story 5.11: an eraser stroke: a white brush over the drawing, as wide as its style's width (FR36). */
+export const eraserMarkupSchema = z.object({ ...base, type: z.literal("eraser"), points: z.array(pointSchema).min(2).max(MAX_POLYLINE_POINTS) });
+
+/**
+ * Story 5.11: a white-out: a closed outline (a rectangle's four corners or a polygon's vertices)
+ * filled with the sheet's white, hiding the drawing under it; the PDF itself is not changed (FR36, AR25).
+ */
+export const whiteoutMarkupSchema = z.object({ ...base, type: z.literal("whiteout"), points: z.array(pointSchema).min(3).max(MAX_POLYLINE_POINTS) });
+/** Story 5.11: the colour a white-out and an eraser cover with: the sheet's. */
+export const COVER_COLOR = "#ffffff";
 
 /**
  * Story 5.8: an image, its box's four corners ordered from the screen's top left when placed
@@ -188,6 +198,8 @@ export const markupSchema = z.discriminatedUnion("type", [
   cloudPlusMarkupSchema,
   penMarkupSchema,
   highlightMarkupSchema,
+  eraserMarkupSchema,
+  whiteoutMarkupSchema,
   imageMarkupSchema,
   dimensionMarkupSchema,
   underlineMarkupSchema,
@@ -222,10 +234,11 @@ export function isTextMarkMarkup(m: Markup): m is TextMarkMarkup {
   return m.type === "underline" || m.type === "strikethrough";
 }
 /** Story 5.7: the freehand strokes. */
-export type InkMarkup = z.infer<typeof penMarkupSchema> | z.infer<typeof highlightMarkupSchema>;
+export type InkMarkup = z.infer<typeof penMarkupSchema> | z.infer<typeof highlightMarkupSchema> | z.infer<typeof eraserMarkupSchema>;
+export type WhiteoutMarkup = z.infer<typeof whiteoutMarkupSchema>;
 /** Whether `m` is a pen or highlight stroke (Story 5.7). */
 export function isInkMarkup(m: Markup): m is InkMarkup {
-  return m.type === "pen" || m.type === "highlight";
+  return m.type === "pen" || m.type === "highlight" || m.type === "eraser";
 }
 /** Story 5.6: the text markups. */
 export type TextMarkup =
@@ -251,3 +264,5 @@ export const DEFAULT_MEASURE_STYLE: MarkupStyle = { color: "#ff0000", width: 1, 
 export const DEFAULT_MARKUP_STYLE: MarkupStyle = { color: "#ff0000", width: 1, fontSize: 10 };
 /** Story 5.7 (D1): a highlight's style: yellow, 12 pt, 40 % opacity (multiplied over the sheet). */
 export const DEFAULT_HIGHLIGHT_STYLE: MarkupStyle = { color: "#ffff00", width: 12, fontSize: 10, opacity: 0.4 };
+/** Story 5.11 (D2): a white-out's and an eraser's style: the sheet's white, a 10 pt brush. */
+export const DEFAULT_COVER_STYLE: MarkupStyle = { color: COVER_COLOR, width: 10, fontSize: 10 };

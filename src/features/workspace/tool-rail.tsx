@@ -17,6 +17,7 @@ import {
   ImagePlus,
   MessageSquareText,
   MousePointer2,
+  Octagon,
   PaintBucket,
   Pen,
   Pentagon,
@@ -27,13 +28,14 @@ import {
   Slash,
   Spline,
   Square,
-  StickyNote,
+  SquareDashed,
   Stamp,
+  StickyNote,
   Strikethrough,
   Type,
+  type LucideIcon,
   TypeOutline,
   Underline,
-  type LucideIcon,
 } from "lucide-react";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { useStore } from "zustand";
@@ -42,7 +44,7 @@ import { Menu, MenuContent, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "@
 import { Toolbar, ToolbarButton, ToolbarSeparator, ToolbarToggleGroup, ToolbarToggleItem } from "@/components/ui/toolbar";
 import { dismissHint, showHint } from "@/components/ui/hint-store";
 import { pickImageFile } from "@/features/editor";
-import { hasDocument, isLineTool, isMeasureTool, isTextMarkTool, isTextTool, type TextMarkTool, setTool, viewerStore, type LineTool, type TextTool, type MeasureTool, type ViewerTool } from "@/features/viewer";
+import { hasDocument, isCoverTool, isLineTool, isMeasureTool, isTextMarkTool, isTextTool, type CoverTool, type TextMarkTool, setTool, viewerStore, type LineTool, type TextTool, type MeasureTool, type ViewerTool } from "@/features/viewer";
 
 import { NO_DRAWING } from "./workspace-toolbar";
 
@@ -58,7 +60,7 @@ interface Tool {
  * Tools that work today: Select and Pan (Story 3.2), and Length (snapping from
  * Story 4.1, measuring from Story 4.5). The others arrive with the editor.
  */
-const LIVE_TOOLS: ReadonlySet<string> = new Set<ViewerTool>(["select", "pan", "length", "polylength", "area", "count", "angle", "radius", "diameter", "line", "arrow", "polyline", "polygon", "rectangle", "ellipse", "cloud", "text", "callout", "typewriter", "note", "cloudplus", "pen", "highlight", "image", "dimension", "underline", "strikethrough"]);
+const LIVE_TOOLS: ReadonlySet<string> = new Set<ViewerTool>(["select", "pan", "length", "polylength", "area", "count", "angle", "radius", "diameter", "line", "arrow", "polyline", "polygon", "rectangle", "ellipse", "cloud", "text", "callout", "typewriter", "note", "cloudplus", "pen", "highlight", "image", "dimension", "underline", "strikethrough", "whiteout", "whiteoutpolygon", "eraser"]);
 
 export const SNAP_PREVIEW_HINT_ID = "snap-preview";
 /** Review S3: a page past the segment cap. */
@@ -109,6 +111,11 @@ const MARKS = "Drag across the words to mark (from a word); the release marks th
 export const UNDERLINE_HINT = `Underline: ${MARKS}`;
 export const STRIKETHROUGH_HINT = `Strikethrough: ${MARKS}`;
 export const NO_PAGE_TEXT = "This page is an image: it has no text to mark";
+/** Story 5.11: the HintBar while White-out or the Eraser is armed. */
+const COVERS = "It hides the drawing on screen; the PDF is not changed until you flatten or export.";
+export const WHITEOUT_HINT = `White-out: drag from one corner to the opposite one, or click both. ${COVERS} Esc cancels; Esc again returns to Select.`;
+export const WHITEOUT_POLYGON_HINT = `White-out polygon: click each corner; double-click, Enter or a click on the first corner closes it. Backspace removes the last corner. ${COVERS} Esc cancels; Esc again returns to Select.`;
+export const ERASER_HINT = `Eraser: drag over the drawing to brush it out. ${COVERS} Esc while drawing drops the stroke; Esc again returns to Select.`;
 export const DIMENSION_HINT = `Dimension: click the two points to dimension, then where its line goes. ${SNAPS} Esc cancels; Esc again returns to Select.`;
 const TOOL_HINTS: Partial<Record<ViewerTool, string>> = {
   length: SNAP_PREVIEW_HINT,
@@ -137,6 +144,9 @@ const TOOL_HINTS: Partial<Record<ViewerTool, string>> = {
   dimension: DIMENSION_HINT,
   underline: UNDERLINE_HINT,
   strikethrough: STRIKETHROUGH_HINT,
+  whiteout: WHITEOUT_HINT,
+  whiteoutpolygon: WHITEOUT_POLYGON_HINT,
+  eraser: ERASER_HINT,
 };
 export const EDITOR_LATER = "Arrives with the markup editor";
 
@@ -165,10 +175,8 @@ const GROUPS: { label: string; tools: Tool[] }[] = [
   },
   // The measuring tools share one button and a menu (FlyoutGroup).
   { label: "Measure", tools: [] },
-  {
-    label: "White-out",
-    tools: [{ id: "white-out", label: "White-out", icon: Eraser, shortcut: "Shift+W" }],
-  },
+  // Story 5.11: White-out, White-out polygon and the Eraser share one slot (COVER_TOOLS).
+  { label: "White-out", tools: [] },
   {
     label: "4541",
     tools: [{ id: "sprinkler-zone", label: "Sprinkler zone", icon: Droplets, shortcut: "J" }],
@@ -227,6 +235,13 @@ export const TEXT_MARK_TOOLS: readonly (Tool & { id: TextMarkTool })[] = [
   { id: "strikethrough", label: "Strikethrough", icon: Strikethrough },
 ];
 export const MORE_TEXT_MARK_TOOLS = "More text markup tools";
+/** Story 5.11: the cover tools share a slot (D4: Shift+W White-out; the others have no key). */
+export const COVER_TOOLS: readonly (Tool & { id: CoverTool })[] = [
+  { id: "whiteout", label: "White-out", icon: SquareDashed, shortcut: "Shift+W" },
+  { id: "whiteoutpolygon", label: "White-out polygon", icon: Octagon },
+  { id: "eraser", label: "Eraser", icon: Eraser },
+];
+export const MORE_COVER_TOOLS = "More white-out tools";
 
 /**
  * Tools sharing one rail slot (Measure, Story 4.11; Lines, Story 5.4): the slot shows the armed
@@ -348,6 +363,8 @@ export function ToolRail() {
           {index > 0 ? <ToolbarSeparator className="my-1" /> : null}
           {group.label === "Measure" ? (
             <FlyoutGroup label="Measure" more={MORE_MEASURE_TOOLS} tools={MEASURE_TOOLS} member={isMeasureTool} open={open} active={active} />
+          ) : group.label === "White-out" ? (
+            <FlyoutGroup label="White-out" more={MORE_COVER_TOOLS} tools={COVER_TOOLS} member={isCoverTool} open={open} active={active} />
           ) : group.label === "Lines" ? (
             <FlyoutGroup label="Lines" more={MORE_LINE_TOOLS} tools={LINE_TOOLS} member={isLineSlotTool} open={open} active={active} />
           ) : group.label === "Markup" ? (

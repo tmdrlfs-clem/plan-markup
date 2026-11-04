@@ -53,7 +53,10 @@ export type ViewerTool =
   | "image"
   | "dimension"
   | "underline"
-  | "strikethrough";
+  | "strikethrough"
+  | "whiteout"
+  | "whiteoutpolygon"
+  | "eraser";
 
 /** Stories 4.6, 4.8, 4.9, 4.10: the measuring tools (they draw markups through the editor's painter). */
 export type MeasureTool = "length" | "polylength" | "area" | "count" | "angle" | "radius" | "diameter" | "fill";
@@ -70,9 +73,9 @@ export function isLineTool(tool: ViewerTool): tool is LineTool {
 }
 
 /** Story 5.5: the box tools (a rectangle, an ellipse: two corners, clicked or dragged; 5.6: a text box too). */
-export type BoxTool = "rectangle" | "ellipse" | "text";
+export type BoxTool = "rectangle" | "ellipse" | "text" | "whiteout";
 export function isBoxTool(tool: ViewerTool): tool is BoxTool {
-  return tool === "rectangle" || tool === "ellipse" || tool === "text";
+  return tool === "rectangle" || tool === "ellipse" || tool === "text" || tool === "whiteout";
 }
 
 /** Story 5.6: the text tools (placed by points, then typed). */
@@ -83,9 +86,15 @@ export function isTextTool(tool: ViewerTool): tool is TextTool {
 }
 
 /** Story 5.7: the freehand tools (pressed and dragged, never snapped). */
-export type InkTool = "pen" | "highlight";
+export type InkTool = "pen" | "highlight" | "eraser";
 export function isInkTool(tool: ViewerTool): tool is InkTool {
-  return tool === "pen" || tool === "highlight";
+  return tool === "pen" || tool === "highlight" || tool === "eraser";
+}
+
+/** Story 5.11: the tools that cover the drawing (White-out by a box or a polygon, the Eraser brush). */
+export type CoverTool = "whiteout" | "whiteoutpolygon" | "eraser";
+export function isCoverTool(tool: ViewerTool): tool is CoverTool {
+  return tool === "whiteout" || tool === "whiteoutpolygon" || tool === "eraser";
 }
 
 /** Story 5.9: the tools that mark PDF text (a drag selects words). */
@@ -98,9 +107,9 @@ export function isTextMarkTool(tool: ViewerTool): tool is TextMarkTool {
  * Stories 5.4, 5.5, 5.6: the markup tools that draw by points (no value, no caption); 5.7: by a
  * stroke; 5.8: Image (one click places the picked image) and Dimension (its caption is its length).
  */
-export type MarkupTool = LineTool | BoxTool | "cloud" | TextTool | InkTool | "image" | "dimension" | TextMarkTool;
+export type MarkupTool = LineTool | BoxTool | "cloud" | TextTool | InkTool | "image" | "dimension" | TextMarkTool | CoverTool;
 export function isMarkupTool(tool: ViewerTool): tool is MarkupTool {
-  return LINE_TOOLS.has(tool) || isBoxTool(tool) || tool === "cloud" || TEXT_TOOLS.has(tool) || isInkTool(tool) || tool === "image" || tool === "dimension" || isTextMarkTool(tool);
+  return LINE_TOOLS.has(tool) || isBoxTool(tool) || tool === "cloud" || TEXT_TOOLS.has(tool) || isInkTool(tool) || tool === "image" || tool === "dimension" || isTextMarkTool(tool) || isCoverTool(tool);
 }
 
 /** Story 5.4: the tools that draw markups by clicking points (through the editor's painter). */

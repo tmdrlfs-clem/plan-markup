@@ -33,7 +33,7 @@ export class MarkupIndex {
               ? NOTE_PT / 2 / unit
               : markup.type === "cloud" || markup.type === "cloudplus"
                 ? CLOUD_CHORD_PT / 2 / unit
-                : markup.type === "pen" || markup.type === "highlight"
+                : markup.type === "pen" || markup.type === "highlight" || markup.type === "eraser"
                   ? markup.style.width / 2 / unit
                   : 0;
         return { minX: b.x - p, minY: b.y - p, maxX: b.x + b.width + p, maxY: b.y + b.height + p, markup, order };

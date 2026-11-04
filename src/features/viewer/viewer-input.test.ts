@@ -59,6 +59,9 @@ describe("resolveViewerKey (focus rule)", () => {
     expect(resolveViewerKey(key({ key: "a", code: "KeyA" }), FOCUSED)).toEqual({ type: "tool", tool: "arrow" });
     expect(resolveViewerKey(key({ key: "N", code: "KeyN", shiftKey: true }), FOCUSED)).toEqual({ type: "tool", tool: "polyline" });
     expect(resolveViewerKey(key({ key: "P", code: "KeyP", shiftKey: true }), FOCUSED)).toEqual({ type: "tool", tool: "polygon" });
+    // Story 5.11: Shift+W White-out (W alone: nothing).
+    expect(resolveViewerKey(key({ key: "W", code: "KeyW", shiftKey: true }), FOCUSED)).toEqual({ type: "tool", tool: "whiteout" });
+    expect(resolveViewerKey(key({ key: "w", code: "KeyW" }), FOCUSED)).toBeNull();
     expect(resolveViewerKey(key({ key: "n", code: "KeyN" }), FOCUSED)).toBeNull();
     // Story 5.5: R Rectangle, E Ellipse, C Cloud (Ctrl+C stays copy).
     expect(resolveViewerKey(key({ key: "r", code: "KeyR" }), FOCUSED)).toEqual({ type: "tool", tool: "rectangle" });

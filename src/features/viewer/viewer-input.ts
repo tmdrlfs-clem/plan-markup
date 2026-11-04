@@ -116,6 +116,8 @@ export function resolveViewerKey(
   // Story 5.7: P Pen, H Highlight.
   if (isLetter(event, "p") && !event.shiftKey) return { type: "tool", tool: "pen" };
   if (isLetter(event, "h") && !event.shiftKey) return { type: "tool", tool: "highlight" };
+  // Story 5.11: Shift+W White-out (the UX shortcut table; ours, Revu has none).
+  if (isLetter(event, "w") && event.shiftKey) return { type: "tool", tool: "whiteout" };
   return null;
 }
 

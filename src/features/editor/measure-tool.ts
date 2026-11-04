@@ -74,6 +74,8 @@ import { simplifyStroke, smoothPath, strokeHasLength } from "@/core/markup/ink";
 import { CLOUD_CHORD_PT, boxCorners, cloudArcs, ellipseFrame } from "@/core/markup/shapes";
 import { NOTE_PT, TEXT_LINE_HEIGHT, TEXT_PAD_PT, cloudRingOf, leaderOf, leaderTo, leaderToRing, textBoxOf, wrapText } from "@/core/markup/text";
 import {
+  COVER_COLOR,
+  DEFAULT_COVER_STYLE,
   DEFAULT_HIGHLIGHT_STYLE,
   DEFAULT_MARKUP_STYLE,
   DEFAULT_MEASURE_STYLE,
@@ -91,6 +93,7 @@ import {
 } from "@/core/schema/markup";
 import {
   isBoxTool,
+  isCoverTool,
   isDrawTool,
   isInkTool,
   isMarkupTool,
@@ -101,6 +104,7 @@ import {
   viewerStore,
   type LayerView,
   type DrawTool,
+  type InkTool,
   type MarkupPainter,
 } from "@/features/viewer";
 
@@ -150,6 +154,8 @@ export const ADD_CLOUD = "Add cloud";
 export const ADD_PEN = "Add pen";
 export const ADD_HIGHLIGHT = "Add highlight";
 export const ADD_DIMENSION = "Add dimension";
+export const ADD_WHITEOUT = "Add white-out";
+export const ADD_ERASER = "Add eraser stroke";
 const ADD_LABEL: Record<DrawTool, string> = {
   length: ADD_LENGTH,
   polylength: ADD_POLYLENGTH,
@@ -177,6 +183,9 @@ const ADD_LABEL: Record<DrawTool, string> = {
   dimension: ADD_DIMENSION,
   underline: ADD_UNDERLINE,
   strikethrough: ADD_STRIKETHROUGH,
+  whiteout: ADD_WHITEOUT,
+  whiteoutpolygon: ADD_WHITEOUT,
+  eraser: ADD_ERASER,
 };
 /** Story 4.8: what the live value says while an area crosses itself (it cannot be added). */
 export const CROSSES_ITSELF = "Crosses itself";
@@ -208,11 +217,14 @@ const MIN_POINTS: Record<DrawTool, number> = {
   dimension: 3,
   underline: 1,
   strikethrough: 1,
+  whiteout: 2,
+  whiteoutpolygon: 3,
+  eraser: 2,
 };
 /** Tools with a fixed number of points: the click that places the last one adds the measurement. */
-const FIXED_POINTS: Partial<Record<DrawTool, number>> = { length: 2, angle: 3, radius: 3, diameter: 3, line: 2, arrow: 2, rectangle: 2, ellipse: 2, text: 2, callout: 2, typewriter: 1, note: 1, dimension: 3 };
+const FIXED_POINTS: Partial<Record<DrawTool, number>> = { length: 2, angle: 3, radius: 3, diameter: 3, line: 2, arrow: 2, rectangle: 2, ellipse: 2, text: 2, callout: 2, typewriter: 1, note: 1, dimension: 3, whiteout: 2 };
 /** Tools whose outline is closed: a click on the first vertex closes it. */
-const CLOSED: ReadonlySet<DrawTool> = new Set<DrawTool>(["area", "polygon", "cloud", "cloudplus"]);
+const CLOSED: ReadonlySet<DrawTool> = new Set<DrawTool>(["area", "polygon", "cloud", "cloudplus", "whiteoutpolygon"]);
 /** Story 5.4 (D1): an arrow head's length in line widths, and its least length, in points (page units). */
 const ARROW_HEAD_WIDTHS = 6;
 const ARROW_HEAD_MIN_PT = 6;
@@ -231,7 +243,7 @@ const SHAPE_LABEL: Record<ShapeMarkup["type"], string> = {
   cloud: "Cloud",
 };
 /** Story 5.7: the layer 2 list's label of a stroke. */
-const INK_LABEL: Record<InkMarkup["type"], string> = { pen: "Pen", highlight: "Highlight" };
+const INK_LABEL: Record<InkMarkup["type"], string> = { pen: "Pen", highlight: "Highlight", eraser: "Eraser" };
 /** Story 5.7: a stroke is captured at points this far apart on screen, and kept within this of its path when simplified (CSS px). */
 const INK_STEP_PX = 1;
 const INK_SIMPLIFY_PX = 0.35;
@@ -804,7 +816,7 @@ export const measurePainter: MarkupPainter = {
         const pts = devicePoints(any.points, view);
         if (!onCanvas(pts, any.style, view)) continue;
         if (selected.has(any.id)) strokeSelection(c, pts, view);
-        if (any.type === "pen") strokeInk(c, pts, any.style, view);
+        if (any.type !== "highlight") strokeInk(c, pts, any.style, view);
         continue;
       }
       if (any.type === "image") {
@@ -833,6 +845,15 @@ export const measurePainter: MarkupPainter = {
         if (!onCanvas(pts, any.style, view)) continue;
         if (selected.has(any.id)) strokeSelection(c, pts, view);
         paintDimension(c, any.points, any.style, view, caption);
+        continue;
+      }
+      if (any.type === "whiteout") {
+        // Story 5.11: a cover, the sheet's white over what it hides.
+        captions.push("White-out");
+        const pts = devicePoints(any.points, view);
+        if (!onCanvas(pts, any.style, view)) continue;
+        paintCover(c, pts);
+        if (selected.has(any.id)) strokeSelection(c, pts, view);
         continue;
       }
       if (!isMeasure(any)) {
@@ -950,7 +971,12 @@ export const measurePainter: MarkupPainter = {
     else if (d.tool === "radius" || d.tool === "diameter") strokeCircle(c, d.tool, pts, deviceCircle(points, view), DEFAULT_MEASURE_STYLE, view);
     else if (d.tool === "text") strokeShape(c, "rectangle", pts, DEFAULT_MARKUP_STYLE, view);
     else if (d.tool === "cloudplus") strokeShape(c, "cloud", pts, DEFAULT_MARKUP_STYLE, view);
-    else if (isMarkupTool(d.tool) && !isTextTool(d.tool) && !isInkTool(d.tool) && d.tool !== "image" && d.tool !== "underline" && d.tool !== "strikethrough") strokeShape(c, d.tool, pts, DEFAULT_MARKUP_STYLE, view);
+    else if (d.tool === "whiteout" || d.tool === "whiteoutpolygon") {
+      // Story 5.11: the cover so far, outlined (the outline is not kept).
+      paintCover(c, pts);
+      strokeShape(c, d.tool === "whiteout" ? "rectangle" : "polyline", pts, DEFAULT_MARKUP_STYLE, view);
+    }
+    else if (isMarkupTool(d.tool) && !isTextTool(d.tool) && !isInkTool(d.tool) && !isCoverTool(d.tool) && d.tool !== "image" && d.tool !== "underline" && d.tool !== "strikethrough") strokeShape(c, d.tool, pts, DEFAULT_MARKUP_STYLE, view);
     else strokeMeasure(c, pts, DEFAULT_MEASURE_STYLE, view);
     c.restore();
     if (!live) return null;
@@ -1162,8 +1188,22 @@ function finishDrawing(documentId: string): "done" | "continue" | "ignored" {
 }
 
 /** Story 5.7: a stroke's style (D1: a pen as the other markups, a highlight yellow, wide, 40 %). */
-function inkStyle(tool: "pen" | "highlight"): MarkupStyle {
-  return tool === "highlight" ? DEFAULT_HIGHLIGHT_STYLE : DEFAULT_MARKUP_STYLE;
+function inkStyle(tool: InkTool): MarkupStyle {
+  // Story 5.11 (D2): an eraser, the sheet's white, 10 pt.
+  return tool === "highlight" ? DEFAULT_HIGHLIGHT_STYLE : tool === "eraser" ? DEFAULT_COVER_STYLE : DEFAULT_MARKUP_STYLE;
+}
+
+/** Story 5.11: a white-out's cover (device points): filled with the sheet's white, no stroke. */
+function paintCover(c: CanvasRenderingContext2D, pts: readonly Point[]): void {
+  if (pts.length < 3) return;
+  c.save();
+  c.beginPath();
+  c.moveTo(pts[0].x, pts[0].y);
+  for (let i = 1; i < pts.length; i++) c.lineTo(pts[i].x, pts[i].y);
+  c.closePath();
+  c.fillStyle = COVER_COLOR;
+  c.fill();
+  c.restore();
 }
 
 /**
@@ -1244,7 +1284,13 @@ function markupOf(d: Drawing): Markup {
       return { ...base, type: "area", points };
     case "pen":
     case "highlight":
+    case "eraser":
       return { ...base, style: inkStyle(d.tool), type: d.tool, points };
+    // Story 5.11: a white-out from a box's two corners, or a polygon's vertices.
+    case "whiteout":
+      return { ...base, style: DEFAULT_COVER_STYLE, type: "whiteout", points: boxCorners(a, b) };
+    case "whiteoutpolygon":
+      return { ...base, style: DEFAULT_COVER_STYLE, type: "whiteout", points };
     case "dimension":
       return { ...base, type: d.tool, points: [a, b, c] };
     case "image":

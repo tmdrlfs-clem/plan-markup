@@ -547,7 +547,7 @@ describe("view navigation (Story 3.2)", () => {
     for (const name of ["Rectangle", "Ellipse", "Cloud"]) expect(within(rail).getByRole("radio", { name })).not.toHaveAttribute("aria-disabled");
     expect(within(rail).getByRole("radio", { name: "Text box" })).not.toHaveAttribute("aria-disabled");
     expect(within(rail).getByRole("button", { name: "More text tools" })).not.toHaveAttribute("aria-disabled");
-    for (const name of ["Pen", "Highlight", "Image", "Underline"]) expect(within(rail).getByRole("radio", { name })).not.toHaveAttribute("aria-disabled");
+    for (const name of ["Pen", "Highlight", "Image", "Underline", "White-out"]) expect(within(rail).getByRole("radio", { name })).not.toHaveAttribute("aria-disabled");
     expect(within(rail).getByRole("radio", { name: "Stamp" })).toHaveAttribute("aria-disabled", "true");
   });
 

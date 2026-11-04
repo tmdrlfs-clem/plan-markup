@@ -29,6 +29,7 @@ export { LOCKED_CURSOR, LOCKED_TOOLTIP, notifyMarkups, registerMarkupPainter, ty
 export {
   hasDocument,
   isBoxTool,
+  isCoverTool,
   isDrawTool,
   isInkTool,
   isLineTool,
@@ -41,6 +42,7 @@ export {
   type ViewerState,
   type ViewerStatus,
   type BoxTool,
+  type CoverTool,
   type DrawTool,
   type InkTool,
   type LineTool,
