@@ -1,6 +1,6 @@
 # Story 5.6: Text box, callout, typewriter, note and cloud+
 
-Status: in-progress
+Status: done
 
 ## Story
 
@@ -19,10 +19,10 @@ so that I can annotate changes in words.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Core** — schemas; text geometry (box of a markup, leader, orientation, growth, wrapping); hits; unit tests.
-- [ ] **Task 2: Viewer** — tools `text`, `callout`, `typewriter`, `note`, `cloudplus`; keys `T`, `Q`, `K`; an overlay slot in the canvas viewport.
-- [ ] **Task 3: Editor** — placing, the text editor overlay, committing, painting (wrapped text, borders, leaders, cloud, note icon); handles; rail menus and hints; unit tests.
-- [ ] **Task 4: Tests** — `e2e/text-tools.spec.ts` (AC 6).
+- [x] **Task 1: Core** — schemas; text geometry (box of a markup, leader, orientation, growth, wrapping); hits; unit tests.
+- [x] **Task 2: Viewer** — tools `text`, `callout`, `typewriter`, `note`, `cloudplus`; keys `T`, `Q`, `K`; an overlay slot in the canvas viewport.
+- [x] **Task 3: Editor** — placing, the text editor overlay, committing, painting (wrapped text, borders, leaders, cloud, note icon); handles; rail menus and hints; unit tests.
+- [x] **Task 4: Tests** — `e2e/text-tools.spec.ts` (AC 6).
 
 ## Dev Notes
 
@@ -47,4 +47,16 @@ Claude Opus 5.5
 
 ### Completion Notes List
 
+- Task 1: `text`, `typewriter` (4 corners), `note` (1 point), `callout` (box + tip), `cloudplus` (cloud + box) schemas with plain `text` (max 10 000); `TextMarkup`, `isTextMarkup`. core/markup/text.ts: `textBoxOf`, `cloudRingOf`, `leaderOf` / `leaderTo` / `leaderToRing`, `orientBox` and `screenAxes` (corners from the screen's top left), `boxFrom`, `growBox`, `wrapText`; hits on the box, note icon, leader and Cloud+ cloud; the R-tree pads a note's icon and a Cloud+'s arcs. Unit tests.
+- Task 2: tools `text` (a box tool: drag or two clicks), `callout`, `typewriter`, `note`, `cloudplus` (`TextTool`, `isTextTool`; all markup tools, snapping); keys `T`, `Q`, `K`; `CanvasViewport` takes an `overlay` (DOM over the canvases).
+- Task 3: measure-tool places them (Typewriter / Note on one click; Cloud+ keeps its closed cloud as `Drawing.ring` until the text's click, Backspace goes back to the cloud) and starts typing (`tools.textEdit`, text-tool.ts); paints the draft and the field's frame while typing (its own store), and the markups: wrapped plain text in the box from p0 along p0→p1, the 1 pt border (none for a typewriter), a callout's arrow leader, a Cloud+'s cloud and leader, a note's icon; layer 2 lists "Text box: …" etc. `TextEditor` (text-editor.tsx) is the field: keys stay in it, Enter is a new line, Esc / Ctrl+Enter / leaving it ends the typing; a click on the canvas while typing only ends it; another tool, page or tab ends it too. `finalizeText` grows the box down to the text (D3) and sizes a typewriter. Vertex handles: a callout's tip, a Cloud+'s cloud corners only (`vertexIndices`). Rail: Cloud slot = Cloud / Cloud+, Text box slot = Text box / Callout / Typewriter / Note, with hints (D4).
+- Task 4: `e2e/text-tools.spec.ts` (passes locally with the line, shape, select and group e2e). Screenshots: fixtures/private/traces/5-6-text-tools.png, 5-6-typing.png.
+- Review (adversarial, self): R1 a callout's (or any one-click) field opened on the click's pointerdown, and the mousedown that follows focused the canvas, blurring the empty field and ending it at once: the field takes the focus after the event (a 0 ms timer). Deferred: editing existing text (D6); text in a mirrored box (a resize through zero) draws outside it; a box made smaller does not re-grow; keys typed in the instant before the field has the focus go to the canvas.
+
 ### File List
+
+- src/core/schema/markup.ts, src/core/markup/text.ts (new), text.test.ts (new), geometry.ts, markup-index.ts
+- src/features/viewer/viewer-store.ts, index.ts, snap-controller.ts, viewer-input.ts, viewer-input.test.ts, canvas-viewport.tsx
+- src/features/editor/text-tool.ts (new), text-editor.tsx (new), text-tool.test.tsx (new), measure-tool.ts, editor-store.ts, undo-store.ts, handles.ts, handles.test.ts, index.ts
+- src/features/workspace/tool-rail.tsx, workspace-shell.tsx, workspace-shell.test.tsx
+- e2e/text-tools.spec.ts (new)

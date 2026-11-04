@@ -29,7 +29,11 @@ export function TextEditor() {
   }
   const visible = edit !== null && frame !== null;
   useEffect(() => {
-    if (visible) ref.current?.focus({ preventScroll: true });
+    if (!visible) return;
+    // After the event that placed it: a click's mousedown focuses the canvas once its pointerdown
+    // is handled, and taking the focus before that would end the typing at once (empty).
+    const timer = setTimeout(() => ref.current?.focus({ preventScroll: true }), 0);
+    return () => clearTimeout(timer);
   }, [visible, draftId]);
 
   if (!edit || !frame) return null;

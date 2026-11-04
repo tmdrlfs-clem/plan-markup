@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { DEFAULT_MARKUP_STYLE, type TextMarkup } from "@/core/schema/markup";
@@ -198,11 +198,11 @@ describe("TextEditor", () => {
     act(() => void measurePainter.paintActive(recorder().ctx, view, null));
   }
 
-  it("opens a focused field over the canvas; letters typed in it arm no tool; Esc adds the text", () => {
+  it("opens a focused field over the canvas; letters typed in it arm no tool; Esc adds the text", async () => {
     render(<TextEditor />);
     act(start);
     const field = screen.getByRole("textbox", { name: TEXT_FIELD_LABEL });
-    expect(field).toHaveFocus();
+    await waitFor(() => expect(field).toHaveFocus());
     fireEvent.change(field, { target: { value: "rect" } });
     fireEvent.keyDown(field, { key: "r", code: "KeyR" });
     expect(viewerStore.getState().tool).toBe("typewriter");
@@ -211,7 +211,7 @@ describe("TextEditor", () => {
     expect(screen.queryByRole("textbox", { name: TEXT_FIELD_LABEL })).toBeNull();
   });
 
-  it("Ctrl+Enter and leaving the field add the text; Enter is a new line", () => {
+  it("Ctrl+Enter and leaving the field add the text; Enter is a new line", async () => {
     render(<TextEditor />);
     act(start);
     let field = screen.getByRole("textbox", { name: TEXT_FIELD_LABEL });
@@ -223,6 +223,7 @@ describe("TextEditor", () => {
     act(start);
     field = screen.getByRole("textbox", { name: TEXT_FIELD_LABEL });
     expect(field).toHaveValue("");
+    await waitFor(() => expect(field).toHaveFocus());
     fireEvent.change(field, { target: { value: "blurred" } });
     act(() => field.blur());
     expect(added()[1].text).toBe("blurred");
