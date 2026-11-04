@@ -10,14 +10,17 @@ import {
   ADD_ANGLE,
   ADD_AREA,
   ADD_ARROW,
+  ADD_CLOUD,
   ADD_COUNT,
   ADD_DIAMETER,
+  ADD_ELLIPSE,
   ADD_LENGTH,
   ADD_LINE,
   ADD_POLYGON,
   ADD_POLYLENGTH,
   ADD_POLYLINE,
   ADD_RADIUS,
+  ADD_RECTANGLE,
   CROSSES_ITSELF,
   MOVE_CAPTION,
   installMeasureTools,
@@ -607,5 +610,106 @@ describe("Line, Arrow, Polyline and Polygon tools (Story 5.4)", () => {
     expect(measurePainter.escape()).toBe(true);
     expect(measurePainter.tracking).toBe(false);
     expect(added()).toHaveLength(2);
+  });
+});
+
+describe("Rectangle, Ellipse and Cloud tools (Story 5.5)", () => {
+  const added = () => markupsOf(editorStore.getState(), SHA);
+  const undoLabel = () => activeUndoLabels(editorStore.getState(), "t1").undo;
+  const BOX = [
+    { x: 0, y: 0 },
+    { x: 72, y: 0 },
+    { x: 72, y: 36 },
+    { x: 0, y: 36 },
+  ];
+
+  it("Rectangle and Ellipse: two corners add the box's four corners (red, 1 pt, no fill), one undo step", () => {
+    setTool("rectangle");
+    measurePainter.place({ x: 0, y: 0 }, AT);
+    expect(measurePainter.place({ x: 72, y: 36 }, AT)).toBe("done");
+    expect(added()[0]).toMatchObject({ type: "rectangle", points: BOX, style: { color: "#ff0000", width: 1 } });
+    expect(added()[0].style.fill).toBeUndefined();
+    expect(undoLabel()).toBe(ADD_RECTANGLE);
+    expect(viewerStore.getState().tool).toBe("rectangle");
+    setTool("ellipse");
+    measurePainter.place({ x: 0, y: 0 }, AT);
+    measurePainter.place({ x: 72, y: 36 }, AT);
+    expect(added()[1]).toMatchObject({ type: "ellipse", points: BOX });
+    expect(undoLabel()).toBe(ADD_ELLIPSE);
+    expect(measurePainter.paintStatic(recorder().ctx, view)).toEqual(["Rectangle", "Ellipse"]);
+  });
+
+  it("a box with no width or height adds nothing; the drawing goes on", () => {
+    setTool("rectangle");
+    measurePainter.place({ x: 0, y: 0 }, { ...AT, tolerance: 1 });
+    expect(measurePainter.place({ x: 72, y: 0.5 }, { ...AT, tolerance: 1 })).toBe("continue");
+    expect(added()).toHaveLength(0);
+    expect(measurePainter.tracking).toBe(true);
+    expect(measurePainter.finish()).toBe("ignored");
+  });
+
+  it("the rubber band shows the whole box from the first corner to the pointer", () => {
+    setTool("rectangle");
+    measurePainter.place({ x: 0, y: 0 }, AT);
+    const r = recorder();
+    expect(measurePainter.paintActive(r.ctx, view, { x: 72, y: 36 })).toBeNull();
+    expect(r.ops.filter((o) => o.op === "lineTo").map((o) => o.args)).toEqual([
+      [72, -0],
+      [72, -36],
+      [0, -36],
+    ]);
+    expect(r.ops.some((o) => o.op === "closePath")).toBe(true);
+  });
+
+  it("Ellipse paints the unit circle mapped into its box", () => {
+    setTool("ellipse");
+    measurePainter.place({ x: 0, y: 0 }, AT);
+    measurePainter.place({ x: 72, y: 36 }, AT);
+    const r = recorder();
+    measurePainter.paintStatic(r.ctx, view);
+    expect(r.ops.find((o) => o.op === "transform")?.args).toEqual([36, 0, 0, -18, 36, -18]);
+    expect(r.ops.find((o) => o.op === "arc")?.args).toEqual([0, 0, 1, 0, 2 * Math.PI]);
+  });
+
+  it("Cloud: closes on its first corner; arcs of a fixed page size, as many at any zoom (D1)", () => {
+    setTool("cloud");
+    for (const p of BOX) measurePainter.place(p, { ...AT, tolerance: 1 });
+    expect(measurePainter.place({ x: 0.5, y: 0 }, { ...AT, tolerance: 1 })).toBe("done");
+    expect(added()[0]).toMatchObject({ type: "cloud", points: BOX });
+    expect(undoLabel()).toBe(ADD_CLOUD);
+    const arcs = (devicePerPt: number) => {
+      const r = recorder();
+      measurePainter.paintStatic(r.ctx, { ...view, devicePerPt, toDevice: (p) => ({ x: devicePerPt * p.x, y: -devicePerPt * p.y }) });
+      return r.ops.filter((o) => o.op === "arc");
+    };
+    // 72 / 9 = 8 and 36 / 9 = 4 a side.
+    expect(arcs(1)).toHaveLength(24);
+    expect(arcs(4)).toHaveLength(24);
+    expect(arcs(4)[0].args[2]).toBeCloseTo(18);
+    // Zoomed far out, the arcs would be specks: the chords are drawn.
+    expect(arcs(0.1)).toHaveLength(0);
+  });
+
+  it("a style's fill fills the closed shape under its stroke; its opacity applies to the whole markup", () => {
+    setTool("rectangle");
+    measurePainter.place({ x: 0, y: 0 }, AT);
+    measurePainter.place({ x: 72, y: 36 }, AT);
+    const m = added()[0];
+    editorStore.setState((s) => ({ doc: { ...s.doc, markups: { ...s.doc.markups, [SHA]: [{ ...m, style: { ...m.style, fill: "#00ff00", opacity: 0.5 } }] } } }));
+    const r = recorder();
+    const alphas: unknown[] = [];
+    const ctx = new Proxy(r.ctx, {
+      get: (t, prop: string) => (t as unknown as Record<string, unknown>)[prop],
+      set: (t, prop: string, value) => {
+        if (prop === "globalAlpha") alphas.push(value);
+        (t as unknown as Record<string, unknown>)[prop] = value;
+        return true;
+      },
+    });
+    measurePainter.paintStatic(ctx, view);
+    const fill = r.ops.findIndex((o) => o.op === "fill");
+    expect(r.ops[fill].fillStyle).toBe("#00ff00");
+    expect(r.ops.findIndex((o) => o.op === "stroke")).toBeGreaterThan(fill);
+    expect(alphas).toEqual([0.5]);
   });
 });

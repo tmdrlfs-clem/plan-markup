@@ -1,7 +1,8 @@
 // Selection handles (Story 5.2, UX-DR13): 8 resize handles on the selection's
 // box (set a little outside it, so they never sit on a vertex), a rotate
 // handle above its top edge, and with one markup selected a handle on each
-// vertex. Laid out and hit in canvas device px, painted on layer 2 with the
+// vertex (Story 5.5, D3: not a rectangle's or an ellipse's: a corner drag would
+// skew the box). Laid out and hit in canvas device px, painted on layer 2 with the
 // selection outline.
 
 import { markupBounds, type Point, type Rect } from "@/core/markup/geometry";
@@ -84,7 +85,8 @@ export function handlesOf(markups: readonly Markup[], view: LayerView): Handles 
   }
   // Review R2: a point (one count marker) has nothing to turn.
   if (box.width > 0 || box.height > 0) handles.push({ kind: "rotate", device: { x: centre.x, y: d.y0 - ROTATE_GAP_PX * view.dpr }, cursor: "crosshair" });
-  if (markups.length === 1) markups[0].points.forEach((p, index) => handles.push({ kind: "vertex", index, device: view.toDevice(p), cursor: "crosshair" }));
+  const one = markups.length === 1 ? markups[0] : null;
+  if (one && one.type !== "rectangle" && one.type !== "ellipse") one.points.forEach((p, index) => handles.push({ kind: "vertex", index, device: view.toDevice(p), cursor: "crosshair" }));
   return { box, handles };
 }
 

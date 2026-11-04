@@ -28,14 +28,18 @@ export type { CalibrationPick, CalibrationPickListener } from "./viewer-engine";
 export { LOCKED_CURSOR, LOCKED_TOOLTIP, notifyMarkups, registerMarkupPainter, type LayerView, type MarkupPainter, type PressBrush, type PressContext, type SelectContext, type SelectionCommand, type SelectionKey } from "./markup-layer";
 export {
   hasDocument,
+  isBoxTool,
   isDrawTool,
+  isLineTool,
   isMarkupTool,
   isMeasureTool,
   setTool,
   viewerStore,
   type ViewerState,
   type ViewerStatus,
+  type BoxTool,
   type DrawTool,
+  type LineTool,
   type MarkupTool,
   type MeasureTool,
   type ViewerTool,

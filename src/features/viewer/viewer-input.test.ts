@@ -60,6 +60,12 @@ describe("resolveViewerKey (focus rule)", () => {
     expect(resolveViewerKey(key({ key: "N", code: "KeyN", shiftKey: true }), FOCUSED)).toEqual({ type: "tool", tool: "polyline" });
     expect(resolveViewerKey(key({ key: "P", code: "KeyP", shiftKey: true }), FOCUSED)).toEqual({ type: "tool", tool: "polygon" });
     expect(resolveViewerKey(key({ key: "n", code: "KeyN" }), FOCUSED)).toBeNull();
+    // Story 5.5: R Rectangle, E Ellipse, C Cloud (Ctrl+C stays copy).
+    expect(resolveViewerKey(key({ key: "r", code: "KeyR" }), FOCUSED)).toEqual({ type: "tool", tool: "rectangle" });
+    expect(resolveViewerKey(key({ key: "e", code: "KeyE" }), FOCUSED)).toEqual({ type: "tool", tool: "ellipse" });
+    expect(resolveViewerKey(key({ key: "c", code: "KeyC" }), FOCUSED)).toEqual({ type: "tool", tool: "cloud" });
+    expect(resolveViewerKey(key({ key: "c", code: "KeyC", ctrlKey: true }), FOCUSED)).toBeNull();
+    expect(resolveViewerKey(key({ key: "r", code: "KeyR" }), OVER)).toBeNull();
     expect(resolveViewerKey(key({ key: "l", code: "KeyL" }), OVER)).toBeNull();
     for (const k of [{ key: "+" }, { key: "-" }, { key: "z", code: "KeyZ" }, { key: "v", code: "KeyV" }, { key: " ", code: "Space" }]) {
       expect(resolveViewerKey(key(k), OVER)).toBeNull();
@@ -194,6 +200,33 @@ describe("ViewerInput", () => {
     expect(canvas.style.cursor).toBe("crosshair");
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
     expect(t.clearSnapFrom).toHaveBeenCalledTimes(1);
+    setTool("select");
+  });
+
+  it("Story 5.5: a box tool's press places the first corner and its release elsewhere the opposite one; a click places one", () => {
+    let tracking = false;
+    const snapClick = vi.fn(() => void (tracking = !tracking));
+    Object.assign(t, { snapClick, toolTracking: () => tracking });
+    setTool("rectangle");
+    // Press, drag, release: two corners.
+    canvas.dispatchEvent(pointer("pointerdown", { x: 10, y: 10 }));
+    canvas.dispatchEvent(pointer("pointermove", { x: 60, y: 40, shiftKey: true }));
+    canvas.dispatchEvent(pointer("pointerup", { x: 60, y: 40, shiftKey: true }));
+    expect(snapClick).toHaveBeenCalledTimes(2);
+    expect(t.pointerAt).toHaveBeenLastCalledWith({ x: 60, y: 40 }, { alt: false, shift: true });
+    expect(tracking).toBe(false);
+    // A click (no drag) places the first corner only; the next click the opposite one, with no drag after it.
+    canvas.dispatchEvent(pointer("pointerdown", { x: 10, y: 10 }));
+    canvas.dispatchEvent(pointer("pointerup", { x: 11, y: 10 }));
+    expect(snapClick).toHaveBeenCalledTimes(3);
+    canvas.dispatchEvent(pointer("pointerdown", { x: 60, y: 40 }));
+    canvas.dispatchEvent(pointer("pointerup", { x: 90, y: 90 }));
+    expect(snapClick).toHaveBeenCalledTimes(4);
+    // Cloud places a point a click, never on release.
+    setTool("cloud");
+    canvas.dispatchEvent(pointer("pointerdown", { x: 10, y: 10 }));
+    canvas.dispatchEvent(pointer("pointerup", { x: 60, y: 40 }));
+    expect(snapClick).toHaveBeenCalledTimes(5);
     setTool("select");
   });
 

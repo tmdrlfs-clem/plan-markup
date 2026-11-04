@@ -1722,6 +1722,11 @@ export class ViewerEngine {
     return true;
   }
 
+  /** Story 5.5: a drawing is in progress. */
+  toolTracking(): boolean {
+    return markupPainter()?.tracking ?? false;
+  }
+
   /** Story 4.6: Backspace removes the drawing's last vertex; Shift's steps then go from the one before. */
   removeToolPoint(): boolean {
     return markupPainter()?.removeLastPoint() ?? false;

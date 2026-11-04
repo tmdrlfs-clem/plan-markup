@@ -24,6 +24,10 @@ export const markupStyleSchema = z.object({
   width: z.number().finite().positive().max(144),
   /** Caption size in points (page units). */
   fontSize: z.number().finite().positive().max(144),
+  /** Story 5.5: the fill of a closed shape; absent: none. */
+  fill: color.optional(),
+  /** Story 5.5: the whole markup's opacity, 0–1; absent: 1. */
+  opacity: z.number().finite().min(0).max(1).optional(),
 });
 export type MarkupStyle = z.infer<typeof markupStyleSchema>;
 
@@ -98,6 +102,16 @@ export const arrowMarkupSchema = z.object({ ...base, type: z.literal("arrow"), p
 export const polylineMarkupSchema = z.object({ ...base, type: z.literal("polyline"), points: z.array(pointSchema).min(2).max(MAX_POLYLINE_POINTS) });
 export const polygonMarkupSchema = z.object({ ...base, type: z.literal("polygon"), points: z.array(pointSchema).min(3).max(MAX_POLYLINE_POINTS) });
 
+/**
+ * Story 5.5: a rectangle and an ellipse (the one inscribed in its box), both stored as the box's
+ * four corners in order (a rotated or skewed box stays exact under Story 5.2's point
+ * transforms), and a revision cloud (closed, its corners; the arcs are drawn, not stored).
+ */
+const fourPoints = z.tuple([pointSchema, pointSchema, pointSchema, pointSchema]);
+export const rectangleMarkupSchema = z.object({ ...base, type: z.literal("rectangle"), points: fourPoints });
+export const ellipseMarkupSchema = z.object({ ...base, type: z.literal("ellipse"), points: fourPoints });
+export const cloudMarkupSchema = z.object({ ...base, type: z.literal("cloud"), points: z.array(pointSchema).min(3).max(MAX_POLYLINE_POINTS) });
+
 /** Every markup type (more join with Epic 5). */
 export const markupSchema = z.discriminatedUnion("type", [
   lengthMarkupSchema,
@@ -111,6 +125,9 @@ export const markupSchema = z.discriminatedUnion("type", [
   arrowMarkupSchema,
   polylineMarkupSchema,
   polygonMarkupSchema,
+  rectangleMarkupSchema,
+  ellipseMarkupSchema,
+  cloudMarkupSchema,
 ]);
 
 export type Markup = z.infer<typeof markupSchema>;
@@ -124,8 +141,15 @@ export type DiameterMarkup = z.infer<typeof diameterMarkupSchema>;
 /** The measurements with a caption (Stories 4.5, 4.6, 4.8, 4.9). */
 export type MeasureMarkup = LengthMarkup | PolylengthMarkup | AreaMarkup | CountMarkup | AngleMarkup | RadiusMarkup | DiameterMarkup;
 export type MarkupType = Markup["type"];
-/** Story 5.4: the straight-line markups. */
-export type ShapeMarkup = z.infer<typeof lineMarkupSchema> | z.infer<typeof arrowMarkupSchema> | z.infer<typeof polylineMarkupSchema> | z.infer<typeof polygonMarkupSchema>;
+/** Story 5.4: the straight-line markups; Story 5.5: the rectangle, ellipse and cloud. */
+export type ShapeMarkup =
+  | z.infer<typeof lineMarkupSchema>
+  | z.infer<typeof arrowMarkupSchema>
+  | z.infer<typeof polylineMarkupSchema>
+  | z.infer<typeof polygonMarkupSchema>
+  | z.infer<typeof rectangleMarkupSchema>
+  | z.infer<typeof ellipseMarkupSchema>
+  | z.infer<typeof cloudMarkupSchema>;
 const MEASURE_TYPES: ReadonlySet<MarkupType> = new Set<MarkupType>(["length", "polylength", "area", "count", "angle", "radius", "diameter"]);
 /** Whether `m` is a measurement (it has a caption and a value). */
 export function isMeasureMarkup(m: Markup): m is MeasureMarkup {
@@ -134,5 +158,5 @@ export function isMeasureMarkup(m: Markup): m is MeasureMarkup {
 
 /** Revu's default measurement style: red, 1 pt, 10 pt captions. */
 export const DEFAULT_MEASURE_STYLE: MarkupStyle = { color: "#ff0000", width: 1, fontSize: 10 };
-/** Story 5.4 (D5): the straight-line markups' style until Properties changes it. */
+/** Story 5.4 (D5): the markups' style until Properties changes it (5.5 D5: no fill, opacity 1). */
 export const DEFAULT_MARKUP_STYLE: MarkupStyle = { color: "#ff0000", width: 1, fontSize: 10 };

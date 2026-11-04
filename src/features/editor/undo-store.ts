@@ -93,6 +93,10 @@ export const DRAWING_POINT_LABEL: Readonly<Record<DrawTool, string>> = {
   arrow: "Arrow point",
   polyline: "Polyline point",
   polygon: "Polygon point",
+  // Story 5.5.
+  rectangle: "Rectangle corner",
+  ellipse: "Ellipse corner",
+  cloud: "Cloud point",
 };
 
 /**

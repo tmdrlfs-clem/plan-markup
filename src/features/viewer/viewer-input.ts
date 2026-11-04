@@ -18,7 +18,7 @@
 
 import type { Point, Rect } from "@/core/render/view";
 
-import { hasDocument, isDrawTool, setTempPan, setTool, viewerStore, type ViewerTool } from "./viewer-store";
+import { hasDocument, isBoxTool, isDrawTool, setTempPan, setTool, viewerStore, type ViewerTool } from "./viewer-store";
 import { LOCKED_CURSOR, LOCKED_TOOLTIP, type PressBrush, type SelectionCommand } from "./markup-layer";
 
 /** CSS px per wheel "line" (deltaMode 1, e.g. Firefox: 3 lines per notch). */
@@ -103,6 +103,10 @@ export function resolveViewerKey(
   if (isLetter(event, "a") && !event.shiftKey) return { type: "tool", tool: "arrow" };
   if (isLetter(event, "n") && event.shiftKey) return { type: "tool", tool: "polyline" };
   if (isLetter(event, "p") && event.shiftKey) return { type: "tool", tool: "polygon" };
+  // Story 5.5: R Rectangle, E Ellipse, C Cloud.
+  if (isLetter(event, "r") && !event.shiftKey) return { type: "tool", tool: "rectangle" };
+  if (isLetter(event, "e") && !event.shiftKey) return { type: "tool", tool: "ellipse" };
+  if (isLetter(event, "c") && !event.shiftKey) return { type: "tool", tool: "cloud" };
   return null;
 }
 
@@ -144,6 +148,8 @@ export interface ViewerInputTarget {
   escapeTool?(leave: boolean): void;
   /** Story 4.6: Enter or a double-click finishes a polylength; true when it did. */
   finishTool?(): boolean;
+  /** Story 5.5: whether a drawing is in progress (a box tool's press placed its first corner). */
+  toolTracking?(): boolean;
   /** Story 4.6: Backspace removes the drawing's last vertex; true when there was one. */
   removeToolPoint?(): boolean;
   /** Story 4.3: Esc while picking calibration points. */
@@ -186,7 +192,8 @@ type Drag =
   | { kind: "zoom"; pointerId: number; start: Point; zoomOut: boolean }
   | { kind: "caption"; pointerId: number }
   | { kind: "press"; pointerId: number; brush: PressBrush }
-  | { kind: "select"; pointerId: number; shift: boolean; alt: boolean; ctrl: boolean };
+  | { kind: "select"; pointerId: number; shift: boolean; alt: boolean; ctrl: boolean }
+  | { kind: "place"; pointerId: number; start: Point };
 
 /** Normalised rectangle between two points. */
 function rectOf(a: Point, b: Point): Rect {
@@ -337,12 +344,15 @@ export class ViewerInput {
       // Story 5.1: click, Shift + click, marquee, Alt + drag lasso, or a drag that moves markups (5.2: handles, Ctrl copies).
       e.preventDefault();
       this.drag = { kind: "select", pointerId: e.pointerId, shift: e.shiftKey, alt: e.altKey, ctrl: e.ctrlKey || e.metaKey };
-    } else {
+    } else if (e.button === 0 && pointTool(tool)) {
       // Story 4.1: a snapping tool's click places its point (the snapped one).
-      if (e.button === 0 && pointTool(tool)) {
-        this.target.pointerAt?.(this.point(e), { alt: e.altKey, shift: e.shiftKey });
-        this.target.snapClick?.();
-      }
+      const wasDrawing = this.target.toolTracking?.() ?? true;
+      this.target.pointerAt?.(this.point(e), { alt: e.altKey, shift: e.shiftKey });
+      this.target.snapClick?.();
+      // Story 5.5: a box tool's press that placed the first corner: a release elsewhere places the opposite one.
+      if (!(isBoxTool(tool) && !wasDrawing && this.target.toolTracking?.())) return;
+      this.drag = { kind: "place", pointerId: e.pointerId, start: this.point(e) };
+    } else {
       return;
     }
     try {
@@ -390,6 +400,12 @@ export class ViewerInput {
   private onPointerUp(e: PointerEvent): void {
     if (!this.drag || this.drag.pointerId !== e.pointerId) return;
     this.pointer = this.point(e);
+    const drag = this.drag;
+    // Story 5.5: a box dragged out places its opposite corner where it is released (a click places none).
+    if (drag.kind === "place" && Math.hypot(this.pointer.x - drag.start.x, this.pointer.y - drag.start.y) >= CLICK_SLOP && this.target.toolTracking?.()) {
+      this.target.pointerAt?.(this.pointer, { alt: e.altKey, shift: e.shiftKey });
+      this.target.snapClick?.();
+    }
     this.endDrag(true);
   }
 

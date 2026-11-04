@@ -21,6 +21,13 @@
 // with no live value (D6) and no caption; an arrow has a filled head at its
 // end point (D1).
 //
+// Story 5.5: Rectangle and Ellipse take two opposite corners (clicked, or
+// pressed and dragged: the viewer places the second on release) and store the
+// box's four corners; a box of no width or height adds nothing. Cloud draws as
+// Polygon and paints arcs of a fixed size in page units along its edges. A
+// style's fill fills a closed shape under its stroke; its opacity applies to
+// the whole markup.
+//
 // With Select, Shift + drag on a caption moves the caption only ("Move
 // caption", a markups.update op); the offset is stored in user space.
 //
@@ -40,7 +47,8 @@ import { angleCaption, bisector } from "@/core/measure/angle";
 import { areaCaption, areaCaptionText, formatArea, polygonCentroid, selfIntersects } from "@/core/measure/area";
 import { circleCaption, circleThrough } from "@/core/measure/circle";
 import { SCALE_NOT_SET, captionPlacement, lengthCaption, polylineCaptionAnchor } from "@/core/measure/length";
-import { translateMarkup } from "@/core/markup/geometry";
+import { outlinePoints, translateMarkup } from "@/core/markup/geometry";
+import { CLOUD_CHORD_PT, boxCorners, cloudArcs, ellipseFrame } from "@/core/markup/shapes";
 import {
   DEFAULT_MARKUP_STYLE,
   DEFAULT_MEASURE_STYLE,
@@ -52,6 +60,7 @@ import {
   type ShapeMarkup,
 } from "@/core/schema/markup";
 import {
+  isBoxTool,
   isDrawTool,
   isMarkupTool,
   notifyMarkups,
@@ -83,6 +92,9 @@ export const ADD_LINE = "Add line";
 export const ADD_ARROW = "Add arrow";
 export const ADD_POLYLINE = "Add polyline";
 export const ADD_POLYGON = "Add polygon";
+export const ADD_RECTANGLE = "Add rectangle";
+export const ADD_ELLIPSE = "Add ellipse";
+export const ADD_CLOUD = "Add cloud";
 const ADD_LABEL: Record<DrawTool, string> = {
   length: ADD_LENGTH,
   polylength: ADD_POLYLENGTH,
@@ -96,6 +108,9 @@ const ADD_LABEL: Record<DrawTool, string> = {
   arrow: ADD_ARROW,
   polyline: ADD_POLYLINE,
   polygon: ADD_POLYGON,
+  rectangle: ADD_RECTANGLE,
+  ellipse: ADD_ELLIPSE,
+  cloud: ADD_CLOUD,
 };
 /** Story 4.8: what the live value says while an area crosses itself (it cannot be added). */
 export const CROSSES_ITSELF = "Crosses itself";
@@ -113,11 +128,14 @@ const MIN_POINTS: Record<DrawTool, number> = {
   arrow: 2,
   polyline: 2,
   polygon: 3,
+  rectangle: 2,
+  ellipse: 2,
+  cloud: 3,
 };
 /** Tools with a fixed number of points: the click that places the last one adds the measurement. */
-const FIXED_POINTS: Partial<Record<DrawTool, number>> = { length: 2, angle: 3, radius: 3, diameter: 3, line: 2, arrow: 2 };
+const FIXED_POINTS: Partial<Record<DrawTool, number>> = { length: 2, angle: 3, radius: 3, diameter: 3, line: 2, arrow: 2, rectangle: 2, ellipse: 2 };
 /** Tools whose outline is closed: a click on the first vertex closes it. */
-const CLOSED: ReadonlySet<DrawTool> = new Set<DrawTool>(["area", "polygon"]);
+const CLOSED: ReadonlySet<DrawTool> = new Set<DrawTool>(["area", "polygon", "cloud"]);
 /** Story 5.4 (D1): an arrow head's length in line widths, and its least length, in points (page units). */
 const ARROW_HEAD_WIDTHS = 6;
 const ARROW_HEAD_MIN_PT = 6;
@@ -126,7 +144,17 @@ const ARROW_HEAD_MIN_PX = 8;
 /** The head's half-angle. */
 const ARROW_HEAD_ANGLE = Math.PI / 7;
 /** Story 5.4: what a shape adds to layer 2's list (it has no caption). */
-const SHAPE_LABEL: Record<ShapeMarkup["type"], string> = { line: "Line", arrow: "Arrow", polyline: "Polyline", polygon: "Polygon" };
+const SHAPE_LABEL: Record<ShapeMarkup["type"], string> = {
+  line: "Line",
+  arrow: "Arrow",
+  polyline: "Polyline",
+  polygon: "Polygon",
+  rectangle: "Rectangle",
+  ellipse: "Ellipse",
+  cloud: "Cloud",
+};
+/** Story 5.5: zoomed out, cloud arcs smaller than this on screen (CSS px) are drawn as their chords. */
+const CLOUD_MIN_CHORD_PX = 3;
 /** Story 4.9: the arc at an angle's vertex, in CSS px (at most 40 % of the shorter leg). */
 const ANGLE_ARC_PX = 14;
 /** The live label beside the pointer, in screen px (not page units: it is UI, not the markup). */
@@ -211,7 +239,9 @@ function strokeRings(c: CanvasRenderingContext2D, rings: readonly (readonly Poin
 
 /**
  * Story 5.4: a line, arrow, polyline or polygon (device points): its stroke; a polygon closed; an
- * arrow's line stops at its head, a filled triangle at the end point (D1).
+ * arrow's line stops at its head, a filled triangle at the end point (D1). Story 5.5: a rectangle
+ * (its corners), an ellipse (in its box) or a cloud (arcs along its edges, D1); a closed shape is
+ * filled under its stroke when the style has a fill; the style's opacity applies to it all.
  */
 function strokeShape(c: CanvasRenderingContext2D, type: ShapeMarkup["type"], pts: readonly Point[], style: MarkupStyle, view: LayerView): void {
   if (pts.length < 2) return;
@@ -232,11 +262,31 @@ function strokeShape(c: CanvasRenderingContext2D, type: ShapeMarkup["type"], pts
       end = base;
     }
   }
+  const opacity = style.opacity ?? 1;
+  c.save();
+  if (opacity < 1) c.globalAlpha = opacity;
   c.beginPath();
-  c.moveTo(pts[0].x, pts[0].y);
-  for (let i = 1; i < n - 1; i++) c.lineTo(pts[i].x, pts[i].y);
-  c.lineTo(end.x, end.y);
-  if (type === "polygon") c.closePath();
+  if (type === "ellipse") {
+    // The unit circle mapped into the box (the path keeps the mapping; the stroke does not).
+    const f = ellipseFrame(pts);
+    c.save();
+    c.transform(f.u.x, f.u.y, f.v.x, f.v.y, f.centre.x, f.centre.y);
+    c.moveTo(1, 0);
+    c.arc(0, 0, 1, 0, 2 * Math.PI);
+    c.restore();
+  } else if (type === "cloud" && CLOUD_CHORD_PT * view.devicePerPt >= CLOUD_MIN_CHORD_PX * view.dpr) {
+    for (const a of cloudArcs(pts, CLOUD_CHORD_PT * view.devicePerPt)) c.arc(a.centre.x, a.centre.y, a.radius, a.start, a.end, a.anticlockwise);
+    c.closePath();
+  } else {
+    c.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < n - 1; i++) c.lineTo(pts[i].x, pts[i].y);
+    c.lineTo(end.x, end.y);
+    if (type === "polygon" || type === "rectangle" || type === "cloud") c.closePath();
+  }
+  if (style.fill && type !== "line" && type !== "arrow" && type !== "polyline") {
+    c.fillStyle = style.fill;
+    c.fill();
+  }
   stroke(c, style, view);
   if (head) {
     c.beginPath();
@@ -247,6 +297,7 @@ function strokeShape(c: CanvasRenderingContext2D, type: ShapeMarkup["type"], pts
     c.fillStyle = style.color;
     c.fill();
   }
+  c.restore();
 }
 
 /** Story 4.8: a count's markers, circles in page units. */
@@ -519,7 +570,8 @@ export const measurePainter: MarkupPainter = {
         captions.push(SHAPE_LABEL[any.type]);
         const pts = devicePoints(any.points, view);
         if (!onCanvas(pts, any.style, view)) continue;
-        if (selected.has(any.id)) strokeSelection(c, pts, view);
+        // Story 5.5: an ellipse's outline lies inside its box's corners.
+        if (selected.has(any.id)) strokeSelection(c, any.type === "ellipse" ? devicePoints(outlinePoints(any), view) : pts, view);
         strokeShape(c, any.type, pts, any.style, view);
         continue;
       }
@@ -564,7 +616,8 @@ export const measurePainter: MarkupPainter = {
     if (d?.tool === "fill") return paintFillActive(c, view, pointer);
     if (!d || d.pageId !== pageIdOf(view.documentId, view.pageIndex) || !pointer || d.points.length === 0) return null;
     const points = [...d.points, pointer];
-    const pts = devicePoints(points, view);
+    // Story 5.5: a box from its first corner to the pointer.
+    const pts = devicePoints(isBoxTool(d.tool) ? boxCorners(points[0], pointer) : points, view);
     const live = liveValue(d.tool, points, calibrationOf(view.documentId, view.pageIndex), view.userUnit);
     c.save();
     if (d.tool === "area") strokeRings(c, [pts], DEFAULT_MEASURE_STYLE, view);
@@ -610,6 +663,8 @@ export const measurePainter: MarkupPainter = {
     if (fixed !== undefined && points.length >= fixed) {
       // Story 4.9: three points in a line make no circle; the click adds nothing.
       if ((tool === "radius" || tool === "diameter") && !circleThrough(points[0], points[1], points[2])) return "continue";
+      // Story 5.5: nor do two corners of a box with no width or height.
+      if (isBoxTool(tool) && (Math.abs(points[1].x - points[0].x) <= at.tolerance || Math.abs(points[1].y - points[0].y) <= at.tolerance)) return "continue";
       setDrawing({ ...d, points: points.slice(0, fixed) });
       return commit(at.documentId);
     }
@@ -768,6 +823,9 @@ function markupOf(d: Drawing): Markup {
     case "line":
     case "arrow":
       return { ...base, type: d.tool, points: [a, b] };
+    case "rectangle":
+    case "ellipse":
+      return { ...base, type: d.tool, points: boxCorners(a, b) };
     case "angle":
     case "radius":
     case "diameter":

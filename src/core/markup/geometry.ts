@@ -2,11 +2,14 @@
 //
 // Everything is in the markup's page user space. A markup is hit by its
 // stroke within a tolerance, an area also by its inside (less its holes), a
-// count by any marker; a radius or diameter by its circle and its line. A
+// count by any marker; a radius or diameter by its circle and its line; a
+// rectangle, ellipse or cloud (Story 5.5) by its outline or inside. A
 // marquee or lasso selects a markup when its whole outline is inside.
 
 import { circleThrough } from "@/core/measure/circle";
 import type { Markup } from "@/core/schema/markup";
+
+import { CLOUD_CHORD_PT, ellipseBounds, ellipseFrame, ellipseLocal, ellipseOutline } from "./shapes";
 
 export type Point = { x: number; y: number };
 export type Rect = { x: number; y: number; width: number; height: number };
@@ -15,6 +18,8 @@ export type Rect = { x: number; y: number; width: number; height: number };
 export const COUNT_MARKER_PT = 4;
 /** Points on a circle's outline for containment. */
 const CIRCLE_SAMPLES = 32;
+/** Story 5.5: points on an ellipse's outline, for containment and its stroke's hit. */
+const ELLIPSE_SAMPLES = 64;
 
 function circleOf(m: Markup): { centre: Point; radius: number } | null {
   return m.type === "radius" || m.type === "diameter" ? circleThrough(m.points[0], m.points[1], m.points[2]) : null;
@@ -22,6 +27,7 @@ function circleOf(m: Markup): { centre: Point; radius: number } | null {
 
 /** The points that outline a markup: its vertices, or a circle's outline (and its points). */
 export function outlinePoints(m: Markup): readonly Point[] {
+  if (m.type === "ellipse") return ellipseOutline(ellipseFrame(m.points), ELLIPSE_SAMPLES);
   const circle = circleOf(m);
   if (!circle) return m.points;
   const out: Point[] = [];
@@ -34,6 +40,7 @@ export function outlinePoints(m: Markup): readonly Point[] {
 
 /** The user-space box of a markup: its points, or a radius's / diameter's whole circle. */
 export function markupBounds(m: Markup): Rect {
+  if (m.type === "ellipse") return ellipseBounds(ellipseFrame(m.points));
   const circle = circleOf(m);
   if (circle) {
     const { centre, radius } = circle;
@@ -86,8 +93,17 @@ export function hitMarkup(m: Markup, p: Point, tol: number, userUnit = 1): boole
       return m.points.some((q) => Math.hypot(p.x - q.x, p.y - q.y) <= r);
     }
     // Story 5.4 (D2): an unfilled polygon is hit inside as well, like an area.
+    // Story 5.5 (D2): so are a rectangle and a cloud (its arcs, out of its corners' ring, hit too).
     case "polygon":
+    case "rectangle":
       return nearPolyline(p, m.points, tol, true) || insidePolygon(p, m.points);
+    case "cloud":
+      return nearPolyline(p, m.points, tol + CLOUD_CHORD_PT / 2 / (userUnit > 0 ? userUnit : 1), true) || insidePolygon(p, m.points);
+    case "ellipse": {
+      const local = ellipseLocal(ellipseFrame(m.points), p);
+      if (local && Math.hypot(local.x, local.y) <= 1) return true;
+      return nearPolyline(p, outlinePoints(m), tol, true);
+    }
     case "area": {
       const holes = m.holes ?? [];
       if (nearPolyline(p, m.points, tol, true) || holes.some((h) => nearPolyline(p, h, tol, true))) return true;

@@ -33,7 +33,7 @@ import { useStore } from "zustand";
 import { Menu, MenuContent, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "@/components/ui/menu";
 import { Toolbar, ToolbarButton, ToolbarSeparator, ToolbarToggleGroup, ToolbarToggleItem } from "@/components/ui/toolbar";
 import { dismissHint, showHint } from "@/components/ui/hint-store";
-import { hasDocument, isMarkupTool, isMeasureTool, setTool, viewerStore, type MarkupTool, type MeasureTool, type ViewerTool } from "@/features/viewer";
+import { hasDocument, isLineTool, isMeasureTool, setTool, viewerStore, type LineTool, type MeasureTool, type ViewerTool } from "@/features/viewer";
 
 import { NO_DRAWING } from "./workspace-toolbar";
 
@@ -49,7 +49,7 @@ interface Tool {
  * Tools that work today: Select and Pan (Story 3.2), and Length (snapping from
  * Story 4.1, measuring from Story 4.5). The others arrive with the editor.
  */
-const LIVE_TOOLS: ReadonlySet<string> = new Set<ViewerTool>(["select", "pan", "length", "polylength", "area", "count", "angle", "radius", "diameter", "line", "arrow", "polyline", "polygon"]);
+const LIVE_TOOLS: ReadonlySet<string> = new Set<ViewerTool>(["select", "pan", "length", "polylength", "area", "count", "angle", "radius", "diameter", "line", "arrow", "polyline", "polygon", "rectangle", "ellipse", "cloud"]);
 
 export const SNAP_PREVIEW_HINT_ID = "snap-preview";
 /** Review S3: a page past the segment cap. */
@@ -77,6 +77,11 @@ export const LINE_HINT = `Line: click the start and the end point. ${SNAPS} Esc 
 export const ARROW_HINT = `Arrow: click the start, then the point the arrow points to. ${SNAPS} Esc cancels; Esc again returns to Select.`;
 export const POLYLINE_HINT = `Polyline: click each vertex; double-click or Enter finishes. Backspace removes the last vertex. ${SNAPS} Esc cancels; Esc again returns to Select.`;
 export const POLYGON_HINT = `Polygon: click each corner; double-click, Enter or a click on the first corner closes it. Backspace removes the last corner. ${SNAPS} Esc cancels; Esc again returns to Select.`;
+/** Story 5.5: the HintBar while Rectangle, Ellipse or Cloud is armed. */
+const BOX_SNAPS = "Points snap to the drawing (Alt: off, Shift on the diagonal: a square).";
+export const RECTANGLE_HINT = `Rectangle: drag from one corner to the opposite one, or click both. ${BOX_SNAPS} Esc cancels; Esc again returns to Select.`;
+export const ELLIPSE_HINT = `Ellipse: drag across its box from corner to corner, or click both. ${BOX_SNAPS.replace("a square", "a circle")} Esc cancels; Esc again returns to Select.`;
+export const CLOUD_HINT = `Cloud: click each corner; double-click, Enter or a click on the first corner closes it. Backspace removes the last corner. ${SNAPS} Esc cancels; Esc again returns to Select.`;
 const TOOL_HINTS: Partial<Record<ViewerTool, string>> = {
   length: SNAP_PREVIEW_HINT,
   polylength: POLYLENGTH_HINT,
@@ -90,6 +95,9 @@ const TOOL_HINTS: Partial<Record<ViewerTool, string>> = {
   arrow: ARROW_HINT,
   polyline: POLYLINE_HINT,
   polygon: POLYGON_HINT,
+  rectangle: RECTANGLE_HINT,
+  ellipse: ELLIPSE_HINT,
+  cloud: CLOUD_HINT,
 };
 export const EDITOR_LATER = "Arrives with the markup editor";
 
@@ -146,7 +154,7 @@ export const MEASURE_TOOLS: readonly (Tool & { id: MeasureTool })[] = [
 export const MORE_MEASURE_TOOLS = "More measure tools";
 
 /** Story 5.4 (D4): the straight-line markup tools, in one slot as the measuring tools are. */
-export const LINE_TOOLS: readonly (Tool & { id: MarkupTool })[] = [
+export const LINE_TOOLS: readonly (Tool & { id: LineTool })[] = [
   { id: "line", label: "Line", icon: Slash, shortcut: "L" },
   { id: "arrow", label: "Arrow", icon: ArrowUpRight, shortcut: "A" },
   { id: "polyline", label: "Polyline", icon: Spline, shortcut: "Shift+N" },
@@ -237,7 +245,7 @@ export function ToolRail() {
           {group.label === "Measure" ? (
             <FlyoutGroup label="Measure" more={MORE_MEASURE_TOOLS} tools={MEASURE_TOOLS} member={isMeasureTool} open={open} active={active} />
           ) : group.label === "Lines" ? (
-            <FlyoutGroup label="Lines" more={MORE_LINE_TOOLS} tools={LINE_TOOLS} member={isMarkupTool} open={open} active={active} />
+            <FlyoutGroup label="Lines" more={MORE_LINE_TOOLS} tools={LINE_TOOLS} member={isLineTool} open={open} active={active} />
           ) : (
             <ToolbarToggleGroup
               type="single"
