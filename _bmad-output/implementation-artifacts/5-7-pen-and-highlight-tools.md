@@ -1,6 +1,6 @@
 # Story 5.7: Pen and highlight tools
 
-Status: review
+Status: done
 
 ## Story
 
@@ -22,7 +22,7 @@ so that I can mark quickly by hand.
 - [x] **Task 1: Core** — schemas; core/markup/ink.ts (straight hold, simplification, smoothing); hits and R-tree padding by half the width; unit tests.
 - [x] **Task 2: Viewer** — tools `pen`, `highlight` (`InkTool`, markup tools, not snapping); keys `P`, `H`; an `ink` drag in the input (Shift held on screen); engine `inkTool`; the highlights canvas (`mix-blend-multiply`, the host `isolate`) painted by the painter's `paintUnder`.
 - [x] **Task 3: Editor** — the stroke in progress (`Drawing.anchor` for Shift), committing, painting (smoothed, round; highlights under), moves repaint layer 3 only; no vertex handles; rail live with hints; unit tests.
-- [ ] **Task 4: Tests** — `e2e/ink-tools.spec.ts` (AC 6), in CI.
+- [x] **Task 4: Tests** — `e2e/ink-tools.spec.ts` (AC 6), in CI.
 
 ## Dev Notes
 
@@ -50,7 +50,7 @@ Claude Opus 5.5
 - Task 1: `pen` and `highlight` schemas, `InkMarkup`, `isInkMarkup`, `DEFAULT_HIGHLIGHT_STYLE`; core/markup/ink.ts: `straightFrom`, `simplifyStroke` (iterative Douglas–Peucker), `strokeHasLength`, `smoothPath`; a stroke is hit within half its width, the R-tree pads it so. Unit tests.
 - Task 2: `InkTool` / `isInkTool` (markup tools, not snapping); keys `P`, `H`; input drag kind `ink` (press focuses the canvas, Shift held from where it began, Esc and lost capture cancel); `ViewerEngine.inkTool` and the painter's optional `ink` and `paintUnder`; `ViewerCanvases.highlights` (optional), a `highlights-canvas` in the viewport.
 - Task 3: measure-tool `inkStroke` (start ends any typing; moves add points a CSS px apart or hold the straight part; end simplifies and adds, a click adds nothing; cancel drops), `strokeInk`, highlights in `paintUnder` (layer 2 lists them and draws their selection), the stroke in layer 3; the editor's subscription passes `activeOnly` when only the drawing changed; `vertexIndices` none for strokes; rail Pen and Highlight live with hints.
-- Unit tests: 1848 pass. Local e2e not run (Docker off); CI runs `e2e/ink-tools.spec.ts`.
+- Unit tests: 1848 pass. Local e2e not run (Docker off); CI run 41887604119 green with `e2e/ink-tools.spec.ts`. Founder kept D1–D5.
 
 ### File List
 
