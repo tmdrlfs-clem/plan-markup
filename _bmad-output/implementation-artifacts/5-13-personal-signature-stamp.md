@@ -1,6 +1,6 @@
 # Story 5.13: Personal signature stamp
 
-Status: review
+Status: done
 
 ## Story
 
@@ -50,7 +50,7 @@ Claude Opus 5.5
 - Task 1: table `public.signatures` (owner pk, path under the owner's folder, size 1..2000), RLS with `app.fn_is_active_user()`; private bucket (PNG, 512 KB); storage policies by the first folder. A direct delete of a storage object is blocked by `storage.protect_delete`, so the pgTAP test proves another user's update fails instead.
 - Task 2: actions check the session user, validate with Zod and `checkSignaturePng`, upload then upsert (a failed upsert removes the new image), log failures without details.
 - Task 3: dialog reads the saved signature each time it opens; the workspace shell test mocks the signature actions.
-- Tests: unit 1874 pass; db:test 90 pass; local e2e `e2e/signature.spec.ts` passes (dev server).
+- Tests: unit 1908 pass; db:test 90 pass; local e2e passes (dev server); CI runs 41919809870 (e2e) and 41919810155 (db) green.
 
 ### File List
 
