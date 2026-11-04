@@ -59,13 +59,14 @@ function hasFiles(event: DragEvent): boolean {
 }
 
 /**
- * React host of the Canvas2D viewer (UX-DR12): tile canvas, static markups canvas and
- * active canvas sized to the viewport x DPR. The engine draws; React only mounts the
+ * React host of the Canvas2D viewer (UX-DR12): tile canvas, highlights canvas (Story 5.7),
+ * static markups canvas and active canvas sized to the viewport x DPR. The engine draws; React only mounts the
  * stack and renders the document-level states (loading bar, inline errors, tile retry).
  */
 export function CanvasViewport({ onOpen, onOpenFiles, createWorker = defaultWorker, overlay }: CanvasViewportProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const tilesRef = useRef<HTMLCanvasElement>(null);
+  const highlightsRef = useRef<HTMLCanvasElement>(null);
   const markupsRef = useRef<HTMLCanvasElement>(null);
   const activeRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<ViewerEngine | null>(null);
@@ -87,16 +88,17 @@ export function CanvasViewport({ onOpen, onOpenFiles, createWorker = defaultWork
   useEffect(() => {
     const host = hostRef.current;
     const tiles = tilesRef.current;
+    const highlights = highlightsRef.current;
     const markups = markupsRef.current;
     const active = activeRef.current;
-    if (!host || !tiles || !markups || !active) return;
+    if (!host || !tiles || !highlights || !markups || !active) return;
     let engine: ViewerEngine | null = null;
     let input: ViewerInput | null = null;
     // The backing store must be exactly the canvas's device pixels, or the compositor
     // rescales it and blurs every hairline (AC 4). Browsers that report
     // device-pixel-content-box give that size; elsewhere the canvases' CSS size is
     // snapped down to whole device px.
-    const canvases = [tiles, markups, active];
+    const canvases = [tiles, highlights, markups, active];
     let deviceBox: DeviceSize | null = null;
     let exactBoxes = false;
     const measure = () => {
@@ -139,7 +141,7 @@ export function CanvasViewport({ onOpen, onOpenFiles, createWorker = defaultWork
     watchDpr();
     // The active tab's engine: input on the canvas, canvases sized for it.
     const detachHost = viewerTabs.attachHost({
-      canvases: { tiles, markups, active },
+      canvases: { tiles, highlights, markups, active },
       // A factory, so a client can start a new worker after a fatal failure (Try again).
       createWorker,
       activate: (next) => {
@@ -187,9 +189,11 @@ export function CanvasViewport({ onOpen, onOpenFiles, createWorker = defaultWork
       data-testid="canvas-viewport"
       onDragOver={onDragOver}
       onDrop={onDrop}
-      className="relative h-full w-full touch-none overflow-hidden select-none bg-surface-0"
+      className="relative isolate h-full w-full touch-none overflow-hidden select-none bg-surface-0"
     >
       <canvas ref={tilesRef} data-testid="tiles-canvas" aria-hidden="true" className={canvasClass} />
+      {/* Story 5.7: highlights multiplied over the sheet, under the other markups. */}
+      <canvas ref={highlightsRef} data-testid="highlights-canvas" aria-hidden="true" className={`${canvasClass} mix-blend-multiply`} />
       <canvas ref={markupsRef} data-testid="markups-canvas" aria-hidden="true" className={canvasClass} />
       <canvas
         ref={activeRef}

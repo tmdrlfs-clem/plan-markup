@@ -47,7 +47,9 @@ export type ViewerTool =
   | "callout"
   | "typewriter"
   | "note"
-  | "cloudplus";
+  | "cloudplus"
+  | "pen"
+  | "highlight";
 
 /** Stories 4.6, 4.8, 4.9, 4.10: the measuring tools (they draw markups through the editor's painter). */
 export type MeasureTool = "length" | "polylength" | "area" | "count" | "angle" | "radius" | "diameter" | "fill";
@@ -76,10 +78,16 @@ export function isTextTool(tool: ViewerTool): tool is TextTool {
   return TEXT_TOOLS.has(tool);
 }
 
-/** Stories 5.4, 5.5, 5.6: the markup tools that draw by points (no value, no caption). */
-export type MarkupTool = LineTool | BoxTool | "cloud" | TextTool;
+/** Story 5.7: the freehand tools (pressed and dragged, never snapped). */
+export type InkTool = "pen" | "highlight";
+export function isInkTool(tool: ViewerTool): tool is InkTool {
+  return tool === "pen" || tool === "highlight";
+}
+
+/** Stories 5.4, 5.5, 5.6: the markup tools that draw by points (no value, no caption); 5.7: by a stroke. */
+export type MarkupTool = LineTool | BoxTool | "cloud" | TextTool | InkTool;
 export function isMarkupTool(tool: ViewerTool): tool is MarkupTool {
-  return LINE_TOOLS.has(tool) || isBoxTool(tool) || tool === "cloud" || TEXT_TOOLS.has(tool);
+  return LINE_TOOLS.has(tool) || isBoxTool(tool) || tool === "cloud" || TEXT_TOOLS.has(tool) || isInkTool(tool);
 }
 
 /** Story 5.4: the tools that draw markups by clicking points (through the editor's painter). */

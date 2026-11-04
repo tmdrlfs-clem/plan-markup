@@ -101,6 +101,9 @@ export function vertexIndices(m: Markup): number[] {
     case "text":
     case "typewriter":
     case "note":
+    // Story 5.7: a stroke is moved, resized and rotated whole.
+    case "pen":
+    case "highlight":
       return [];
     case "callout":
       return [4];

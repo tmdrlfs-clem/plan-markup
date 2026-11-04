@@ -25,7 +25,7 @@ export class MarkupIndex {
       markups.map((markup, order) => {
         const b = markupBounds(markup);
         // A count's markers reach past their points; a cloud's arcs past its corners' ring (Story 5.5 review R1).
-        // Story 5.6: a note's icon past its point, a Cloud+'s arcs.
+        // Story 5.6: a note's icon past its point, a Cloud+'s arcs. Story 5.7: a stroke's half width.
         const p =
           markup.type === "count"
             ? COUNT_MARKER_PT / unit
@@ -33,7 +33,9 @@ export class MarkupIndex {
               ? NOTE_PT / 2 / unit
               : markup.type === "cloud" || markup.type === "cloudplus"
                 ? CLOUD_CHORD_PT / 2 / unit
-                : 0;
+                : markup.type === "pen" || markup.type === "highlight"
+                  ? markup.style.width / 2 / unit
+                  : 0;
         return { minX: b.x - p, minY: b.y - p, maxX: b.x + b.width + p, maxY: b.y + b.height + p, markup, order };
       }),
     );

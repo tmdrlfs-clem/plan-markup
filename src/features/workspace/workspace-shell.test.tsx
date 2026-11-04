@@ -542,12 +542,13 @@ describe("view navigation (Story 3.2)", () => {
     expect(pan).toHaveAttribute("aria-checked", "true");
     await user.click(pan); // clicking the active tool keeps it
     expect(viewerStore.getState().tool).toBe("pan");
-    // Story 5.4: Line works; 5.5: Rectangle, Ellipse and Cloud too; 5.6: Text box; Pen arrives later.
+    // Story 5.4: Line works; 5.5: Rectangle, Ellipse and Cloud too; 5.6: Text box; 5.7: Pen and Highlight; Stamp arrives later.
     expect(within(rail).getByRole("radio", { name: "Line" })).not.toHaveAttribute("aria-disabled");
     for (const name of ["Rectangle", "Ellipse", "Cloud"]) expect(within(rail).getByRole("radio", { name })).not.toHaveAttribute("aria-disabled");
     expect(within(rail).getByRole("radio", { name: "Text box" })).not.toHaveAttribute("aria-disabled");
     expect(within(rail).getByRole("button", { name: "More text tools" })).not.toHaveAttribute("aria-disabled");
-    expect(within(rail).getByRole("radio", { name: "Pen" })).toHaveAttribute("aria-disabled", "true");
+    for (const name of ["Pen", "Highlight"]) expect(within(rail).getByRole("radio", { name })).not.toHaveAttribute("aria-disabled");
+    expect(within(rail).getByRole("radio", { name: "Stamp" })).toHaveAttribute("aria-disabled", "true");
   });
 
   it("the status bar shows, in order: file name, pager, page size, scale, snap toggles, cursor X/Y, zoom, save slot (Story 3.7)", () => {

@@ -4,7 +4,8 @@
 // stroke within a tolerance, an area also by its inside (less its holes), a
 // count by any marker; a radius or diameter by its circle and its line; a
 // rectangle, ellipse or cloud (Story 5.5) by its outline or inside; a text
-// markup (Story 5.6) by its box, its note icon, its cloud or its leader. A
+// markup (Story 5.6) by its box, its note icon, its cloud or its leader; a
+// pen or highlight stroke (Story 5.7) within half its width as well. A
 // marquee or lasso selects a markup when its whole outline is inside.
 
 import { circleThrough } from "@/core/measure/circle";
@@ -119,6 +120,10 @@ export function hitMarkup(m: Markup, p: Point, tol: number, userUnit = 1): boole
       const ring = cloudRingOf(m);
       return nearPolyline(p, ring, tol + CLOUD_CHORD_PT / 2 / unit, true) || insidePolygon(p, ring);
     }
+    // Story 5.7: a stroke as wide as it is painted (a highlight's 12 pt).
+    case "pen":
+    case "highlight":
+      return nearPolyline(p, m.points, tol + m.style.width / 2 / (userUnit > 0 ? userUnit : 1), false);
     case "ellipse": {
       const local = ellipseLocal(ellipseFrame(m.points), p);
       if (local && Math.hypot(local.x, local.y) <= 1) return true;

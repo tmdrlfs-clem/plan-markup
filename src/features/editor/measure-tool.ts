@@ -34,6 +34,13 @@
 // editor (text-tool.ts) and added when the typing ends. A click on the canvas
 // while typing only ends the typing.
 //
+// Story 5.7: Pen and Highlight are pressed and dragged (the viewer sends the
+// stroke, never snapped; Shift holds a part of it horizontal or vertical); the
+// release adds the stroke, simplified, as one undo step ("Add pen", "Add
+// highlight"); a click that drew nothing adds nothing, Esc or a lost pointer
+// drops it. A highlight is painted under the other markups, multiplied over
+// the sheet (paintUnder), at its style's opacity.
+//
 // With Select, Shift + drag on a caption moves the caption only ("Move
 // caption", a markups.update op); the offset is stored in user space.
 //
@@ -54,14 +61,18 @@ import { areaCaption, areaCaptionText, formatArea, polygonCentroid, selfIntersec
 import { circleCaption, circleThrough } from "@/core/measure/circle";
 import { SCALE_NOT_SET, captionPlacement, lengthCaption, polylineCaptionAnchor } from "@/core/measure/length";
 import { outlinePoints, translateMarkup } from "@/core/markup/geometry";
+import { simplifyStroke, smoothPath, strokeHasLength } from "@/core/markup/ink";
 import { CLOUD_CHORD_PT, boxCorners, cloudArcs, ellipseFrame } from "@/core/markup/shapes";
 import { NOTE_PT, TEXT_LINE_HEIGHT, TEXT_PAD_PT, cloudRingOf, leaderOf, leaderTo, leaderToRing, textBoxOf, wrapText } from "@/core/markup/text";
 import {
+  DEFAULT_HIGHLIGHT_STYLE,
   DEFAULT_MARKUP_STYLE,
   DEFAULT_MEASURE_STYLE,
   MAX_POLYLINE_POINTS,
+  isInkMarkup,
   isMeasureMarkup,
   isTextMarkup,
+  type InkMarkup,
   type Markup,
   type MarkupStyle,
   type MeasureMarkup,
@@ -71,6 +82,7 @@ import {
 import {
   isBoxTool,
   isDrawTool,
+  isInkTool,
   isMarkupTool,
   isTextTool,
   notifyMarkups,
@@ -82,7 +94,7 @@ import {
   type MarkupPainter,
 } from "@/features/viewer";
 
-import { editorStore, markupsOf, pageMarkups, setCaptionDrag, setDrawing, setMarkupMenu, setMoveDrag, setPreview, setSelection, type Drawing, type MoveDrag } from "./editor-store";
+import { editorStore, markupsOf, pageMarkups, setCaptionDrag, type EditorState, setDrawing, setMarkupMenu, setMoveDrag, setPreview, setSelection, type Drawing, type MoveDrag } from "./editor-store";
 import { discardFill, fillAreaUser, fillPress, paintFill, takeFillRings, undoFillStroke } from "./fill-tool";
 import { handlesOf, paintHandles } from "./handles";
 import { lockedNote, openMarkupMenu, paintSelectGesture, resetSelectTool, selectCursorAt, selectGesture, selectionKey, toggleSelected } from "./select-tool";
@@ -122,6 +134,8 @@ export const ADD_POLYGON = "Add polygon";
 export const ADD_RECTANGLE = "Add rectangle";
 export const ADD_ELLIPSE = "Add ellipse";
 export const ADD_CLOUD = "Add cloud";
+export const ADD_PEN = "Add pen";
+export const ADD_HIGHLIGHT = "Add highlight";
 const ADD_LABEL: Record<DrawTool, string> = {
   length: ADD_LENGTH,
   polylength: ADD_POLYLENGTH,
@@ -143,6 +157,8 @@ const ADD_LABEL: Record<DrawTool, string> = {
   typewriter: ADD_TYPEWRITER,
   note: ADD_NOTE,
   cloudplus: ADD_CLOUD_PLUS,
+  pen: ADD_PEN,
+  highlight: ADD_HIGHLIGHT,
 };
 /** Story 4.8: what the live value says while an area crosses itself (it cannot be added). */
 export const CROSSES_ITSELF = "Crosses itself";
@@ -168,6 +184,8 @@ const MIN_POINTS: Record<DrawTool, number> = {
   typewriter: 1,
   note: 1,
   cloudplus: 3,
+  pen: 2,
+  highlight: 2,
 };
 /** Tools with a fixed number of points: the click that places the last one adds the measurement. */
 const FIXED_POINTS: Partial<Record<DrawTool, number>> = { length: 2, angle: 3, radius: 3, diameter: 3, line: 2, arrow: 2, rectangle: 2, ellipse: 2, text: 2, callout: 2, typewriter: 1, note: 1 };
@@ -190,6 +208,11 @@ const SHAPE_LABEL: Record<ShapeMarkup["type"], string> = {
   ellipse: "Ellipse",
   cloud: "Cloud",
 };
+/** Story 5.7: the layer 2 list's label of a stroke. */
+const INK_LABEL: Record<InkMarkup["type"], string> = { pen: "Pen", highlight: "Highlight" };
+/** Story 5.7: a stroke is captured at points this far apart on screen, and kept within this of its path when simplified (CSS px). */
+const INK_STEP_PX = 1;
+const INK_SIMPLIFY_PX = 0.35;
 /** Story 5.5: zoomed out, cloud arcs smaller than this on screen (CSS px) are drawn as their chords. */
 const CLOUD_MIN_CHORD_PX = 3;
 /** Story 4.9: the arc at an angle's vertex, in CSS px (at most 40 % of the shorter leg). */
@@ -334,6 +357,23 @@ function strokeShape(c: CanvasRenderingContext2D, type: ShapeMarkup["type"], pts
     c.fillStyle = style.color;
     c.fill();
   }
+  c.restore();
+}
+
+/** Story 5.7: a stroke (device points), smoothed through its points, round ends; a highlight at its style's opacity. */
+function strokeInk(c: CanvasRenderingContext2D, pts: readonly Point[], style: MarkupStyle, view: LayerView): void {
+  const path = smoothPath(pts);
+  if (!path) return;
+  c.save();
+  if ((style.opacity ?? 1) < 1) c.globalAlpha = style.opacity ?? 1;
+  c.beginPath();
+  c.moveTo(path.start.x, path.start.y);
+  for (const q of path.curves) c.quadraticCurveTo(q.control.x, q.control.y, q.to.x, q.to.y);
+  c.lineWidth = Math.max(1, style.width * view.devicePerPt);
+  c.lineCap = "round";
+  c.lineJoin = "round";
+  c.strokeStyle = style.color;
+  c.stroke();
   c.restore();
 }
 
@@ -701,6 +741,15 @@ export const measurePainter: MarkupPainter = {
         paintTextMarkup(c, any, view, true);
         continue;
       }
+      if (isInkMarkup(any)) {
+        // Story 5.7: a stroke; a highlight's is painted under the markups (paintUnder).
+        captions.push(INK_LABEL[any.type]);
+        const pts = devicePoints(any.points, view);
+        if (!onCanvas(pts, any.style, view)) continue;
+        if (selected.has(any.id)) strokeSelection(c, pts, view);
+        if (any.type === "pen") strokeInk(c, pts, any.style, view);
+        continue;
+      }
       if (!isMeasure(any)) {
         // Story 5.4: a shape, no caption (its label stands in layer 2's list).
         captions.push(SHAPE_LABEL[any.type]);
@@ -745,6 +794,18 @@ export const measurePainter: MarkupPainter = {
     return captions;
   },
 
+  paintUnder(c, view) {
+    const pageId = pageIdOf(view.documentId, view.pageIndex);
+    const preview = editorStore.getState().tools.preview;
+    const added = preview && preview.documentId === view.documentId ? preview.added.filter((m) => m.pageId === pageId) : [];
+    for (const one of [...pageMarkups(editorStore.getState(), view.documentId, pageId), ...added]) {
+      if (one.type !== "highlight") continue;
+      const m = shown(one);
+      const pts = devicePoints(m.points, view);
+      if (onCanvas(pts, m.style, view)) strokeInk(c, pts, m.style, view);
+    }
+  },
+
   paintActive(c, view, pointer) {
     // Story 5.1: the marquee or lasso in progress.
     if (viewerStore.getState().tool === "select") paintSelectGesture(c, view);
@@ -760,6 +821,11 @@ export const measurePainter: MarkupPainter = {
     }
     const d = drawing();
     if (d?.tool === "fill") return paintFillActive(c, view, pointer);
+    // Story 5.7: the stroke so far (a highlight's at its opacity, not yet multiplied).
+    if (d && isInkTool(d.tool) && d.pageId === pageIdOf(view.documentId, view.pageIndex)) {
+      strokeInk(c, devicePoints(d.points, view), inkStyle(d.tool), view);
+      return null;
+    }
     if (!d || d.pageId !== pageIdOf(view.documentId, view.pageIndex) || !pointer) return null;
     // Story 5.6: a Cloud+'s closed cloud and a leader to the pointer (where its text goes).
     if (d.ring) {
@@ -784,7 +850,7 @@ export const measurePainter: MarkupPainter = {
     else if (d.tool === "radius" || d.tool === "diameter") strokeCircle(c, d.tool, pts, deviceCircle(points, view), DEFAULT_MEASURE_STYLE, view);
     else if (d.tool === "text") strokeShape(c, "rectangle", pts, DEFAULT_MARKUP_STYLE, view);
     else if (d.tool === "cloudplus") strokeShape(c, "cloud", pts, DEFAULT_MARKUP_STYLE, view);
-    else if (isMarkupTool(d.tool) && !isTextTool(d.tool)) strokeShape(c, d.tool, pts, DEFAULT_MARKUP_STYLE, view);
+    else if (isMarkupTool(d.tool) && !isTextTool(d.tool) && !isInkTool(d.tool)) strokeShape(c, d.tool, pts, DEFAULT_MARKUP_STYLE, view);
     else strokeMeasure(c, pts, DEFAULT_MEASURE_STYLE, view);
     c.restore();
     if (!live) return null;
@@ -807,8 +873,8 @@ export const measurePainter: MarkupPainter = {
       return "ignored";
     }
     const tool = viewerStore.getState().tool;
-    // Dynamic fill is pressed, not clicked (press below).
-    if (!isDrawTool(tool) || tool === "fill") return "ignored";
+    // Dynamic fill is pressed, not clicked (press below); Pen and Highlight are dragged (ink below).
+    if (!isDrawTool(tool) || tool === "fill" || isInkTool(tool)) return "ignored";
     const pageId = pageIdOf(at.documentId, at.pageIndex);
     const d = drawing();
     if (!d || d.pageId !== pageId || d.tool !== tool) {
@@ -919,6 +985,10 @@ export const measurePainter: MarkupPainter = {
     if (viewerStore.getState().tool === "fill") fillPress(phase, point, at, brush);
   },
 
+  ink(phase, point, at, straight) {
+    inkStroke(phase, point, at, straight);
+  },
+
   select(phase, point, at) {
     selectGesture(phase, point, at, (view, device) => measurePainter.captionAt(view, device));
   },
@@ -985,6 +1055,51 @@ function finishDrawing(documentId: string): "done" | "continue" | "ignored" {
   return commit(documentId);
 }
 
+/** Story 5.7: a stroke's style (D1: a pen as the other markups, a highlight yellow, wide, 40 %). */
+function inkStyle(tool: "pen" | "highlight"): MarkupStyle {
+  return tool === "highlight" ? DEFAULT_HIGHLIGHT_STYLE : DEFAULT_MARKUP_STYLE;
+}
+
+/**
+ * Story 5.7: a Pen or Highlight stroke. The press starts it (and ends any typing); each move adds
+ * the point once it is a step away on screen, or, `straight` (Shift), replaces what follows the
+ * point where Shift began; the release adds it simplified; a cancel drops it.
+ */
+function inkStroke(phase: "start" | "move" | "end" | "cancel", point: Point, at: { documentId: string; pageIndex: number; view: LayerView }, straight: boolean): void {
+  const tool = viewerStore.getState().tool;
+  const pageId = pageIdOf(at.documentId, at.pageIndex);
+  if (phase === "start") {
+    if (textEditing()) endTextEdit(true);
+    if (isInkTool(tool)) setDrawing({ tool, pageId, pageIndex: at.pageIndex, points: [point], ...(straight ? { anchor: 0 } : {}) });
+    return;
+  }
+  const d = drawing();
+  if (!d || !isInkTool(d.tool) || d.pageId !== pageId) return;
+  if (phase === "cancel") return setDrawing(null);
+  // One CSS px in user units on this page at this zoom.
+  const px = (at.view.dpr || 1) / (at.view.devicePerPt * (at.view.userUnit > 0 ? at.view.userUnit : 1) || 1);
+  let points = d.points;
+  let anchor = d.anchor;
+  if (straight) {
+    anchor ??= points.length - 1;
+    points = [...points.slice(0, anchor + 1), point];
+  } else {
+    anchor = undefined;
+    const last = points[points.length - 1];
+    if (Math.hypot(point.x - last.x, point.y - last.y) >= INK_STEP_PX * px && points.length < MAX_POLYLINE_POINTS) points = [...points, point];
+  }
+  if (phase === "move") {
+    if (points !== d.points || anchor !== d.anchor) setDrawing({ ...d, points, anchor });
+    return;
+  }
+  const stroke = simplifyStroke(points, INK_SIMPLIFY_PX * px);
+  setDrawing(null);
+  // A click, or a press that never moved, draws nothing (D2).
+  if (stroke.length < 2 || !strokeHasLength(stroke)) return;
+  const markup: Markup = { id: uuidv7(), pageId, createdAt: new Date().toISOString(), style: inkStyle(d.tool), type: d.tool, points: stroke };
+  executeOp({ kind: "markups.add", documentId: at.documentId, markups: [markup] }, ADD_LABEL[d.tool]);
+}
+
 /** The markup a finished drawing makes (Story 5.4: a shape takes the markup style). */
 function markupOf(d: Drawing): Markup {
   const base = { id: uuidv7(), pageId: d.pageId, createdAt: new Date().toISOString(), style: isMarkupTool(d.tool) ? DEFAULT_MARKUP_STYLE : DEFAULT_MEASURE_STYLE };
@@ -1004,6 +1119,9 @@ function markupOf(d: Drawing): Markup {
       return { ...base, type: d.tool, points: [a, b, c] };
     case "fill":
       return { ...base, type: "area", points };
+    case "pen":
+    case "highlight":
+      return { ...base, style: inkStyle(d.tool), type: d.tool, points };
     case "text":
     case "callout":
     case "typewriter":
@@ -1052,6 +1170,12 @@ function undoDrawingPoint(): boolean {
   return true;
 }
 
+/** Story 5.7: whether the tools differ in their drawing only (layer 2 paints none of it). */
+function onlyDrawingChanged(a: EditorState["tools"], b: EditorState["tools"]): boolean {
+  const keys = Object.keys(a) as (keyof EditorState["tools"])[];
+  return a.drawing !== b.drawing && keys.length === Object.keys(b).length && keys.every((k) => k === "drawing" || a[k] === b[k]);
+}
+
 let installed = 0;
 let uninstall: (() => void) | null = null;
 
@@ -1070,7 +1194,9 @@ export function installMeasureTools(): () => void {
         const ids = new Set(markupsOf(s, s.view.documentId).map((m) => m.id));
         if (s.selection.ids.some((id) => !ids.has(id))) return void setSelection(s.selection.ids.filter((id) => ids.has(id)));
       }
-      notifyMarkups({ drawingEnded: prev.tools.drawing !== null && s.tools.drawing === null });
+      // Story 5.7: only the drawing changed (a stroke's every move): layer 2 is not painted again.
+      const activeOnly = s.doc === prev.doc && s.selection === prev.selection && onlyDrawingChanged(s.tools, prev.tools);
+      notifyMarkups({ drawingEnded: prev.tools.drawing !== null && s.tools.drawing === null, ...(activeOnly ? { activeOnly } : {}) });
     });
     // Another tool, page, tab or document ends the drawing in progress (and a caption move):
     // a count is kept (D4), the others are cancelled.

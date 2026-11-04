@@ -106,6 +106,11 @@ export type SelectionCommand =
 export interface MarkupPainter {
   /** Layer 2: the page's markups. Returns the captions drawn, in drawing order (e2e, diagnostics). */
   paintStatic(c: CanvasRenderingContext2D, view: LayerView): readonly string[];
+  /**
+   * Story 5.7: under layer 2, a layer multiplied over the sheet: the page's highlights (layer 2
+   * lists them and draws their selection, not their strokes).
+   */
+  paintUnder?(c: CanvasRenderingContext2D, view: LayerView): void;
   /** Layer 3: the drawing in progress, its rubber band to `pointer` (the tool point) and its live value. Returns the live text. */
   paintActive(c: CanvasRenderingContext2D, view: LayerView, pointer: Point | null): string | null;
   /** A drawing follows the pointer (the overlay repaints on every move). */
@@ -132,6 +137,11 @@ export interface MarkupPainter {
   endCaptionDrag(commit: boolean): boolean;
   /** Story 4.10: a press-and-hold tool's press, drag and release at `point` (user space). */
   press?(phase: "start" | "move" | "end", point: Point, at: PressContext, brush: PressBrush): void;
+  /**
+   * Story 5.7: a Pen or Highlight stroke's press, drag, release or cancel at `point` (user
+   * space); `straight`: Shift holds this part of it straight (the input has held the point).
+   */
+  ink?(phase: "start" | "move" | "end" | "cancel", point: Point, at: { documentId: string; pageIndex: number; view: LayerView }, straight: boolean): void;
   /** Story 5.1: a Select press, drag, release or cancel at `point` (user space). */
   select?(phase: "start" | "move" | "end" | "cancel", point: Point, at: SelectContext): void;
   /** Story 5.1 / 5.2: the cursor at `point` with Select (a markup: move; a handle: its action); null: the default. */

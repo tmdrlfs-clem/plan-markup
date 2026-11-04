@@ -53,7 +53,7 @@ interface Tool {
  * Tools that work today: Select and Pan (Story 3.2), and Length (snapping from
  * Story 4.1, measuring from Story 4.5). The others arrive with the editor.
  */
-const LIVE_TOOLS: ReadonlySet<string> = new Set<ViewerTool>(["select", "pan", "length", "polylength", "area", "count", "angle", "radius", "diameter", "line", "arrow", "polyline", "polygon", "rectangle", "ellipse", "cloud", "text", "callout", "typewriter", "note", "cloudplus"]);
+const LIVE_TOOLS: ReadonlySet<string> = new Set<ViewerTool>(["select", "pan", "length", "polylength", "area", "count", "angle", "radius", "diameter", "line", "arrow", "polyline", "polygon", "rectangle", "ellipse", "cloud", "text", "callout", "typewriter", "note", "cloudplus", "pen", "highlight"]);
 
 export const SNAP_PREVIEW_HINT_ID = "snap-preview";
 /** Review S3: a page past the segment cap. */
@@ -93,6 +93,10 @@ export const CALLOUT_HINT = `Callout: click the point the leader points to, then
 export const TYPEWRITER_HINT = `Typewriter: click where the text starts. ${TYPING}`;
 export const NOTE_HINT = `Note: click where the note goes. ${TYPING}`;
 export const CLOUD_PLUS_HINT = `Cloud+: click each corner of the cloud and close it on the first corner (or Enter), then click where the text goes. ${TYPING}`;
+/** Story 5.7: the HintBar while Pen or Highlight is armed. */
+const STROKE = "Shift holds the stroke horizontal or vertical. Esc while drawing drops the stroke; Esc again returns to Select.";
+export const PEN_HINT = `Pen: drag to draw freehand. ${STROKE}`;
+export const HIGHLIGHT_HINT = `Highlight: drag over the sheet to highlight it. ${STROKE}`;
 const TOOL_HINTS: Partial<Record<ViewerTool, string>> = {
   length: SNAP_PREVIEW_HINT,
   polylength: POLYLENGTH_HINT,
@@ -114,6 +118,8 @@ const TOOL_HINTS: Partial<Record<ViewerTool, string>> = {
   typewriter: TYPEWRITER_HINT,
   note: NOTE_HINT,
   cloudplus: CLOUD_PLUS_HINT,
+  pen: PEN_HINT,
+  highlight: HIGHLIGHT_HINT,
 };
 export const EDITOR_LATER = "Arrives with the markup editor";
 

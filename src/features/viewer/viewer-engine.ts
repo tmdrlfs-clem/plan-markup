@@ -119,7 +119,8 @@ const REVEAL_MIN_PT = 72;
 /** Story 5.1: a Select click hits a markup within this many CSS px. */
 const SELECT_TOLERANCE_PX = 5;
 
-export type ViewerCanvases = { tiles: HTMLCanvasElement; markups: HTMLCanvasElement; active: HTMLCanvasElement };
+/** Story 5.7: `highlights`, between the tiles and the markups, is multiplied over the sheet (CSS). */
+export type ViewerCanvases = { tiles: HTMLCanvasElement; highlights?: HTMLCanvasElement; markups: HTMLCanvasElement; active: HTMLCanvasElement };
 
 /** The canvas backing store in whole device px, as the host measured it. */
 export type DeviceSize = { width: number; height: number };
@@ -1893,6 +1894,15 @@ export class ViewerEngine {
     );
   }
 
+  /** Story 5.7: a Pen or Highlight stroke's press, drag, release or cancel (viewport CSS px). */
+  inkTool(phase: "start" | "move" | "end" | "cancel", at: Point, straight: boolean): void {
+    const painter = markupPainter();
+    const view = this.layerView();
+    const point = this.screenToUser(at);
+    if (!painter?.ink || !view || !point) return;
+    painter.ink(phase, point, { documentId: view.documentId, pageIndex: view.pageIndex, view }, straight);
+  }
+
   /** A viewport point in PDF user space, on the page or off it. */
   private screenToUser(at: Point): Point | null {
     return this.page ? pageToUser(this.page, screenToPage(this.view, this.viewport, at)) : null;
@@ -2113,6 +2123,13 @@ export class ViewerEngine {
     c.clearRect(0, 0, canvas.width, canvas.height);
     const painter = markupPainter();
     const view = this.layerView();
+    // Story 5.7: the highlights under the markups, multiplied over the sheet.
+    const under = this.canvases.highlights?.getContext("2d");
+    if (under) {
+      under.setTransform(1, 0, 0, 1, 0, 0);
+      under.clearRect(0, 0, canvas.width, canvas.height);
+      if (painter?.paintUnder && view) painter.paintUnder(under, view);
+    }
     const captions = painter && view ? painter.paintStatic(c, view) : [];
     const data = canvas.dataset as DOMStringMap | undefined;
     if (!data) return;

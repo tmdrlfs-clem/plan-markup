@@ -29,6 +29,8 @@ export type Drawing = {
   points: readonly Point[];
   /** Story 5.6: a Cloud+'s closed cloud (its points then wait for the text's click). */
   ring?: readonly Point[];
+  /** Story 5.7: a stroke's point from which Shift holds it straight (what follows is replaced). */
+  anchor?: number;
 };
 
 /** Story 5.6: a text markup placed and being typed: its draft (no text yet), its document and the tab that records it. */

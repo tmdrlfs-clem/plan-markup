@@ -18,7 +18,9 @@
 
 import type { Point, Rect } from "@/core/render/view";
 
-import { hasDocument, isBoxTool, isDrawTool, setTempPan, setTool, viewerStore, type ViewerTool } from "./viewer-store";
+import { straightFrom } from "@/core/markup/ink";
+
+import { hasDocument, isBoxTool, isDrawTool, isInkTool, setTempPan, setTool, viewerStore, type ViewerTool } from "./viewer-store";
 import { LOCKED_CURSOR, LOCKED_TOOLTIP, type PressBrush, type SelectionCommand } from "./markup-layer";
 
 /** CSS px per wheel "line" (deltaMode 1, e.g. Firefox: 3 lines per notch). */
@@ -111,6 +113,9 @@ export function resolveViewerKey(
   if (isLetter(event, "t") && !event.shiftKey) return { type: "tool", tool: "text" };
   if (isLetter(event, "q") && !event.shiftKey) return { type: "tool", tool: "callout" };
   if (isLetter(event, "k") && !event.shiftKey) return { type: "tool", tool: "cloudplus" };
+  // Story 5.7: P Pen, H Highlight.
+  if (isLetter(event, "p") && !event.shiftKey) return { type: "tool", tool: "pen" };
+  if (isLetter(event, "h") && !event.shiftKey) return { type: "tool", tool: "highlight" };
   return null;
 }
 
@@ -163,6 +168,8 @@ export interface ViewerInputTarget {
   moveCaptionDrag?(at: Point): void;
   /** Story 4.6: the caption drag ends: kept (`commit`) or put back (Esc, a cancelled pointer). */
   endCaptionDrag?(commit: boolean): void;
+  /** Story 5.7: a Pen or Highlight stroke's press, drag, release or cancel (viewport CSS px); `straight`: Shift held. */
+  inkTool?(phase: "start" | "move" | "end" | "cancel", at: Point, straight: boolean): void;
   /** Story 4.10: press, drag and release with Dynamic fill (viewport CSS px). */
   pressTool?(phase: "start" | "move" | "end", at: Point, brush: PressBrush): void;
   /** Story 5.1: a Select press, drag, release or cancel (viewport CSS px); false when there is nothing to select on. */
@@ -197,7 +204,9 @@ type Drag =
   | { kind: "caption"; pointerId: number }
   | { kind: "press"; pointerId: number; brush: PressBrush }
   | { kind: "select"; pointerId: number; shift: boolean; alt: boolean; ctrl: boolean }
-  | { kind: "place"; pointerId: number; start: Point };
+  | { kind: "place"; pointerId: number; start: Point }
+  /** Story 5.7: `last`: the point last sent; `anchor`: where Shift began holding the stroke straight. */
+  | { kind: "ink"; pointerId: number; last: Point; anchor: Point | null };
 
 /** Normalised rectangle between two points. */
 function rectOf(a: Point, b: Point): Rect {
@@ -340,6 +349,12 @@ export class ViewerInput {
       const brush: PressBrush = e.ctrlKey || e.metaKey ? "erase" : e.shiftKey ? "paint" : "grow";
       this.drag = { kind: "press", pointerId: e.pointerId, brush };
       this.target.pressTool("start", this.point(e), brush);
+    } else if (e.button === 0 && isInkTool(tool) && this.target.inkTool) {
+      // Story 5.7: a stroke follows the pointer while pressed (never snapped); Shift holds it straight.
+      e.preventDefault();
+      const at = this.point(e);
+      this.drag = { kind: "ink", pointerId: e.pointerId, last: at, anchor: e.shiftKey ? at : null };
+      this.target.inkTool("start", at, e.shiftKey);
     } else if (e.button === 0 && e.shiftKey && tool === "select" && this.target.startCaptionDrag?.(this.point(e))) {
       // Story 4.6: Shift + drag on a measurement's caption moves the caption only.
       e.preventDefault();
@@ -364,7 +379,8 @@ export class ViewerInput {
     } catch {
       // Synthetic pointers (tests) cannot be captured.
     }
-    if (e.button === 1) this.canvas.focus({ preventScroll: true });
+    // Story 5.7: a stroke's press (its default is prevented) gives the canvas its keys too.
+    if (e.button === 1 || this.drag?.kind === "ink") this.canvas.focus({ preventScroll: true });
     this.updateCursor();
   }
 
@@ -392,9 +408,20 @@ export class ViewerInput {
       this.target.pressTool?.("move", p, drag.brush);
     } else if (drag.kind === "select") {
       this.target.selectGesture?.("move", p, { shift: drag.shift, alt: drag.alt, ctrl: drag.ctrl });
+    } else if (drag.kind === "ink") {
+      this.inkMove(drag, p, e.shiftKey);
     } else {
       this.target.setZoomRect(rectOf(drag.start, p));
     }
+  }
+
+  /** Story 5.7: the stroke to `p`; with Shift, horizontal or vertical (on screen) from where Shift began. */
+  private inkMove(drag: Extract<Drag, { kind: "ink" }>, p: Point, shift: boolean): void {
+    if (shift) drag.anchor ??= drag.last;
+    else drag.anchor = null;
+    const at = drag.anchor ? straightFrom(drag.anchor, p) : p;
+    drag.last = at;
+    this.target.inkTool?.("move", at, shift);
   }
 
   private cancelDrag(e: PointerEvent): void {
@@ -405,6 +432,7 @@ export class ViewerInput {
     if (!this.drag || this.drag.pointerId !== e.pointerId) return;
     this.pointer = this.point(e);
     const drag = this.drag;
+    if (drag.kind === "ink") this.inkMove(drag, this.pointer, e.shiftKey);
     // Story 5.5: a box dragged out places its opposite corner where it is released (a click places none).
     if (drag.kind === "place" && Math.hypot(this.pointer.x - drag.start.x, this.pointer.y - drag.start.y) >= CLICK_SLOP && this.target.toolTracking?.()) {
       this.target.pointerAt?.(this.pointer, { alt: e.altKey, shift: e.shiftKey });
@@ -420,6 +448,7 @@ export class ViewerInput {
     this.drag = null;
     if (drag.kind === "caption") this.target.endCaptionDrag?.(commit);
     if (drag.kind === "press" && this.pointer) this.target.pressTool?.("end", this.pointer, drag.brush);
+    if (drag.kind === "ink") this.target.inkTool?.(commit ? "end" : "cancel", drag.last, drag.anchor !== null);
     if (drag.kind === "select" && this.pointer) this.target.selectGesture?.(commit ? "end" : "cancel", this.pointer, { shift: drag.shift, alt: drag.alt, ctrl: drag.ctrl });
     if (drag.kind === "zoom") {
       this.target.setZoomRect(null);
@@ -451,8 +480,8 @@ export class ViewerInput {
       const tool = viewerStore.getState().tool;
       if (e.key === "Alt" && this.pointer && (pointTool(tool) || tool === "select")) e.preventDefault();
     }
-    // Story 4.6 / 5.1: Esc during a caption or Select drag puts things back (and nothing else).
-    if (e.key === "Escape" && (this.drag?.kind === "caption" || this.drag?.kind === "select")) {
+    // Story 4.6 / 5.1: Esc during a caption or Select drag puts things back (and nothing else); 5.7: it drops a stroke.
+    if (e.key === "Escape" && (this.drag?.kind === "caption" || this.drag?.kind === "select" || this.drag?.kind === "ink")) {
       e.preventDefault();
       this.endDrag(false);
       return;

@@ -126,6 +126,13 @@ export const noteMarkupSchema = z.object({ ...base, type: z.literal("note"), poi
 export const calloutMarkupSchema = z.object({ ...base, type: z.literal("callout"), points: z.tuple([pointSchema, pointSchema, pointSchema, pointSchema, pointSchema]), text });
 export const cloudPlusMarkupSchema = z.object({ ...base, type: z.literal("cloudplus"), points: z.array(pointSchema).min(7).max(MAX_POLYLINE_POINTS + 4), text });
 
+/**
+ * Story 5.7: a pen or highlight stroke, the freehand path's points (simplified when drawn; it is
+ * painted smoothed through them). A highlight paints with its style's opacity, multiplied over the sheet.
+ */
+export const penMarkupSchema = z.object({ ...base, type: z.literal("pen"), points: z.array(pointSchema).min(2).max(MAX_POLYLINE_POINTS) });
+export const highlightMarkupSchema = z.object({ ...base, type: z.literal("highlight"), points: z.array(pointSchema).min(2).max(MAX_POLYLINE_POINTS) });
+
 /** Every markup type (more join with Epic 5). */
 export const markupSchema = z.discriminatedUnion("type", [
   lengthMarkupSchema,
@@ -147,6 +154,8 @@ export const markupSchema = z.discriminatedUnion("type", [
   noteMarkupSchema,
   calloutMarkupSchema,
   cloudPlusMarkupSchema,
+  penMarkupSchema,
+  highlightMarkupSchema,
 ]);
 
 export type Markup = z.infer<typeof markupSchema>;
@@ -169,6 +178,12 @@ export type ShapeMarkup =
   | z.infer<typeof rectangleMarkupSchema>
   | z.infer<typeof ellipseMarkupSchema>
   | z.infer<typeof cloudMarkupSchema>;
+/** Story 5.7: the freehand strokes. */
+export type InkMarkup = z.infer<typeof penMarkupSchema> | z.infer<typeof highlightMarkupSchema>;
+/** Whether `m` is a pen or highlight stroke (Story 5.7). */
+export function isInkMarkup(m: Markup): m is InkMarkup {
+  return m.type === "pen" || m.type === "highlight";
+}
 /** Story 5.6: the text markups. */
 export type TextMarkup =
   | z.infer<typeof textMarkupSchema>
@@ -191,3 +206,5 @@ export function isMeasureMarkup(m: Markup): m is MeasureMarkup {
 export const DEFAULT_MEASURE_STYLE: MarkupStyle = { color: "#ff0000", width: 1, fontSize: 10 };
 /** Story 5.4 (D5): the markups' style until Properties changes it (5.5 D5: no fill, opacity 1). */
 export const DEFAULT_MARKUP_STYLE: MarkupStyle = { color: "#ff0000", width: 1, fontSize: 10 };
+/** Story 5.7 (D1): a highlight's style: yellow, 12 pt, 40 % opacity (multiplied over the sheet). */
+export const DEFAULT_HIGHLIGHT_STYLE: MarkupStyle = { color: "#ffff00", width: 12, fontSize: 10, opacity: 0.4 };

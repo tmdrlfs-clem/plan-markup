@@ -71,6 +71,10 @@ describe("resolveViewerKey (focus rule)", () => {
     expect(resolveViewerKey(key({ key: "q", code: "KeyQ" }), FOCUSED)).toEqual({ type: "tool", tool: "callout" });
     expect(resolveViewerKey(key({ key: "k", code: "KeyK" }), FOCUSED)).toEqual({ type: "tool", tool: "cloudplus" });
     expect(resolveViewerKey(key({ key: "t", code: "KeyT" }), OVER)).toBeNull();
+    // Story 5.7: P Pen, H Highlight (Shift+P stays Polygon).
+    expect(resolveViewerKey(key({ key: "p", code: "KeyP" }), FOCUSED)).toEqual({ type: "tool", tool: "pen" });
+    expect(resolveViewerKey(key({ key: "h", code: "KeyH" }), FOCUSED)).toEqual({ type: "tool", tool: "highlight" });
+    expect(resolveViewerKey(key({ key: "h", code: "KeyH" }), OVER)).toBeNull();
     expect(resolveViewerKey(key({ key: "l", code: "KeyL" }), OVER)).toBeNull();
     for (const k of [{ key: "+" }, { key: "-" }, { key: "z", code: "KeyZ" }, { key: "v", code: "KeyV" }, { key: " ", code: "Space" }]) {
       expect(resolveViewerKey(key(k), OVER)).toBeNull();
@@ -232,6 +236,39 @@ describe("ViewerInput", () => {
     canvas.dispatchEvent(pointer("pointerdown", { x: 10, y: 10 }));
     canvas.dispatchEvent(pointer("pointerup", { x: 60, y: 40 }));
     expect(snapClick).toHaveBeenCalledTimes(5);
+    setTool("select");
+  });
+
+  it("Story 5.7: a Pen stroke follows the pointer; Shift holds it horizontal or vertical from where Shift began; Esc drops it", () => {
+    const inkTool = vi.fn();
+    Object.assign(t, { inkTool });
+    setTool("pen");
+    canvas.dispatchEvent(pointer("pointerdown", { x: 10, y: 10 }));
+    expect(inkTool).toHaveBeenLastCalledWith("start", { x: 10, y: 10 }, false);
+    expect(document.activeElement).toBe(canvas);
+    canvas.dispatchEvent(pointer("pointermove", { x: 20, y: 14 }));
+    expect(inkTool).toHaveBeenLastCalledWith("move", { x: 20, y: 14 }, false);
+    // Shift: from (20, 14), along the nearer axis.
+    canvas.dispatchEvent(pointer("pointermove", { x: 50, y: 20, shiftKey: true }));
+    expect(inkTool).toHaveBeenLastCalledWith("move", { x: 50, y: 14 }, true);
+    canvas.dispatchEvent(pointer("pointermove", { x: 52, y: 80, shiftKey: true }));
+    expect(inkTool).toHaveBeenLastCalledWith("move", { x: 20, y: 80 }, true);
+    // Released: freehand again from there.
+    canvas.dispatchEvent(pointer("pointermove", { x: 30, y: 90 }));
+    expect(inkTool).toHaveBeenLastCalledWith("move", { x: 30, y: 90 }, false);
+    canvas.dispatchEvent(pointer("pointerup", { x: 31, y: 91 }));
+    expect(inkTool).toHaveBeenCalledWith("move", { x: 31, y: 91 }, false);
+    expect(inkTool).toHaveBeenLastCalledWith("end", { x: 31, y: 91 }, false);
+    // Shift from the press: straight from the start; Esc drops the stroke.
+    canvas.dispatchEvent(pointer("pointerdown", { x: 10, y: 10, shiftKey: true }));
+    canvas.dispatchEvent(pointer("pointermove", { x: 14, y: 40, shiftKey: true }));
+    expect(inkTool).toHaveBeenLastCalledWith("move", { x: 10, y: 40 }, true);
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    expect(inkTool).toHaveBeenLastCalledWith("cancel", { x: 10, y: 40 }, true);
+    canvas.dispatchEvent(pointer("pointerup", { x: 14, y: 40 }));
+    expect(inkTool).toHaveBeenCalledTimes(10);
+    // No point is placed or snapped for a stroke.
+    expect(t.snapClick).not.toHaveBeenCalled();
     setTool("select");
   });
 
