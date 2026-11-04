@@ -36,6 +36,12 @@ const SNAPPING_TOOLS: ReadonlySet<ViewerTool> = new Set<ViewerTool>([
   "rectangle",
   "ellipse",
   "cloud",
+  // Story 5.6: the text tools.
+  "text",
+  "callout",
+  "typewriter",
+  "note",
+  "cloudplus",
 ]);
 
 export function isSnappingTool(tool: ViewerTool): boolean {

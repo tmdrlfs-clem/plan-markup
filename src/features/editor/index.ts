@@ -4,6 +4,7 @@ export { activeUndoLabels, clearUndo, executeCommand, executeOp, redoActive, und
 export { useEditorSession } from "./session";
 export { MEASUREMENTS_HINT, MeasurementsPanel } from "./measurements-panel";
 export { MarkupContextMenu, useSelectionState } from "./markup-context-menu";
+export { TextEditor } from "./text-editor";
 export { hasClipboard } from "./select-tool";
 export {
   ADD_ANGLE,

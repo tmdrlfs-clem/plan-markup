@@ -3,12 +3,14 @@
 // Everything is in the markup's page user space. A markup is hit by its
 // stroke within a tolerance, an area also by its inside (less its holes), a
 // count by any marker; a radius or diameter by its circle and its line; a
-// rectangle, ellipse or cloud (Story 5.5) by its outline or inside. A
+// rectangle, ellipse or cloud (Story 5.5) by its outline or inside; a text
+// markup (Story 5.6) by its box, its note icon, its cloud or its leader. A
 // marquee or lasso selects a markup when its whole outline is inside.
 
 import { circleThrough } from "@/core/measure/circle";
 import type { Markup } from "@/core/schema/markup";
 
+import { NOTE_PT, cloudRingOf, leaderOf, textBoxOf } from "./text";
 import { CLOUD_CHORD_PT, ellipseBounds, ellipseFrame, ellipseLocal, ellipseOutline } from "./shapes";
 
 export type Point = { x: number; y: number };
@@ -99,6 +101,24 @@ export function hitMarkup(m: Markup, p: Point, tol: number, userUnit = 1): boole
       return nearPolyline(p, m.points, tol, true) || insidePolygon(p, m.points);
     case "cloud":
       return nearPolyline(p, m.points, tol + CLOUD_CHORD_PT / 2 / (userUnit > 0 ? userUnit : 1), true) || insidePolygon(p, m.points);
+    case "text":
+    case "typewriter":
+    case "note":
+    case "callout":
+    case "cloudplus": {
+      const unit = userUnit > 0 ? userUnit : 1;
+      if (m.type === "note") {
+        const half = NOTE_PT / 2 / unit + tol;
+        return Math.abs(p.x - m.points[0].x) <= half && Math.abs(p.y - m.points[0].y) <= half;
+      }
+      const box = textBoxOf(m)!;
+      if (nearPolyline(p, box, tol, true) || insidePolygon(p, box)) return true;
+      const leader = leaderOf(m);
+      if (leader && segmentDistance(p, leader[0], leader[1]) <= tol) return true;
+      if (m.type !== "cloudplus") return false;
+      const ring = cloudRingOf(m);
+      return nearPolyline(p, ring, tol + CLOUD_CHORD_PT / 2 / unit, true) || insidePolygon(p, ring);
+    }
     case "ellipse": {
       const local = ellipseLocal(ellipseFrame(m.points), p);
       if (local && Math.hypot(local.x, local.y) <= 1) return true;

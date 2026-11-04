@@ -6,6 +6,7 @@ import {
   ChevronDown,
   Circle,
   Cloud,
+  CloudCog,
   Diameter,
   Droplets,
   Eraser,
@@ -13,6 +14,7 @@ import {
   Hash,
   Hexagon,
   Highlighter,
+  MessageSquareText,
   MousePointer2,
   PaintBucket,
   Pen,
@@ -23,8 +25,10 @@ import {
   Slash,
   Spline,
   Square,
+  StickyNote,
   Stamp,
   Type,
+  TypeOutline,
   type LucideIcon,
 } from "lucide-react";
 import { Fragment, useEffect, useState } from "react";
@@ -33,7 +37,7 @@ import { useStore } from "zustand";
 import { Menu, MenuContent, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "@/components/ui/menu";
 import { Toolbar, ToolbarButton, ToolbarSeparator, ToolbarToggleGroup, ToolbarToggleItem } from "@/components/ui/toolbar";
 import { dismissHint, showHint } from "@/components/ui/hint-store";
-import { hasDocument, isLineTool, isMeasureTool, setTool, viewerStore, type LineTool, type MeasureTool, type ViewerTool } from "@/features/viewer";
+import { hasDocument, isLineTool, isMeasureTool, isTextTool, setTool, viewerStore, type LineTool, type TextTool, type MeasureTool, type ViewerTool } from "@/features/viewer";
 
 import { NO_DRAWING } from "./workspace-toolbar";
 
@@ -49,7 +53,7 @@ interface Tool {
  * Tools that work today: Select and Pan (Story 3.2), and Length (snapping from
  * Story 4.1, measuring from Story 4.5). The others arrive with the editor.
  */
-const LIVE_TOOLS: ReadonlySet<string> = new Set<ViewerTool>(["select", "pan", "length", "polylength", "area", "count", "angle", "radius", "diameter", "line", "arrow", "polyline", "polygon", "rectangle", "ellipse", "cloud"]);
+const LIVE_TOOLS: ReadonlySet<string> = new Set<ViewerTool>(["select", "pan", "length", "polylength", "area", "count", "angle", "radius", "diameter", "line", "arrow", "polyline", "polygon", "rectangle", "ellipse", "cloud", "text", "callout", "typewriter", "note", "cloudplus"]);
 
 export const SNAP_PREVIEW_HINT_ID = "snap-preview";
 /** Review S3: a page past the segment cap. */
@@ -82,6 +86,13 @@ const BOX_SNAPS = "Points snap to the drawing (Alt: off, Shift on the diagonal: 
 export const RECTANGLE_HINT = `Rectangle: drag from one corner to the opposite one, or click both. ${BOX_SNAPS} Esc cancels; Esc again returns to Select.`;
 export const ELLIPSE_HINT = `Ellipse: drag across its box from corner to corner, or click both. ${BOX_SNAPS.replace("a square", "a circle")} Esc cancels; Esc again returns to Select.`;
 export const CLOUD_HINT = `Cloud: click each corner; double-click, Enter or a click on the first corner closes it. Backspace removes the last corner. ${SNAPS} Esc cancels; Esc again returns to Select.`;
+/** Story 5.6: the HintBar while a text tool is armed. */
+const TYPING = "Type the text; Enter is a new line. Esc, Ctrl+Enter or a click elsewhere adds it.";
+export const TEXT_HINT = `Text box: drag from one corner to the opposite one, or click both. ${TYPING}`;
+export const CALLOUT_HINT = `Callout: click the point the leader points to, then where the text goes. ${TYPING}`;
+export const TYPEWRITER_HINT = `Typewriter: click where the text starts. ${TYPING}`;
+export const NOTE_HINT = `Note: click where the note goes. ${TYPING}`;
+export const CLOUD_PLUS_HINT = `Cloud+: click each corner of the cloud and close it on the first corner (or Enter), then click where the text goes. ${TYPING}`;
 const TOOL_HINTS: Partial<Record<ViewerTool, string>> = {
   length: SNAP_PREVIEW_HINT,
   polylength: POLYLENGTH_HINT,
@@ -98,6 +109,11 @@ const TOOL_HINTS: Partial<Record<ViewerTool, string>> = {
   rectangle: RECTANGLE_HINT,
   ellipse: ELLIPSE_HINT,
   cloud: CLOUD_HINT,
+  text: TEXT_HINT,
+  callout: CALLOUT_HINT,
+  typewriter: TYPEWRITER_HINT,
+  note: NOTE_HINT,
+  cloudplus: CLOUD_PLUS_HINT,
 };
 export const EDITOR_LATER = "Arrives with the markup editor";
 
@@ -117,8 +133,6 @@ const GROUPS: { label: string; tools: Tool[] }[] = [
     tools: [
       { id: "rectangle", label: "Rectangle", icon: Square, shortcut: "R" },
       { id: "ellipse", label: "Ellipse", icon: Circle, shortcut: "E" },
-      { id: "cloud", label: "Cloud", icon: Cloud, shortcut: "C" },
-      { id: "text", label: "Text box", icon: Type, shortcut: "T" },
       { id: "pen", label: "Pen", icon: Pen, shortcut: "P" },
       { id: "highlight", label: "Highlight", icon: Highlighter, shortcut: "H" },
       { id: "stamp", label: "Stamp", icon: Stamp, shortcut: "S" },
@@ -161,6 +175,24 @@ export const LINE_TOOLS: readonly (Tool & { id: LineTool })[] = [
   { id: "polygon", label: "Polygon", icon: Hexagon, shortcut: "Shift+P" },
 ];
 export const MORE_LINE_TOOLS = "More line tools";
+
+/** Story 5.6 (D4): Cloud and Cloud+ share the Cloud slot; the text tools the Text box slot. */
+type CloudTool = "cloud" | "cloudplus";
+const isCloudTool = (tool: ViewerTool): tool is CloudTool => tool === "cloud" || tool === "cloudplus";
+export const CLOUD_TOOLS: readonly (Tool & { id: CloudTool })[] = [
+  { id: "cloud", label: "Cloud", icon: Cloud, shortcut: "C" },
+  { id: "cloudplus", label: "Cloud+", icon: CloudCog, shortcut: "K" },
+];
+export const MORE_CLOUD_TOOLS = "More cloud tools";
+type TextSlotTool = Exclude<TextTool, "cloudplus">;
+const isTextSlotTool = (tool: ViewerTool): tool is TextSlotTool => isTextTool(tool) && tool !== "cloudplus";
+export const TEXT_TOOLS: readonly (Tool & { id: TextSlotTool })[] = [
+  { id: "text", label: "Text box", icon: Type, shortcut: "T" },
+  { id: "callout", label: "Callout", icon: MessageSquareText, shortcut: "Q" },
+  { id: "typewriter", label: "Typewriter", icon: TypeOutline },
+  { id: "note", label: "Note", icon: StickyNote },
+];
+export const MORE_TEXT_TOOLS = "More text tools";
 
 /**
  * Tools sharing one rail slot (Measure, Story 4.11; Lines, Story 5.4): the slot shows the armed
@@ -225,6 +257,35 @@ function FlyoutGroup<T extends ViewerTool>({
   );
 }
 
+/** One rail group of buttons (the tools not yet live are disabled). */
+function ToolGroup({ label, tools, open, active }: { label: string; tools: readonly Tool[]; open: boolean; active: ViewerTool }) {
+  return (
+    <ToolbarToggleGroup
+      type="single"
+      aria-label={label}
+      className="flex-col"
+      value={open && LIVE_TOOLS.has(active) ? active : ""}
+      onValueChange={(value: string) => {
+        // Clicking the active tool again keeps it: a tool is always active.
+        if (LIVE_TOOLS.has(value)) setTool(value as ViewerTool);
+      }}
+    >
+      {tools.map((tool) => (
+        <ToolbarToggleItem
+          key={tool.id}
+          value={tool.id}
+          label={tool.label}
+          icon={tool.icon}
+          shortcut={tool.shortcut}
+          size="md"
+          disabled={!(open && LIVE_TOOLS.has(tool.id))}
+          disabledReason={open ? EDITOR_LATER : NO_DRAWING}
+        />
+      ))}
+    </ToolbarToggleGroup>
+  );
+}
+
 /** Right 44 px tool rail; every tool needs an open drawing. */
 export function ToolRail() {
   const open = useStore(viewerStore, hasDocument);
@@ -246,30 +307,16 @@ export function ToolRail() {
             <FlyoutGroup label="Measure" more={MORE_MEASURE_TOOLS} tools={MEASURE_TOOLS} member={isMeasureTool} open={open} active={active} />
           ) : group.label === "Lines" ? (
             <FlyoutGroup label="Lines" more={MORE_LINE_TOOLS} tools={LINE_TOOLS} member={isLineTool} open={open} active={active} />
+          ) : group.label === "Markup" ? (
+            // Story 5.6 (D4): Rectangle, Ellipse, the Cloud slot, the Text box slot, then Pen, Highlight and Stamp.
+            <>
+              <ToolGroup label="Markup" tools={group.tools.slice(0, 2)} open={open} active={active} />
+              <FlyoutGroup label="Clouds" more={MORE_CLOUD_TOOLS} tools={CLOUD_TOOLS} member={isCloudTool} open={open} active={active} />
+              <FlyoutGroup label="Text" more={MORE_TEXT_TOOLS} tools={TEXT_TOOLS} member={isTextSlotTool} open={open} active={active} />
+              <ToolGroup label="Freehand" tools={group.tools.slice(2)} open={open} active={active} />
+            </>
           ) : (
-            <ToolbarToggleGroup
-              type="single"
-              aria-label={group.label}
-              className="flex-col"
-              value={open && LIVE_TOOLS.has(active) ? active : ""}
-              onValueChange={(value: string) => {
-                // Clicking the active tool again keeps it: a tool is always active.
-                if (LIVE_TOOLS.has(value)) setTool(value as ViewerTool);
-              }}
-            >
-              {group.tools.map((tool) => (
-                <ToolbarToggleItem
-                  key={tool.id}
-                  value={tool.id}
-                  label={tool.label}
-                  icon={tool.icon}
-                  shortcut={tool.shortcut}
-                  size="md"
-                  disabled={!(open && LIVE_TOOLS.has(tool.id))}
-                  disabledReason={open ? EDITOR_LATER : NO_DRAWING}
-                />
-              ))}
-            </ToolbarToggleGroup>
+            <ToolGroup label={group.label} tools={group.tools} open={open} active={active} />
           )}
         </Fragment>
       ))}

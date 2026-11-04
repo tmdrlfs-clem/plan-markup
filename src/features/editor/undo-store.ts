@@ -97,6 +97,12 @@ export const DRAWING_POINT_LABEL: Readonly<Record<DrawTool, string>> = {
   rectangle: "Rectangle corner",
   ellipse: "Ellipse corner",
   cloud: "Cloud point",
+  // Story 5.6.
+  text: "Text box corner",
+  callout: "Callout point",
+  typewriter: "Typewriter point",
+  note: "Note point",
+  cloudplus: "Cloud+ point",
 };
 
 /**

@@ -4,7 +4,7 @@ import { boxCorners } from "@/core/markup/shapes";
 import { DEFAULT_MARKUP_STYLE, type Markup } from "@/core/schema/markup";
 import type { LayerView } from "@/features/viewer";
 
-import { handlesOf } from "./handles";
+import { handlesOf, vertexIndices } from "./handles";
 
 const view: LayerView = {
   documentId: "d",
@@ -39,5 +39,18 @@ describe("handles of boxes and clouds (Story 5.5, D3)", () => {
       expect(kinds(shape(type))).toContain("rotate");
     }
     expect(kinds(shape("cloud")).filter((k) => k === "vertex")).toHaveLength(4);
+  });
+});
+
+describe("vertex handles of text markups (Story 5.6)", () => {
+  const box = boxCorners({ x: 0, y: 0 }, { x: 200, y: 100 });
+  const text = (type: Markup["type"], points: { x: number; y: number }[]) => ({ ...shape("rectangle"), type, points, text: "x" }) as Markup;
+
+  it("only a callout's tip and a Cloud+'s cloud corners", () => {
+    expect(vertexIndices(text("text", box))).toEqual([]);
+    expect(vertexIndices(text("typewriter", box))).toEqual([]);
+    expect(vertexIndices(text("note", [{ x: 0, y: 0 }]))).toEqual([]);
+    expect(vertexIndices(text("callout", [...box, { x: 300, y: 50 }]))).toEqual([4]);
+    expect(vertexIndices(text("cloudplus", [{ x: 300, y: 0 }, { x: 400, y: 0 }, { x: 400, y: 100 }, ...box]))).toEqual([0, 1, 2]);
   });
 });

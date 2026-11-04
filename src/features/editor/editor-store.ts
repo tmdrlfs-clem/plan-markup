@@ -6,13 +6,13 @@
 //   view       the active document tab, mirrored from the viewer
 //   tools      the drawing in progress (Length, Story 4.5; more tools with Epic 5), a caption being moved (4.6)
 //              and markups being moved (a drag or an arrow key held, 5.1), resized, rotated or copied (5.2),
-//              the markups' context menu (5.3)
+//              the markups' context menu (5.3), the text being typed (5.6)
 //   selection  selected markup ids (the Measurements panel, Story 4.11; Epic 5)
 //   history    undo histories by document tab (the Story 4.3 undo stack)
 
 import { createStore } from "zustand/vanilla";
 
-import type { Markup } from "@/core/schema/markup";
+import type { Markup, TextMarkup } from "@/core/schema/markup";
 import type { UndoHistory } from "@/core/undo/stack";
 import { viewerStore, type DrawTool, type LayerView } from "@/features/viewer";
 
@@ -22,7 +22,17 @@ type Point = { x: number; y: number };
  * A measurement being drawn (Length 4.5, Polylength 4.6, Area and Count 4.8; 5.4: a line, arrow,
  * polyline or polygon): its tool, its page and the points placed so far (user space).
  */
-export type Drawing = { tool: DrawTool; pageId: string; pageIndex: number; points: readonly Point[] };
+export type Drawing = {
+  tool: DrawTool;
+  pageId: string;
+  pageIndex: number;
+  points: readonly Point[];
+  /** Story 5.6: a Cloud+'s closed cloud (its points then wait for the text's click). */
+  ring?: readonly Point[];
+};
+
+/** Story 5.6: a text markup placed and being typed: its draft (no text yet), its document and the tab that records it. */
+export type TextEdit = { draft: TextMarkup; documentId: string; tabId: string | null };
 
 /** Story 4.6: a caption being moved: its markup and the offset change so far (user space). */
 export type CaptionDrag = { id: string; documentId: string; delta: Point };
@@ -39,7 +49,7 @@ export type MarkupMenu = { documentId: string; pageIndex: number; view: LayerVie
 export type EditorState = {
   doc: { markups: Readonly<Record<string, readonly Markup[]>> };
   view: { tabId: string | null; documentId: string | null };
-  tools: { drawing: Drawing | null; captionDrag: CaptionDrag | null; moveDrag: MoveDrag | null; preview: Preview | null; menu: MarkupMenu | null };
+  tools: { drawing: Drawing | null; captionDrag: CaptionDrag | null; moveDrag: MoveDrag | null; preview: Preview | null; menu: MarkupMenu | null; textEdit: TextEdit | null };
   selection: { ids: readonly string[] };
   /** Histories by tab id ("" outside tabs). */
   history: { histories: Readonly<Record<string, UndoHistory>> };
@@ -48,7 +58,7 @@ export type EditorState = {
 export const EMPTY_EDITOR: EditorState = {
   doc: { markups: {} },
   view: { tabId: null, documentId: null },
-  tools: { drawing: null, captionDrag: null, moveDrag: null, preview: null, menu: null },
+  tools: { drawing: null, captionDrag: null, moveDrag: null, preview: null, menu: null, textEdit: null },
   selection: { ids: [] },
   history: { histories: {} },
 };
@@ -100,6 +110,12 @@ export function setPreview(preview: Preview | null): void {
 export function setMarkupMenu(menu: MarkupMenu | null): void {
   if (editorStore.getState().tools.menu === menu) return;
   editorStore.setState((s) => ({ tools: { ...s.tools, menu } }));
+}
+
+/** Story 5.6: the text being typed (the text tool only). */
+export function setTextEdit(textEdit: TextEdit | null): void {
+  if (editorStore.getState().tools.textEdit === textEdit) return;
+  editorStore.setState((s) => ({ tools: { ...s.tools, textEdit } }));
 }
 
 /** Story 4.11: selects markups by id (none: clears); false when nothing changed. */

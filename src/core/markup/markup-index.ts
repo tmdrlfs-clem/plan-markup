@@ -9,6 +9,7 @@ import type { Markup } from "@/core/schema/markup";
 
 import { COUNT_MARKER_PT, hitMarkup, insideLoop, insideRect, markupBounds, type Point, type Rect } from "./geometry";
 import { CLOUD_CHORD_PT } from "./shapes";
+import { NOTE_PT } from "./text";
 
 type Item = { minX: number; minY: number; maxX: number; maxY: number; markup: Markup; order: number };
 
@@ -24,7 +25,15 @@ export class MarkupIndex {
       markups.map((markup, order) => {
         const b = markupBounds(markup);
         // A count's markers reach past their points; a cloud's arcs past its corners' ring (Story 5.5 review R1).
-        const p = markup.type === "count" ? COUNT_MARKER_PT / unit : markup.type === "cloud" ? CLOUD_CHORD_PT / 2 / unit : 0;
+        // Story 5.6: a note's icon past its point, a Cloud+'s arcs.
+        const p =
+          markup.type === "count"
+            ? COUNT_MARKER_PT / unit
+            : markup.type === "note"
+              ? NOTE_PT / 2 / unit
+              : markup.type === "cloud" || markup.type === "cloudplus"
+                ? CLOUD_CHORD_PT / 2 / unit
+                : 0;
         return { minX: b.x - p, minY: b.y - p, maxX: b.x + b.width + p, maxY: b.y + b.height + p, markup, order };
       }),
     );

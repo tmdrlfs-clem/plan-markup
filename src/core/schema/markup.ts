@@ -112,6 +112,20 @@ export const rectangleMarkupSchema = z.object({ ...base, type: z.literal("rectan
 export const ellipseMarkupSchema = z.object({ ...base, type: z.literal("ellipse"), points: fourPoints });
 export const cloudMarkupSchema = z.object({ ...base, type: z.literal("cloud"), points: z.array(pointSchema).min(3).max(MAX_POLYLINE_POINTS) });
 
+/**
+ * Story 5.6: text markups. The text is plain text, never HTML (NFR27). A text box and a
+ * typewriter are the box's four corners, ordered from the screen's top left when made (p0→p1
+ * the lines' direction, p0→p3 down them); a note is its icon's point; a callout is its box's
+ * corners then its leader's tip; a Cloud+ is its cloud's corners then its box's four corners.
+ */
+export const MAX_TEXT_LENGTH = 10_000;
+const text = z.string().max(MAX_TEXT_LENGTH);
+export const textMarkupSchema = z.object({ ...base, type: z.literal("text"), points: fourPoints, text });
+export const typewriterMarkupSchema = z.object({ ...base, type: z.literal("typewriter"), points: fourPoints, text });
+export const noteMarkupSchema = z.object({ ...base, type: z.literal("note"), points: z.tuple([pointSchema]), text });
+export const calloutMarkupSchema = z.object({ ...base, type: z.literal("callout"), points: z.tuple([pointSchema, pointSchema, pointSchema, pointSchema, pointSchema]), text });
+export const cloudPlusMarkupSchema = z.object({ ...base, type: z.literal("cloudplus"), points: z.array(pointSchema).min(7).max(MAX_POLYLINE_POINTS + 4), text });
+
 /** Every markup type (more join with Epic 5). */
 export const markupSchema = z.discriminatedUnion("type", [
   lengthMarkupSchema,
@@ -128,6 +142,11 @@ export const markupSchema = z.discriminatedUnion("type", [
   rectangleMarkupSchema,
   ellipseMarkupSchema,
   cloudMarkupSchema,
+  textMarkupSchema,
+  typewriterMarkupSchema,
+  noteMarkupSchema,
+  calloutMarkupSchema,
+  cloudPlusMarkupSchema,
 ]);
 
 export type Markup = z.infer<typeof markupSchema>;
@@ -150,6 +169,18 @@ export type ShapeMarkup =
   | z.infer<typeof rectangleMarkupSchema>
   | z.infer<typeof ellipseMarkupSchema>
   | z.infer<typeof cloudMarkupSchema>;
+/** Story 5.6: the text markups. */
+export type TextMarkup =
+  | z.infer<typeof textMarkupSchema>
+  | z.infer<typeof typewriterMarkupSchema>
+  | z.infer<typeof noteMarkupSchema>
+  | z.infer<typeof calloutMarkupSchema>
+  | z.infer<typeof cloudPlusMarkupSchema>;
+const TEXT_TYPES: ReadonlySet<MarkupType> = new Set<MarkupType>(["text", "typewriter", "note", "callout", "cloudplus"]);
+/** Whether `m` carries text (Story 5.6). */
+export function isTextMarkup(m: Markup): m is TextMarkup {
+  return TEXT_TYPES.has(m.type);
+}
 const MEASURE_TYPES: ReadonlySet<MarkupType> = new Set<MarkupType>(["length", "polylength", "area", "count", "angle", "radius", "diameter"]);
 /** Whether `m` is a measurement (it has a caption and a value). */
 export function isMeasureMarkup(m: Markup): m is MeasureMarkup {

@@ -107,6 +107,10 @@ export function resolveViewerKey(
   if (isLetter(event, "r") && !event.shiftKey) return { type: "tool", tool: "rectangle" };
   if (isLetter(event, "e") && !event.shiftKey) return { type: "tool", tool: "ellipse" };
   if (isLetter(event, "c") && !event.shiftKey) return { type: "tool", tool: "cloud" };
+  // Story 5.6: T Text box, Q Callout, K Cloud+ (Typewriter and Note have no key, D5).
+  if (isLetter(event, "t") && !event.shiftKey) return { type: "tool", tool: "text" };
+  if (isLetter(event, "q") && !event.shiftKey) return { type: "tool", tool: "callout" };
+  if (isLetter(event, "k") && !event.shiftKey) return { type: "tool", tool: "cloudplus" };
   return null;
 }
 

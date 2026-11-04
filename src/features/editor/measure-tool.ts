@@ -28,6 +28,12 @@
 // style's fill fills a closed shape under its stroke; its opacity applies to
 // the whole markup.
 //
+// Story 5.6: the text tools place as the others do (Text box as Rectangle,
+// Callout by its tip then its text, Typewriter and Note by one click, Cloud+
+// as Cloud then its text's click); placed, the markup is typed in the text
+// editor (text-tool.ts) and added when the typing ends. A click on the canvas
+// while typing only ends the typing.
+//
 // With Select, Shift + drag on a caption moves the caption only ("Move
 // caption", a markups.update op); the offset is stored in user space.
 //
@@ -49,20 +55,24 @@ import { circleCaption, circleThrough } from "@/core/measure/circle";
 import { SCALE_NOT_SET, captionPlacement, lengthCaption, polylineCaptionAnchor } from "@/core/measure/length";
 import { outlinePoints, translateMarkup } from "@/core/markup/geometry";
 import { CLOUD_CHORD_PT, boxCorners, cloudArcs, ellipseFrame } from "@/core/markup/shapes";
+import { NOTE_PT, TEXT_LINE_HEIGHT, TEXT_PAD_PT, cloudRingOf, leaderOf, leaderTo, leaderToRing, textBoxOf, wrapText } from "@/core/markup/text";
 import {
   DEFAULT_MARKUP_STYLE,
   DEFAULT_MEASURE_STYLE,
   MAX_POLYLINE_POINTS,
   isMeasureMarkup,
+  isTextMarkup,
   type Markup,
   type MarkupStyle,
   type MeasureMarkup,
   type ShapeMarkup,
+  type TextMarkup,
 } from "@/core/schema/markup";
 import {
   isBoxTool,
   isDrawTool,
   isMarkupTool,
+  isTextTool,
   notifyMarkups,
   registerMarkupPainter,
   setTool,
@@ -76,6 +86,23 @@ import { editorStore, markupsOf, pageMarkups, setCaptionDrag, setDrawing, setMar
 import { discardFill, fillAreaUser, fillPress, paintFill, takeFillRings, undoFillStroke } from "./fill-tool";
 import { handlesOf, paintHandles } from "./handles";
 import { lockedNote, openMarkupMenu, paintSelectGesture, resetSelectTool, selectCursorAt, selectGesture, selectionKey, toggleSelected } from "./select-tool";
+import {
+  ADD_CALLOUT,
+  ADD_CLOUD_PLUS,
+  ADD_NOTE,
+  ADD_TEXT,
+  ADD_TYPEWRITER,
+  NOTE_FIELD_PX,
+  beginTextEdit,
+  draftOf,
+  endTextEdit,
+  forgetViews,
+  noteView,
+  setTextFrame,
+  textEditing,
+  textLabel,
+  type TextFrame,
+} from "./text-tool";
 import { executeOp, registerDrawingUndo } from "./undo-store";
 
 type Point = { x: number; y: number };
@@ -111,6 +138,11 @@ const ADD_LABEL: Record<DrawTool, string> = {
   rectangle: ADD_RECTANGLE,
   ellipse: ADD_ELLIPSE,
   cloud: ADD_CLOUD,
+  text: ADD_TEXT,
+  callout: ADD_CALLOUT,
+  typewriter: ADD_TYPEWRITER,
+  note: ADD_NOTE,
+  cloudplus: ADD_CLOUD_PLUS,
 };
 /** Story 4.8: what the live value says while an area crosses itself (it cannot be added). */
 export const CROSSES_ITSELF = "Crosses itself";
@@ -131,11 +163,16 @@ const MIN_POINTS: Record<DrawTool, number> = {
   rectangle: 2,
   ellipse: 2,
   cloud: 3,
+  text: 2,
+  callout: 2,
+  typewriter: 1,
+  note: 1,
+  cloudplus: 3,
 };
 /** Tools with a fixed number of points: the click that places the last one adds the measurement. */
-const FIXED_POINTS: Partial<Record<DrawTool, number>> = { length: 2, angle: 3, radius: 3, diameter: 3, line: 2, arrow: 2, rectangle: 2, ellipse: 2 };
+const FIXED_POINTS: Partial<Record<DrawTool, number>> = { length: 2, angle: 3, radius: 3, diameter: 3, line: 2, arrow: 2, rectangle: 2, ellipse: 2, text: 2, callout: 2, typewriter: 1, note: 1 };
 /** Tools whose outline is closed: a click on the first vertex closes it. */
-const CLOSED: ReadonlySet<DrawTool> = new Set<DrawTool>(["area", "polygon", "cloud"]);
+const CLOSED: ReadonlySet<DrawTool> = new Set<DrawTool>(["area", "polygon", "cloud", "cloudplus"]);
 /** Story 5.4 (D1): an arrow head's length in line widths, and its least length, in points (page units). */
 const ARROW_HEAD_WIDTHS = 6;
 const ARROW_HEAD_MIN_PT = 6;
@@ -298,6 +335,90 @@ function strokeShape(c: CanvasRenderingContext2D, type: ShapeMarkup["type"], pts
     c.fill();
   }
   c.restore();
+}
+
+/** Story 5.6: a text's lines in its box (device corners, p0→p1 along the lines), plain text (NFR27). */
+function drawText(c: CanvasRenderingContext2D, box: readonly Point[], text: string, wrap: boolean, style: MarkupStyle, view: LayerView): void {
+  const size = style.fontSize * view.devicePerPt;
+  if (size < 1 || text === "") return;
+  const [d0, d1] = box;
+  const width = Math.hypot(d1.x - d0.x, d1.y - d0.y);
+  const pad = wrap ? TEXT_PAD_PT * view.devicePerPt : 0;
+  c.save();
+  if ((style.opacity ?? 1) < 1) c.globalAlpha = style.opacity ?? 1;
+  c.translate(d0.x, d0.y);
+  c.rotate(Math.atan2(d1.y - d0.y, d1.x - d0.x));
+  c.font = `${size}px ${view.colors.fontFamily}`;
+  c.textAlign = "left";
+  c.textBaseline = "top";
+  c.fillStyle = style.color;
+  const lines = wrapText(text, wrap ? Math.max(size, width - 2 * pad) : null, (s) => c.measureText(s).width);
+  lines.forEach((line, i) => c.fillText(line, pad, pad + i * size * TEXT_LINE_HEIGHT));
+  c.restore();
+}
+
+/** Story 5.6 (D7): a note's icon, a page (folded corner) in page units, upright, centred on its point. */
+function drawNote(c: CanvasRenderingContext2D, at: Point, style: MarkupStyle, view: LayerView): void {
+  const side = Math.max(8 * view.dpr, NOTE_PT * view.devicePerPt);
+  const x = at.x - side / 2;
+  const y = at.y - side / 2;
+  const fold = side / 4;
+  c.save();
+  c.beginPath();
+  c.moveTo(x, y);
+  c.lineTo(x + side - fold, y);
+  c.lineTo(x + side, y + fold);
+  c.lineTo(x + side, y + side);
+  c.lineTo(x, y + side);
+  c.closePath();
+  c.fillStyle = view.colors.halo;
+  c.fill();
+  stroke(c, style, view);
+  c.beginPath();
+  for (let i = 1; i <= 3; i++) {
+    const ly = y + (side * (i + 0.5)) / 5;
+    c.moveTo(x + side / 5, ly);
+    c.lineTo(x + side - side / 5, ly);
+  }
+  c.lineWidth = Math.max(1, view.dpr);
+  c.strokeStyle = style.color;
+  c.stroke();
+  c.restore();
+}
+
+/** Story 5.6: a text markup: its cloud and leader, its box's border (a typewriter has none) and, `withText`, its text. */
+function paintTextMarkup(c: CanvasRenderingContext2D, m: TextMarkup, view: LayerView, withText: boolean): void {
+  if (m.type === "note") return drawNote(c, view.toDevice(m.points[0]), m.style, view);
+  const box = devicePoints(textBoxOf(m)!, view);
+  if (m.type === "cloudplus") strokeShape(c, "cloud", devicePoints(cloudRingOf(m), view), m.style, view);
+  const leader = leaderOf(m);
+  if (leader) strokeShape(c, m.type === "callout" ? "arrow" : "line", devicePoints(leader, view), m.style, view);
+  if (m.type !== "typewriter") strokeShape(c, "rectangle", box, m.style, view);
+  if (withText) drawText(c, box, m.text, m.type !== "typewriter", m.style, view);
+}
+
+/** Story 5.6: the text editor's frame over a draft as painted (viewport CSS px). */
+function textFrameOf(m: TextMarkup, view: LayerView): TextFrame {
+  const k = view.dpr || 1;
+  const fontPx = (m.style.fontSize * view.devicePerPt) / k;
+  if (m.type === "note") {
+    const at = view.toDevice(m.points[0]);
+    const half = Math.max(8 * view.dpr, NOTE_PT * view.devicePerPt) / 2;
+    return { x: (at.x + half) / k + 4, y: (at.y - half) / k, width: NOTE_FIELD_PX, height: 0, angle: 0, fontPx: Math.max(12, fontPx), padPx: 4, color: m.style.color, kind: m.type };
+  }
+  const [d0, d1, , d3] = devicePoints(textBoxOf(m)!, view);
+  const pad = m.type === "typewriter" ? 0 : (TEXT_PAD_PT * view.devicePerPt) / k;
+  return {
+    x: d0.x / k,
+    y: d0.y / k,
+    width: Math.hypot(d1.x - d0.x, d1.y - d0.y) / k,
+    height: Math.hypot(d3.x - d0.x, d3.y - d0.y) / k,
+    angle: Math.atan2(d1.y - d0.y, d1.x - d0.x),
+    fontPx,
+    padPx: pad,
+    color: m.style.color,
+    kind: m.type,
+  };
 }
 
 /** Story 4.8: a count's markers, circles in page units. */
@@ -553,10 +674,12 @@ export const measurePainter: MarkupPainter = {
     const markups = added.length > 0 ? [...stored, ...added] : stored;
     if (markups.length === 0) {
       captionBoxes = null;
+      noteView(view);
       return [];
     }
     const pageId = pageIdOf(view.documentId, view.pageIndex);
     const calibration = calibrationOf(view.documentId, view.pageIndex);
+    noteView(view);
     const captions: string[] = [];
     const boxes: CaptionBox[] = [];
     const selected = new Set(editorStore.getState().selection.ids);
@@ -565,6 +688,19 @@ export const measurePainter: MarkupPainter = {
     for (const one of markups) {
       const any = shown(one);
       if (selected.has(any.id)) selectedShown.push(any);
+      if (isTextMarkup(any)) {
+        // Story 5.6: a text markup, its label and text in layer 2's list.
+        captions.push(textLabel(any));
+        const pts = devicePoints(any.points, view);
+        if (!onCanvas(pts, any.style, view)) continue;
+        if (selected.has(any.id)) {
+          const half = any.type === "note" ? Math.max(8 * view.dpr, NOTE_PT * view.devicePerPt) / 2 : 0;
+          const around = half > 0 ? [{ x: pts[0].x - half, y: pts[0].y - half }, { x: pts[0].x + half, y: pts[0].y + half }] : pts;
+          strokeSelection(c, around, view);
+        }
+        paintTextMarkup(c, any, view, true);
+        continue;
+      }
       if (!isMeasure(any)) {
         // Story 5.4: a shape, no caption (its label stands in layer 2's list).
         captions.push(SHAPE_LABEL[any.type]);
@@ -612,11 +748,33 @@ export const measurePainter: MarkupPainter = {
   paintActive(c, view, pointer) {
     // Story 5.1: the marquee or lasso in progress.
     if (viewerStore.getState().tool === "select") paintSelectGesture(c, view);
+    // Story 5.6: the text being typed: its box (the field shows the text) and where the field goes.
+    const edit = textEditing();
+    if (edit) {
+      if (edit.draft.pageId !== pageIdOf(view.documentId, view.pageIndex)) {
+        setTextFrame(null);
+      } else {
+        paintTextMarkup(c, edit.draft, view, false);
+        setTextFrame(textFrameOf(edit.draft, view));
+      }
+    }
     const d = drawing();
     if (d?.tool === "fill") return paintFillActive(c, view, pointer);
-    if (!d || d.pageId !== pageIdOf(view.documentId, view.pageIndex) || !pointer || d.points.length === 0) return null;
+    if (!d || d.pageId !== pageIdOf(view.documentId, view.pageIndex) || !pointer) return null;
+    // Story 5.6: a Cloud+'s closed cloud and a leader to the pointer (where its text goes).
+    if (d.ring) {
+      strokeShape(c, "cloud", devicePoints(d.ring, view), DEFAULT_MARKUP_STYLE, view);
+      strokeShape(c, "line", devicePoints(leaderToRing([pointer, pointer, pointer, pointer], d.ring), view), DEFAULT_MARKUP_STYLE, view);
+      return null;
+    }
+    if (d.points.length === 0) return null;
     const points = [...d.points, pointer];
-    // Story 5.5: a box from its first corner to the pointer.
+    if (d.tool === "callout") {
+      // The leader from the pointer (where the text goes) to the tip.
+      strokeShape(c, "arrow", devicePoints(leaderTo([pointer, pointer, pointer, pointer], d.points[0]), view), DEFAULT_MARKUP_STYLE, view);
+      return null;
+    }
+    // Story 5.5: a box from its first corner to the pointer (5.6: a text box's too).
     const pts = devicePoints(isBoxTool(d.tool) ? boxCorners(points[0], pointer) : points, view);
     const live = liveValue(d.tool, points, calibrationOf(view.documentId, view.pageIndex), view.userUnit);
     c.save();
@@ -624,7 +782,9 @@ export const measurePainter: MarkupPainter = {
     else if (d.tool === "count") drawMarkers(c, pts.slice(0, -1), DEFAULT_MEASURE_STYLE, view);
     else if (d.tool === "angle") strokeAngle(c, pts, DEFAULT_MEASURE_STYLE, view);
     else if (d.tool === "radius" || d.tool === "diameter") strokeCircle(c, d.tool, pts, deviceCircle(points, view), DEFAULT_MEASURE_STYLE, view);
-    else if (isMarkupTool(d.tool)) strokeShape(c, d.tool, pts, DEFAULT_MARKUP_STYLE, view);
+    else if (d.tool === "text") strokeShape(c, "rectangle", pts, DEFAULT_MARKUP_STYLE, view);
+    else if (d.tool === "cloudplus") strokeShape(c, "cloud", pts, DEFAULT_MARKUP_STYLE, view);
+    else if (isMarkupTool(d.tool) && !isTextTool(d.tool)) strokeShape(c, d.tool, pts, DEFAULT_MARKUP_STYLE, view);
     else strokeMeasure(c, pts, DEFAULT_MEASURE_STYLE, view);
     c.restore();
     if (!live) return null;
@@ -641,6 +801,11 @@ export const measurePainter: MarkupPainter = {
   },
 
   place(point, at) {
+    // Story 5.6: a click while typing ends the typing, and only that.
+    if (textEditing()) {
+      endTextEdit(true);
+      return "ignored";
+    }
     const tool = viewerStore.getState().tool;
     // Dynamic fill is pressed, not clicked (press below).
     if (!isDrawTool(tool) || tool === "fill") return "ignored";
@@ -648,7 +813,13 @@ export const measurePainter: MarkupPainter = {
     const d = drawing();
     if (!d || d.pageId !== pageId || d.tool !== tool) {
       setDrawing({ tool, pageId, pageIndex: at.pageIndex, points: [point] });
-      return "continue";
+      // Story 5.6: Typewriter and Note are placed by one click.
+      return FIXED_POINTS[tool] === 1 ? commit(at.documentId) : "continue";
+    }
+    // Story 5.6: a Cloud+'s closed cloud: this click places its text.
+    if (d.ring) {
+      setDrawing({ ...d, points: [point] });
+      return commit(at.documentId);
     }
     // A click on the last point adds nothing (a double-click's second click): keep drawing.
     const last = d.points[d.points.length - 1];
@@ -678,8 +849,8 @@ export const measurePainter: MarkupPainter = {
     if (d?.tool === "fill") return addFilledArea();
     const documentId = viewerStore.getState().documentId;
     // Fixed-point tools (Length, Angle, Radius, Diameter) finish on their last click only.
-    if (!d || FIXED_POINTS[d.tool] !== undefined || !documentId || !d.pageId.startsWith(`${documentId}:`)) return "ignored";
-    return finishDrawing(documentId);
+    if (!d || d.ring || FIXED_POINTS[d.tool] !== undefined || !documentId || !d.pageId.startsWith(`${documentId}:`)) return "ignored";
+    return finishDrawing(documentId) === "ignored" ? "ignored" : "done";
   },
 
   removeLastPoint() {
@@ -687,6 +858,7 @@ export const measurePainter: MarkupPainter = {
   },
 
   escape() {
+    if (textEditing()) return endTextEdit(true) || true;
     const d = drawing();
     // Story 4.11: with nothing being drawn, Esc clears the selection.
     if (!d) return setSelection([]);
@@ -806,7 +978,7 @@ function pageMarkupById(documentId: string, id: string): MeasureMarkup | null {
 }
 
 /** Finishes a polylength, area or count when it can be: enough points, an area that does not cross itself (D3). */
-function finishDrawing(documentId: string): "done" | "ignored" {
+function finishDrawing(documentId: string): "done" | "continue" | "ignored" {
   const d = drawing();
   if (!d || d.points.length < MIN_POINTS[d.tool]) return "ignored";
   if (d.tool === "area" && selfIntersects(d.points)) return "ignored";
@@ -832,14 +1004,32 @@ function markupOf(d: Drawing): Markup {
       return { ...base, type: d.tool, points: [a, b, c] };
     case "fill":
       return { ...base, type: "area", points };
+    case "text":
+    case "callout":
+    case "typewriter":
+    case "note":
+    case "cloudplus":
+      throw new Error("text markups are typed (text-tool.ts)");
     default:
       return { ...base, type: d.tool, points };
   }
 }
 
-/** Adds the drawing as its markup (one undo step, in `tabId`'s history: the active tab by default) and ends it. */
-function commit(documentId: string, tabId?: string): "done" {
+/**
+ * Adds the drawing as its markup (one undo step, in `tabId`'s history: the active tab by default) and ends it.
+ * Story 5.6: a text tool's starts its typing; a Cloud+'s closed cloud waits for its text's click ("continue").
+ */
+function commit(documentId: string, tabId?: string): "done" | "continue" {
   const d = drawing()!;
+  if (isTextTool(d.tool)) {
+    if (d.tool === "cloudplus" && !d.ring) {
+      setDrawing({ ...d, ring: d.points, points: [] });
+      return "continue";
+    }
+    setDrawing(null);
+    beginTextEdit(draftOf(d.tool, d.pageId, d.points, d.ring), documentId, tabId ?? viewerStore.getState().tabId);
+    return "done";
+  }
   const markup = markupOf(d);
   setDrawing(null);
   executeOp({ kind: "markups.add", documentId, markups: [markup] }, ADD_LABEL[d.tool], tabId);
@@ -852,6 +1042,11 @@ function undoDrawingPoint(): boolean {
   if (!d) return false;
   // Story 4.10: while filling, the last stroke.
   if (d.tool === "fill") return undoFillStroke();
+  // Story 5.6: a Cloud+ waiting for its text's click goes back to its cloud.
+  if (d.ring) {
+    setDrawing({ tool: d.tool, pageId: d.pageId, pageIndex: d.pageIndex, points: d.ring });
+    return true;
+  }
   const points = d.points.slice(0, -1);
   setDrawing(points.length > 0 ? { ...d, points } : null);
   return true;
@@ -883,6 +1078,8 @@ export function installMeasureTools(): () => void {
       if (s.calibrations !== prev.calibrations) notifyMarkups({});
       const moved = s.tool !== prev.tool || s.pageIndex !== prev.pageIndex || s.tabId !== prev.tabId || s.openSeq !== prev.openSeq || s.documentId !== prev.documentId;
       if (moved) setCaptionDrag(null);
+      // Story 5.6: another tool, page, tab or document ends the typing (its text is kept).
+      if (moved && textEditing()) endTextEdit(true);
       // Story 4.11 (D5): arming another tool, another tab or document clears the selection;
       // Story 5.1 (D4): another page too. A move in progress is dropped.
       const otherDocument = s.tabId !== prev.tabId || s.openSeq !== prev.openSeq || s.documentId !== prev.documentId;
@@ -905,6 +1102,8 @@ export function installMeasureTools(): () => void {
       else setDrawing(null);
     });
     uninstall = () => {
+      endTextEdit(false);
+      forgetViews();
       discardFill();
       resetSelectTool();
       setMoveDrag(null);

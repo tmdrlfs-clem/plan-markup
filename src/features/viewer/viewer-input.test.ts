@@ -66,6 +66,11 @@ describe("resolveViewerKey (focus rule)", () => {
     expect(resolveViewerKey(key({ key: "c", code: "KeyC" }), FOCUSED)).toEqual({ type: "tool", tool: "cloud" });
     expect(resolveViewerKey(key({ key: "c", code: "KeyC", ctrlKey: true }), FOCUSED)).toBeNull();
     expect(resolveViewerKey(key({ key: "r", code: "KeyR" }), OVER)).toBeNull();
+    // Story 5.6: T Text box, Q Callout, K Cloud+.
+    expect(resolveViewerKey(key({ key: "t", code: "KeyT" }), FOCUSED)).toEqual({ type: "tool", tool: "text" });
+    expect(resolveViewerKey(key({ key: "q", code: "KeyQ" }), FOCUSED)).toEqual({ type: "tool", tool: "callout" });
+    expect(resolveViewerKey(key({ key: "k", code: "KeyK" }), FOCUSED)).toEqual({ type: "tool", tool: "cloudplus" });
+    expect(resolveViewerKey(key({ key: "t", code: "KeyT" }), OVER)).toBeNull();
     expect(resolveViewerKey(key({ key: "l", code: "KeyL" }), OVER)).toBeNull();
     for (const k of [{ key: "+" }, { key: "-" }, { key: "z", code: "KeyZ" }, { key: "v", code: "KeyV" }, { key: " ", code: "Space" }]) {
       expect(resolveViewerKey(key(k), OVER)).toBeNull();
@@ -85,7 +90,7 @@ describe("resolveViewerKey (focus rule)", () => {
     expect(resolveViewerKey(key({ key: "z", code: "KeyZ", ctrlKey: true }), FOCUSED)).toBeNull(); // Ctrl+Z is Undo
     expect(resolveViewerKey(key({ key: "v", code: "KeyV", altKey: true }), FOCUSED)).toBeNull();
     expect(resolveViewerKey(key({ key: "Z", code: "KeyZ", shiftKey: true }), FOCUSED)).toBeNull();
-    expect(resolveViewerKey(key({ key: "q", code: "KeyQ" }), FOCUSED)).toBeNull();
+    expect(resolveViewerKey(key({ key: "x", code: "KeyX" }), FOCUSED)).toBeNull();
     expect(resolveViewerKey(key({ key: "+", isComposing: true }), FOCUSED)).toBeNull();
     // Non-Latin layouts fall back to the key position.
     expect(resolveViewerKey(key({ key: "м", code: "KeyV" }), FOCUSED)).toEqual({ type: "tool", tool: "select" });

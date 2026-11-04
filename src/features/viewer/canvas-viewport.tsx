@@ -1,7 +1,7 @@
 "use client";
 
 import { FileWarning, RotateCw } from "lucide-react";
-import { useEffect, useRef, type DragEvent } from "react";
+import { useEffect, useRef, type DragEvent, type ReactNode } from "react";
 import { useStore } from "zustand";
 
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,8 @@ export interface CanvasViewportProps {
   onOpenFiles: (files: File[]) => void;
   /** Builds the render worker; tests pass a fake. */
   createWorker?: () => Worker;
+  /** Story 5.6: DOM over the canvases, in the viewport's CSS px (the editor's text field). */
+  overlay?: ReactNode;
 }
 
 function defaultWorker(): Worker {
@@ -61,7 +63,7 @@ function hasFiles(event: DragEvent): boolean {
  * active canvas sized to the viewport x DPR. The engine draws; React only mounts the
  * stack and renders the document-level states (loading bar, inline errors, tile retry).
  */
-export function CanvasViewport({ onOpen, onOpenFiles, createWorker = defaultWorker }: CanvasViewportProps) {
+export function CanvasViewport({ onOpen, onOpenFiles, createWorker = defaultWorker, overlay }: CanvasViewportProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const tilesRef = useRef<HTMLCanvasElement>(null);
   const markupsRef = useRef<HTMLCanvasElement>(null);
@@ -199,6 +201,7 @@ export function CanvasViewport({ onOpen, onOpenFiles, createWorker = defaultWork
         data-first-frame-ms={firstFrameMs === null ? undefined : Math.round(firstFrameMs)}
         className={`${canvasClass} focus-ring`}
       />
+      {overlay}
 
       {/* Loading shows as a thin progress bar in the document tab (Story 3.5, UX). */}
 

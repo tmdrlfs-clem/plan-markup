@@ -42,7 +42,12 @@ export type ViewerTool =
   | "polygon"
   | "rectangle"
   | "ellipse"
-  | "cloud";
+  | "cloud"
+  | "text"
+  | "callout"
+  | "typewriter"
+  | "note"
+  | "cloudplus";
 
 /** Stories 4.6, 4.8, 4.9, 4.10: the measuring tools (they draw markups through the editor's painter). */
 export type MeasureTool = "length" | "polylength" | "area" | "count" | "angle" | "radius" | "diameter" | "fill";
@@ -58,16 +63,23 @@ export function isLineTool(tool: ViewerTool): tool is LineTool {
   return LINE_TOOLS.has(tool);
 }
 
-/** Story 5.5: the box tools (a rectangle, an ellipse: two corners, clicked or dragged). */
-export type BoxTool = "rectangle" | "ellipse";
+/** Story 5.5: the box tools (a rectangle, an ellipse: two corners, clicked or dragged; 5.6: a text box too). */
+export type BoxTool = "rectangle" | "ellipse" | "text";
 export function isBoxTool(tool: ViewerTool): tool is BoxTool {
-  return tool === "rectangle" || tool === "ellipse";
+  return tool === "rectangle" || tool === "ellipse" || tool === "text";
 }
 
-/** Stories 5.4, 5.5: the markup tools that draw by points (no value, no caption). */
-export type MarkupTool = LineTool | BoxTool | "cloud";
+/** Story 5.6: the text tools (placed by points, then typed). */
+export type TextTool = "text" | "callout" | "typewriter" | "note" | "cloudplus";
+const TEXT_TOOLS: ReadonlySet<ViewerTool> = new Set<ViewerTool>(["text", "callout", "typewriter", "note", "cloudplus"]);
+export function isTextTool(tool: ViewerTool): tool is TextTool {
+  return TEXT_TOOLS.has(tool);
+}
+
+/** Stories 5.4, 5.5, 5.6: the markup tools that draw by points (no value, no caption). */
+export type MarkupTool = LineTool | BoxTool | "cloud" | TextTool;
 export function isMarkupTool(tool: ViewerTool): tool is MarkupTool {
-  return LINE_TOOLS.has(tool) || isBoxTool(tool) || tool === "cloud";
+  return LINE_TOOLS.has(tool) || isBoxTool(tool) || tool === "cloud" || TEXT_TOOLS.has(tool);
 }
 
 /** Story 5.4: the tools that draw markups by clicking points (through the editor's painter). */
