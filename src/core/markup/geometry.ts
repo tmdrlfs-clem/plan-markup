@@ -6,7 +6,8 @@
 // rectangle, ellipse or cloud (Story 5.5) by its outline or inside; a text
 // markup (Story 5.6) by its box, its note icon, its cloud or its leader; a
 // pen or highlight stroke (Story 5.7) within half its width as well; an
-// image (Story 5.8) inside its box, a dimension by its lines. A
+// image (Story 5.8) inside its box, a dimension by its lines; an underline or
+// strikethrough (Story 5.9) inside its glyph boxes. A
 // marquee or lasso selects a markup when its whole outline is inside.
 
 import { circleThrough } from "@/core/measure/circle";
@@ -14,6 +15,7 @@ import type { Markup } from "@/core/schema/markup";
 
 import { dimensionLine, dimensionOutline } from "./dimension";
 import { NOTE_PT, cloudRingOf, leaderOf, textBoxOf } from "./text";
+import { quadsOf } from "./text-select";
 import { CLOUD_CHORD_PT, ellipseBounds, ellipseFrame, ellipseLocal, ellipseOutline } from "./shapes";
 
 export type Point = { x: number; y: number };
@@ -128,6 +130,10 @@ export function hitMarkup(m: Markup, p: Point, tol: number, userUnit = 1): boole
     case "pen":
     case "highlight":
       return nearPolyline(p, m.points, tol + m.style.width / 2 / (userUnit > 0 ? userUnit : 1), false);
+    // Story 5.9: any of its glyph boxes.
+    case "underline":
+    case "strikethrough":
+      return quadsOf(m.points).some((q) => insidePolygon(p, q) || nearPolyline(p, q, tol, true));
     // Story 5.8: the dimension line and the extension lines out to it.
     case "dimension": {
       const [a, b, c] = m.points;

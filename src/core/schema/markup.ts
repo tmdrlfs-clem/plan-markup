@@ -147,6 +147,19 @@ export const imageMarkupSchema = z.object({ ...base, type: z.literal("image"), p
  */
 export const dimensionMarkupSchema = z.object({ ...base, type: z.literal("dimension"), points: threePoints });
 
+/**
+ * Story 5.9: an underline or a strikethrough of PDF text: the selected glyph boxes, four points a
+ * quad (bottom left, bottom right, top right, top left, as the text runs), and the selected text.
+ */
+export const MAX_TEXT_QUADS = 10_000;
+const quadPoints = z
+  .array(pointSchema)
+  .min(4)
+  .max(4 * MAX_TEXT_QUADS)
+  .refine((pts) => pts.length % 4 === 0, "four points a quad");
+export const underlineMarkupSchema = z.object({ ...base, type: z.literal("underline"), points: quadPoints, text: z.string().max(MAX_TEXT_LENGTH).optional() });
+export const strikethroughMarkupSchema = z.object({ ...base, type: z.literal("strikethrough"), points: quadPoints, text: z.string().max(MAX_TEXT_LENGTH).optional() });
+
 /** Every markup type (more join with Epic 5). */
 export const markupSchema = z.discriminatedUnion("type", [
   lengthMarkupSchema,
@@ -172,6 +185,8 @@ export const markupSchema = z.discriminatedUnion("type", [
   highlightMarkupSchema,
   imageMarkupSchema,
   dimensionMarkupSchema,
+  underlineMarkupSchema,
+  strikethroughMarkupSchema,
 ]);
 
 export type Markup = z.infer<typeof markupSchema>;
@@ -196,6 +211,11 @@ export type ShapeMarkup =
   | z.infer<typeof cloudMarkupSchema>;
 export type ImageMarkup = z.infer<typeof imageMarkupSchema>;
 export type DimensionMarkup = z.infer<typeof dimensionMarkupSchema>;
+/** Story 5.9: an underline or a strikethrough of PDF text. */
+export type TextMarkMarkup = z.infer<typeof underlineMarkupSchema> | z.infer<typeof strikethroughMarkupSchema>;
+export function isTextMarkMarkup(m: Markup): m is TextMarkMarkup {
+  return m.type === "underline" || m.type === "strikethrough";
+}
 /** Story 5.7: the freehand strokes. */
 export type InkMarkup = z.infer<typeof penMarkupSchema> | z.infer<typeof highlightMarkupSchema>;
 /** Whether `m` is a pen or highlight stroke (Story 5.7). */

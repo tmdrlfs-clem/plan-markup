@@ -46,6 +46,9 @@
 // for its line's offset, and shows the calibrated length ("Scale not set"
 // without a calibration) on its line between extension lines.
 //
+// Story 5.9: Underline and Strikethrough select PDF text as they are dragged
+// and mark the words selected (text-mark-tool.ts).
+//
 // With Select, Shift + drag on a caption moves the caption only ("Move
 // caption", a markups.update op); the offset is stored in user space.
 //
@@ -123,6 +126,7 @@ import {
   textLabel,
   type TextFrame,
 } from "./text-tool";
+import { ADD_STRIKETHROUGH, ADD_UNDERLINE, paintTextMark, paintTextMarkActive, textMarkDrag, textMarkLabel } from "./text-mark-tool";
 import { executeOp, registerDrawingUndo } from "./undo-store";
 
 type Point = { x: number; y: number };
@@ -170,6 +174,8 @@ const ADD_LABEL: Record<DrawTool, string> = {
   highlight: ADD_HIGHLIGHT,
   image: ADD_IMAGE,
   dimension: ADD_DIMENSION,
+  underline: ADD_UNDERLINE,
+  strikethrough: ADD_STRIKETHROUGH,
 };
 /** Story 4.8: what the live value says while an area crosses itself (it cannot be added). */
 export const CROSSES_ITSELF = "Crosses itself";
@@ -199,6 +205,8 @@ const MIN_POINTS: Record<DrawTool, number> = {
   highlight: 2,
   image: 1,
   dimension: 3,
+  underline: 1,
+  strikethrough: 1,
 };
 /** Tools with a fixed number of points: the click that places the last one adds the measurement. */
 const FIXED_POINTS: Partial<Record<DrawTool, number>> = { length: 2, angle: 3, radius: 3, diameter: 3, line: 2, arrow: 2, rectangle: 2, ellipse: 2, text: 2, callout: 2, typewriter: 1, note: 1, dimension: 3 };
@@ -807,6 +815,15 @@ export const measurePainter: MarkupPainter = {
         paintImage(c, any, pts, view);
         continue;
       }
+      if (any.type === "underline" || any.type === "strikethrough") {
+        // Story 5.9: marked PDF text.
+        captions.push(textMarkLabel(any));
+        const pts = devicePoints(any.points, view);
+        if (!onCanvas(pts, any.style, view)) continue;
+        if (selected.has(any.id)) strokeSelection(c, pts, view);
+        paintTextMark(c, any.type, pts, any.style, view);
+        continue;
+      }
       if (any.type === "dimension") {
         // Story 5.8: a dimension and its calibrated length (never stored).
         const caption = dimensionCaption(any, calibration, view.userUnit);
@@ -888,6 +905,11 @@ export const measurePainter: MarkupPainter = {
     }
     const d = drawing();
     if (d?.tool === "fill") return paintFillActive(c, view, pointer);
+    // Story 5.9: the words selected so far.
+    if (d && (d.tool === "underline" || d.tool === "strikethrough") && d.pageId === pageIdOf(view.documentId, view.pageIndex)) {
+      if (d.quads) paintTextMarkActive(c, d.tool, devicePoints(d.quads, view), view);
+      return d.selected ?? null;
+    }
     // Story 5.7: the stroke so far (a highlight's at its opacity, not yet multiplied).
     if (d && isInkTool(d.tool) && d.pageId === pageIdOf(view.documentId, view.pageIndex)) {
       strokeInk(c, devicePoints(d.points, view), inkStyle(d.tool), view);
@@ -927,7 +949,7 @@ export const measurePainter: MarkupPainter = {
     else if (d.tool === "radius" || d.tool === "diameter") strokeCircle(c, d.tool, pts, deviceCircle(points, view), DEFAULT_MEASURE_STYLE, view);
     else if (d.tool === "text") strokeShape(c, "rectangle", pts, DEFAULT_MARKUP_STYLE, view);
     else if (d.tool === "cloudplus") strokeShape(c, "cloud", pts, DEFAULT_MARKUP_STYLE, view);
-    else if (isMarkupTool(d.tool) && !isTextTool(d.tool) && !isInkTool(d.tool) && d.tool !== "image") strokeShape(c, d.tool, pts, DEFAULT_MARKUP_STYLE, view);
+    else if (isMarkupTool(d.tool) && !isTextTool(d.tool) && !isInkTool(d.tool) && d.tool !== "image" && d.tool !== "underline" && d.tool !== "strikethrough") strokeShape(c, d.tool, pts, DEFAULT_MARKUP_STYLE, view);
     else strokeMeasure(c, pts, DEFAULT_MEASURE_STYLE, view);
     c.restore();
     if (!live) return null;
@@ -951,7 +973,7 @@ export const measurePainter: MarkupPainter = {
     }
     const tool = viewerStore.getState().tool;
     // Dynamic fill is pressed, not clicked (press below); Pen and Highlight are dragged (ink below).
-    if (!isDrawTool(tool) || tool === "fill" || isInkTool(tool)) return "ignored";
+    if (!isDrawTool(tool) || tool === "fill" || isInkTool(tool) || tool === "underline" || tool === "strikethrough") return "ignored";
     const pageId = pageIdOf(at.documentId, at.pageIndex);
     // Story 5.8: the picked image, centred on the click; then Select has it (to resize).
     if (tool === "image") return placeImage(point, at.documentId, pageId);
@@ -1066,6 +1088,10 @@ export const measurePainter: MarkupPainter = {
 
   ink(phase, point, at, straight) {
     inkStroke(phase, point, at, straight);
+  },
+
+  textMark(phase, point, at) {
+    textMarkDrag(phase, point, at);
   },
 
   select(phase, point, at) {
@@ -1222,6 +1248,9 @@ function markupOf(d: Drawing): Markup {
       return { ...base, type: d.tool, points: [a, b, c] };
     case "image":
       throw new Error("an image is placed from its picked file (image-tool.ts)");
+    case "underline":
+    case "strikethrough":
+      throw new Error("marked text is added by its drag (text-mark-tool.ts)");
     case "text":
     case "callout":
     case "typewriter":

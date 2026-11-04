@@ -105,6 +105,9 @@ export function vertexIndices(m: Markup): number[] {
     // Story 5.7: a stroke is moved, resized and rotated whole.
     case "pen":
     case "highlight":
+    // Story 5.9: marked text keeps its glyph boxes together.
+    case "underline":
+    case "strikethrough":
       return [];
     case "callout":
       return [4];

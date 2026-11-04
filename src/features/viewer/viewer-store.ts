@@ -51,7 +51,9 @@ export type ViewerTool =
   | "pen"
   | "highlight"
   | "image"
-  | "dimension";
+  | "dimension"
+  | "underline"
+  | "strikethrough";
 
 /** Stories 4.6, 4.8, 4.9, 4.10: the measuring tools (they draw markups through the editor's painter). */
 export type MeasureTool = "length" | "polylength" | "area" | "count" | "angle" | "radius" | "diameter" | "fill";
@@ -86,13 +88,19 @@ export function isInkTool(tool: ViewerTool): tool is InkTool {
   return tool === "pen" || tool === "highlight";
 }
 
+/** Story 5.9: the tools that mark PDF text (a drag selects words). */
+export type TextMarkTool = "underline" | "strikethrough";
+export function isTextMarkTool(tool: ViewerTool): tool is TextMarkTool {
+  return tool === "underline" || tool === "strikethrough";
+}
+
 /**
  * Stories 5.4, 5.5, 5.6: the markup tools that draw by points (no value, no caption); 5.7: by a
  * stroke; 5.8: Image (one click places the picked image) and Dimension (its caption is its length).
  */
-export type MarkupTool = LineTool | BoxTool | "cloud" | TextTool | InkTool | "image" | "dimension";
+export type MarkupTool = LineTool | BoxTool | "cloud" | TextTool | InkTool | "image" | "dimension" | TextMarkTool;
 export function isMarkupTool(tool: ViewerTool): tool is MarkupTool {
-  return LINE_TOOLS.has(tool) || isBoxTool(tool) || tool === "cloud" || TEXT_TOOLS.has(tool) || isInkTool(tool) || tool === "image" || tool === "dimension";
+  return LINE_TOOLS.has(tool) || isBoxTool(tool) || tool === "cloud" || TEXT_TOOLS.has(tool) || isInkTool(tool) || tool === "image" || tool === "dimension" || isTextMarkTool(tool);
 }
 
 /** Story 5.4: the tools that draw markups by clicking points (through the editor's painter). */

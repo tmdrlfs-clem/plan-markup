@@ -81,7 +81,8 @@ import {
 } from "@/core/render/view";
 import { readCanvasTokens, subscribeCanvasTokens, viewerPalette, type ViewerPalette } from "@/components/ui/tokens";
 import type { Quad } from "@/core/search/page-text";
-import type { ContentFlags, PageInfo, TilePayload } from "@/workers/render-protocol";
+import type { ContentFlags, PageInfo, TextResult, TilePayload } from "@/workers/render-protocol";
+import type { PageText } from "@/core/markup/text-select";
 import { WorkerRequestError, type RenderClient } from "@/workers/rpc";
 
 import { DocumentSearch } from "./document-search";
@@ -94,7 +95,7 @@ import { setCursor } from "./status/cursor-store";
 import { searchUi } from "./search-ui";
 import type { AlignTo, OrderStep } from "@/core/markup/arrange";
 import { markupPainter, onMarkupsChanged, type LayerView, type PressBrush, type SelectContext, type SelectionCommand } from "./markup-layer";
-import { isDrawTool, setTool, viewerStore, type ViewerErrorCode, type ViewerState, type ViewerTool } from "./viewer-store";
+import { isDrawTool, isTextMarkTool, setTool, viewerStore, type ViewerErrorCode, type ViewerState, type ViewerTool } from "./viewer-store";
 
 /** Story 4.6: a click this close (CSS px) to the last vertex repeats it (a double-click's second click). */
 const DOUBLE_CLICK_SLOP_PX = 3;
@@ -261,6 +262,10 @@ export class ViewerEngine {
   private dpr = 1;
   /** The shown page, or null before a document is open. */
   private page: PageInfo | null = null;
+  /** Story 5.9: the pages' text in user space, by page index, as Underline and Strikethrough read it. */
+  private readonly userTexts = new Map<number, PageText | "pending">();
+  /** Story 5.9: where an Underline or Strikethrough drag is (viewport CSS px), while it lasts. */
+  private lastTextMark: Point | null = null;
   private pages: PageInfo[] = [];
   /** 0-based index of the shown page. */
   private pageIndex = 0;
@@ -393,6 +398,8 @@ export class ViewerEngine {
       if (s.tool === prev.tool) return;
       // Story 4.3: another tool chosen while picking calibration points cancels the pick.
       if (this.pick && s.tool !== "calibrate") this.cancelCalibrationPick();
+      // Story 5.9: Underline or Strikethrough armed: read the page's text now.
+      if (isTextMarkTool(s.tool) && this.page && !this.suspended) this.userText(this.pageIndex);
       if (!isSnappingTool(s.tool)) this.clearSnapFrom();
       // A snapping tool armed: now the neighbours are worth building too (review S1).
       else if (this.page && this.previewFinal && !this.suspended) this.snap.ensure(this.pageIndex, this.pages.length, true);
@@ -972,6 +979,8 @@ export class ViewerEngine {
     this.timingsPartial = null;
     this.page = null;
     this.pages = [];
+    this.userTexts.clear();
+    this.lastTextMark = null;
     this.pageIndex = 0;
     this.contents = [];
     this.pageViews = new Map();
@@ -1899,8 +1908,44 @@ export class ViewerEngine {
     const painter = markupPainter();
     const view = this.layerView();
     const point = this.screenToUser(at);
-    if (!painter?.ink || !view || !point) return;
-    painter.ink(phase, point, { documentId: view.documentId, pageIndex: view.pageIndex, view }, straight);
+    if (!painter || !view || !point) return;
+    const where = { documentId: view.documentId, pageIndex: view.pageIndex, view };
+    // Story 5.9: Underline and Strikethrough select the page's text (read once a page, in user space).
+    if (isTextMarkTool(viewerStore.getState().tool)) {
+      this.lastTextMark = phase === "start" || phase === "move" ? at : null;
+      painter.textMark?.(phase, point, { ...where, text: this.userText(this.pageIndex) });
+      return;
+    }
+    painter.ink?.(phase, point, where, straight);
+  }
+
+  /** Story 5.9: the page's text in user space; null until the worker has read it (it is asked for then). */
+  private userText(index: number): PageText | null {
+    const known = this.userTexts.get(index);
+    if (known !== undefined) return known === "pending" ? null : known;
+    const page = this.pages[index];
+    if (!page) return null;
+    this.userTexts.set(index, "pending");
+    const generation = this.documentGeneration;
+    const call = this.client.request("render.text", { page: index + 1 });
+    void (call.promise as Promise<TextResult>).then(
+      (result) => {
+        if (generation !== this.documentGeneration) return;
+        const toUser = (x: number, y: number) => pageToUser(page, { x, y });
+        const items = result.items.map((item) => {
+          const q = item.quad;
+          const c = [toUser(q[0], q[1]), toUser(q[2], q[3]), toUser(q[4], q[5]), toUser(q[6], q[7])];
+          return { ...item, quad: [c[0].x, c[0].y, c[1].x, c[1].y, c[2].x, c[2].y, c[3].x, c[3].y] as Quad };
+        });
+        this.userTexts.set(index, { items, index: result.index });
+        // A drag waiting for it goes on with it.
+        if (this.lastTextMark && index === this.pageIndex) this.inkTool("move", this.lastTextMark, false);
+      },
+      () => {
+        if (generation === this.documentGeneration) this.userTexts.delete(index);
+      },
+    );
+    return null;
   }
 
   /** A viewport point in PDF user space, on the page or off it. */

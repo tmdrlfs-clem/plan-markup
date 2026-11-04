@@ -29,8 +29,10 @@ import {
   Square,
   StickyNote,
   Stamp,
+  Strikethrough,
   Type,
   TypeOutline,
+  Underline,
   type LucideIcon,
 } from "lucide-react";
 import { Fragment, useEffect, useRef, useState } from "react";
@@ -40,7 +42,7 @@ import { Menu, MenuContent, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "@
 import { Toolbar, ToolbarButton, ToolbarSeparator, ToolbarToggleGroup, ToolbarToggleItem } from "@/components/ui/toolbar";
 import { dismissHint, showHint } from "@/components/ui/hint-store";
 import { pickImageFile } from "@/features/editor";
-import { hasDocument, isLineTool, isMeasureTool, isTextTool, setTool, viewerStore, type LineTool, type TextTool, type MeasureTool, type ViewerTool } from "@/features/viewer";
+import { hasDocument, isLineTool, isMeasureTool, isTextMarkTool, isTextTool, type TextMarkTool, setTool, viewerStore, type LineTool, type TextTool, type MeasureTool, type ViewerTool } from "@/features/viewer";
 
 import { NO_DRAWING } from "./workspace-toolbar";
 
@@ -56,7 +58,7 @@ interface Tool {
  * Tools that work today: Select and Pan (Story 3.2), and Length (snapping from
  * Story 4.1, measuring from Story 4.5). The others arrive with the editor.
  */
-const LIVE_TOOLS: ReadonlySet<string> = new Set<ViewerTool>(["select", "pan", "length", "polylength", "area", "count", "angle", "radius", "diameter", "line", "arrow", "polyline", "polygon", "rectangle", "ellipse", "cloud", "text", "callout", "typewriter", "note", "cloudplus", "pen", "highlight", "image", "dimension"]);
+const LIVE_TOOLS: ReadonlySet<string> = new Set<ViewerTool>(["select", "pan", "length", "polylength", "area", "count", "angle", "radius", "diameter", "line", "arrow", "polyline", "polygon", "rectangle", "ellipse", "cloud", "text", "callout", "typewriter", "note", "cloudplus", "pen", "highlight", "image", "dimension", "underline", "strikethrough"]);
 
 export const SNAP_PREVIEW_HINT_ID = "snap-preview";
 /** Review S3: a page past the segment cap. */
@@ -102,6 +104,11 @@ export const PEN_HINT = `Pen: drag to draw freehand. ${STROKE}`;
 export const HIGHLIGHT_HINT = `Highlight: drag over the sheet to highlight it. ${STROKE}`;
 /** Story 5.8: the HintBar while Image (an image picked) or Dimension is armed. */
 export const IMAGE_HINT = "Image: click where the image goes (its centre); then drag its handles to resize it. Esc cancels.";
+/** Story 5.9: the HintBar while Underline or Strikethrough is armed, and why they are off on an image-only page. */
+const MARKS = "Drag across the words to mark (from a word); the release marks them. Esc while dragging cancels; Esc again returns to Select.";
+export const UNDERLINE_HINT = `Underline: ${MARKS}`;
+export const STRIKETHROUGH_HINT = `Strikethrough: ${MARKS}`;
+export const NO_PAGE_TEXT = "This page is an image: it has no text to mark";
 export const DIMENSION_HINT = `Dimension: click the two points to dimension, then where its line goes. ${SNAPS} Esc cancels; Esc again returns to Select.`;
 const TOOL_HINTS: Partial<Record<ViewerTool, string>> = {
   length: SNAP_PREVIEW_HINT,
@@ -128,6 +135,8 @@ const TOOL_HINTS: Partial<Record<ViewerTool, string>> = {
   highlight: HIGHLIGHT_HINT,
   image: IMAGE_HINT,
   dimension: DIMENSION_HINT,
+  underline: UNDERLINE_HINT,
+  strikethrough: STRIKETHROUGH_HINT,
 };
 export const EDITOR_LATER = "Arrives with the markup editor";
 
@@ -212,6 +221,12 @@ export const TEXT_TOOLS: readonly (Tool & { id: TextSlotTool })[] = [
   { id: "note", label: "Note", icon: StickyNote },
 ];
 export const MORE_TEXT_TOOLS = "More text tools";
+/** Story 5.9: Underline and Strikethrough share a slot (no keys, D4). */
+export const TEXT_MARK_TOOLS: readonly (Tool & { id: TextMarkTool })[] = [
+  { id: "underline", label: "Underline", icon: Underline },
+  { id: "strikethrough", label: "Strikethrough", icon: Strikethrough },
+];
+export const MORE_TEXT_MARK_TOOLS = "More text markup tools";
 
 /**
  * Tools sharing one rail slot (Measure, Story 4.11; Lines, Story 5.4): the slot shows the armed
@@ -224,6 +239,7 @@ function FlyoutGroup<T extends ViewerTool>({
   member,
   open,
   active,
+  unavailable = null,
 }: {
   label: string;
   more: string;
@@ -231,7 +247,11 @@ function FlyoutGroup<T extends ViewerTool>({
   member: (tool: ViewerTool) => tool is T;
   open: boolean;
   active: ViewerTool;
+  /** Story 5.9: why the slot's tools cannot be used here (they are disabled with it); null: they can. */
+  unavailable?: string | null;
 }) {
+  const usable = open && unavailable === null;
+  const reason = open ? (unavailable ?? NO_DRAWING) : NO_DRAWING;
   const [last, setLast] = useState<T>(tools[0].id);
   // The slot follows the armed tool, whatever armed it (rail, menu or shortcut).
   if (member(active) && active !== last) setLast(active);
@@ -254,13 +274,13 @@ function FlyoutGroup<T extends ViewerTool>({
           icon={shown.icon}
           shortcut={shown.shortcut}
           size="md"
-          disabled={!open}
-          disabledReason={NO_DRAWING}
+          disabled={!usable}
+          disabledReason={reason}
         />
       </ToolbarToggleGroup>
-      <Menu open={open && menuOpen} onOpenChange={(next) => setMenuOpen(open && next)}>
+      <Menu open={usable && menuOpen} onOpenChange={(next) => setMenuOpen(usable && next)}>
         <MenuTrigger asChild>
-          <ToolbarButton label={more} icon={ChevronDown} size="xs" className="h-4 w-8" disabled={!open} disabledReason={NO_DRAWING} />
+          <ToolbarButton label={more} icon={ChevronDown} size="xs" className="h-4 w-8" disabled={!usable} disabledReason={reason} />
         </MenuTrigger>
         <MenuContent side="left" align="start">
           <MenuRadioGroup value={member(active) ? active : ""} onValueChange={(value) => setTool(value as ViewerTool)}>
@@ -314,6 +334,8 @@ export function ToolRail() {
   const hint = open ? (TOOL_HINTS[active] ?? null) : null;
   const partial = useStore(viewerStore, (s) => s.snapPartial);
   const imageInput = useRef<HTMLInputElement>(null);
+  // Story 5.9: an image-only page has no text to mark.
+  const imageOnly = useStore(viewerStore, (s) => s.content?.imageOnly === true);
   useEffect(() => {
     if (!hint) return;
     showHint({ id: SNAP_PREVIEW_HINT_ID, variant: "info", text: partial ? `${hint} ${SNAP_PARTIAL_NOTE}` : hint });
@@ -334,6 +356,15 @@ export function ToolRail() {
               <ToolGroup label="Markup" tools={group.tools.slice(0, 2)} open={open} active={active} />
               <FlyoutGroup label="Clouds" more={MORE_CLOUD_TOOLS} tools={CLOUD_TOOLS} member={isCloudTool} open={open} active={active} />
               <FlyoutGroup label="Text" more={MORE_TEXT_TOOLS} tools={TEXT_TOOLS} member={isTextSlotTool} open={open} active={active} />
+              <FlyoutGroup
+                label="Text markup"
+                more={MORE_TEXT_MARK_TOOLS}
+                tools={TEXT_MARK_TOOLS}
+                member={isTextMarkTool}
+                open={open}
+                active={active}
+                unavailable={imageOnly ? NO_PAGE_TEXT : null}
+              />
               <ToolGroup label="Freehand" tools={group.tools.slice(2)} open={open} active={active} onPickImage={() => imageInput.current?.click()} />
             </>
           ) : (

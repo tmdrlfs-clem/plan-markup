@@ -20,7 +20,7 @@ import type { Point, Rect } from "@/core/render/view";
 
 import { straightFrom } from "@/core/markup/ink";
 
-import { hasDocument, isBoxTool, isDrawTool, isInkTool, setTempPan, setTool, viewerStore, type ViewerTool } from "./viewer-store";
+import { hasDocument, isBoxTool, isDrawTool, isInkTool, isTextMarkTool, setTempPan, setTool, viewerStore, type ViewerTool } from "./viewer-store";
 import { LOCKED_CURSOR, LOCKED_TOOLTIP, type PressBrush, type SelectionCommand } from "./markup-layer";
 
 /** CSS px per wheel "line" (deltaMode 1, e.g. Firefox: 3 lines per notch). */
@@ -122,6 +122,8 @@ export function resolveViewerKey(
 /** The canvas cursor for the tool state. */
 export function cursorFor(state: { tool: ViewerTool; tempPan: boolean; dragging: boolean; zoomOut: boolean }): string {
   if (state.tempPan || state.tool === "pan" || state.dragging) return state.dragging ? "grabbing" : "grab";
+  // Story 5.9: Underline and Strikethrough select text.
+  if (isTextMarkTool(state.tool)) return "text";
   if (pointTool(state.tool)) return "crosshair";
   if (state.tool === "zoom") return state.zoomOut ? "zoom-out" : "zoom-in";
   return "default";
@@ -349,12 +351,14 @@ export class ViewerInput {
       const brush: PressBrush = e.ctrlKey || e.metaKey ? "erase" : e.shiftKey ? "paint" : "grow";
       this.drag = { kind: "press", pointerId: e.pointerId, brush };
       this.target.pressTool("start", this.point(e), brush);
-    } else if (e.button === 0 && isInkTool(tool) && this.target.inkTool) {
+    } else if (e.button === 0 && (isInkTool(tool) || isTextMarkTool(tool)) && this.target.inkTool) {
       // Story 5.7: a stroke follows the pointer while pressed (never snapped); Shift holds it straight.
+      // Story 5.9: Underline and Strikethrough drag the same way across the words to mark (no Shift).
       e.preventDefault();
       const at = this.point(e);
-      this.drag = { kind: "ink", pointerId: e.pointerId, last: at, anchor: e.shiftKey ? at : null };
-      this.target.inkTool("start", at, e.shiftKey);
+      const shift = e.shiftKey && isInkTool(tool);
+      this.drag = { kind: "ink", pointerId: e.pointerId, last: at, anchor: shift ? at : null };
+      this.target.inkTool("start", at, shift);
     } else if (e.button === 0 && e.shiftKey && tool === "select" && this.target.startCaptionDrag?.(this.point(e))) {
       // Story 4.6: Shift + drag on a measurement's caption moves the caption only.
       e.preventDefault();
@@ -416,7 +420,8 @@ export class ViewerInput {
   }
 
   /** Story 5.7: the stroke to `p`; with Shift, horizontal or vertical (on screen) from where Shift began. */
-  private inkMove(drag: Extract<Drag, { kind: "ink" }>, p: Point, shift: boolean): void {
+  private inkMove(drag: Extract<Drag, { kind: "ink" }>, p: Point, held: boolean): void {
+    const shift = held && isInkTool(viewerStore.getState().tool);
     if (shift) drag.anchor ??= drag.last;
     else drag.anchor = null;
     const at = drag.anchor ? straightFrom(drag.anchor, p) : p;

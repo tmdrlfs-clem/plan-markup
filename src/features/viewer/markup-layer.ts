@@ -4,6 +4,8 @@
 // to it. The editor feature registers it, so the viewer never imports the
 // editor (the dependency points the other way).
 
+import type { PageText } from "@/core/markup/text-select";
+
 type Point = { x: number; y: number };
 
 /** What a painter needs to draw a page's markups on a canvas. */
@@ -142,6 +144,11 @@ export interface MarkupPainter {
    * space); `straight`: Shift holds this part of it straight (the input has held the point).
    */
   ink?(phase: "start" | "move" | "end" | "cancel", point: Point, at: { documentId: string; pageIndex: number; view: LayerView }, straight: boolean): void;
+  /**
+   * Story 5.9: an Underline or Strikethrough drag's press, move, release or cancel at `point` (user
+   * space); `text`: the page's text in user space, null while it is still being read (or there is none).
+   */
+  textMark?(phase: "start" | "move" | "end" | "cancel", point: Point, at: { documentId: string; pageIndex: number; view: LayerView; text: PageText | null }): void;
   /** Story 5.1: a Select press, drag, release or cancel at `point` (user space). */
   select?(phase: "start" | "move" | "end" | "cancel", point: Point, at: SelectContext): void;
   /** Story 5.1 / 5.2: the cursor at `point` with Select (a markup: move; a handle: its action); null: the default. */

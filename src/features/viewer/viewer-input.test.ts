@@ -111,6 +111,8 @@ describe("cursorFor", () => {
     expect(cursorFor({ tool: "zoom", tempPan: false, dragging: false, zoomOut: true })).toBe("zoom-out");
     expect(cursorFor({ tool: "zoom", tempPan: true, dragging: false, zoomOut: false })).toBe("grab");
     expect(cursorFor({ tool: "select", tempPan: false, dragging: true, zoomOut: false })).toBe("grabbing"); // middle drag
+    // Story 5.9: the text cursor while marking text.
+    expect(cursorFor({ tool: "underline", tempPan: false, dragging: false, zoomOut: false })).toBe("text");
   });
 });
 
@@ -269,6 +271,19 @@ describe("ViewerInput", () => {
     expect(inkTool).toHaveBeenCalledTimes(10);
     // No point is placed or snapped for a stroke.
     expect(t.snapClick).not.toHaveBeenCalled();
+    setTool("select");
+  });
+
+  it("Story 5.9: Underline drags as a stroke does, never held straight", () => {
+    const inkTool = vi.fn();
+    Object.assign(t, { inkTool });
+    setTool("underline");
+    canvas.dispatchEvent(pointer("pointerdown", { x: 10, y: 10, shiftKey: true }));
+    expect(inkTool).toHaveBeenLastCalledWith("start", { x: 10, y: 10 }, false);
+    canvas.dispatchEvent(pointer("pointermove", { x: 50, y: 14, shiftKey: true }));
+    expect(inkTool).toHaveBeenLastCalledWith("move", { x: 50, y: 14 }, false);
+    canvas.dispatchEvent(pointer("pointerup", { x: 50, y: 14 }));
+    expect(inkTool).toHaveBeenLastCalledWith("end", { x: 50, y: 14 }, false);
     setTool("select");
   });
 

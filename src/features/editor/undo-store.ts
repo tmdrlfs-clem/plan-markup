@@ -109,6 +109,9 @@ export const DRAWING_POINT_LABEL: Readonly<Record<DrawTool, string>> = {
   // Story 5.8.
   image: "Image point",
   dimension: "Dimension point",
+  // Story 5.9 (a drag; Undo during it takes it back).
+  underline: "Underline selection",
+  strikethrough: "Strikethrough selection",
 };
 
 /**

@@ -201,8 +201,8 @@ describe("WorkspaceShell layout", () => {
     setup();
     const rail = screen.getByRole("toolbar", { name: "Drawing tools" });
     const tools = within(rail).getAllByRole("radio");
-    // The measuring tools share one slot and a menu (Story 5.4: the line tools too; 5.8: Image has its own button).
-    expect(tools.length).toBe(14);
+    // The measuring tools share one slot and a menu (Story 5.4: the line tools too; 5.8: Image has its own button; 5.9: a text markup slot).
+    expect(tools.length).toBe(15);
     for (const tool of tools) expect(tool).toHaveAttribute("aria-disabled", "true");
     expect(within(rail).getByRole("button", { name: "More measure tools" })).toHaveAttribute("aria-disabled", "true");
     expect(within(rail).getByRole("button", { name: "More line tools" })).toHaveAttribute("aria-disabled", "true");
@@ -547,7 +547,7 @@ describe("view navigation (Story 3.2)", () => {
     for (const name of ["Rectangle", "Ellipse", "Cloud"]) expect(within(rail).getByRole("radio", { name })).not.toHaveAttribute("aria-disabled");
     expect(within(rail).getByRole("radio", { name: "Text box" })).not.toHaveAttribute("aria-disabled");
     expect(within(rail).getByRole("button", { name: "More text tools" })).not.toHaveAttribute("aria-disabled");
-    for (const name of ["Pen", "Highlight"]) expect(within(rail).getByRole("radio", { name })).not.toHaveAttribute("aria-disabled");
+    for (const name of ["Pen", "Highlight", "Image", "Underline"]) expect(within(rail).getByRole("radio", { name })).not.toHaveAttribute("aria-disabled");
     expect(within(rail).getByRole("radio", { name: "Stamp" })).toHaveAttribute("aria-disabled", "true");
   });
 
