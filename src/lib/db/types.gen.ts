@@ -29,6 +29,9 @@ export type Database = {
                            },
 "fn_is_platform_admin":
 { Args: Record<PropertyKey, never>; Returns: boolean
+                           },
+"fn_owns_drawing":
+{ Args: { "p_drawing_id": string }; Returns: boolean
                            }
           }
           Enums: {
@@ -39,7 +42,87 @@ export type Database = {
           }
         },"public": {
           Tables: {
-            "profiles": {
+            "calibrations": {
+                  Row: {
+                    "calibration": NonNullable<Json>,"page_id": string,"updated_at": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "calibration": NonNullable<Json>,"page_id": string,"updated_at"?: string
+                  }
+                  Update: {
+                    "calibration"?: NonNullable<Json>,"page_id"?: string,"updated_at"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "calibrations_page_id_fkey"
+      columns: ["page_id"]
+isOneToOne: true
+      referencedRelation: "pages"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"drawing_files": {
+                  Row: {
+                    "created_at": string,"drawing_id": string,"filename": string,"fingerprint": string | null,"id": string,"page_count": number,"parent_file_id": string | null,"sha256": string,"storage_path": string | null
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "created_at"?: string,"drawing_id": string,"filename": string,"fingerprint"?: string | null,"id"?: string,"page_count": number,"parent_file_id"?: string | null,"sha256": string,"storage_path"?: string | null
+                  }
+                  Update: {
+                    "created_at"?: string,"drawing_id"?: string,"filename"?: string,"fingerprint"?: string | null,"id"?: string,"page_count"?: number,"parent_file_id"?: string | null,"sha256"?: string,"storage_path"?: string | null
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "drawing_files_drawing_id_fkey"
+      columns: ["drawing_id"]
+isOneToOne: false
+      referencedRelation: "drawings"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "drawing_files_parent_file_id_fkey"
+      columns: ["parent_file_id"]
+isOneToOne: false
+      referencedRelation: "drawing_files"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"drawings": {
+                  Row: {
+                    "created_at": string,"id": string,"owner_id": string,"storage_enabled": boolean,"title": string,"updated_at": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "created_at"?: string,"id"?: string,"owner_id"?: string,"storage_enabled"?: boolean,"title": string,"updated_at"?: string
+                  }
+                  Update: {
+                    "created_at"?: string,"id"?: string,"owner_id"?: string,"storage_enabled"?: boolean,"title"?: string,"updated_at"?: string
+                  }
+                  Relationships: [
+
+                  ]
+                },"pages": {
+                  Row: {
+                    "crop_box": (number)[],"drawing_file_id": string,"height": number,"id": string,"index": number,"rotation": number,"width": number
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "crop_box": (number)[],"drawing_file_id": string,"height": number,"id"?: string,"index": number,"rotation"?: number,"width": number
+                  }
+                  Update: {
+                    "crop_box"?: (number)[],"drawing_file_id"?: string,"height"?: number,"id"?: string,"index"?: number,"rotation"?: number,"width"?: number
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "pages_drawing_file_id_fkey"
+      columns: ["drawing_file_id"]
+isOneToOne: false
+      referencedRelation: "drawing_files"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"profiles": {
                   Row: {
                     "created_at": string,"email": string,"id": string,"is_platform_admin": boolean,"name": string,"status": string,"theme": string,"updated_at": string
                   }
@@ -76,6 +159,11 @@ export type Database = {
             "consume_rate_limit":
 { Args: { "p_bucket": string,"p_key_hash": string,"p_max_hits": number,"p_window_seconds": number }; Returns: {
               "allowed": boolean,"retry_after_seconds": number
+            }[]
+                           },
+"ensure_drawing_file":
+{ Args: { "p_filename": string,"p_pages": Json,"p_sha256": string }; Returns: {
+              "drawing_id": string,"file_id": string,"page_ids": (string)[]
             }[]
                            }
           }

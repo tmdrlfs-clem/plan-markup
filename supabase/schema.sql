@@ -83,6 +83,20 @@ $$;
 ALTER FUNCTION "app"."fn_is_platform_admin"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "app"."fn_owns_drawing"("p_drawing_id" "uuid") RETURNS boolean
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+  select app.fn_is_active_user() and exists (
+    select 1 from public.drawings d
+    where d.id = p_drawing_id and d.owner_id = (select auth.uid())
+  );
+$$;
+
+
+ALTER FUNCTION "app"."fn_owns_drawing"("p_drawing_id" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "app"."fn_set_updated_at"() RETURNS "trigger"
     LANGUAGE "plpgsql"
     SET "search_path" TO ''
@@ -158,6 +172,62 @@ $_$;
 
 ALTER FUNCTION "public"."consume_rate_limit"("p_bucket" "text", "p_key_hash" "text", "p_max_hits" integer, "p_window_seconds" integer) OWNER TO "postgres";
 
+
+CREATE OR REPLACE FUNCTION "public"."ensure_drawing_file"("p_sha256" "text", "p_filename" "text", "p_pages" "jsonb") RETURNS TABLE("drawing_id" "uuid", "file_id" "uuid", "page_ids" "uuid"[])
+    LANGUAGE "plpgsql"
+    SET "search_path" TO ''
+    AS $_$
+declare
+  v_uid uuid := (select auth.uid());
+  v_drawing uuid;
+  v_file uuid;
+  v_count integer;
+begin
+  if v_uid is null or not app.fn_is_active_user() then
+    raise exception 'not allowed' using errcode = '42501';
+  end if;
+  if p_sha256 is null or p_sha256 !~ '^[0-9a-f]{64}$' then
+    raise exception 'invalid sha256' using errcode = '22023';
+  end if;
+  if jsonb_typeof(p_pages) is distinct from 'array' then
+    raise exception 'invalid pages' using errcode = '22023';
+  end if;
+  v_count := jsonb_array_length(p_pages);
+  if v_count not between 1 and 10000 then
+    raise exception 'invalid page count' using errcode = '22023';
+  end if;
+
+  perform pg_advisory_xact_lock(hashtextextended(v_uid::text || ':' || p_sha256, 0));
+
+  select f.drawing_id, f.id into v_drawing, v_file
+  from public.drawing_files f
+  join public.drawings d on d.id = f.drawing_id
+  where f.sha256 = p_sha256 and d.owner_id = v_uid
+  order by f.created_at
+  limit 1;
+
+  if v_file is null then
+    insert into public.drawings (owner_id, title) values (v_uid, p_filename) returning id into v_drawing;
+    insert into public.drawing_files (drawing_id, sha256, page_count, filename)
+    values (v_drawing, p_sha256, v_count, p_filename)
+    returning id into v_file;
+    insert into public.pages (drawing_file_id, index, rotation, crop_box, width, height)
+    select v_file, (e.ord - 1)::integer,
+           coalesce((e.page ->> 'rotation')::integer, 0),
+           array(select jsonb_array_elements_text(e.page -> 'cropBox')::double precision),
+           (e.page ->> 'width')::double precision,
+           (e.page ->> 'height')::double precision
+    from jsonb_array_elements(p_pages) with ordinality as e(page, ord);
+  end if;
+
+  return query
+    select v_drawing, v_file, array(select p.id from public.pages p where p.drawing_file_id = v_file order by p.index);
+end;
+$_$;
+
+
+ALTER FUNCTION "public"."ensure_drawing_file"("p_sha256" "text", "p_filename" "text", "p_pages" "jsonb") OWNER TO "postgres";
+
 SET default_tablespace = '';
 
 SET default_table_access_method = "heap";
@@ -179,6 +249,86 @@ ALTER TABLE "app"."rate_limits" OWNER TO "postgres";
 
 
 COMMENT ON TABLE "app"."rate_limits" IS 'Fixed-window rate-limit counters. Written only by public.consume_rate_limit (service_role).';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."calibrations" (
+    "page_id" "uuid" NOT NULL,
+    "calibration" "jsonb" NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "calibrations_object_check" CHECK ((("jsonb_typeof"("calibration") = 'object'::"text") AND ("pg_column_size"("calibration") <= 2048)))
+);
+
+
+ALTER TABLE "public"."calibrations" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."calibrations" IS 'A page''s calibration (Epic 4), by page id.';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."drawing_files" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "drawing_id" "uuid" NOT NULL,
+    "sha256" "text" NOT NULL,
+    "fingerprint" "text",
+    "page_count" integer NOT NULL,
+    "filename" "text" NOT NULL,
+    "parent_file_id" "uuid",
+    "storage_path" "text",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "drawing_files_filename_check" CHECK ((("length"("filename") >= 1) AND ("length"("filename") <= 255))),
+    CONSTRAINT "drawing_files_fingerprint_check" CHECK ((("fingerprint" IS NULL) OR (("length"("fingerprint") >= 1) AND ("length"("fingerprint") <= 64)))),
+    CONSTRAINT "drawing_files_page_count_check" CHECK ((("page_count" >= 1) AND ("page_count" <= 10000))),
+    CONSTRAINT "drawing_files_sha256_check" CHECK (("sha256" ~ '^[0-9a-f]{64}$'::"text")),
+    CONSTRAINT "drawing_files_storage_path_check" CHECK ((("storage_path" IS NULL) OR ("length"("storage_path") <= 300)))
+);
+
+
+ALTER TABLE "public"."drawing_files" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."drawing_files" IS 'A PDF of a markup set, by the SHA-256 of its bytes (A1). No bytes are stored unless FR53 is on.';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."drawings" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "owner_id" "uuid" DEFAULT "auth"."uid"() NOT NULL,
+    "title" "text" NOT NULL,
+    "storage_enabled" boolean DEFAULT false NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "drawings_title_check" CHECK ((("length"("title") >= 1) AND ("length"("title") <= 255)))
+);
+
+
+ALTER TABLE "public"."drawings" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."drawings" IS 'A markup set (Story 6.1). Owner only.';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."pages" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "drawing_file_id" "uuid" NOT NULL,
+    "index" integer NOT NULL,
+    "rotation" integer DEFAULT 0 NOT NULL,
+    "crop_box" double precision[] NOT NULL,
+    "width" double precision NOT NULL,
+    "height" double precision NOT NULL,
+    CONSTRAINT "pages_crop_box_check" CHECK ((("array_length"("crop_box", 1) = 4) AND ("array_position"("crop_box", NULL::double precision) IS NULL))),
+    CONSTRAINT "pages_index_check" CHECK ((("index" >= 0) AND ("index" <= 9999))),
+    CONSTRAINT "pages_rotation_check" CHECK (("rotation" = ANY (ARRAY[0, 90, 180, 270]))),
+    CONSTRAINT "pages_size_check" CHECK ((("width" > (0)::double precision) AND ("height" > (0)::double precision) AND ("width" <= ('1000000'::numeric)::double precision) AND ("height" <= ('1000000'::numeric)::double precision)))
+);
+
+
+ALTER TABLE "public"."pages" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."pages" IS 'A stable page id per page of a drawing file (A2).';
 
 
 
@@ -236,6 +386,36 @@ ALTER TABLE ONLY "app"."rate_limits"
 
 
 
+ALTER TABLE ONLY "public"."calibrations"
+    ADD CONSTRAINT "calibrations_pkey" PRIMARY KEY ("page_id");
+
+
+
+ALTER TABLE ONLY "public"."drawing_files"
+    ADD CONSTRAINT "drawing_files_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."drawing_files"
+    ADD CONSTRAINT "drawing_files_sha256_unique" UNIQUE ("drawing_id", "sha256");
+
+
+
+ALTER TABLE ONLY "public"."drawings"
+    ADD CONSTRAINT "drawings_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."pages"
+    ADD CONSTRAINT "pages_index_unique" UNIQUE ("drawing_file_id", "index");
+
+
+
+ALTER TABLE ONLY "public"."pages"
+    ADD CONSTRAINT "pages_pkey" PRIMARY KEY ("id");
+
+
+
 ALTER TABLE ONLY "public"."profiles"
     ADD CONSTRAINT "profiles_pkey" PRIMARY KEY ("id");
 
@@ -246,12 +426,49 @@ ALTER TABLE ONLY "public"."signatures"
 
 
 
+CREATE INDEX "drawing_files_parent_idx" ON "public"."drawing_files" USING "btree" ("parent_file_id");
+
+
+
+CREATE INDEX "drawing_files_sha256_idx" ON "public"."drawing_files" USING "btree" ("sha256");
+
+
+
+CREATE INDEX "drawings_owner_idx" ON "public"."drawings" USING "btree" ("owner_id");
+
+
+
 CREATE OR REPLACE TRIGGER "trg_profiles_updated_at" BEFORE UPDATE ON "public"."profiles" FOR EACH ROW EXECUTE FUNCTION "app"."fn_set_updated_at"();
+
+
+
+ALTER TABLE ONLY "public"."calibrations"
+    ADD CONSTRAINT "calibrations_page_id_fkey" FOREIGN KEY ("page_id") REFERENCES "public"."pages"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."drawing_files"
+    ADD CONSTRAINT "drawing_files_drawing_id_fkey" FOREIGN KEY ("drawing_id") REFERENCES "public"."drawings"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."drawing_files"
+    ADD CONSTRAINT "drawing_files_parent_file_id_fkey" FOREIGN KEY ("parent_file_id") REFERENCES "public"."drawing_files"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."drawings"
+    ADD CONSTRAINT "drawings_owner_id_fkey" FOREIGN KEY ("owner_id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
 
 
 
 ALTER TABLE ONLY "public"."profiles"
     ADD CONSTRAINT "fk_profiles_user" FOREIGN KEY ("id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."pages"
+    ADD CONSTRAINT "pages_drawing_file_id_fkey" FOREIGN KEY ("drawing_file_id") REFERENCES "public"."drawing_files"("id") ON DELETE CASCADE;
 
 
 
@@ -264,6 +481,89 @@ ALTER TABLE "app"."rate_limits" ENABLE ROW LEVEL SECURITY;
 
 
 CREATE POLICY "rate_limits_all_none" ON "app"."rate_limits" TO "authenticated", "anon" USING (false) WITH CHECK (false);
+
+
+
+ALTER TABLE "public"."calibrations" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "calibrations_delete_own" ON "public"."calibrations" FOR DELETE TO "authenticated" USING ((EXISTS ( SELECT 1
+   FROM ("public"."pages" "p"
+     JOIN "public"."drawing_files" "f" ON (("f"."id" = "p"."drawing_file_id")))
+  WHERE (("p"."id" = "calibrations"."page_id") AND "app"."fn_owns_drawing"("f"."drawing_id")))));
+
+
+
+CREATE POLICY "calibrations_insert_own" ON "public"."calibrations" FOR INSERT TO "authenticated" WITH CHECK ((EXISTS ( SELECT 1
+   FROM ("public"."pages" "p"
+     JOIN "public"."drawing_files" "f" ON (("f"."id" = "p"."drawing_file_id")))
+  WHERE (("p"."id" = "calibrations"."page_id") AND "app"."fn_owns_drawing"("f"."drawing_id")))));
+
+
+
+CREATE POLICY "calibrations_select_own" ON "public"."calibrations" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
+   FROM ("public"."pages" "p"
+     JOIN "public"."drawing_files" "f" ON (("f"."id" = "p"."drawing_file_id")))
+  WHERE (("p"."id" = "calibrations"."page_id") AND "app"."fn_owns_drawing"("f"."drawing_id")))));
+
+
+
+CREATE POLICY "calibrations_update_own" ON "public"."calibrations" FOR UPDATE TO "authenticated" USING ((EXISTS ( SELECT 1
+   FROM ("public"."pages" "p"
+     JOIN "public"."drawing_files" "f" ON (("f"."id" = "p"."drawing_file_id")))
+  WHERE (("p"."id" = "calibrations"."page_id") AND "app"."fn_owns_drawing"("f"."drawing_id"))))) WITH CHECK ((EXISTS ( SELECT 1
+   FROM ("public"."pages" "p"
+     JOIN "public"."drawing_files" "f" ON (("f"."id" = "p"."drawing_file_id")))
+  WHERE (("p"."id" = "calibrations"."page_id") AND "app"."fn_owns_drawing"("f"."drawing_id")))));
+
+
+
+ALTER TABLE "public"."drawing_files" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "drawing_files_delete_own" ON "public"."drawing_files" FOR DELETE TO "authenticated" USING ("app"."fn_owns_drawing"("drawing_id"));
+
+
+
+CREATE POLICY "drawing_files_insert_own" ON "public"."drawing_files" FOR INSERT TO "authenticated" WITH CHECK ("app"."fn_owns_drawing"("drawing_id"));
+
+
+
+CREATE POLICY "drawing_files_select_own" ON "public"."drawing_files" FOR SELECT TO "authenticated" USING ("app"."fn_owns_drawing"("drawing_id"));
+
+
+
+ALTER TABLE "public"."drawings" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "drawings_delete_own" ON "public"."drawings" FOR DELETE TO "authenticated" USING ((("owner_id" = ( SELECT "auth"."uid"() AS "uid")) AND ( SELECT "app"."fn_is_active_user"() AS "fn_is_active_user")));
+
+
+
+CREATE POLICY "drawings_insert_own" ON "public"."drawings" FOR INSERT TO "authenticated" WITH CHECK ((("owner_id" = ( SELECT "auth"."uid"() AS "uid")) AND ( SELECT "app"."fn_is_active_user"() AS "fn_is_active_user")));
+
+
+
+CREATE POLICY "drawings_select_own" ON "public"."drawings" FOR SELECT TO "authenticated" USING ((("owner_id" = ( SELECT "auth"."uid"() AS "uid")) AND ( SELECT "app"."fn_is_active_user"() AS "fn_is_active_user")));
+
+
+
+CREATE POLICY "drawings_update_own" ON "public"."drawings" FOR UPDATE TO "authenticated" USING ((("owner_id" = ( SELECT "auth"."uid"() AS "uid")) AND ( SELECT "app"."fn_is_active_user"() AS "fn_is_active_user"))) WITH CHECK ((("owner_id" = ( SELECT "auth"."uid"() AS "uid")) AND ( SELECT "app"."fn_is_active_user"() AS "fn_is_active_user")));
+
+
+
+ALTER TABLE "public"."pages" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "pages_insert_own" ON "public"."pages" FOR INSERT TO "authenticated" WITH CHECK ((EXISTS ( SELECT 1
+   FROM "public"."drawing_files" "f"
+  WHERE (("f"."id" = "pages"."drawing_file_id") AND "app"."fn_owns_drawing"("f"."drawing_id")))));
+
+
+
+CREATE POLICY "pages_select_own" ON "public"."pages" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
+   FROM "public"."drawing_files" "f"
+  WHERE (("f"."id" = "pages"."drawing_file_id") AND "app"."fn_owns_drawing"("f"."drawing_id")))));
 
 
 
@@ -322,12 +622,43 @@ GRANT ALL ON FUNCTION "app"."fn_is_platform_admin"() TO "authenticated";
 
 
 
+REVOKE ALL ON FUNCTION "app"."fn_owns_drawing"("p_drawing_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "app"."fn_owns_drawing"("p_drawing_id" "uuid") TO "authenticated";
+
+
+
 REVOKE ALL ON FUNCTION "app"."fn_set_updated_at"() FROM PUBLIC;
 
 
 
 REVOKE ALL ON FUNCTION "public"."consume_rate_limit"("p_bucket" "text", "p_key_hash" "text", "p_max_hits" integer, "p_window_seconds" integer) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."consume_rate_limit"("p_bucket" "text", "p_key_hash" "text", "p_max_hits" integer, "p_window_seconds" integer) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."ensure_drawing_file"("p_sha256" "text", "p_filename" "text", "p_pages" "jsonb") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."ensure_drawing_file"("p_sha256" "text", "p_filename" "text", "p_pages" "jsonb") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."ensure_drawing_file"("p_sha256" "text", "p_filename" "text", "p_pages" "jsonb") TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."calibrations" TO "service_role";
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE "public"."calibrations" TO "authenticated";
+
+
+
+GRANT ALL ON TABLE "public"."drawing_files" TO "service_role";
+GRANT SELECT,INSERT,DELETE ON TABLE "public"."drawing_files" TO "authenticated";
+
+
+
+GRANT ALL ON TABLE "public"."drawings" TO "service_role";
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE "public"."drawings" TO "authenticated";
+
+
+
+GRANT ALL ON TABLE "public"."pages" TO "service_role";
+GRANT SELECT,INSERT,DELETE ON TABLE "public"."pages" TO "authenticated";
 
 
 

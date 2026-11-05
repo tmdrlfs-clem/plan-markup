@@ -88,7 +88,7 @@ development_status:
   4-11-measurements-panel: done
   epic-4-retrospective: optional
   # Epic 5: Markup and As-Built Drawing
-  epic-5: in-progress
+  epic-5: done
   5-1-select-move-and-delete-markups: done
   5-2-resize-rotate-copy-and-paste: done
   5-3-group-align-reorder-and-lock: done
@@ -104,8 +104,8 @@ development_status:
   5-13-personal-signature-stamp: done
   epic-5-retrospective: optional
   # Epic 6: Auto-save, Markup Sets and Markups List
-  epic-6: backlog
-  6-1-identify-the-file-and-create-its-markup-set: backlog
+  epic-6: in-progress
+  6-1-identify-the-file-and-create-its-markup-set: review
   6-2-save-markups-through-the-ops-rpc: backlog
   6-3-offline-queue-and-save-status: backlog
   6-4-restore-markups-when-reopening-the-same-pdf: backlog

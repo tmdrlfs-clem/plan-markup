@@ -8,9 +8,19 @@ import { viewerStore } from "@/features/viewer";
 
 import { editorStore, layersOf, markupsOf, setDocLayers, setDocMarkups } from "./editor-store";
 
+type OpListener = (op: DocOp) => void;
+const listeners = new Set<OpListener>();
+
+/** Story 6.1: `listener` hears every op once it is applied (do, undo and redo alike); returns its unsubscribe. */
+export function subscribeAppliedOps(listener: OpListener): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
 /** Applies `op` (Story 5.12: a compound op's parts in order). A calibrations op for a document that is not the active one changes nothing (undo only runs in the active tab). */
 export function applyOp(op: DocOp): void {
   for (const part of opParts(op)) applySimple(part);
+  for (const listener of listeners) listener(op);
 }
 
 function applySimple(op: SimpleDocOp): void {
