@@ -1,6 +1,6 @@
 # Story 6.1: Identify the file and create its markup set
 
-Status: review
+Status: done
 
 ## Story
 
@@ -48,7 +48,7 @@ Claude Opus 5.5
 
 - Task 1: Supabase's default privileges give `authenticated` every privilege on new public tables; the migration revokes them all and grants back only what is used (pgTAP checks no UPDATE on files).
 - Task 2–3: the sync asks for the set once per document (a failure is forgotten so the next edit asks again); calibration changes wait in a map by key and are kept when the set or the save fails.
-- Tests: unit 1919 pass; db:test 114 pass; local e2e `e2e/markup-set.spec.ts` passes (dev server).
+- Tests: unit 1919 pass; db:test 114 pass; local e2e passes (dev server); CI runs 41949329784 (e2e) and 41949329782 (db) green.
 
 ### File List
 
