@@ -9,6 +9,7 @@
 --   theme@plan-markup.test        active, its own theme changed by the themes e2e (Story 3.8)
 --   sync@plan-markup.test         active, its markup sets read by the save e2e (Stories 6.1, 6.2)
 --   offline@plan-markup.test      active, its markup sets read by the offline queue e2e (Story 6.3)
+--   restore@plan-markup.test      active, its markup sets restored by the restore e2e (Story 6.4)
 --
 -- The save e2e read rows back from the database: their own users keep other
 -- specs' edits (saved since Story 6.2) out of their sets.
@@ -55,6 +56,11 @@ values
    'authenticated', 'authenticated', 'offline@plan-markup.test',
    extensions.crypt('password123', extensions.gen_salt('bf')), now(),
    '{"provider":"email","providers":["email"]}', '{"name":"Dev Offline"}', now(), now(),
+   '', '', '', ''),
+  ('00000000-0000-0000-0000-000000000000', '00000000-0000-4000-8000-000000000011',
+   'authenticated', 'authenticated', 'restore@plan-markup.test',
+   extensions.crypt('password123', extensions.gen_salt('bf')), now(),
+   '{"provider":"email","providers":["email"]}', '{"name":"Dev Restore"}', now(), now(),
    '', '', '', '');
 
 insert into auth.identities (
@@ -72,7 +78,8 @@ where u.id in (
   '00000000-0000-4000-8000-00000000000d',
   '00000000-0000-4000-8000-00000000000e',
   '00000000-0000-4000-8000-00000000000f',
-  '00000000-0000-4000-8000-000000000010'
+  '00000000-0000-4000-8000-000000000010',
+  '00000000-0000-4000-8000-000000000011'
 );
 
 -- Profiles were created by app.fn_handle_new_user (status pending).
@@ -83,7 +90,8 @@ where id = '00000000-0000-4000-8000-00000000000a';
 update public.profiles
 set status = 'active'
 where id in ('00000000-0000-4000-8000-00000000000b', '00000000-0000-4000-8000-00000000000e',
-             '00000000-0000-4000-8000-00000000000f', '00000000-0000-4000-8000-000000000010');
+             '00000000-0000-4000-8000-00000000000f', '00000000-0000-4000-8000-000000000010',
+             '00000000-0000-4000-8000-000000000011');
 
 update public.profiles
 set status = 'deactivated'

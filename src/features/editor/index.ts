@@ -1,5 +1,5 @@
 // Public surface of the editor feature (Story 4.3: undo; Story 4.5: the editor store, op commands, the session).
-export { editorStore, markupsOf, pageMarkups, resetEditor, type CaptionDrag, type Drawing, type EditorState, type MoveDrag } from "./editor-store";
+export { editorStore, layersOf, markupsOf, pageMarkups, resetEditor, setDocLayers, setDocMarkups, type CaptionDrag, type Drawing, type EditorState, type MoveDrag } from "./editor-store";
 export { activeUndoLabels, clearUndo, executeCommand, executeOp, redoActive, undoActive } from "./undo-store";
 export { subscribeAppliedOps } from "./commands";
 export { useEditorSession } from "./session";

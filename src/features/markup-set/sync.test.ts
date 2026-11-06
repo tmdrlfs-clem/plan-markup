@@ -6,6 +6,8 @@ import type { Calibration } from "@/core/calibration/calibration";
 import type { DocOp } from "@/core/commands/ops";
 import type { ApplyMarkupOpsInput, MarkupOpResult, SavedMarkup } from "@/core/markup-set/markup-ops";
 import type { Markup } from "@/core/schema/markup";
+import type { Layer } from "@/core/schema/layer";
+import type { LoadedMarkupSet } from "@/lib/db/markups";
 import { memoryOpQueue, type OpQueueBackend } from "@/lib/idb/op-queue";
 
 import { createMarkupSetSync, FIRST_RETRY_MS, isSaveShortcut, MAX_RETRY_MS, type SnapshotStore } from "./sync";
@@ -40,7 +42,7 @@ const applyAll = async (input: ApplyMarkupOpsInput) => ({
 type Shared = { queue?: OpQueueBackend; snapshots?: SnapshotStore; list?: Markup[] };
 
 function setup(shared: Shared = {}) {
-  const state = { documentId: SHA as string | null, fileName: "L17.pdf", pages: PAGES, calibrations: {} as Record<string, Calibration>, list: shared.list ?? ([] as Markup[]), online: true };
+  const state = { documentId: SHA as string | null, fileName: "L17.pdf", pages: PAGES, calibrations: {} as Record<string, Calibration>, list: shared.list ?? ([] as Markup[]), online: true, layers: [] as Layer[] };
   let n = 0;
   const queue = shared.queue ?? memoryOpQueue();
   const snapshots = shared.snapshots ?? memorySnapshots();
@@ -51,6 +53,17 @@ function setup(shared: Shared = {}) {
     apply: vi.fn(applyAll),
     viewer: () => state,
     markups: () => state.list,
+    load: vi.fn(async (): Promise<{ ok: true; data: LoadedMarkupSet | null }> => ({ ok: true, data: null })),
+    setMarkups: vi.fn((_doc: string, markups: readonly Markup[]) => {
+      state.list = [...markups];
+    }),
+    setCalibrations: vi.fn((_doc: string, calibrations: Readonly<Record<string, Calibration>>) => {
+      state.calibrations = { ...calibrations };
+    }),
+    layers: () => state.layers,
+    setLayers: vi.fn((_doc: string, layers: readonly Layer[]) => {
+      state.layers = [...layers];
+    }),
     queue,
     snapshots,
     online: () => state.online,
@@ -314,5 +327,91 @@ describe("offline queue and save status (Story 6.3)", () => {
     expect(isSaveShortcut({ key: "S", ctrlKey: false, metaKey: true, altKey: false, shiftKey: false })).toBe(true);
     expect(isSaveShortcut({ key: "s", ctrlKey: true, metaKey: false, altKey: false, shiftKey: true })).toBe(false);
     expect(isSaveShortcut({ key: "s", ctrlKey: false, metaKey: false, altKey: false, shiftKey: false })).toBe(false);
+  });
+});
+
+describe("restore when reopening the same PDF (Story 6.4)", () => {
+  const loaded = (markups: Markup[], z: number[], calibrations: Record<string, Calibration> = {}): LoadedMarkupSet => ({
+    ids: IDS,
+    markups: markups.map((markup, i) => ({ markup, z: z[i], version: 3 })),
+    calibrations,
+  });
+
+  it("brings back the server's markups and calibrations; the next edit sends only itself, at the server's version", async () => {
+    const { state, deps, sync } = setup();
+    const a = line(M1);
+    const b = line(M2, 3);
+    deps.load.mockResolvedValue({ ok: true, data: loaded([a, b], [0, 1], { [`${SHA}:0`]: CAL }) });
+    await sync.restore(SHA);
+    expect(deps.load).toHaveBeenCalledWith(SHA);
+    expect(state.list).toEqual([a, b]);
+    expect(state.calibrations).toEqual({ [`${SHA}:0`]: CAL });
+    expect(sync.status().state).toBe("saved");
+    // No ensure: the set is known.
+    const moved = line(M2, 9);
+    state.list = [a, moved];
+    sync.onOp({ kind: "markups.update", documentId: SHA, before: [b], after: [moved] });
+    await sync.flush();
+    expect(deps.ensure).not.toHaveBeenCalled();
+    expect(opsOf(deps, 0)).toEqual([expect.objectContaining({ markupId: M2, kind: "update", baseVersion: 3, fields: { geometry: { points: moved.points } } })]);
+  });
+
+  it("shows the copy on this computer first, then the server's", async () => {
+    const shared = { queue: memoryOpQueue(), snapshots: memorySnapshots() };
+    const a = line(M1);
+    const b = line(M2, 3);
+    await shared.queue.putSet(USER, SHA, { markups: [a], z: [0], calibrations: {}, layers: [{ id: M2, name: "Pipes", shown: true, locked: false } as unknown as Layer] });
+    const { state, deps, sync } = setup({ queue: shared.queue });
+    let answer: (v: { ok: true; data: LoadedMarkupSet }) => void = () => undefined;
+    deps.load.mockImplementation(() => new Promise((resolve) => (answer = resolve)));
+    const done = sync.restore(SHA);
+    await vi.waitFor(() => expect(state.list).toEqual([a]));
+    expect(state.layers).toHaveLength(1);
+    answer({ ok: true, data: loaded([a, b], [0, 1]) });
+    await done;
+    expect(state.list).toEqual([a, b]);
+  });
+
+  it("an edit made before the server answers wins (the server's set is not shown)", async () => {
+    const { state, deps, sync } = setup();
+    let answer: (v: { ok: true; data: LoadedMarkupSet }) => void = () => undefined;
+    deps.load.mockImplementation(() => new Promise((resolve) => (answer = resolve)));
+    const done = sync.restore(SHA);
+    await vi.waitFor(() => expect(deps.load).toHaveBeenCalled());
+    const mine = line(M2, 7);
+    state.list = [mine];
+    sync.onOp(add(mine));
+    answer({ ok: true, data: loaded([line(M1)], [0]) });
+    await done;
+    expect(state.list).toEqual([mine]);
+  });
+
+  it("restores nothing when this tab's session already has the document, or when the file has no set", async () => {
+    const withSession = setup({ list: [line(M1)] });
+    await withSession.sync.restore(SHA);
+    expect(withSession.deps.load).not.toHaveBeenCalled();
+    const none = setup();
+    await none.sync.restore(SHA);
+    expect(none.deps.load).toHaveBeenCalledTimes(1);
+    expect(none.deps.setMarkups).not.toHaveBeenCalled();
+    await none.sync.restore(SHA);
+    expect(none.deps.load).toHaveBeenCalledTimes(1);
+  });
+
+  it("what waits in the queue is sent before the server's set is read", async () => {
+    const first = setup();
+    first.state.online = false;
+    first.deps.apply.mockRejectedValue(new Error("offline"));
+    const a = line(M1);
+    first.state.list = [a];
+    first.sync.onOp(add(a));
+    await first.sync.flush();
+    first.sync.dispose();
+    // A new tab: no session, the queue still holds the line.
+    const second = setup({ queue: first.queue });
+    second.deps.load.mockResolvedValue({ ok: true, data: loaded([a], [0]) });
+    await second.sync.restore(SHA);
+    expect(second.deps.apply).toHaveBeenCalled();
+    expect(second.state.list).toEqual([a]);
   });
 });

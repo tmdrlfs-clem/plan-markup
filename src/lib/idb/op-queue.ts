@@ -5,7 +5,9 @@
 // work. Per user (a shared computer never sends one user's changes as
 // another's). Besides the queue: what each document's markup set is made from
 // (its hash, name and pages, so a change made offline before the set exists
-// can still make it later) and the markups' last known server versions.
+// can still make it later), the markups' last known server versions and
+// (Story 6.4) each set as last in step with the server, so a reopened file
+// shows its markups before the server answers.
 //
 // The storage is behind `OpQueueBackend`: IndexedDB in the browser, memory in
 // tests and where IndexedDB is unavailable (then the queue lasts the page).
@@ -15,6 +17,11 @@ import { openDB, type DBSchema, type IDBPDatabase } from "idb";
 import type { Calibration } from "@/core/calibration/calibration";
 import type { MarkupOp } from "@/core/markup-set/markup-ops";
 import type { EnsureMarkupSetInput } from "@/core/markup-set/markup-set";
+import type { Layer } from "@/core/schema/layer";
+import type { Markup } from "@/core/schema/markup";
+
+/** Story 6.4: a document's set as last in step with the server: its markups in drawing order with their order keys, calibrations and (local) layers. */
+export type CachedSet = { markups: Markup[]; z: number[]; calibrations: Record<string, Calibration>; layers: Layer[] };
 
 /** A markup op as queued: its page by the client key (`<sha256>:<index>`); the server page id and base version are set when sent. */
 export type QueuedMarkupOp = Omit<MarkupOp, "pageId" | "baseVersion"> & { pageKey?: string };
@@ -34,6 +41,8 @@ export interface OpQueueBackend {
   getDoc(userId: string, documentId: string): Promise<EnsureMarkupSetInput | null>;
   putVersions(userId: string, versions: ReadonlyMap<string, number>): Promise<void>;
   getVersions(userId: string, markupIds: readonly string[]): Promise<Map<string, number>>;
+  putSet(userId: string, documentId: string, set: CachedSet): Promise<void>;
+  getSet(userId: string, documentId: string): Promise<CachedSet | null>;
   /** True when it survives a reload. */
   readonly durable: boolean;
 }
@@ -43,8 +52,15 @@ export function memoryOpQueue(): OpQueueBackend {
   const queue: QueueEntry[] = [];
   const docs = new Map<string, EnsureMarkupSetInput>();
   const versions = new Map<string, number>();
+  const cachedSets = new Map<string, CachedSet>();
   return {
     durable: false,
+    async putSet(userId, documentId, set) {
+      cachedSets.set(`${userId}:${documentId}`, set);
+    },
+    async getSet(userId, documentId) {
+      return cachedSets.get(`${userId}:${documentId}`) ?? null;
+    },
     async add(entries) {
       for (const e of entries) queue.push({ ...e, seq: next++ });
     },
@@ -82,6 +98,7 @@ interface SyncDb extends DBSchema {
   queue: { key: number; value: QueueEntry; indexes: { byUser: [string, number] } };
   docs: { key: string; value: EnsureMarkupSetInput };
   versions: { key: string; value: number };
+  sets: { key: string; value: CachedSet };
 }
 
 const DB_NAME = "pm-sync";
@@ -89,6 +106,12 @@ const DB_NAME = "pm-sync";
 function idbOpQueue(db: IDBPDatabase<SyncDb>): OpQueueBackend {
   return {
     durable: true,
+    async putSet(userId, documentId, set) {
+      await db.put("sets", set, `${userId}:${documentId}`);
+    },
+    async getSet(userId, documentId) {
+      return (await db.get("sets", `${userId}:${documentId}`)) ?? null;
+    },
     async add(entries) {
       const tx = db.transaction("queue", "readwrite");
       for (const e of entries) {
@@ -142,13 +165,17 @@ function idbOpQueue(db: IDBPDatabase<SyncDb>): OpQueueBackend {
 export async function openOpQueue(): Promise<OpQueueBackend> {
   if (typeof indexedDB === "undefined") return memoryOpQueue();
   try {
-    const db = await openDB<SyncDb>(DB_NAME, 1, {
-      upgrade(upgradeDb) {
-        // The index key is [userId, seq]: seq is the primary key, copied into the value on add.
-        const queue = upgradeDb.createObjectStore("queue", { keyPath: "seq", autoIncrement: true });
-        queue.createIndex("byUser", ["userId", "seq"]);
-        upgradeDb.createObjectStore("docs");
-        upgradeDb.createObjectStore("versions");
+    const db = await openDB<SyncDb>(DB_NAME, 2, {
+      upgrade(upgradeDb, oldVersion) {
+        if (oldVersion < 1) {
+          // The index key is [userId, seq]: seq is the primary key, copied into the value on add.
+          const queue = upgradeDb.createObjectStore("queue", { keyPath: "seq", autoIncrement: true });
+          queue.createIndex("byUser", ["userId", "seq"]);
+          upgradeDb.createObjectStore("docs");
+          upgradeDb.createObjectStore("versions");
+        }
+        // Story 6.4.
+        if (oldVersion < 2) upgradeDb.createObjectStore("sets");
       },
     });
     return idbOpQueue(db);

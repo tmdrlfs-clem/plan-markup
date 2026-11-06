@@ -17,6 +17,10 @@
 //    confirmed it.
 // 3. A failure retries with exponential backoff capped at 30 s, at once on
 //    `online`, on Ctrl+S and on Retry. The SaveIndicator shows the state.
+// 4. Story 6.4: opening a file whose hash has a set (and that this browser
+//    tab's session does not already hold) shows the set as last in step with
+//    the server (IndexedDB) after the first frame, then the server's own;
+//    edits made meanwhile win, and the queue goes before the server is asked.
 
 import { useEffect } from "react";
 import { createStore } from "zustand/vanilla";
@@ -25,15 +29,17 @@ import { z } from "zod";
 import type { Calibration } from "@/core/calibration/calibration";
 import { opParts, type DocOp } from "@/core/commands/ops";
 import { uuidv7 } from "@/core/ids/uuid";
-import { diffMarkups, MAX_OPS, savedMarkupSchema, type ApplyMarkupOpsInput, type MarkupChange, type MarkupOp, type MarkupOpResult, type SavedMarkup } from "@/core/markup-set/markup-ops";
+import { diffMarkups, MAX_OPS, savedMarkup, savedMarkupSchema, type ApplyMarkupOpsInput, type MarkupChange, type MarkupOp, type MarkupOpResult, type SavedMarkup } from "@/core/markup-set/markup-ops";
 import { pageGeometryOf, setFilename, type CalibrationEntry, type EnsureMarkupSetInput, type MarkupSetIds } from "@/core/markup-set/markup-set";
+import type { Layer } from "@/core/schema/layer";
 import type { Markup } from "@/core/schema/markup";
-import { openOpQueue, type OpQueueBackend, type QueueEntry, type QueuedMarkupOp } from "@/lib/idb/op-queue";
+import type { LoadedMarkupSet } from "@/lib/db/markups";
+import { openOpQueue, type CachedSet, type OpQueueBackend, type QueueEntry, type QueuedMarkupOp } from "@/lib/idb/op-queue";
 import type { Result, ResultCode } from "@/lib/result";
-import { editorStore, subscribeAppliedOps } from "@/features/editor";
+import { editorStore, layersOf, setDocLayers, setDocMarkups, subscribeAppliedOps } from "@/features/editor";
 import { viewerStore } from "@/features/viewer";
 
-import { applyMarkupOps, ensureMarkupSet, saveSetCalibrations } from "./actions";
+import { applyMarkupOps, ensureMarkupSet, loadMarkupSet, saveSetCalibrations } from "./actions";
 
 /** Changes wait this long for more before they are queued and sent. */
 export const SAVE_DELAY_MS = 300;
@@ -105,6 +111,13 @@ export type SyncDeps = {
   viewer: () => Viewer;
   /** A document's markups in drawing order. */
   markups: (documentId: string) => readonly Markup[] | undefined;
+  /** Story 6.4: the server's set of a file (null: none). */
+  load: (sha256: string) => Promise<Result<LoadedMarkupSet | null>>;
+  /** Story 6.4: what a restore sets. */
+  setMarkups: (documentId: string, markups: readonly Markup[]) => void;
+  setCalibrations: (documentId: string, calibrations: Readonly<Record<string, Calibration>>) => void;
+  layers: (documentId: string) => readonly Layer[];
+  setLayers: (documentId: string, layers: readonly Layer[]) => void;
   queue: OpQueueBackend | Promise<OpQueueBackend>;
   snapshots?: SnapshotStore;
   /** False when the browser says it is offline. */
@@ -122,6 +135,8 @@ export type MarkupSetSync = {
   flush: () => Promise<void>;
   /** Sends now (Ctrl+S, Retry, `online`): the backoff starts again. */
   saveNow: () => Promise<void>;
+  /** Story 6.4: brings back an opened document's set (once per page; resolves when done). */
+  restore: (documentId: string) => Promise<void>;
   /** The set of `documentId` once known (tests). */
   ids: (documentId: string) => Promise<MarkupSetIds | null>;
   /** The server version of a markup as last known (tests). */
@@ -156,6 +171,9 @@ export function createMarkupSetSync(deps: SyncDeps): MarkupSetSync {
   const versions = new Map<string, number>();
   /** Documents whose markups changed since they were last queued. */
   const dirty = new Set<string>();
+  /** Story 6.4: documents edited in this page, and documents whose restore started. */
+  const touched = new Set<string>();
+  const restoring = new Set<string>();
   /** Calibration changes to queue, by document then key (null: removed). */
   const calibrations = new Map<string, Map<string, Calibration | null>>();
 
@@ -390,6 +408,9 @@ export function createMarkupSetSync(deps: SyncDeps): MarkupSetSync {
       attempt = 0;
     }
     setStatus({ state: "saved", pending: 0, ...(sent ? { lastSavedAt: now() } : {}) });
+    // Everything is on the server: the open document's set is cached as it is now (Story 6.4).
+    const open = deps.viewer().documentId;
+    if (sent && open && touched.has(open) && snapshots.has(open)) await queue.putSet(userId, open, cacheOf(open)).catch(() => undefined);
     if (dirty.size > 0) schedule();
   };
 
@@ -399,6 +420,67 @@ export function createMarkupSetSync(deps: SyncDeps): MarkupSetSync {
       draining = null;
     });
     return draining;
+  };
+
+  // -------------------------------------------------------------------------
+  // 4. Restore (Story 6.4).
+  // -------------------------------------------------------------------------
+
+  const calibrationsOf = (documentId: string): Record<string, Calibration> =>
+    Object.fromEntries(Object.entries(deps.viewer().calibrations).filter(([key]) => key.startsWith(`${documentId}:`)));
+
+  /** The document's set as queued (= on the server once the queue is empty). */
+  const cacheOf = (documentId: string): CachedSet => {
+    const saved = snapshotOf(documentId);
+    const markups = (deps.markups(documentId) ?? []).filter((m) => saved.has(m.id));
+    return { markups, z: markups.map((m) => saved.get(m.id)!.z), calibrations: calibrationsOf(documentId), layers: [...deps.layers(documentId)] };
+  };
+
+  /** Shows a set and makes it what was saved: the next diff sends only new changes. */
+  const show = (documentId: string, markups: readonly Markup[], z: readonly number[], cals: Record<string, Calibration>) => {
+    const saved = new Map<string, SavedMarkup>(markups.map((m, i) => [m.id, savedMarkup(m, z[i])]));
+    snapshots.set(documentId, saved);
+    deps.snapshots?.set(documentId, saved);
+    deps.setMarkups(documentId, markups);
+    if (deps.viewer().documentId === documentId) deps.setCalibrations(documentId, cals);
+  };
+
+  const pendingFor = async (queue: OpQueueBackend, documentId: string) =>
+    (await queue.head(userId, HEAD).catch(() => [] as QueueEntry[])).some((e) => e.documentId === documentId);
+
+  const restoreNow = async (documentId: string): Promise<void> => {
+    const queue = await queueReady;
+    // This browser tab's session already holds the document (a reload): it is the truth here.
+    if (snapshots.has(documentId) || deps.snapshots?.get(documentId) || (deps.markups(documentId)?.length ?? 0) > 0) return;
+    const fresh = () => !touched.has(documentId) && !disposed;
+
+    // 1. As last in step with the server, from this computer.
+    const cached = await queue.getSet(userId, documentId).catch(() => null);
+    if (cached && fresh() && (deps.markups(documentId)?.length ?? 0) === 0) {
+      show(documentId, cached.markups, cached.z, cached.calibrations);
+      if (deps.layers(documentId).length === 0 && cached.layers.length > 0) deps.setLayers(documentId, cached.layers);
+    }
+
+    // 2. The server's: what waits in the queue goes first (a tab closed while offline).
+    if (await pendingFor(queue, documentId)) await flush();
+    if (await pendingFor(queue, documentId)) return;
+    const result = await deps.load(documentId).catch(() => null);
+    if (!result?.ok || result.data === null || !fresh()) return;
+    const set = result.data;
+    sets.set(documentId, Promise.resolve(set.ids));
+    const known = new Map(set.markups.map((e) => [e.markup.id, e.version]));
+    for (const [id, v] of known) versions.set(id, v);
+    await queue.putVersions(userId, known).catch(() => undefined);
+    if (!fresh() || (await pendingFor(queue, documentId))) return;
+    show(documentId, set.markups.map((e) => e.markup), set.markups.map((e) => e.z), set.calibrations);
+    await queue.putSet(userId, documentId, { ...cacheOf(documentId), calibrations: set.calibrations }).catch(() => undefined);
+    if (status.pending === 0) setStatus({ state: "saved" });
+  };
+
+  const restore = (documentId: string): Promise<void> => {
+    if (restoring.has(documentId)) return Promise.resolve();
+    restoring.add(documentId);
+    return restoreNow(documentId).catch(() => undefined);
   };
 
   const flush = async () => {
@@ -415,6 +497,7 @@ export function createMarkupSetSync(deps: SyncDeps): MarkupSetSync {
   };
 
   const onOp = (op: DocOp) => {
+    touched.add(op.documentId);
     void queueReady.then((queue) => recordInput(op.documentId, queue));
     const viewer = deps.viewer();
     for (const part of opParts(op)) {
@@ -447,6 +530,7 @@ export function createMarkupSetSync(deps: SyncDeps): MarkupSetSync {
     onOp,
     flush,
     saveNow,
+    restore,
     ids: (documentId) => sets.get(documentId) ?? Promise.resolve(null),
     version: (markupId) => versions.get(markupId),
     status: () => status,
@@ -483,6 +567,14 @@ export function useMarkupSetSync(userId: string): void {
       apply: applyMarkupOps,
       viewer: () => viewerStore.getState(),
       markups: (documentId) => editorStore.getState().doc.markups[documentId],
+      load: loadMarkupSet,
+      setMarkups: setDocMarkups,
+      setCalibrations: (documentId, calibrations) =>
+        viewerStore.setState((s) => ({
+          calibrations: { ...Object.fromEntries(Object.entries(s.calibrations).filter(([key]) => !key.startsWith(`${documentId}:`))), ...calibrations },
+        })),
+      layers: (documentId) => layersOf(editorStore.getState(), documentId),
+      setLayers: setDocLayers,
       queue: openOpQueue(),
       snapshots: sessionSnapshots(userId),
       online: () => (typeof navigator === "undefined" ? true : navigator.onLine),
@@ -490,6 +582,15 @@ export function useMarkupSetSync(userId: string): void {
     });
     activeSync = sync;
     const unsubscribe = subscribeAppliedOps(sync.onOp);
+    // Story 6.4: an opened document's set comes back after its first frame (never before: rendering is not held up).
+    const onViewer = (s: { status: string; documentId: string | null }) => {
+      if (s.status === "ready" && s.documentId) {
+        const documentId = s.documentId;
+        setTimeout(() => void sync.restore(documentId), 0);
+      }
+    };
+    onViewer(viewerStore.getState());
+    const unsubscribeViewer = viewerStore.subscribe(onViewer);
     const onOnline = () => void sync.saveNow();
     const onOffline = () => {
       if (sync.status().pending > 0) saveStatusStore.setState({ state: "offline" });
@@ -507,6 +608,7 @@ export function useMarkupSetSync(userId: string): void {
     window.addEventListener("pagehide", onHide);
     return () => {
       unsubscribe();
+      unsubscribeViewer();
       window.removeEventListener("online", onOnline);
       window.removeEventListener("offline", onOffline);
       window.removeEventListener("keydown", onKey, true);

@@ -4,7 +4,7 @@ import { applyMarkupOpsSchema, type ApplyMarkupOpsInput, type MarkupOpResult } f
 import { ensureMarkupSetSchema, saveCalibrationsSchema, type MarkupSetIds } from "@/core/markup-set/markup-set";
 import { getAuthUser } from "@/lib/auth";
 import { ensureDrawingFile, saveCalibrations } from "@/lib/db/drawings";
-import { applyMarkupOps as applyOps, MarkupOpsError } from "@/lib/db/markups";
+import { applyMarkupOps as applyOps, loadMarkupSet as loadSet, MarkupOpsError, type LoadedMarkupSet } from "@/lib/db/markups";
 import { fail, internalError, type Result } from "@/lib/result";
 import { createServerSupabase } from "@/lib/supabase/server";
 
@@ -55,5 +55,17 @@ export async function applyMarkupOps(input: unknown): Promise<Result<MarkupOpRes
   } catch (error) {
     if (error instanceof MarkupOpsError && error.code !== "INTERNAL") return fail(error.code);
     return internalError("markup_set.ops_failed", error);
+  }
+}
+
+/** Story 6.4 (FR50): the user's markup set of the file with this SHA-256 (null: none yet). */
+export async function loadMarkupSet(sha256: unknown): Promise<Result<LoadedMarkupSet | null>> {
+  const user = await getAuthUser();
+  if (!user) return fail("UNAUTHENTICATED");
+  if (typeof sha256 !== "string" || !/^[0-9a-f]{64}$/.test(sha256)) return fail("INVALID_INPUT");
+  try {
+    return { ok: true, data: await loadSet(await createServerSupabase(), sha256) };
+  } catch (error) {
+    return internalError("markup_set.load_failed", error);
   }
 }

@@ -1,6 +1,6 @@
 # Story 6.3: Offline queue and save status
 
-Status: review
+Status: done
 
 ## Story
 
