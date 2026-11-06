@@ -7,10 +7,11 @@
 // names its tool count. Story 7.2: each tool is a tile with its preview and
 // name (a device shows its label). Story 7.3: a click arms the tile (placed at
 // each click on the drawing until Esc), a drag places it once; a tile drawn at
-// a scale is disabled on a page without one. Story 7.4: Import .btx (import-btx-ui).
+// a scale is disabled on a page without one. Story 7.4: Import (import-btx-ui).
+// Story 7.6: each set exports to our own file (tool-file); Import takes it back.
 
 import { useEffect, useState, type KeyboardEvent } from "react";
-import { ArrowDown, ArrowUp, Pencil, Plus, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Download, Pencil, Plus, Trash2 } from "lucide-react";
 import { useStore } from "zustand";
 import { createStore } from "zustand/vanilla";
 
@@ -32,6 +33,7 @@ import { createToolSet, deleteToolSet, listToolSets, moveToolSet, renameToolSet 
 import { resetStamps, setArmedStamp, setDraggedStamp, stampStore, type StampTool } from "./stamp-store";
 import { ImportBtxButton } from "./import-btx-ui";
 import { ToolPreview, cachedToolImage, toolImageDataUrl } from "./tool-preview";
+import { exportToolSet, exportedText, saveBlob } from "./tool-file";
 
 export const EMPTY_TOOL_CHEST = "No tool sets yet";
 export const NO_DRAWING_TO_PLACE = "Open a drawing to place tools";
@@ -217,6 +219,20 @@ function addImportedSet(set: ToolSet): void {
   toolChestStore.setState((s) => ({ status: "ready", sets: [...s.sets.filter((x) => x.id !== set.id), set] }));
 }
 
+/** Story 7.6: saves `set` as a file; tools that could not be read are named. */
+async function exportSet(set: ToolSet): Promise<void> {
+  try {
+    const done = await exportToolSet(set, { image: toolImageDataUrl, save: saveBlob });
+    toast({
+      title: exportedText(set.name, done.count),
+      description: done.skipped.length > 0 ? `Left out (could not be read): ${done.skipped.join(", ")}` : undefined,
+      variant: done.skipped.length > 0 ? "warning" : "success",
+    });
+  } catch {
+    toast({ title: "The tool set could not be exported. Try again.", variant: "danger" });
+  }
+}
+
 function ImportButton() {
   return <ImportBtxButton onSet={addImportedSet} />;
 }
@@ -339,6 +355,7 @@ export function ToolChestPanel() {
                     <IconButton size="xs" label={`Rename ${set.name}`} icon={Pencil} onClick={() => setRenaming(set.id)} />
                     <IconButton size="xs" label={`Move ${set.name} up`} icon={ArrowUp} disabled={searching || i === 0} onClick={() => void move(set, -1)} />
                     <IconButton size="xs" label={`Move ${set.name} down`} icon={ArrowDown} disabled={searching || i === sets.length - 1} onClick={() => void move(set, 1)} />
+                    <IconButton size="xs" label={`Export ${set.name}`} icon={Download} onClick={() => void exportSet(set)} />
                     <IconButton size="xs" label={`Delete ${set.name}`} icon={Trash2} onClick={() => setDeleting(set)} />
                   </>
                 }

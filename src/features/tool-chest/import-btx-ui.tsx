@@ -1,7 +1,8 @@
 "use client";
 
-// Story 7.4 (F7): the Tool Chest's Import .btx button, and the report of the
-// items that did not import (a partial import, or none at all).
+// Story 7.4 (F7): the Tool Chest's Import button, and the report of the items
+// that did not import (a partial import, or none at all). Story 7.6: it also
+// takes our own tool set files (.json), told apart by their extension.
 
 import { useRef } from "react";
 import { FileUp } from "lucide-react";
@@ -13,6 +14,7 @@ import { Dialog, DialogFooter, DialogPrimary } from "@/components/ui/dialog";
 import { toast } from "@/components/ui/toast-store";
 
 import { addTool, createToolSet } from "./actions";
+import { importToolFile } from "./tool-file";
 import { NOTHING_IMPORTED, NOT_A_TOOL_SET, importBtx, importedText, readInWorker, type ImportDeps, type ImportOutcome, type ImportReportItem } from "./import-btx";
 
 type Report = { title: string; added: number; failed: ImportReportItem[] };
@@ -30,7 +32,7 @@ export function setImportDeps(next: Partial<ImportDeps>): void {
 export function showOutcome(outcome: ImportOutcome, onSet: (set: Extract<ImportOutcome, { set: unknown }>["set"]) => void): void {
   switch (outcome.kind) {
     case "invalid":
-      toast({ title: NOT_A_TOOL_SET, description: outcome.reason, variant: "warning" });
+      toast({ title: outcome.title ?? NOT_A_TOOL_SET, description: outcome.reason, variant: "warning" });
       return;
     case "none":
       importStore.setState({ report: { title: outcome.title, added: 0, failed: outcome.failed } });
@@ -50,7 +52,7 @@ export async function runImport(file: File, onSet: Parameters<typeof showOutcome
   if (importStore.getState().busy) return;
   importStore.setState({ busy: true });
   try {
-    showOutcome(await importBtx(file, deps), onSet);
+    showOutcome(await (/\.json$/i.test(file.name) ? importToolFile(file, deps) : importBtx(file, deps)), onSet);
   } finally {
     importStore.setState({ busy: false });
   }
@@ -61,15 +63,15 @@ export function ImportBtxButton({ onSet }: { onSet: Parameters<typeof showOutcom
   const input = useRef<HTMLInputElement>(null);
   return (
     <>
-      <Button size="sm" variant="ghost" disabled={busy} onClick={() => input.current?.click()}>
+      <Button size="sm" variant="ghost" disabled={busy} title="Import a Revu tool set (.btx) or a Plan Markup tool set (.json)" onClick={() => input.current?.click()}>
         <FileUp size={14} aria-hidden="true" />
-        {busy ? "Importing…" : "Import .btx"}
+        {busy ? "Importing…" : "Import…"}
       </Button>
       <input
         ref={input}
         type="file"
-        accept=".btx"
-        aria-label="Revu tool set file"
+        accept=".btx,.json"
+        aria-label="Tool set file (.btx or .json)"
         data-testid="import-btx-input"
         className="hidden"
         onChange={(e) => {

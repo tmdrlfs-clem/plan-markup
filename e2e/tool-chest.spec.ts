@@ -1,5 +1,5 @@
 // Story 7.1: personal tool sets (production build in CI).
-// Covers: the empty state (Import .btx and Create set); creating two sets,
+// Covers: the empty state (Import… and Create set); creating two sets,
 // renaming one, moving it up; instant search; the sets survive a reload in
 // their order; deleting asks with the tool count.
 import { expect, test, type Page } from "@playwright/test";
@@ -24,7 +24,7 @@ test("tool sets: create, rename, reorder, search, persist and delete", async ({ 
     await page.getByRole("radio", { name: "Tool Chest" }).click();
   }
   await expect(panel(page).getByText("No tool sets yet")).toBeVisible();
-  await expect(panel(page).getByRole("button", { name: "Import .btx" })).toBeEnabled();
+  await expect(panel(page).getByRole("button", { name: "Import…" })).toBeEnabled();
 
   await createSet(page, "Sprinkler");
   await expect(setNames(page)).toHaveText(["Sprinkler (0)"]);

@@ -59,13 +59,13 @@ describe("Import .btx outcomes (Story 7.4, F7)", () => {
     const onSet = vi.fn();
     render(<ImportBtxButton onSet={onSet} />);
     const input = screen.getByTestId("import-btx-input") as HTMLInputElement;
-    expect(input.accept).toBe(".btx");
+    expect(input.accept).toBe(".btx,.json");
     await userEvent.setup({ applyAccept: false }).upload(input, new File(["x"], "a.btx"));
     expect(await screen.findByRole("button", { name: "Importing…" })).toBeDisabled();
     // A second import while one runs is ignored.
     await runImport(new File(["x"], "b.btx"), onSet);
     await act(async () => finish());
-    expect(await screen.findByRole("button", { name: "Import .btx" })).toBeEnabled();
+    expect(await screen.findByRole("button", { name: "Import…" })).toBeEnabled();
     expect(m.toast).toHaveBeenCalledTimes(1);
   });
 });

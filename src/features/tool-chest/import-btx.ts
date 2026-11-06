@@ -53,7 +53,7 @@ export type ImportOutcome =
   | { kind: "ok"; set: ToolSet; title: string }
   | { kind: "partial"; set: ToolSet; title: string; failed: ImportReportItem[] }
   | { kind: "none"; title: string; failed: ImportReportItem[] }
-  | { kind: "invalid"; reason: string };
+  | { kind: "invalid"; reason: string; title?: string };
 
 export type ImportDeps = {
   /** Reads and draws the file in the worker. */

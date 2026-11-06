@@ -41,7 +41,7 @@ describe("Tool Chest panel (Story 7.1)", () => {
   it("the empty state offers Import .btx (Story 7.4) and Create set", async () => {
     const user = setup([]);
     expect(await screen.findByText(EMPTY_TOOL_CHEST)).toBeTruthy();
-    const importButton = screen.getByRole("button", { name: "Import .btx" });
+    const importButton = screen.getByRole("button", { name: "Import…" });
     expect(importButton).toBeEnabled();
     m.create.mockResolvedValue({ ok: true, data: { id: "n", name: "Heads", position: 1, tools: [] } });
     await user.click(screen.getByRole("button", { name: "Create set" }));
