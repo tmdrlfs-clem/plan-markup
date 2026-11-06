@@ -1,6 +1,6 @@
 # Story 7.2: Save a markup as a tool
 
-Status: review
+Status: done
 
 ## Story
 
@@ -43,7 +43,7 @@ Claude Opus 5.5
 
 ### Completion Notes List
 
-- Local: typecheck, lint clean; vitest 2010 pass; db:test 185 pass; check:* pass; e2e save-tool (2) + tool-chest pass (dev).
+- CI + Database green (ec2d294). Local: typecheck, lint clean; vitest 2010 pass; db:test 185 pass; check:* pass; e2e save-tool (2) + tool-chest pass (dev).
 
 ### File List
 
