@@ -1,6 +1,6 @@
 # Story 7.3: Place tools and count devices
 
-Status: review
+Status: done
 
 ## Story
 
@@ -43,7 +43,7 @@ Claude Opus 5.5
 
 ### Completion Notes List
 
-- Local: typecheck, lint clean; vitest 2021 pass; db:test 185 pass; check:* pass; e2e save-tool (3), tool-chest, markups-list, image-dimension, group-align-lock, shape-tools pass (dev).
+- CI green (dfcdb0d; no DB change, Database workflow not triggered). Local: typecheck, lint clean; vitest 2021 pass; db:test 185 pass; check:* pass; e2e save-tool (3), tool-chest, markups-list, image-dimension, group-align-lock, shape-tools pass (dev).
 
 ### File List
 
