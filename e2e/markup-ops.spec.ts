@@ -161,7 +161,7 @@ test("markup ops: draw, move, delete and undo save to the server; the op round t
   await expect.poll(summary, { timeout: 10_000 }).toEqual(["line v4", "arrow v21"]);
   const sorted = [...timed].sort((a, b) => a - b);
   const p95 = sorted[Math.ceil(sorted.length * 0.95) - 1];
-  console.log(`markup ops round trip: median ${sorted[sorted.length >> 1].toFixed(0)} ms, p95 ${p95.toFixed(0)} ms (n=${sorted.length})`);
+  test.info().annotations.push({ type: "perf", description: `markup ops round trip: median ${sorted[sorted.length >> 1].toFixed(0)} ms, p95 ${p95.toFixed(0)} ms (n=${sorted.length})` });
   expect(p95).toBeLessThanOrEqual(500);
   expect(calls.length).toBeGreaterThanOrEqual(24);
   await context.close();
