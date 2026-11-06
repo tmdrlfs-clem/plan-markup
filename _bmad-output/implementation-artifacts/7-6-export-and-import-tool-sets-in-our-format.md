@@ -1,6 +1,6 @@
 # Story 7.6: Export and import tool sets in our format
 
-Status: review
+Status: done
 
 ## Story
 
@@ -45,6 +45,7 @@ Claude Opus 5.5
 ### Completion Notes List
 
 - Local: typecheck, lint clean; vitest 205 files / 2061 tests pass; build ok; check:* pass; e2e tool-file, tool-chest, import-btx (incl. private) pass.
+- CI green on 31b8454 (unit, guards, Playwright e2e, gitleaks).
 
 ### File List
 
