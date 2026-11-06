@@ -1,6 +1,6 @@
 # Story 7.4: Import a `.btx` file safely
 
-Status: review
+Status: done
 
 ## Story
 
@@ -44,6 +44,7 @@ Claude Opus 5.5
 ### Completion Notes List
 
 - Local: typecheck, lint clean; vitest 2038 pass; build ok; check:* pass; e2e import-btx (2 incl. private file) + tool-chest pass (dev).
+- CI green on a83f223 (unit, guards, Playwright e2e, gitleaks).
 
 ### File List
 
