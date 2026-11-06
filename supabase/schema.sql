@@ -644,6 +644,51 @@ COMMENT ON TABLE "public"."signatures" IS 'A user''s signature image (Story 5.13
 
 
 
+CREATE TABLE IF NOT EXISTS "public"."tool_sets" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "owner_id" "uuid" DEFAULT "auth"."uid"() NOT NULL,
+    "name" "text" NOT NULL,
+    "position" double precision DEFAULT 0 NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "tool_sets_name_check" CHECK (((("length"("btrim"("name")) >= 1) AND ("length"("btrim"("name")) <= 100)) AND ("name" = "btrim"("name")))),
+    CONSTRAINT "tool_sets_position_check" CHECK ((("position" = "position") AND (("position" >= ('-1000000000000000'::numeric)::double precision) AND ("position" <= ('1000000000000000'::numeric)::double precision))))
+);
+
+
+ALTER TABLE "public"."tool_sets" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."tool_sets" IS 'A user''s tool set (Story 7.1). Owner only.';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."tools" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "tool_set_id" "uuid" NOT NULL,
+    "owner_id" "uuid" DEFAULT "auth"."uid"() NOT NULL,
+    "name" "text" NOT NULL,
+    "markup" "jsonb" NOT NULL,
+    "device" "jsonb",
+    "asset_path" "text",
+    "position" double precision DEFAULT 0 NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "tools_asset_path_check" CHECK ((("asset_path" IS NULL) OR (("asset_path" ~~ (((("owner_id")::"text" || '/'::"text") || ("tool_set_id")::"text") || '/%'::"text")) AND ("length"("asset_path") <= 300)))),
+    CONSTRAINT "tools_device_check" CHECK ((("device" IS NULL) OR (("jsonb_typeof"("device") = 'object'::"text") AND ("pg_column_size"("device") <= 4096)))),
+    CONSTRAINT "tools_markup_check" CHECK ((("jsonb_typeof"("markup") = 'object'::"text") AND ("pg_column_size"("markup") <= 262144))),
+    CONSTRAINT "tools_name_check" CHECK (((("length"("btrim"("name")) >= 1) AND ("length"("btrim"("name")) <= 100)) AND ("name" = "btrim"("name")))),
+    CONSTRAINT "tools_position_check" CHECK ((("position" = "position") AND (("position" >= ('-1000000000000000'::numeric)::double precision) AND ("position" <= ('1000000000000000'::numeric)::double precision))))
+);
+
+
+ALTER TABLE "public"."tools" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."tools" IS 'A tool in a tool set (Story 7.1; content from Story 7.2). Owner only; the set''s owner.';
+
+
+
 ALTER TABLE ONLY "app"."rate_limits"
     ADD CONSTRAINT "rate_limits_pkey" PRIMARY KEY ("bucket", "key_hash");
 
@@ -694,6 +739,16 @@ ALTER TABLE ONLY "public"."signatures"
 
 
 
+ALTER TABLE ONLY "public"."tool_sets"
+    ADD CONSTRAINT "tool_sets_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."tools"
+    ADD CONSTRAINT "tools_pkey" PRIMARY KEY ("id");
+
+
+
 CREATE INDEX "drawing_files_filename_idx" ON "public"."drawing_files" USING "btree" ("filename");
 
 
@@ -719,6 +774,18 @@ CREATE INDEX "markups_drawing_updated_idx" ON "public"."markups" USING "btree" (
 
 
 CREATE INDEX "markups_page_idx" ON "public"."markups" USING "btree" ("page_id");
+
+
+
+CREATE INDEX "tool_sets_owner_idx" ON "public"."tool_sets" USING "btree" ("owner_id", "position");
+
+
+
+CREATE INDEX "tools_owner_idx" ON "public"."tools" USING "btree" ("owner_id");
+
+
+
+CREATE INDEX "tools_set_idx" ON "public"."tools" USING "btree" ("tool_set_id", "position");
 
 
 
@@ -778,6 +845,21 @@ ALTER TABLE ONLY "public"."pages"
 
 ALTER TABLE ONLY "public"."signatures"
     ADD CONSTRAINT "signatures_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."tool_sets"
+    ADD CONSTRAINT "tool_sets_owner_id_fkey" FOREIGN KEY ("owner_id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."tools"
+    ADD CONSTRAINT "tools_owner_id_fkey" FOREIGN KEY ("owner_id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."tools"
+    ADD CONSTRAINT "tools_tool_set_id_fkey" FOREIGN KEY ("tool_set_id") REFERENCES "public"."tool_sets"("id") ON DELETE CASCADE;
 
 
 
@@ -908,6 +990,48 @@ CREATE POLICY "signatures_update_own" ON "public"."signatures" FOR UPDATE TO "au
 
 
 
+ALTER TABLE "public"."tool_sets" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "tool_sets_delete_own" ON "public"."tool_sets" FOR DELETE TO "authenticated" USING ((("owner_id" = ( SELECT "auth"."uid"() AS "uid")) AND ( SELECT "app"."fn_is_active_user"() AS "fn_is_active_user")));
+
+
+
+CREATE POLICY "tool_sets_insert_own" ON "public"."tool_sets" FOR INSERT TO "authenticated" WITH CHECK ((("owner_id" = ( SELECT "auth"."uid"() AS "uid")) AND ( SELECT "app"."fn_is_active_user"() AS "fn_is_active_user")));
+
+
+
+CREATE POLICY "tool_sets_select_own" ON "public"."tool_sets" FOR SELECT TO "authenticated" USING ((("owner_id" = ( SELECT "auth"."uid"() AS "uid")) AND ( SELECT "app"."fn_is_active_user"() AS "fn_is_active_user")));
+
+
+
+CREATE POLICY "tool_sets_update_own" ON "public"."tool_sets" FOR UPDATE TO "authenticated" USING ((("owner_id" = ( SELECT "auth"."uid"() AS "uid")) AND ( SELECT "app"."fn_is_active_user"() AS "fn_is_active_user"))) WITH CHECK ((("owner_id" = ( SELECT "auth"."uid"() AS "uid")) AND ( SELECT "app"."fn_is_active_user"() AS "fn_is_active_user")));
+
+
+
+ALTER TABLE "public"."tools" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "tools_delete_own" ON "public"."tools" FOR DELETE TO "authenticated" USING ((("owner_id" = ( SELECT "auth"."uid"() AS "uid")) AND ( SELECT "app"."fn_is_active_user"() AS "fn_is_active_user")));
+
+
+
+CREATE POLICY "tools_insert_own" ON "public"."tools" FOR INSERT TO "authenticated" WITH CHECK ((("owner_id" = ( SELECT "auth"."uid"() AS "uid")) AND ( SELECT "app"."fn_is_active_user"() AS "fn_is_active_user") AND (EXISTS ( SELECT 1
+   FROM "public"."tool_sets" "s"
+  WHERE (("s"."id" = "tools"."tool_set_id") AND ("s"."owner_id" = ( SELECT "auth"."uid"() AS "uid")))))));
+
+
+
+CREATE POLICY "tools_select_own" ON "public"."tools" FOR SELECT TO "authenticated" USING ((("owner_id" = ( SELECT "auth"."uid"() AS "uid")) AND ( SELECT "app"."fn_is_active_user"() AS "fn_is_active_user")));
+
+
+
+CREATE POLICY "tools_update_own" ON "public"."tools" FOR UPDATE TO "authenticated" USING ((("owner_id" = ( SELECT "auth"."uid"() AS "uid")) AND ( SELECT "app"."fn_is_active_user"() AS "fn_is_active_user"))) WITH CHECK ((("owner_id" = ( SELECT "auth"."uid"() AS "uid")) AND ( SELECT "app"."fn_is_active_user"() AS "fn_is_active_user") AND (EXISTS ( SELECT 1
+   FROM "public"."tool_sets" "s"
+  WHERE (("s"."id" = "tools"."tool_set_id") AND ("s"."owner_id" = ( SELECT "auth"."uid"() AS "uid")))))));
+
+
+
 GRANT USAGE ON SCHEMA "app" TO "authenticated";
 
 
@@ -1010,6 +1134,16 @@ GRANT UPDATE("theme") ON TABLE "public"."profiles" TO "authenticated";
 
 GRANT ALL ON TABLE "public"."signatures" TO "authenticated";
 GRANT ALL ON TABLE "public"."signatures" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."tool_sets" TO "authenticated";
+GRANT ALL ON TABLE "public"."tool_sets" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."tools" TO "authenticated";
+GRANT ALL ON TABLE "public"."tools" TO "service_role";
 
 
 

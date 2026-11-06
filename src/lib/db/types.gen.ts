@@ -179,6 +179,40 @@ isOneToOne: false
                   Relationships: [
 
                   ]
+                },"tool_sets": {
+                  Row: {
+                    "created_at": string,"id": string,"name": string,"owner_id": string,"position": number,"updated_at": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "created_at"?: string,"id"?: string,"name": string,"owner_id"?: string,"position"?: number,"updated_at"?: string
+                  }
+                  Update: {
+                    "created_at"?: string,"id"?: string,"name"?: string,"owner_id"?: string,"position"?: number,"updated_at"?: string
+                  }
+                  Relationships: [
+
+                  ]
+                },"tools": {
+                  Row: {
+                    "asset_path": string | null,"created_at": string,"device": Json | null,"id": string,"markup": NonNullable<Json>,"name": string,"owner_id": string,"position": number,"tool_set_id": string,"updated_at": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "asset_path"?: string | null,"created_at"?: string,"device"?: Json | null,"id"?: string,"markup": NonNullable<Json>,"name": string,"owner_id"?: string,"position"?: number,"tool_set_id": string,"updated_at"?: string
+                  }
+                  Update: {
+                    "asset_path"?: string | null,"created_at"?: string,"device"?: Json | null,"id"?: string,"markup"?: NonNullable<Json>,"name"?: string,"owner_id"?: string,"position"?: number,"tool_set_id"?: string,"updated_at"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "tools_tool_set_id_fkey"
+      columns: ["tool_set_id"]
+isOneToOne: false
+      referencedRelation: "tool_sets"
+      referencedColumns: ["id"]
+    }
+                  ]
                 }
           }
           Views: {

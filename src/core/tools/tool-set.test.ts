@@ -1,0 +1,39 @@
+import { describe, expect, it } from "vitest";
+
+import { createToolSetSchema, deleteSetText, moveToolSetSchema, renameToolSetSchema, searchToolSets, type ToolSet } from "./tool-set";
+
+const ID = "00000000-0000-4000-8000-000000000001";
+const sets: ToolSet[] = [
+  { id: "a", name: "Sprinkler heads", position: 1, tools: [{ id: "1", name: "Pendant" }, { id: "2", name: "Upright" }] },
+  { id: "b", name: "Fire alarm", position: 2, tools: [{ id: "3", name: "Smoke detector" }, { id: "4", name: "Pendant sounder" }] },
+  { id: "c", name: "Empty", position: 3, tools: [] },
+];
+
+describe("tool sets (Story 7.1)", () => {
+  it("search keeps sets matching by name with all their tools, else only their matching tools", () => {
+    expect(searchToolSets(sets, "")).toHaveLength(3);
+    expect(searchToolSets(sets, "SPRINKLER").map((s) => [s.name, s.tools.length])).toEqual([["Sprinkler heads", 2]]);
+    expect(searchToolSets(sets, "pendant").map((s) => [s.name, s.tools.map((t) => t.name)])).toEqual([
+      ["Sprinkler heads", ["Pendant"]],
+      ["Fire alarm", ["Pendant sounder"]],
+    ]);
+    // Words across the set and tool names.
+    expect(searchToolSets(sets, "alarm smoke").map((s) => s.tools.map((t) => t.name))).toEqual([["Smoke detector"]]);
+    expect(searchToolSets(sets, "nothing")).toEqual([]);
+  });
+
+  it("the delete confirmation names the tool count", () => {
+    expect(deleteSetText(sets[0])).toBe("“Sprinkler heads” and its 2 tools will be deleted.");
+    expect(deleteSetText({ name: "One", tools: [{ id: "x", name: "x" }] })).toBe("“One” and its 1 tool will be deleted.");
+    expect(deleteSetText(sets[2])).toBe("“Empty” has no tools.");
+  });
+
+  it("validates names (trimmed, 1–100) and moves (±1)", () => {
+    expect(createToolSetSchema.parse({ name: "  Heads  " })).toEqual({ name: "Heads" });
+    expect(createToolSetSchema.safeParse({ name: "   " }).success).toBe(false);
+    expect(createToolSetSchema.safeParse({ name: "x".repeat(101) }).success).toBe(false);
+    expect(renameToolSetSchema.safeParse({ id: "nope", name: "A" }).success).toBe(false);
+    expect(moveToolSetSchema.safeParse({ id: ID, direction: 2 }).success).toBe(false);
+    expect(moveToolSetSchema.safeParse({ id: ID, direction: -1 }).success).toBe(true);
+  });
+});

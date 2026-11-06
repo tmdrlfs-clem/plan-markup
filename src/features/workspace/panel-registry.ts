@@ -42,7 +42,6 @@ export const LEFT_PANELS: readonly LeftPanelInfo[] = [
     shortcut: "Alt+X",
     code: "KeyX",
     empty: "No tool sets yet",
-    hint: "Import a Revu tool set (.btx) once a drawing is open.",
   },
   {
     id: "measurements",

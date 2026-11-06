@@ -33,6 +33,8 @@ import {
 } from "@/features/viewer";
 
 import { AccountMenu, displayName, type WorkspaceUser } from "./account-menu";
+import { ToolChestPanel, setToolChestOwner } from "@/features/tool-chest/tool-chest-panel";
+
 import { EmptyWorkspace } from "./empty-workspace";
 import { LayoutProvider, useLayout, useLayoutStore } from "./layout-context";
 import { BOTTOM_SIZE, LEFT_SIZE } from "./layout-persistence";
@@ -69,7 +71,10 @@ export type { WorkspaceUser } from "./account-menu";
 export function WorkspaceShell({ user, theme = null }: { user: WorkspaceUser; theme?: Theme | null }) {
   // The open drawings belong to the signed-in user: another user's workspace starts empty.
   // In render, before the canvas mounts and would reopen the previous user's tabs.
-  useMemo(() => viewerTabs.setOwner(user.id), [user.id]);
+  useMemo(() => {
+    viewerTabs.setOwner(user.id);
+    setToolChestOwner(user.id);
+  }, [user.id]);
   // Story 4.5: the editing session (markups, calibrations, undo) of this user's documents survives a reload.
   useEditorSession(user.id);
   useMarkupSetSync(user.id);
@@ -93,6 +98,7 @@ export function WorkspaceShell({ user, theme = null }: { user: WorkspaceUser; th
 
 function LeftPanelBody() {
   const panel = useLayout((s) => leftPanel(s.left.active));
+  if (panel.id === "tool-chest") return <ToolChestPanel />;
   if (panel.id === "thumbnails") return <ThumbnailsPanel emptyText={panel.empty} />;
   if (panel.id === "search") return <SearchPanel emptyText={panel.empty} />;
   // Story 4.11: measurements grouped by type with totals.
