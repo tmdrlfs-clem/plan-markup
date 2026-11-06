@@ -1,6 +1,6 @@
 # Story 6.8: Sort, filter and search the Markups List
 
-Status: review
+Status: done
 
 ## Story
 
@@ -41,7 +41,7 @@ Claude Opus 5.5
 
 ### Completion Notes List
 
-- Unit editor/workspace/core markup 305 pass; e2e markups-list pass (dev).
+- CI green (7819445). Unit editor/workspace/core markup 305 pass; e2e markups-list pass (dev).
 
 ### File List
 

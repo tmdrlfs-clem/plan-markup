@@ -1,6 +1,6 @@
 # Story 6.7: Markups List panel
 
-Status: review
+Status: done
 
 ## Story
 
@@ -44,7 +44,7 @@ Claude Opus 5.5
 
 ### Completion Notes List
 
-- Unit src/features + src/core pass (workspace-shell 41). e2e (dev): markups-list, workspace-shell, select-move-delete, measurements-panel, layers pass.
+- CI green (7819445). Unit src/features + src/core pass (workspace-shell 41). e2e (dev): markups-list, workspace-shell, select-move-delete, measurements-panel, layers pass.
 
 ### File List
 
