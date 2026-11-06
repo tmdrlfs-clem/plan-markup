@@ -1,270 +1,518 @@
 "use client";
 
-// Story 6.1 (A1, AR5): the server's markup set of the open file. Opening a PDF
-// makes nothing; the first edit (or calibration) of a document asks the
-// server for its set (made when the hash is new to the user: drawing, file,
-// pages). Calibrations then save by the server's page ids, batched, after
-// each op that changes them (do, undo and redo). Story 6.2: markup changes are
-// diffed against what was last saved and sent as ops (one request in flight
-// per document); a failed save is tried again with the next change (Story 6.3
-// queues them).
+// Stories 6.1–6.3 (A1, A4, AR5, AR10, NFR3, NFR37): the user's edits saved to
+// their markup sets, whatever the network does.
+//
+// 1. An applied op (do, undo, redo) marks its document. About 300 ms later
+//    the document's markups are diffed against what was last queued (a
+//    snapshot of hashes in sessionStorage, so it lives as long as the editor's
+//    own session) and the changes, with any calibration changes, go into the
+//    local queue (IndexedDB) before anything is sent. Undo of a synced change
+//    is simply the next change (a compensating op, A4).
+// 2. The queue is sent in order, one request at a time: the set is asked for
+//    (made on the first edit of a hash, Story 6.1) from what the queue
+//    recorded about the file, client page keys become server page ids and each
+//    op takes the markup's latest known server version as its base (so a
+//    conflict re-bases itself). An entry leaves the queue only once the server
+//    confirmed it.
+// 3. A failure retries with exponential backoff capped at 30 s, at once on
+//    `online`, on Ctrl+S and on Retry. The SaveIndicator shows the state.
 
 import { useEffect } from "react";
+import { createStore } from "zustand/vanilla";
+import { z } from "zod";
 
 import type { Calibration } from "@/core/calibration/calibration";
 import { opParts, type DocOp } from "@/core/commands/ops";
 import { uuidv7 } from "@/core/ids/uuid";
-import { diffMarkups, MAX_OPS, type ApplyMarkupOpsInput, type MarkupChange, type MarkupOp, type MarkupOpResult, type SavedMarkup } from "@/core/markup-set/markup-ops";
+import { diffMarkups, MAX_OPS, savedMarkupSchema, type ApplyMarkupOpsInput, type MarkupChange, type MarkupOp, type MarkupOpResult, type SavedMarkup } from "@/core/markup-set/markup-ops";
 import { pageGeometryOf, setFilename, type CalibrationEntry, type EnsureMarkupSetInput, type MarkupSetIds } from "@/core/markup-set/markup-set";
 import type { Markup } from "@/core/schema/markup";
-import type { Result } from "@/lib/result";
+import { openOpQueue, type OpQueueBackend, type QueueEntry, type QueuedMarkupOp } from "@/lib/idb/op-queue";
+import type { Result, ResultCode } from "@/lib/result";
 import { editorStore, subscribeAppliedOps } from "@/features/editor";
 import { viewerStore } from "@/features/viewer";
 
 import { applyMarkupOps, ensureMarkupSet, saveSetCalibrations } from "./actions";
 
-/** Changes wait this long for more before they are sent. */
+/** Changes wait this long for more before they are queued and sent. */
 export const SAVE_DELAY_MS = 300;
-/** A request carries ops up to about this many bytes of JSON (more go in the next request; one op always goes). */
+/** A request carries ops up to about this many bytes of JSON (one op always goes). */
 export const MAX_REQUEST_BYTES = 4_000_000;
+/** Retry delays: 1 s, doubling, at most 30 s. */
+export const FIRST_RETRY_MS = 1_000;
+export const MAX_RETRY_MS = 30_000;
+/** Queue entries read per step. */
+const HEAD = 500;
+
+// ---------------------------------------------------------------------------
+// Save status (UX-DR10).
+// ---------------------------------------------------------------------------
+
+/** saved ✓ · saving … · offline (waiting) · error (not synced, Retry) · local (session expired: sign in to save). */
+export type SaveState = "saved" | "saving" | "offline" | "error" | "local";
+export type SaveStatus = { state: SaveState; pending: number; lastSavedAt: number | null };
+
+export const saveStatusStore = createStore<SaveStatus>(() => ({ state: "saved", pending: 0, lastSavedAt: null }));
+
+// ---------------------------------------------------------------------------
+// The snapshot of what was queued, per document.
+// ---------------------------------------------------------------------------
+
+export type SnapshotStore = {
+  get: (documentId: string) => Map<string, SavedMarkup> | null;
+  set: (documentId: string, saved: ReadonlyMap<string, SavedMarkup>) => void;
+};
+
+const snapshotRecordSchema = z.object({ v: z.literal(1), saved: z.array(z.tuple([z.string().max(64), savedMarkupSchema])).max(100_000) });
+
+/** Snapshots in sessionStorage (`pm.sync.v1.<user>.<sha256>`): they last exactly as long as the editor session they describe. */
+export function sessionSnapshots(userId: string): SnapshotStore {
+  const key = (documentId: string) => `pm.sync.v1.${userId}.${documentId}`;
+  return {
+    get(documentId) {
+      try {
+        const raw = window.sessionStorage.getItem(key(documentId));
+        if (raw === null) return null;
+        const parsed = snapshotRecordSchema.safeParse(JSON.parse(raw));
+        return parsed.success ? new Map(parsed.data.saved.map(([id, s]) => [id, s as SavedMarkup])) : null;
+      } catch {
+        return null;
+      }
+    },
+    set(documentId, saved) {
+      try {
+        const entries = [...saved].map(([id, { type, z: order, geometry, style, props }]) => [id, { type, z: order, geometry, style, props }]);
+        window.sessionStorage.setItem(key(documentId), JSON.stringify({ v: 1, saved: entries }));
+      } catch {
+        // Storage full or blocked: the snapshot lasts the page.
+      }
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// The sync.
+// ---------------------------------------------------------------------------
 
 type Viewer = { documentId: string | null; fileName: string | null; pages: readonly Parameters<typeof pageGeometryOf>[0][]; calibrations: Readonly<Record<string, Calibration>> };
 
 export type SyncDeps = {
+  userId: string;
   ensure: (input: EnsureMarkupSetInput) => Promise<Result<MarkupSetIds>>;
   save: (entries: CalibrationEntry[]) => Promise<Result<null>>;
-  /** Story 6.2: applies markup ops on the server. */
   apply: (input: ApplyMarkupOpsInput) => Promise<Result<MarkupOpResult[]>>;
   viewer: () => Viewer;
-  /** Story 6.2: a document's markups in drawing order. */
+  /** A document's markups in drawing order. */
   markups: (documentId: string) => readonly Markup[] | undefined;
+  queue: OpQueueBackend | Promise<OpQueueBackend>;
+  snapshots?: SnapshotStore;
+  /** False when the browser says it is offline. */
+  online?: () => boolean;
+  onStatus?: (status: SaveStatus) => void;
   delayMs?: number;
   now?: () => number;
   newId?: () => string;
 };
 
-/** Story 6.2: a document's markups as last saved, and their server versions (kept after a delete, for its undo). */
-type MarkupState = { saved: Map<string, SavedMarkup>; versions: Map<string, number>; dirty: boolean; sending: boolean };
-
 export type MarkupSetSync = {
   /** Hears an applied op. */
   onOp: (op: DocOp) => void;
+  /** Queues what waits and sends the queue; resolves when this round is done. */
+  flush: () => Promise<void>;
+  /** Sends now (Ctrl+S, Retry, `online`): the backoff starts again. */
+  saveNow: () => Promise<void>;
   /** The set of `documentId` once known (tests). */
   ids: (documentId: string) => Promise<MarkupSetIds | null>;
-  /** Sends what waits now (tests). */
-  flush: () => Promise<void>;
   /** The server version of a markup as last known (tests). */
-  version: (documentId: string, markupId: string) => number | undefined;
+  version: (markupId: string) => number | undefined;
+  status: () => SaveStatus;
   dispose: () => void;
 };
 
-/** Page index of a calibration key (`<sha256>:<index>`, core/calibration pageIdOf) of `documentId`; null for another document's. */
+/** Page index of a client page key (`<sha256>:<index>`) of `documentId`; null for another document's. */
 function pageIndexOf(key: string, documentId: string): number | null {
   if (!key.startsWith(`${documentId}:`)) return null;
   const index = Number(key.slice(documentId.length + 1));
   return Number.isInteger(index) && index >= 0 ? index : null;
 }
 
+/** Why a call failed, as a save state: thrown (no network) or offline → offline; signed out → local; else error. */
+function failureState(code: ResultCode | null, online: boolean): SaveState {
+  if (code === null || !online) return "offline";
+  return code === "UNAUTHENTICATED" ? "local" : "error";
+}
+
 export function createMarkupSetSync(deps: SyncDeps): MarkupSetSync {
-  const sets = new Map<string, Promise<MarkupSetIds | null>>();
-  /** Calibrations waiting to be sent, by document then calibration key (null: removed). */
-  const waiting = new Map<string, Map<string, Calibration | null>>();
-  const markupStates = new Map<string, MarkupState>();
-  let timer: ReturnType<typeof setTimeout> | null = null;
+  const { userId } = deps;
   const now = deps.now ?? Date.now;
   const newId = deps.newId ?? (() => uuidv7());
+  const online = deps.online ?? (() => true);
+  const queueReady = Promise.resolve(deps.queue);
 
-  const markupState = (documentId: string): MarkupState => {
-    let state = markupStates.get(documentId);
-    if (!state) markupStates.set(documentId, (state = { saved: new Map(), versions: new Map(), dirty: false, sending: false }));
-    return state;
+  const sets = new Map<string, Promise<MarkupSetIds | null>>();
+  const inputs = new Map<string, EnsureMarkupSetInput>();
+  const snapshots = new Map<string, Map<string, SavedMarkup>>();
+  const versions = new Map<string, number>();
+  /** Documents whose markups changed since they were last queued. */
+  const dirty = new Set<string>();
+  /** Calibration changes to queue, by document then key (null: removed). */
+  const calibrations = new Map<string, Map<string, Calibration | null>>();
+
+  let status: SaveStatus = { state: "saved", pending: 0, lastSavedAt: null };
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
+  let attempt = 0;
+  let disposed = false;
+  let queueing: Promise<void> = Promise.resolve();
+  let draining: Promise<void> | null = null;
+
+  const setStatus = (next: Partial<SaveStatus>) => {
+    status = { ...status, ...next };
+    deps.onStatus?.(status);
   };
 
-  const ensure = (documentId: string): Promise<MarkupSetIds | null> => {
-    const known = sets.get(documentId);
-    if (known) return known;
+  const snapshotOf = (documentId: string): Map<string, SavedMarkup> => {
+    let saved = snapshots.get(documentId);
+    if (!saved) snapshots.set(documentId, (saved = deps.snapshots?.get(documentId) ?? new Map()));
+    return saved;
+  };
+
+  /** What the set of the open document is made from, kept in the queue's store for later (offline) sends. */
+  const recordInput = (documentId: string, queue: OpQueueBackend) => {
+    if (inputs.has(documentId)) return;
     const viewer = deps.viewer();
     // Only the open document's pages are known here (ops run in the active tab).
-    if (viewer.documentId !== documentId || viewer.pages.length === 0) return Promise.resolve(null);
+    if (viewer.documentId !== documentId || viewer.pages.length === 0) return;
     const input: EnsureMarkupSetInput = { sha256: documentId, filename: setFilename(viewer.fileName), pages: viewer.pages.map(pageGeometryOf) };
+    inputs.set(documentId, input);
+    void queue.putDoc(userId, documentId, input).catch(() => undefined);
+  };
+
+  const inputOf = async (documentId: string, queue: OpQueueBackend): Promise<EnsureMarkupSetInput | null> => {
+    const known = inputs.get(documentId);
+    if (known) return known;
+    const stored = await queue.getDoc(userId, documentId).catch(() => null);
+    if (stored) inputs.set(documentId, stored);
+    return stored;
+  };
+
+  /** The set of a document (asked once; a failure is forgotten so the next send asks again). */
+  const ensure = (documentId: string, input: EnsureMarkupSetInput): Promise<{ ids: MarkupSetIds | null; code: ResultCode | null }> => {
+    const known = sets.get(documentId);
+    if (known) return known.then((ids) => ({ ids, code: ids ? null : "INTERNAL" }));
+    let code: ResultCode | null = null;
     const pending = deps.ensure(input).then(
-      (result) => (result.ok ? result.data : null),
+      (result) => {
+        if (result.ok) return result.data;
+        code = result.code;
+        return null;
+      },
       () => null,
     );
     sets.set(documentId, pending);
-    // A failure is forgotten, so the next edit asks again.
-    void pending.then((ids) => {
+    return pending.then((ids) => {
       if (!ids && sets.get(documentId) === pending) sets.delete(documentId);
+      return { ids, code };
     });
-    return pending;
   };
 
-  /** The op for a change (the page id mapped from the client key by index), or null for a page the set does not know. */
-  const opOf = (change: MarkupChange, state: MarkupState, documentId: string, ids: MarkupSetIds, clientTs: number): MarkupOp | null => {
+  // -------------------------------------------------------------------------
+  // 1. Queue.
+  // -------------------------------------------------------------------------
+
+  const opOf = (change: MarkupChange, clientTs: number): QueuedMarkupOp => {
     const base = { opId: newId(), clientTs };
     if (change.kind === "create") {
-      const index = pageIndexOf(change.row.pageId, documentId);
-      const pageId = index === null ? undefined : ids.pageIds[index];
-      if (!pageId) return null;
       const { geometry, style, props } = change.row;
-      return { ...base, markupId: change.row.id, kind: "create", type: change.row.type, pageId, baseVersion: state.versions.get(change.row.id) ?? 0, fields: { geometry, style, props, z: change.z } };
+      return { ...base, markupId: change.row.id, kind: "create", type: change.row.type, pageKey: change.row.pageId, fields: { geometry, style, props, z: change.z } };
     }
-    const baseVersion = state.versions.get(change.id) ?? 0;
-    if (change.kind === "delete") return { ...base, markupId: change.id, kind: "delete", type: change.type, baseVersion };
-    return { ...base, markupId: change.id, kind: "update", type: change.type, baseVersion, fields: change.fields };
+    if (change.kind === "delete") return { ...base, markupId: change.id, kind: "delete", type: change.type };
+    return { ...base, markupId: change.id, kind: "update", type: change.type, fields: change.fields };
   };
 
-  /** Splits ops into requests of about MAX_REQUEST_BYTES (an image markup can be megabytes). */
-  const requestsOf = (ops: readonly MarkupOp[]): MarkupOp[][] => {
-    const requests: MarkupOp[][] = [[]];
-    let bytes = 0;
-    for (const op of ops) {
-      const size = JSON.stringify(op).length;
-      const last = requests[requests.length - 1];
-      if (last.length > 0 && (bytes + size > MAX_REQUEST_BYTES || last.length >= MAX_OPS)) {
-        requests.push([op]);
-        bytes = size;
-      } else {
-        last.push(op);
-        bytes += size;
-      }
-    }
-    return requests;
-  };
-
-  /**
-   * Sends a document's markup changes since the last save, one request at a
-   * time per document. Only what the server confirmed becomes the saved state:
-   * the rest is diffed again with the next change.
-   */
-  const sendMarkups = async (documentId: string): Promise<void> => {
-    const state = markupState(documentId);
-    if (state.sending || !state.dirty) return;
-    state.sending = true;
-    state.dirty = false;
-    try {
-      const ids = await ensure(documentId);
-      if (!ids) {
-        state.dirty = true;
-        return;
-      }
-      // Markups on pages the set does not know stay local (they are never saved).
+  const enqueueNow = async (): Promise<void> => {
+    const queue = await queueReady;
+    const entries: QueueEntry[] = [];
+    const nextSnapshots = new Map<string, Map<string, SavedMarkup>>();
+    const docs = [...dirty];
+    dirty.clear();
+    const clientTs = now();
+    for (const documentId of docs) {
+      const pages = inputs.get(documentId)?.pages.length ?? (await inputOf(documentId, queue))?.pages.length ?? 0;
+      // Markups on pages the set cannot know stay local.
       const current = (deps.markups(documentId) ?? []).filter((m) => {
         const index = pageIndexOf(m.pageId, documentId);
-        return index !== null && ids.pageIds[index] !== undefined;
+        return index !== null && index < pages;
       });
-      const { changes, next } = diffMarkups(state.saved, current);
-      if (changes.length === 0) {
-        state.saved = next;
+      const { changes, next } = diffMarkups(snapshotOf(documentId), current);
+      nextSnapshots.set(documentId, next);
+      for (const change of changes) entries.push({ userId, documentId, kind: "markup", op: opOf(change, clientTs) });
+    }
+    const cals = [...calibrations];
+    calibrations.clear();
+    for (const [documentId, changes] of cals) {
+      entries.push({ userId, documentId, kind: "calibrations", entries: [...changes].map(([key, calibration]) => ({ key, calibration })) });
+    }
+    if (entries.length > 0) {
+      try {
+        await queue.add(entries);
+      } catch {
+        // Not queued: everything stays waiting for the next change.
+        for (const d of docs) dirty.add(d);
+        for (const [documentId, changes] of cals) {
+          const again = calibrations.get(documentId) ?? new Map<string, Calibration | null>();
+          for (const [key, value] of changes) if (!again.has(key)) again.set(key, value);
+          calibrations.set(documentId, again);
+        }
         return;
       }
-      const clientTs = now();
-      const ops = changes.map((c) => opOf(c, state, documentId, ids, clientTs)).filter((op): op is MarkupOp => op !== null);
-      for (const batch of requestsOf(ops)) {
-        const result = await deps.apply({ drawingId: ids.drawingId, ops: batch }).catch(() => null);
-        if (!result?.ok) {
-          state.dirty = true;
-          return;
-        }
-        for (const r of result.data) {
-          state.versions.set(r.markupId, r.version);
-          const op = batch.find((o) => o.opId === r.opId);
-          if (!op) continue;
-          // Confirmed: the saved state takes the op's markup as it is now (or drops a deleted one).
-          if (op.kind === "delete") state.saved.delete(op.markupId);
-          else if (r.status === "missing") {
-            // Unknown to the server (its create was never applied): made again next time.
-            state.saved.delete(op.markupId);
-            state.dirty = true;
-          } else {
-            const entry = next.get(op.markupId);
-            if (entry) state.saved.set(op.markupId, entry);
-          }
+    }
+    // Queued: the snapshots move on (durably beside the editor session).
+    for (const [documentId, next] of nextSnapshots) {
+      snapshots.set(documentId, next);
+      deps.snapshots?.set(documentId, next);
+    }
+    if (entries.length > 0) setStatus({ state: online() ? "saving" : "offline", pending: await queue.count(userId).catch(() => status.pending) });
+  };
+
+  const enqueue = (): Promise<void> => (queueing = queueing.then(enqueueNow, enqueueNow));
+
+  // -------------------------------------------------------------------------
+  // 2. Send.
+  // -------------------------------------------------------------------------
+
+  /** The next request: one calibrations entry, or consecutive markup ops of one document (each markup once, about MAX_REQUEST_BYTES). */
+  const batchOf = (head: readonly QueueEntry[]): QueueEntry[] => {
+    const first = head[0];
+    if (first.kind === "calibrations") return [first];
+    const batch: QueueEntry[] = [];
+    const markups = new Set<string>();
+    let bytes = 0;
+    for (const e of head) {
+      if (e.kind !== "markup" || e.documentId !== first.documentId || markups.has(e.op.markupId)) break;
+      const size = JSON.stringify(e.op).length;
+      if (batch.length > 0 && (bytes + size > MAX_REQUEST_BYTES || batch.length >= MAX_OPS)) break;
+      batch.push(e);
+      markups.add(e.op.markupId);
+      bytes += size;
+    }
+    return batch;
+  };
+
+  /** Sends one request; null when sent, else the failure code (null code: no network). */
+  const send = async (queue: OpQueueBackend, batch: QueueEntry[]): Promise<{ failed: false } | { failed: true; code: ResultCode | null }> => {
+    const documentId = batch[0].documentId;
+    const input = await inputOf(documentId, queue);
+    if (!input) {
+      // What the set is made from was never recorded: it can never be sent.
+      await queue.remove(batch.map((e) => e.seq!));
+      return { failed: false };
+    }
+    const { ids, code } = await ensure(documentId, input);
+    if (!ids) return { failed: true, code };
+    const pageIdOf = (key: string) => {
+      const index = pageIndexOf(key, documentId);
+      return index === null ? undefined : ids.pageIds[index];
+    };
+
+    const first = batch[0];
+    if (first.kind === "calibrations") {
+      const entries = first.entries.flatMap((e) => {
+        const pageId = pageIdOf(e.key);
+        return pageId ? [{ pageId, calibration: e.calibration }] : [];
+      });
+      if (entries.length > 0) {
+        const result = await deps.save(entries).catch(() => null);
+        if (!result?.ok) return { failed: true, code: result ? result.code : null };
+      }
+      await queue.remove([first.seq!]);
+      return { failed: false };
+    }
+
+    const markupEntries = batch.filter((e): e is Extract<QueueEntry, { kind: "markup" }> => e.kind === "markup");
+    const unknown = markupEntries.map((e) => e.op.markupId).filter((id) => !versions.has(id));
+    if (unknown.length > 0) for (const [id, v] of await queue.getVersions(userId, unknown).catch(() => new Map<string, number>())) versions.set(id, v);
+    const ops: MarkupOp[] = [];
+    for (const e of markupEntries) {
+      const { pageKey, ...op } = e.op;
+      const pageId = pageKey === undefined ? undefined : pageIdOf(pageKey);
+      // A page the set does not have: never sendable (it leaves with the batch).
+      if (op.kind === "create" && !pageId) continue;
+      ops.push({ ...op, ...(pageId && op.kind === "create" ? { pageId } : {}), baseVersion: versions.get(op.markupId) ?? 0 });
+    }
+    if (ops.length > 0) {
+      const result = await deps.apply({ drawingId: ids.drawingId, ops }).catch(() => null);
+      if (!result?.ok) return { failed: true, code: result ? result.code : null };
+      const confirmed = new Map<string, number>();
+      for (const r of result.data) {
+        versions.set(r.markupId, r.version);
+        confirmed.set(r.markupId, r.version);
+        const op = ops.find((o) => o.opId === r.opId);
+        if (r.status === "missing" && op?.kind === "update") {
+          // Unknown to the server (its create never reached it): made again with the next diff.
+          snapshotOf(documentId).delete(r.markupId);
+          deps.snapshots?.set(documentId, snapshotOf(documentId));
+          dirty.add(documentId);
         }
       }
-      // Unchanged markups whose saved entry only moved in the map (same object) are already there.
-    } finally {
-      state.sending = false;
-      if (state.dirty) schedule();
+      await queue.putVersions(userId, confirmed).catch(() => undefined);
     }
+    await queue.remove(markupEntries.map((e) => e.seq!));
+    return { failed: false };
+  };
+
+  const scheduleRetry = () => {
+    if (retryTimer !== null || disposed) return;
+    const delay = Math.min(FIRST_RETRY_MS * 2 ** attempt, MAX_RETRY_MS);
+    attempt++;
+    retryTimer = setTimeout(() => {
+      retryTimer = null;
+      void drain();
+    }, delay);
+  };
+
+  const drainNow = async (): Promise<void> => {
+    const queue = await queueReady;
+    let sent = false;
+    for (;;) {
+      if (disposed) return;
+      const head = await queue.head(userId, HEAD).catch(() => [] as QueueEntry[]);
+      if (head.length === 0) break;
+      setStatus({ state: "saving", pending: Math.max(status.pending, head.length) });
+      const outcome = await send(queue, batchOf(head)).catch(() => ({ failed: true as const, code: "INTERNAL" as ResultCode }));
+      if (outcome.failed) {
+        setStatus({ state: failureState(outcome.code, online()), pending: await queue.count(userId).catch(() => status.pending) });
+        scheduleRetry();
+        return;
+      }
+      sent = true;
+      attempt = 0;
+    }
+    setStatus({ state: "saved", pending: 0, ...(sent ? { lastSavedAt: now() } : {}) });
+    if (dirty.size > 0) schedule();
+  };
+
+  const drain = (): Promise<void> => {
+    if (draining) return draining;
+    draining = drainNow().finally(() => {
+      draining = null;
+    });
+    return draining;
   };
 
   const flush = async () => {
+    if (timer !== null) clearTimeout(timer);
     timer = null;
-    const dirty = [...markupStates].filter(([, s]) => s.dirty).map(([id]) => id);
-    const batches = [...waiting];
-    waiting.clear();
-    await Promise.all([
-      ...dirty.map((documentId) => sendMarkups(documentId)),
-      ...batches.map(async ([documentId, changes]) => {
-        const ids = await ensure(documentId);
-        const entries: CalibrationEntry[] = [];
-        for (const [key, calibration] of changes) {
-          const index = pageIndexOf(key, documentId);
-          const pageId = index === null ? undefined : ids?.pageIds[index];
-          if (pageId) entries.push({ pageId, calibration });
-        }
-        // Without a set (not made yet, offline) nothing is sent and everything is kept.
-        const saved = ids !== null && (entries.length === 0 || (await deps.save(entries).catch(() => null))?.ok === true);
-        if (!saved) {
-          // Kept for the next change, unless a newer value is already waiting.
-          const again = waiting.get(documentId) ?? new Map<string, Calibration | null>();
-          for (const [key, value] of changes) if (!again.has(key)) again.set(key, value);
-          waiting.set(documentId, again);
-        }
-      }),
-    ]);
+    await enqueue();
+    // A round already sending finishes first; then what was just queued goes.
+    if (draining) await draining;
+    await drain();
   };
 
   const schedule = () => {
-    if (timer === null) timer = setTimeout(() => void flush(), deps.delayMs ?? SAVE_DELAY_MS);
+    if (timer === null && !disposed) timer = setTimeout(() => void flush(), deps.delayMs ?? SAVE_DELAY_MS);
   };
 
   const onOp = (op: DocOp) => {
-    void ensure(op.documentId);
+    void queueReady.then((queue) => recordInput(op.documentId, queue));
     const viewer = deps.viewer();
     for (const part of opParts(op)) {
-      if (part.kind.startsWith("markups.")) {
-        markupState(part.documentId).dirty = true;
-        schedule();
+      if (part.kind.startsWith("markups.")) dirty.add(part.documentId);
+      if (part.kind === "calibrations.set" && viewer.documentId === part.documentId) {
+        const changes = calibrations.get(part.documentId) ?? new Map<string, Calibration | null>();
+        for (const key of new Set([...Object.keys(part.before), ...Object.keys(part.after)])) changes.set(key, viewer.calibrations[key] ?? null);
+        calibrations.set(part.documentId, changes);
       }
-      if (part.kind !== "calibrations.set" || viewer.documentId !== part.documentId) continue;
-      const changes = waiting.get(part.documentId) ?? new Map<string, Calibration | null>();
-      for (const key of new Set([...Object.keys(part.before), ...Object.keys(part.after)])) changes.set(key, viewer.calibrations[key] ?? null);
-      waiting.set(part.documentId, changes);
-      schedule();
     }
-    // A waiting retry goes with this change.
-    if (waiting.size) schedule();
+    // Story 6.1: the first edit of a document asks for its set (made when the hash is new).
+    void queueReady.then(async (queue) => {
+      const input = await inputOf(op.documentId, queue);
+      if (input) await ensure(op.documentId, input);
+    });
+    schedule();
   };
+
+  const saveNow = async () => {
+    if (retryTimer !== null) clearTimeout(retryTimer);
+    retryTimer = null;
+    attempt = 0;
+    await flush();
+  };
+
+  // What an earlier page left in the queue goes now.
+  void drain();
 
   return {
     onOp,
-    ids: (documentId) => sets.get(documentId) ?? Promise.resolve(null),
     flush,
-    version: (documentId, markupId) => markupStates.get(documentId)?.versions.get(markupId),
+    saveNow,
+    ids: (documentId) => sets.get(documentId) ?? Promise.resolve(null),
+    version: (markupId) => versions.get(markupId),
+    status: () => status,
     dispose: () => {
+      disposed = true;
       if (timer !== null) clearTimeout(timer);
+      if (retryTimer !== null) clearTimeout(retryTimer);
       timer = null;
+      retryTimer = null;
     },
   };
 }
 
+/** Ctrl+S (⌘S): save now instead of the browser's save dialog. */
+export function isSaveShortcut(event: Pick<KeyboardEvent, "key" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey">): boolean {
+  return (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "s";
+}
+
+let activeSync: MarkupSetSync | null = null;
+
+/** Sends now (the SaveIndicator's Retry). */
+export function saveNow(): void {
+  void activeSync?.saveNow();
+}
+
 /** Keeps the signed-in user's markup sets in step with their edits (mounted once in the workspace). */
-export function useMarkupSetSync(): void {
+export function useMarkupSetSync(userId: string): void {
   useEffect(() => {
+    saveStatusStore.setState({ state: "saved", pending: 0, lastSavedAt: null });
     const sync = createMarkupSetSync({
+      userId,
       ensure: ensureMarkupSet,
       save: saveSetCalibrations,
       apply: applyMarkupOps,
       viewer: () => viewerStore.getState(),
       markups: (documentId) => editorStore.getState().doc.markups[documentId],
+      queue: openOpQueue(),
+      snapshots: sessionSnapshots(userId),
+      online: () => (typeof navigator === "undefined" ? true : navigator.onLine),
+      onStatus: (s) => saveStatusStore.setState(s),
     });
+    activeSync = sync;
     const unsubscribe = subscribeAppliedOps(sync.onOp);
+    const onOnline = () => void sync.saveNow();
+    const onOffline = () => {
+      if (sync.status().pending > 0) saveStatusStore.setState({ state: "offline" });
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (!isSaveShortcut(event)) return;
+      event.preventDefault();
+      void sync.saveNow();
+    };
+    // Leaving the page: what waits is queued (best effort; the session keeps the edits).
+    const onHide = () => void sync.flush();
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+    window.addEventListener("keydown", onKey, true);
+    window.addEventListener("pagehide", onHide);
     return () => {
       unsubscribe();
-      void sync.flush();
-      sync.dispose();
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
+      window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("pagehide", onHide);
+      void sync.flush().finally(() => sync.dispose());
+      if (activeSync === sync) activeSync = null;
     };
-  }, []);
+  }, [userId]);
 }

@@ -64,7 +64,7 @@ export function WorkspaceShell({ user, theme = null }: { user: WorkspaceUser; th
   useMemo(() => viewerTabs.setOwner(user.id), [user.id]);
   // Story 4.5: the editing session (markups, calibrations, undo) of this user's documents survives a reload.
   useEditorSession(user.id);
-  useMarkupSetSync();
+  useMarkupSetSync(user.id);
   // Stories 4.5 / 4.6: the measuring tools paint and place through the viewer's markup layers.
   useMeasureTools();
   return (

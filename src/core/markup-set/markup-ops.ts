@@ -148,8 +148,34 @@ export function stableJson(value: unknown): string {
   return JSON.stringify(value) ?? "null";
 }
 
-/** A markup as last saved: the object, its order key and its fields as stable JSON. */
-export type SavedMarkup = { markup: Markup; z: number; geometry: string; style: string; props: string };
+/** A 53-bit hash of a string (cyrb53), in base 36: compact enough to keep per markup in sessionStorage. */
+export function hashString(text: string): string {
+  let h1 = 0xdeadbeef;
+  let h2 = 0x41c6ce57;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 2654435761);
+    h2 = Math.imul(h2 ^ c, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
+}
+
+/**
+ * A markup as last saved (or queued): its type, order key and a hash of each
+ * field; `markup` is the object itself while in memory (an unchanged object
+ * is not hashed again), absent when read back from storage.
+ */
+export type SavedMarkup = { type: Markup["type"]; z: number; geometry: string; style: string; props: string; markup?: Markup };
+
+export const savedMarkupSchema = z.object({
+  type: z.string().max(32),
+  z: z.number(),
+  geometry: z.string().max(16),
+  style: z.string().max(16),
+  props: z.string().max(16),
+});
 
 export type MarkupChange =
   | { kind: "create"; row: MarkupRow; z: number }
@@ -209,7 +235,7 @@ export function orderKeys(previous: readonly (number | undefined)[]): number[] {
 /** A saved entry for `markup` at `z`. */
 export function savedMarkup(markup: Markup, z: number): SavedMarkup {
   const row = splitMarkup(markup);
-  return { markup, z, geometry: stableJson(row.geometry), style: stableJson(row.style), props: stableJson(row.props) };
+  return { type: markup.type, z, geometry: hashString(stableJson(row.geometry)), style: hashString(stableJson(row.style)), props: hashString(stableJson(row.props)), markup };
 }
 
 /**
@@ -245,6 +271,6 @@ export function diffMarkups(saved: ReadonlyMap<string, SavedMarkup>, current: re
     if (z !== was.z) fields.z = z;
     if (Object.keys(fields).length > 0) changes.push({ kind: "update", id: markup.id, type: markup.type, fields });
   });
-  for (const [id, was] of saved) if (!next.has(id)) changes.push({ kind: "delete", id, type: was.markup.type });
+  for (const [id, was] of saved) if (!next.has(id)) changes.push({ kind: "delete", id, type: was.type });
   return { changes, next };
 }

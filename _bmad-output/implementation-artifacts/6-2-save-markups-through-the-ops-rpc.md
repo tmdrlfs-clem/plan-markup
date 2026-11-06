@@ -1,6 +1,6 @@
 # Story 6.2: Save markups through the ops RPC
 
-Status: review
+Status: done
 
 ## Story
 

@@ -14,7 +14,7 @@ import { signIn } from "./helpers";
 
 const PDF = readFileSync(path.join(__dirname, "..", "fixtures", "pdf", "scales.pdf"));
 const SHA = createHash("sha256").update(PDF).digest("hex");
-const EMAIL = "admin@plan-markup.test";
+const EMAIL = "sync@plan-markup.test";
 const DB_URL = process.env.SUPABASE_DB_URL ?? "postgresql://postgres:postgres@127.0.0.1:56322/postgres";
 
 const canvas = (page: Page) => page.getByTestId("drawing-canvas");

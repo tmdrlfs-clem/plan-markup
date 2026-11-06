@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { StatusBarItem } from "@/components/ui/status-bar-item";
 import type { Calibration } from "@/core/calibration/calibration";
 import type { PageGeometry } from "@/core/render/view";
+import { SaveIndicator } from "@/features/markup-set/save-indicator";
 import { CursorReadout, PageSizeItem, ScaleIndicator, SnapToggles, ZoomItem, type ScaleState } from "@/features/viewer";
 
 export interface WorkspaceStatusBarProps {
@@ -26,7 +27,7 @@ export interface WorkspaceStatusBarProps {
 /**
  * 24 px status bar in a fixed order (UX-DR7, Story 3.7 AC 1): file name · page
  * pager · page size · scale · snap toggles · cursor X/Y · zoom · save state
- * (an empty slot for Story 6.x's SaveIndicator). Until a drawing is open only
+ * (Story 6.3's SaveIndicator). Until a drawing is open only
  * the empty item shows. The file name truncates first; below 1440 px the page
  * size shows as an icon with its size in the tooltip, so the bar fits 1280 px
  * on one line. Page changes are announced through a visually hidden polite
@@ -60,8 +61,8 @@ export function WorkspaceStatusBar({
           <SnapToggles />
           <CursorReadout page={page} calibration={calibration} />
           {zoom !== null ? <ZoomItem zoom={zoom} /> : null}
-          {/* Story 6.x: the SaveIndicator. */}
-          <span data-testid="status-save" />
+          {/* Story 6.3: the SaveIndicator. */}
+          <SaveIndicator />
         </div>
       ) : null}
       <span role="status" aria-live="polite" data-testid="status-announcement" className="sr-only">

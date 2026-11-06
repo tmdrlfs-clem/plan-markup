@@ -106,8 +106,8 @@ development_status:
   # Epic 6: Auto-save, Markup Sets and Markups List
   epic-6: in-progress
   6-1-identify-the-file-and-create-its-markup-set: done
-  6-2-save-markups-through-the-ops-rpc: review
-  6-3-offline-queue-and-save-status: backlog
+  6-2-save-markups-through-the-ops-rpc: done
+  6-3-offline-queue-and-save-status: review
   6-4-restore-markups-when-reopening-the-same-pdf: backlog
   6-5-tell-me-markups-exist-on-another-version: backlog
   6-6-my-markup-sets: backlog
