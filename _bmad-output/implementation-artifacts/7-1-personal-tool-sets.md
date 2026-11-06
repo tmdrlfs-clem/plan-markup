@@ -1,6 +1,6 @@
 # Story 7.1: Personal tool sets
 
-Status: review
+Status: done
 
 ## Story
 
@@ -45,7 +45,7 @@ Claude Opus 5.5
 
 ### Completion Notes List
 
-- db:test 176 pass (tool_sets_rls 20); check:* pass; unit tool-chest/workspace/core tools pass; e2e tool-chest pass (dev).
+- CI + Database green (7b6869a). db:test 176 pass (tool_sets_rls 20); check:* pass; unit tool-chest/workspace/core tools pass; e2e tool-chest pass (dev).
 
 ### File List
 
