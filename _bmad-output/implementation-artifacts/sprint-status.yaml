@@ -120,7 +120,7 @@ development_status:
   7-2-save-a-markup-as-a-tool: done
   7-3-place-tools-and-count-devices: done
   7-4-import-a-btx-file-safely: done
-  7-5-faithful-btx-tool-conversion: review
+  7-5-faithful-btx-tool-conversion: done
   7-6-export-and-import-tool-sets-in-our-format: backlog
   7-7-revision-stamp: backlog
   7-8-auto-legend: backlog

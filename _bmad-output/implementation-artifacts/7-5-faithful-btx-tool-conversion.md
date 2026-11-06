@@ -1,6 +1,6 @@
 # Story 7.5: Faithful `.btx` tool conversion
 
-Status: review
+Status: done
 
 ## Story
 
@@ -51,6 +51,7 @@ Claude Opus 5.5
 
 - Local: typecheck, lint clean; vitest 203 files / 2055 tests pass; build ok; check:* pass; e2e import-btx (2 incl. private), save-tool (3), tool-chest pass.
 - Private sets: 23 of 138 items convert (sprinkler 14, my-tools 9); fire-alarm-tools is stamps and image squares only.
+- CI green on ec7f87e (unit, guards, Playwright e2e, gitleaks).
 
 ### File List
 
