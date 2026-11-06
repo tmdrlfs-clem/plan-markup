@@ -7,6 +7,7 @@ const m = vi.hoisted(() => ({
   rename: vi.fn(),
   move: vi.fn(),
   remove: vi.fn(),
+  add: vi.fn(),
   error: vi.fn(),
 }));
 
@@ -20,9 +21,10 @@ vi.mock("@/lib/db/tool-sets", () => ({
   renameToolSet: m.rename,
   moveToolSet: m.move,
   deleteToolSet: m.remove,
+  addTool: m.add,
 }));
 
-import { createToolSet, deleteToolSet, listToolSets, moveToolSet, renameToolSet } from "./actions";
+import { addTool, createToolSet, deleteToolSet, listToolSets, moveToolSet, renameToolSet } from "./actions";
 
 const USER = { id: "11111111-1111-4111-8111-111111111111", email: "a@b.test", name: "A", isPlatformAdmin: false, theme: "blueprint" };
 const ID = "00000000-0000-4000-8000-000000000001";
@@ -68,5 +70,48 @@ describe("tool set actions (Story 7.1)", () => {
     const result = await listToolSets();
     expect(result).toMatchObject({ ok: false, code: "INTERNAL" });
     expect(m.error).toHaveBeenCalled();
+  });
+});
+
+const CONTENT = {
+  v: 1,
+  markups: [
+    {
+      id: "00000000-0000-7000-8000-000000000001",
+      pageId: "tool:0",
+      createdAt: "2026-11-07T00:00:00.000Z",
+      style: { color: "#ff0000", width: 1, fontSize: 10 },
+      type: "line",
+      points: [
+        { x: -10, y: 0 },
+        { x: 10, y: 0 },
+      ],
+    },
+  ],
+  calibration: null,
+  userUnit: 1,
+};
+
+describe("addTool (Story 7.2)", () => {
+  it("validates the input, then adds under the signed-in user", async () => {
+    expect(await addTool({ set: { id: ID }, name: "Pipe", content: { ...CONTENT, markups: [] }, device: null, image: null })).toMatchObject({ ok: false, code: "INVALID_INPUT" });
+    expect(await addTool({ set: { id: ID }, name: "Pipe", content: CONTENT, device: null, image: { type: "image/png", base64: "iVBORw0KGgo=" } })).toMatchObject({
+      ok: false,
+      code: "INVALID_INPUT",
+      message: "The tool's image is missing.",
+    });
+    expect(m.add).not.toHaveBeenCalled();
+    const added = { set: null, setId: ID, tool: { id: "t", name: "Pipe", content: CONTENT, device: null, imageUrl: null } };
+    m.add.mockResolvedValueOnce(added);
+    expect(await addTool({ set: { id: ID }, name: " Pipe ", content: CONTENT, device: null, image: null })).toEqual({ ok: true, data: added });
+    expect(m.add.mock.calls[0][1]).toBe(USER.id);
+    expect(m.add.mock.calls[0][2]).toMatchObject({ name: "Pipe" });
+  });
+
+  it("reports a full set and a set that is not the user's", async () => {
+    m.add.mockResolvedValueOnce("full");
+    expect(await addTool({ set: { name: "New" }, name: "Pipe", content: CONTENT, device: null, image: null })).toMatchObject({ ok: false, code: "INVALID_INPUT", message: "That tool set is full." });
+    m.add.mockResolvedValueOnce(null);
+    expect(await addTool({ set: { id: ID }, name: "Pipe", content: CONTENT, device: null, image: null })).toMatchObject({ ok: false, code: "NOT_FOUND" });
   });
 });

@@ -5,7 +5,8 @@
 // was, for the selection on that page: Copy, Paste, Delete; Group, Ungroup;
 // Arrange and Align; Lock / Unlock; Select all. Items that cannot act are
 // disabled. Closing it puts the focus back on the canvas. The Edit menu uses
-// the same availability (useSelectionState).
+// the same availability (useSelectionState). Story 7.2: Add to Tool Chest…
+// makes the selection a tool (the Tool Chest's dialog asks where).
 
 import {
   AlignCenterHorizontal,
@@ -22,6 +23,7 @@ import {
   Group,
   Lock,
   LockOpen,
+  PackagePlus,
   SendToBack,
   SquareDashedMousePointer,
   Trash2,
@@ -33,7 +35,9 @@ import { Menu, MenuContent, MenuItem, MenuSeparator, MenuSub, MenuSubContent, Me
 import { pageIdOf } from "@/core/calibration/calibration";
 import { unitsOf, type AlignTo, type OrderStep } from "@/core/markup/arrange";
 import type { Markup } from "@/core/schema/markup";
-import { viewerCommands, type SelectionKey } from "@/features/viewer";
+import { canBeTool } from "@/core/tools/tool";
+import { requestAddTool } from "@/features/tool-chest/add-tool-store";
+import { viewerCommands, viewerStore, type SelectionKey } from "@/features/viewer";
 
 import { editorStore, isLocked, markupsOf, setMarkupMenu } from "./editor-store";
 import { hasClipboard, ORDER_LABEL, selectionKey } from "./select-tool";
@@ -76,6 +80,18 @@ export function useSelectionState(documentId: string | null, pageIndex: number):
   // Story 5.12: a layer locked or unlocked changes what may change.
   useStore(editorStore, (s) => (documentId ? s.doc.layers[documentId] : undefined));
   return selectionStateOf(ids, markups, documentId, pageIndex);
+}
+
+/** Story 7.2: asks the Tool Chest to make the selection on a page a tool. */
+export function addSelectionToToolChest(documentId: string, pageIndex: number, userUnit: number): boolean {
+  const state = editorStore.getState();
+  const wanted = new Set(state.selection.ids);
+  const pageId = pageIdOf(documentId, pageIndex);
+  const markups = markupsOf(state, documentId).filter((m) => m.pageId === pageId && wanted.has(m.id) && canBeTool(m));
+  if (markups.length === 0) return false;
+  const calibration = viewerStore.getState().calibrations[pageId] ?? null;
+  requestAddTool({ markups, calibration, userUnit });
+  return true;
 }
 
 const ARRANGE: readonly { step: OrderStep; shortcut: string; icon: typeof BringToFront }[] = [
@@ -161,6 +177,10 @@ export function MarkupContextMenu() {
             Lock
           </MenuItem>
         )}
+        <MenuSeparator />
+        <MenuItem icon={PackagePlus} disabled={s.selected === 0} onSelect={() => void addSelectionToToolChest(menu.documentId, menu.pageIndex, menu.view.userUnit)}>
+          Add to Tool Chest…
+        </MenuItem>
         <MenuSeparator />
         <MenuItem icon={SquareDashedMousePointer} shortcut="Ctrl+A" disabled={!s.any} onSelect={run({ kind: "all" })}>
           Select all

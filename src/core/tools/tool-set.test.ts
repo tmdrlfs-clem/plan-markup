@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 
+import type { Tool } from "./tool";
 import { createToolSetSchema, deleteSetText, moveToolSetSchema, renameToolSetSchema, searchToolSets, type ToolSet } from "./tool-set";
 
 const ID = "00000000-0000-4000-8000-000000000001";
+const tool = (id: string, name: string): Tool => ({ id, name, content: null, device: null, imageUrl: null });
 const sets: ToolSet[] = [
-  { id: "a", name: "Sprinkler heads", position: 1, tools: [{ id: "1", name: "Pendant" }, { id: "2", name: "Upright" }] },
-  { id: "b", name: "Fire alarm", position: 2, tools: [{ id: "3", name: "Smoke detector" }, { id: "4", name: "Pendant sounder" }] },
+  { id: "a", name: "Sprinkler heads", position: 1, tools: [tool("1", "Pendant"), tool("2", "Upright")] },
+  { id: "b", name: "Fire alarm", position: 2, tools: [tool("3", "Smoke detector"), tool("4", "Pendant sounder")] },
   { id: "c", name: "Empty", position: 3, tools: [] },
 ];
 
@@ -24,7 +26,7 @@ describe("tool sets (Story 7.1)", () => {
 
   it("the delete confirmation names the tool count", () => {
     expect(deleteSetText(sets[0])).toBe("“Sprinkler heads” and its 2 tools will be deleted.");
-    expect(deleteSetText({ name: "One", tools: [{ id: "x", name: "x" }] })).toBe("“One” and its 1 tool will be deleted.");
+    expect(deleteSetText({ name: "One", tools: [{ name: "x" }] })).toBe("“One” and its 1 tool will be deleted.");
     expect(deleteSetText(sets[2])).toBe("“Empty” has no tools.");
   });
 

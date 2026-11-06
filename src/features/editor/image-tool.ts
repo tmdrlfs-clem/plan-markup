@@ -153,6 +153,14 @@ function imageOf(src: string): HTMLImageElement | null {
   return null;
 }
 
+/** Story 7.2: resolves once `src` is decoded into the shared cache (or failed), for painters outside the layer (a tool's preview). */
+export function decodeMarkupImage(src: string): Promise<void> {
+  imageOf(src);
+  const img = decoded.get(src);
+  if (!img || img === "failed" || (img.complete && img.naturalWidth > 0)) return Promise.resolve();
+  return img.decode().catch(() => undefined);
+}
+
 export function forgetDecodedImages(): void {
   decoded.clear();
 }

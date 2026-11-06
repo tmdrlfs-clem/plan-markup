@@ -4,7 +4,10 @@ import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { Tool } from "@/core/tools/tool";
 import type { ToolSet } from "@/core/tools/tool-set";
+
+const tool = (id: string, name: string): Tool => ({ id, name, content: null, device: null, imageUrl: null });
 
 const m = vi.hoisted(() => ({ list: vi.fn(), create: vi.fn(), rename: vi.fn(), move: vi.fn(), remove: vi.fn() }));
 vi.mock("./actions", () => ({
@@ -17,7 +20,7 @@ vi.mock("./actions", () => ({
 
 import { EMPTY_TOOL_CHEST, IMPORT_SOON, ToolChestPanel, setToolChestOwner, toolChestStore } from "./tool-chest-panel";
 
-const A: ToolSet = { id: "a", name: "Sprinkler", position: 1, tools: [{ id: "1", name: "Pendant" }, { id: "2", name: "Upright" }] };
+const A: ToolSet = { id: "a", name: "Sprinkler", position: 1, tools: [tool("1", "Pendant"), tool("2", "Upright")] };
 const B: ToolSet = { id: "b", name: "Alarm", position: 2, tools: [] };
 
 function setup(sets: ToolSet[]) {

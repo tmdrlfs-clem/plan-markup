@@ -1,5 +1,7 @@
 "use server";
 
+import { uuidv7 } from "@/core/ids/uuid";
+import { addToolSchema } from "@/core/tools/tool";
 import {
   createToolSetSchema,
   deleteToolSetSchema,
@@ -74,8 +76,27 @@ export async function deleteToolSet(input: unknown): Promise<Result<null>> {
   const parsed = deleteToolSetSchema.safeParse(input);
   if (!parsed.success) return fail("INVALID_INPUT");
   try {
-    return (await db.deleteToolSet(await createServerSupabase(), parsed.data.id)) ? { ok: true, data: null } : fail("NOT_FOUND");
+    return (await db.deleteToolSet(await createServerSupabase(), user.id, parsed.data.id)) ? { ok: true, data: null } : fail("NOT_FOUND");
   } catch (error) {
     return internalError("tool_sets.delete_failed", error);
+  }
+}
+
+/**
+ * Story 7.2 (FR40): adds a tool `{ set, name, content, device, image }` to one
+ * of the user's sets (or a new set by name); its image goes to the private
+ * tool-assets bucket first.
+ */
+export async function addTool(input: unknown): Promise<Result<db.AddedTool>> {
+  const user = await getAuthUser();
+  if (!user) return fail("UNAUTHENTICATED");
+  const parsed = addToolSchema.safeParse(input);
+  if (!parsed.success) return fail("INVALID_INPUT", parsed.error.issues[0]?.message);
+  try {
+    const added = await db.addTool(await createServerSupabase(), user.id, parsed.data, uuidv7);
+    if (added === "full") return fail("INVALID_INPUT", "That tool set is full.");
+    return added ? { ok: true, data: added } : fail("NOT_FOUND");
+  } catch (error) {
+    return internalError("tools.add_failed", error);
   }
 }

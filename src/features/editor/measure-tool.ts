@@ -774,6 +774,119 @@ function liveValue(tool: DrawTool, points: readonly Point[], calibration: Calibr
   return lengthCaption(points, calibration, userUnit);
 }
 
+/** What painting a list of markups collects (layer 2's captions, caption boxes, the selection painted). */
+type PaintSink = { selected: ReadonlySet<string>; captions: string[]; boxes: CaptionBox[]; selectedShown: Markup[] };
+
+/** Paints `markups` in order (the page's static layer, and Story 7.2's tool previews). */
+function paintList(c: CanvasRenderingContext2D, markups: readonly Markup[], view: LayerView, calibration: Calibration | null, sink: PaintSink): void {
+  const { selected, captions, boxes, selectedShown } = sink;
+  c.save();
+  for (const one of markups) {
+    const any = shown(one);
+    if (selected.has(any.id)) selectedShown.push(any);
+    if (isTextMarkup(any)) {
+      // Story 5.6: a text markup, its label and text in layer 2's list.
+      captions.push(textLabel(any));
+      const pts = devicePoints(any.points, view);
+      if (!onCanvas(pts, any.style, view)) continue;
+      if (selected.has(any.id)) {
+        const half = any.type === "note" ? Math.max(8 * view.dpr, NOTE_PT * view.devicePerPt) / 2 : 0;
+        const around = half > 0 ? [{ x: pts[0].x - half, y: pts[0].y - half }, { x: pts[0].x + half, y: pts[0].y + half }] : pts;
+        strokeSelection(c, around, view);
+      }
+      paintTextMarkup(c, any, view, true);
+      continue;
+    }
+    if (isInkMarkup(any)) {
+      // Story 5.7: a stroke; a highlight's is painted under the markups (paintUnder).
+      captions.push(INK_LABEL[any.type]);
+      const pts = devicePoints(any.points, view);
+      if (!onCanvas(pts, any.style, view)) continue;
+      if (selected.has(any.id)) strokeSelection(c, pts, view);
+      if (any.type !== "highlight") strokeInk(c, pts, any.style, view);
+      continue;
+    }
+    if (any.type === "image") {
+      // Story 5.8: an image, upright in its box (5.13: a signature stamp says whose).
+      captions.push(any.signature ? `Signature: ${any.signature.signer}` : "Image");
+      const pts = devicePoints(any.points, view);
+      if (!onCanvas(pts, any.style, view)) continue;
+      if (selected.has(any.id)) strokeSelection(c, pts, view);
+      paintImage(c, any, pts, view);
+      continue;
+    }
+    if (any.type === "underline" || any.type === "strikethrough") {
+      // Story 5.9: marked PDF text.
+      captions.push(textMarkLabel(any));
+      const pts = devicePoints(any.points, view);
+      if (!onCanvas(pts, any.style, view)) continue;
+      if (selected.has(any.id)) strokeSelection(c, pts, view);
+      paintTextMark(c, any.type, pts, any.style, view);
+      continue;
+    }
+    if (any.type === "dimension") {
+      // Story 5.8: a dimension and its calibrated length (never stored).
+      const caption = dimensionCaption(any, calibration, view.userUnit);
+      captions.push(`Dimension: ${caption.text}`);
+      const pts = devicePoints(dimensionOutline(any.points), view);
+      if (!onCanvas(pts, any.style, view)) continue;
+      if (selected.has(any.id)) strokeSelection(c, pts, view);
+      paintDimension(c, any.points, any.style, view, caption);
+      continue;
+    }
+    if (any.type === "whiteout") {
+      // Story 5.11: a cover, the sheet's white over what it hides.
+      captions.push("White-out");
+      const pts = devicePoints(any.points, view);
+      if (!onCanvas(pts, any.style, view)) continue;
+      paintCover(c, pts);
+      if (selected.has(any.id)) strokeSelection(c, pts, view);
+      continue;
+    }
+    if (!isMeasure(any)) {
+      // Story 5.4: a shape, no caption (its label stands in layer 2's list).
+      captions.push(SHAPE_LABEL[any.type]);
+      const pts = devicePoints(any.points, view);
+      if (!onCanvas(pts, any.style, view)) continue;
+      // Story 5.5: an ellipse's outline lies inside its box's corners.
+      if (selected.has(any.id)) strokeSelection(c, any.type === "ellipse" ? devicePoints(outlinePoints(any), view) : pts, view);
+      strokeShape(c, any.type, pts, any.style, view);
+      continue;
+    }
+    const m = any;
+    const caption = captionOf(m, calibration, view.userUnit);
+    captions.push(caption.text);
+    const pts = devicePoints(m.points, view);
+    const frame = captionFrame(m, view);
+    const circle = m.type === "radius" || m.type === "diameter" ? deviceCircle(m.points, view) : null;
+    const extent = circle
+      ? [
+          { x: circle.centre.x - circle.radius, y: circle.centre.y - circle.radius },
+          { x: circle.centre.x + circle.radius, y: circle.centre.y + circle.radius },
+        ]
+      : [];
+    if (!onCanvas(pts, m.style, view, [frame, ...extent])) continue;
+    if (selected.has(m.id)) strokeSelection(c, circle ? extent : pts, view);
+    if (m.type === "area") strokeRings(c, [pts, ...(m.holes ?? []).map((h) => devicePoints(h, view))], m.style, view);
+    else if (m.type === "count") drawMarkers(c, pts, m.style, view);
+    else if (m.type === "angle") strokeAngle(c, pts, m.style, view);
+    else if (m.type === "radius" || m.type === "diameter") strokeCircle(c, m.type, pts, circle, m.style, view);
+    else strokeMeasure(c, pts, m.style, view);
+    drawCaption(c, frame, caption.lines, caption.scaled, m.style, view);
+    if (frame.size >= 1) {
+      c.font = `${frame.size}px ${view.colors.fontFamily}`;
+      const half = Math.max(...caption.lines.map((line) => c.measureText(line).width || 0)) / 2;
+      boxes.push({ id: m.id, frame, half, lines: caption.lines.length });
+    }
+  }
+  c.restore();
+}
+
+/** Story 7.2: a tool's markups on a preview canvas (no selection, no caption hit boxes). */
+export function paintMarkupsPreview(c: CanvasRenderingContext2D, markups: readonly Markup[], view: LayerView, calibration: Calibration | null): void {
+  paintList(c, markups, view, calibration, { selected: new Set(), captions: [], boxes: [], selectedShown: [] });
+}
+
 export const measurePainter: MarkupPainter = {
   paintStatic(c, view) {
     const stored = pageMarkups(editorStore.getState(), view.documentId, pageIdOf(view.documentId, view.pageIndex));
@@ -793,106 +906,7 @@ export const measurePainter: MarkupPainter = {
     const boxes: CaptionBox[] = [];
     const selected = new Set(editorStore.getState().selection.ids);
     const selectedShown: Markup[] = [];
-    c.save();
-    for (const one of markups) {
-      const any = shown(one);
-      if (selected.has(any.id)) selectedShown.push(any);
-      if (isTextMarkup(any)) {
-        // Story 5.6: a text markup, its label and text in layer 2's list.
-        captions.push(textLabel(any));
-        const pts = devicePoints(any.points, view);
-        if (!onCanvas(pts, any.style, view)) continue;
-        if (selected.has(any.id)) {
-          const half = any.type === "note" ? Math.max(8 * view.dpr, NOTE_PT * view.devicePerPt) / 2 : 0;
-          const around = half > 0 ? [{ x: pts[0].x - half, y: pts[0].y - half }, { x: pts[0].x + half, y: pts[0].y + half }] : pts;
-          strokeSelection(c, around, view);
-        }
-        paintTextMarkup(c, any, view, true);
-        continue;
-      }
-      if (isInkMarkup(any)) {
-        // Story 5.7: a stroke; a highlight's is painted under the markups (paintUnder).
-        captions.push(INK_LABEL[any.type]);
-        const pts = devicePoints(any.points, view);
-        if (!onCanvas(pts, any.style, view)) continue;
-        if (selected.has(any.id)) strokeSelection(c, pts, view);
-        if (any.type !== "highlight") strokeInk(c, pts, any.style, view);
-        continue;
-      }
-      if (any.type === "image") {
-        // Story 5.8: an image, upright in its box (5.13: a signature stamp says whose).
-        captions.push(any.signature ? `Signature: ${any.signature.signer}` : "Image");
-        const pts = devicePoints(any.points, view);
-        if (!onCanvas(pts, any.style, view)) continue;
-        if (selected.has(any.id)) strokeSelection(c, pts, view);
-        paintImage(c, any, pts, view);
-        continue;
-      }
-      if (any.type === "underline" || any.type === "strikethrough") {
-        // Story 5.9: marked PDF text.
-        captions.push(textMarkLabel(any));
-        const pts = devicePoints(any.points, view);
-        if (!onCanvas(pts, any.style, view)) continue;
-        if (selected.has(any.id)) strokeSelection(c, pts, view);
-        paintTextMark(c, any.type, pts, any.style, view);
-        continue;
-      }
-      if (any.type === "dimension") {
-        // Story 5.8: a dimension and its calibrated length (never stored).
-        const caption = dimensionCaption(any, calibration, view.userUnit);
-        captions.push(`Dimension: ${caption.text}`);
-        const pts = devicePoints(dimensionOutline(any.points), view);
-        if (!onCanvas(pts, any.style, view)) continue;
-        if (selected.has(any.id)) strokeSelection(c, pts, view);
-        paintDimension(c, any.points, any.style, view, caption);
-        continue;
-      }
-      if (any.type === "whiteout") {
-        // Story 5.11: a cover, the sheet's white over what it hides.
-        captions.push("White-out");
-        const pts = devicePoints(any.points, view);
-        if (!onCanvas(pts, any.style, view)) continue;
-        paintCover(c, pts);
-        if (selected.has(any.id)) strokeSelection(c, pts, view);
-        continue;
-      }
-      if (!isMeasure(any)) {
-        // Story 5.4: a shape, no caption (its label stands in layer 2's list).
-        captions.push(SHAPE_LABEL[any.type]);
-        const pts = devicePoints(any.points, view);
-        if (!onCanvas(pts, any.style, view)) continue;
-        // Story 5.5: an ellipse's outline lies inside its box's corners.
-        if (selected.has(any.id)) strokeSelection(c, any.type === "ellipse" ? devicePoints(outlinePoints(any), view) : pts, view);
-        strokeShape(c, any.type, pts, any.style, view);
-        continue;
-      }
-      const m = any;
-      const caption = captionOf(m, calibration, view.userUnit);
-      captions.push(caption.text);
-      const pts = devicePoints(m.points, view);
-      const frame = captionFrame(m, view);
-      const circle = m.type === "radius" || m.type === "diameter" ? deviceCircle(m.points, view) : null;
-      const extent = circle
-        ? [
-            { x: circle.centre.x - circle.radius, y: circle.centre.y - circle.radius },
-            { x: circle.centre.x + circle.radius, y: circle.centre.y + circle.radius },
-          ]
-        : [];
-      if (!onCanvas(pts, m.style, view, [frame, ...extent])) continue;
-      if (selected.has(m.id)) strokeSelection(c, circle ? extent : pts, view);
-      if (m.type === "area") strokeRings(c, [pts, ...(m.holes ?? []).map((h) => devicePoints(h, view))], m.style, view);
-      else if (m.type === "count") drawMarkers(c, pts, m.style, view);
-      else if (m.type === "angle") strokeAngle(c, pts, m.style, view);
-      else if (m.type === "radius" || m.type === "diameter") strokeCircle(c, m.type, pts, circle, m.style, view);
-      else strokeMeasure(c, pts, m.style, view);
-      drawCaption(c, frame, caption.lines, caption.scaled, m.style, view);
-      if (frame.size >= 1) {
-        c.font = `${frame.size}px ${view.colors.fontFamily}`;
-        const half = Math.max(...caption.lines.map((line) => c.measureText(line).width || 0)) / 2;
-        boxes.push({ id: m.id, frame, half, lines: caption.lines.length });
-      }
-    }
-    c.restore();
+    paintList(c, markups, view, calibration, { selected, captions, boxes, selectedShown });
     // Story 5.2: the selection's handles, over everything.
     const handles = handlesOf(selectedShown.filter((m) => !isLocked(m)), view);
     if (handles) paintHandles(c, handles, view);

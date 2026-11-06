@@ -117,7 +117,7 @@ development_status:
   # Epic 7: Tool Chest, Stamps and Legend
   epic-7: in-progress
   7-1-personal-tool-sets: done
-  7-2-save-a-markup-as-a-tool: backlog
+  7-2-save-a-markup-as-a-tool: review
   7-3-place-tools-and-count-devices: backlog
   7-4-import-a-btx-file-safely: backlog
   7-5-faithful-btx-tool-conversion: backlog

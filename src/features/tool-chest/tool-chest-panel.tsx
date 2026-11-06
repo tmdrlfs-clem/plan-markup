@@ -4,8 +4,8 @@
 // collapsible groups in their order, with instant search over set and tool
 // names. Create set adds one (named in place); each set renames (double-click
 // or the pencil), moves up or down, and deletes after a confirmation that
-// names its tool count. Tools themselves arrive with Story 7.2; Import .btx
-// with Story 7.4.
+// names its tool count. Story 7.2: each tool is a tile with its preview and
+// name (a device shows its label). Import .btx comes with Story 7.4.
 
 import { useEffect, useState, type KeyboardEvent } from "react";
 import { ArrowDown, ArrowUp, FileUp, Pencil, Plus, Trash2 } from "lucide-react";
@@ -22,6 +22,7 @@ import { toast } from "@/components/ui/toast-store";
 import { MAX_TOOL_SET_NAME, deleteSetText, searchToolSets, type ToolSet } from "@/core/tools/tool-set";
 
 import { createToolSet, deleteToolSet, listToolSets, moveToolSet, renameToolSet } from "./actions";
+import { ToolPreview } from "./tool-preview";
 
 export const EMPTY_TOOL_CHEST = "No tool sets yet";
 export const IMPORT_SOON = "Importing Revu tool sets (.btx) is coming soon.";
@@ -266,10 +267,17 @@ export function ToolChestPanel() {
                 {set.tools.length === 0 ? (
                   <p className="text-ws-sm text-muted">No tools yet. Select a markup and add it to the Tool Chest.</p>
                 ) : (
-                  <ul className="flex flex-col gap-0.5" aria-label={`${set.name} tools`}>
+                  <ul className="grid grid-cols-[repeat(auto-fill,minmax(72px,1fr))] gap-1" aria-label={`${set.name} tools`}>
                     {set.tools.map((tool) => (
-                      <li key={tool.id} data-testid="tool" className="truncate text-ws-md">
-                        {tool.name}
+                      <li
+                        key={tool.id}
+                        data-testid="tool"
+                        title={tool.device ? `${tool.name} (${tool.device.group}: ${tool.device.label})` : tool.name}
+                        className="flex min-w-0 flex-col items-center gap-1 rounded-[2px] p-1 hover:bg-surface-2"
+                      >
+                        <ToolPreview content={tool.content} imageUrl={tool.imageUrl} />
+                        <span className="w-full truncate text-center text-ws-sm">{tool.name}</span>
+                        {tool.device ? <span className="w-full truncate text-center text-ws-xs text-muted">{tool.device.label}</span> : null}
                       </li>
                     ))}
                   </ul>

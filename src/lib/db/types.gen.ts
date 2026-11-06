@@ -35,6 +35,9 @@ export type Database = {
                            },
 "fn_owns_drawing":
 { Args: { "p_drawing_id": string }; Returns: boolean
+                           },
+"fn_owns_tool_asset_path":
+{ Args: { "p_name": string }; Returns: boolean
                            }
           }
           Enums: {

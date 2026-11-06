@@ -11,6 +11,8 @@ import { viewerStore } from "@/features/viewer/viewer-store";
 import { resetViewer } from "@/features/viewer/viewer-tabs";
 
 import { editorStore, markupsOf, resetEditor, setDocMarkups, setMarkupMenu, setSelection } from "./editor-store";
+import { addToolStore } from "@/features/tool-chest/add-tool-store";
+
 import { MarkupContextMenu, selectionStateOf } from "./markup-context-menu";
 import { resetSelectTool } from "./select-tool";
 import { activeUndoLabels, clearUndo } from "./undo-store";
@@ -111,5 +113,26 @@ describe("MarkupContextMenu (Story 5.3)", () => {
     expect(ga.groupId).toBeDefined();
     expect(ga.groupId).toBe(gb.groupId);
     expect(activeUndoLabels(editorStore.getState(), "t1").undo).toBe("Group markups");
+  });
+
+  it("Add to Tool Chest… asks for a tool of the selection on that page, with its scale (Story 7.2)", async () => {
+    const user = userEvent.setup();
+    render(<MarkupContextMenu />);
+    open();
+    await screen.findByRole("menu", { name: "Markup" });
+    expect(screen.getByRole("menuitem", { name: /Add to Tool Chest/ })).toHaveAttribute("data-disabled");
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    const cal = { xFactor: 1, yFactor: 1, unit: "mm", precision: "0", source: "ratio", ratio: 100 };
+    viewerStore.setState({ calibrations: { "doc:0": cal } } as never);
+    setSelection([a.id, b.id]);
+    open();
+    await screen.findByRole("menu", { name: "Markup" });
+    await user.click(screen.getByRole("menuitem", { name: /Add to Tool Chest/ }));
+    const request = addToolStore.getState().request;
+    expect(request?.markups.map((m) => m.id)).toEqual([a.id, b.id]);
+    expect(request?.calibration).toEqual(cal);
+    expect(request?.userUnit).toBe(1);
+    addToolStore.setState({ request: null });
   });
 });

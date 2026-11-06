@@ -9,7 +9,7 @@ export { TextEditor } from "./text-editor";
 export { PropertiesPanel } from "./properties-panel";
 export { LayersPanel } from "./layers-panel";
 export { MarkupsListPanel } from "./markups-list-panel";
-export { pickImage, pickImageFile } from "./image-tool";
+export { decodeMarkupImage, pickImage, pickImageFile } from "./image-tool";
 export { hasClipboard } from "./select-tool";
 export {
   ADD_ANGLE,
@@ -24,6 +24,7 @@ export {
   armCount,
   armLength,
   armPolylength,
+  paintMarkupsPreview,
   useMeasureTools,
 } from "./measure-tool";
 export type { UndoCommand } from "@/core/undo/stack";

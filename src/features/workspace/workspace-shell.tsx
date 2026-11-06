@@ -33,6 +33,7 @@ import {
 } from "@/features/viewer";
 
 import { AccountMenu, displayName, type WorkspaceUser } from "./account-menu";
+import { AddToolDialog } from "@/features/tool-chest/add-tool-dialog";
 import { ToolChestPanel, setToolChestOwner } from "@/features/tool-chest/tool-chest-panel";
 
 import { EmptyWorkspace } from "./empty-workspace";
@@ -267,6 +268,7 @@ function ShellBody({ user, initialTheme }: { user: WorkspaceUser; initialTheme: 
           <ScalePrompt />
           {/* Story 5.3: the markups' context menu (a right-click with Select). */}
           <MarkupContextMenu />
+          <AddToolDialog />
         </main>
         <aside aria-label="Tools" data-region="tool-rail" className="w-11 shrink-0 border-l border-border bg-surface-2">
           <ToolRail />

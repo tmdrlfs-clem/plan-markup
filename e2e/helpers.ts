@@ -39,7 +39,7 @@ export const SHARED_ADMIN = "admin@plan-markup.test";
  * again (6.4), specs signing in as one shared account would see each other's
  * markups on the same fixture. Each test attempt gets its own active account
  * instead (made on demand, a platform admin like the seed admin, its markup
- * sets cleared), so it always opens files to an empty set.
+ * sets and tool sets cleared), so it always opens files to an empty set.
  */
 async function isolatedAdmin(): Promise<string> {
   const info = test.info();
@@ -65,6 +65,8 @@ async function isolatedAdmin(): Promise<string> {
     );
     await client.query(`update public.profiles set status = 'active', is_platform_admin = true where id = (select id from auth.users where email = $1)`, [email]);
     await client.query(`delete from public.drawings where owner_id = (select id from auth.users where email = $1)`, [email]);
+    // Story 7.1: and its tool sets (a rerun starts from an empty Tool Chest).
+    await client.query(`delete from public.tool_sets where owner_id = (select id from auth.users where email = $1)`, [email]);
   } finally {
     await client.end();
   }

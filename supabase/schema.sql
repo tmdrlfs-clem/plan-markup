@@ -108,6 +108,23 @@ $$;
 ALTER FUNCTION "app"."fn_owns_drawing"("p_drawing_id" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "app"."fn_owns_tool_asset_path"("p_name" "text") RETURNS boolean
+    LANGUAGE "sql" STABLE
+    SET "search_path" TO ''
+    AS $$
+  select (storage.foldername(p_name))[1] = (select auth.uid())::text
+    and (select app.fn_is_active_user())
+    and exists (
+      select 1 from public.tool_sets s
+      where s.id::text = (storage.foldername(p_name))[2]
+        and s.owner_id = (select auth.uid())
+    );
+$$;
+
+
+ALTER FUNCTION "app"."fn_owns_tool_asset_path"("p_name" "text") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "app"."fn_set_updated_at"() RETURNS "trigger"
     LANGUAGE "plpgsql"
     SET "search_path" TO ''
@@ -1064,6 +1081,11 @@ GRANT ALL ON FUNCTION "app"."fn_is_platform_admin"() TO "authenticated";
 
 REVOKE ALL ON FUNCTION "app"."fn_owns_drawing"("p_drawing_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "app"."fn_owns_drawing"("p_drawing_id" "uuid") TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "app"."fn_owns_tool_asset_path"("p_name" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "app"."fn_owns_tool_asset_path"("p_name" "text") TO "authenticated";
 
 
 
