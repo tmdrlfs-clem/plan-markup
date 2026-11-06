@@ -1799,6 +1799,17 @@ export class ViewerEngine {
     drag.pending = null;
   }
 
+  /** Story 7.3: a Tool Chest tile dropped at `at` (viewport CSS px): the painter places it once. */
+  dropTool(at: Point): boolean {
+    const painter = markupPainter();
+    const view = this.layerView();
+    const point = this.screenToUser(at);
+    if (!painter?.drop || !view || !point) return false;
+    const placed = painter.drop(point, { documentId: view.documentId, pageIndex: view.pageIndex, view });
+    if (placed) this.focusCanvas();
+    return placed;
+  }
+
   /** Story 5.1: the Select context at a viewport point (CSS px); null without a page. */
   private selectContext(at: Point, mods: { shift: boolean; alt: boolean; ctrl: boolean }): { point: Point; context: SelectContext } | null {
     const view = this.layerView();

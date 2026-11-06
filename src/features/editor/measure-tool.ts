@@ -125,6 +125,7 @@ import {
   draftOf,
   endTextEdit,
   forgetViews,
+  lastViewOf,
   noteView,
   setTextFrame,
   textEditing,
@@ -133,6 +134,9 @@ import {
 } from "./text-tool";
 import { ADD_STRIKETHROUGH, ADD_UNDERLINE, paintTextMark, paintTextMarkActive, textMarkDrag, textMarkLabel } from "./text-mark-tool";
 import { executeOp, registerDrawingUndo } from "./undo-store";
+import { toast } from "@/components/ui/toast-store";
+import { NEEDS_SCALE, placedMarkups, toolScale } from "@/core/tools/place";
+import { stampStore, type StampTool } from "@/features/tool-chest/stamp-store";
 
 type Point = { x: number; y: number };
 
@@ -156,6 +160,10 @@ export const ADD_HIGHLIGHT = "Add highlight";
 export const ADD_DIMENSION = "Add dimension";
 export const ADD_WHITEOUT = "Add white-out";
 export const ADD_ERASER = "Add eraser stroke";
+/** Story 7.3: a Tool Chest tool placed. */
+export const PLACE_TOOL = "Place tool";
+/** Story 7.3: S (or Stamp) with no tool chosen yet. */
+export const NO_STAMP = "Choose a tool in the Tool Chest first";
 const ADD_LABEL: Record<DrawTool, string> = {
   length: ADD_LENGTH,
   polylength: ADD_POLYLENGTH,
@@ -186,6 +194,7 @@ const ADD_LABEL: Record<DrawTool, string> = {
   whiteout: ADD_WHITEOUT,
   whiteoutpolygon: ADD_WHITEOUT,
   eraser: ADD_ERASER,
+  stamp: PLACE_TOOL,
 };
 /** Story 4.8: what the live value says while an area crosses itself (it cannot be added). */
 export const CROSSES_ITSELF = "Crosses itself";
@@ -220,6 +229,7 @@ const MIN_POINTS: Record<DrawTool, number> = {
   whiteout: 2,
   whiteoutpolygon: 3,
   eraser: 2,
+  stamp: 1,
 };
 /** Tools with a fixed number of points: the click that places the last one adds the measurement. */
 const FIXED_POINTS: Partial<Record<DrawTool, number>> = { length: 2, angle: 3, radius: 3, diameter: 3, line: 2, arrow: 2, rectangle: 2, ellipse: 2, text: 2, callout: 2, typewriter: 1, note: 1, dimension: 3, whiteout: 2 };
@@ -939,6 +949,12 @@ export const measurePainter: MarkupPainter = {
         setTextFrame(textFrameOf(edit.draft, view));
       }
     }
+    // Story 7.3: the armed tool under the pointer, where a click places it.
+    if (viewerStore.getState().tool === "stamp") {
+      const armed = stampStore.getState().armed;
+      if (armed && pointer) paintStampGhost(c, armed, pointer, view);
+      return null;
+    }
     const d = drawing();
     if (d?.tool === "fill") return paintFillActive(c, view, pointer);
     // Story 5.9: the words selected so far.
@@ -990,7 +1006,7 @@ export const measurePainter: MarkupPainter = {
       paintCover(c, pts);
       strokeShape(c, d.tool === "whiteout" ? "rectangle" : "polyline", pts, DEFAULT_MARKUP_STYLE, view);
     }
-    else if (isMarkupTool(d.tool) && !isTextTool(d.tool) && !isInkTool(d.tool) && !isCoverTool(d.tool) && d.tool !== "image" && d.tool !== "underline" && d.tool !== "strikethrough") strokeShape(c, d.tool, pts, DEFAULT_MARKUP_STYLE, view);
+    else if (isMarkupTool(d.tool) && !isTextTool(d.tool) && !isInkTool(d.tool) && !isCoverTool(d.tool) && d.tool !== "image" && d.tool !== "stamp" && d.tool !== "underline" && d.tool !== "strikethrough") strokeShape(c, d.tool, pts, DEFAULT_MARKUP_STYLE, view);
     else strokeMeasure(c, pts, DEFAULT_MEASURE_STYLE, view);
     c.restore();
     if (!live) return null;
@@ -1006,6 +1022,12 @@ export const measurePainter: MarkupPainter = {
     return drawing()?.points.at(-1) ?? null;
   },
 
+  // Story 7.3: a tile dragged from the Tool Chest is placed once, whatever the tool.
+  drop(point, at) {
+    const dragged = stampStore.getState().dragging;
+    return dragged ? placeStamp(dragged, point, at.documentId, at.pageIndex) : false;
+  },
+
   place(point, at) {
     // Story 5.6: a click while typing ends the typing, and only that.
     if (textEditing()) {
@@ -1018,6 +1040,8 @@ export const measurePainter: MarkupPainter = {
     const pageId = pageIdOf(at.documentId, at.pageIndex);
     // Story 5.8: the picked image, centred on the click; then Select has it (to resize).
     if (tool === "image") return placeImage(point, at.documentId, pageId);
+    // Story 7.3: the armed tool, centred on the click; it stays armed (Esc returns to Select).
+    if (tool === "stamp") return placeStamp(stampStore.getState().armed, point, at.documentId, at.pageIndex) ? "done" : "ignored";
     const d = drawing();
     if (!d || d.pageId !== pageId || d.tool !== tool) {
       setDrawing({ tool, pageId, pageIndex: at.pageIndex, points: [point] });
@@ -1266,6 +1290,39 @@ function dimensionCaption(m: DimensionMarkup, calibration: Calibration | null, u
 }
 
 /** Story 5.8: adds the picked image centred at `point` ("Add image"), then selects it with Select. */
+/** Story 7.3: where `tool` goes on page `pageIndex` (null: the page needs a scale or its image is loading). */
+function stampMarkups(tool: StampTool, point: Point, documentId: string, pageIndex: number, userUnit?: number): Markup[] | null {
+  const pageId = pageIdOf(documentId, pageIndex);
+  const unit = userUnit ?? lastViewOf(pageId)?.userUnit ?? 1;
+  return placedMarkups(tool, point, { pageId, calibration: calibrationOf(documentId, pageIndex), userUnit: unit }, uuidv7, new Date().toISOString());
+}
+
+/** Story 7.3: places `tool` centred at `point` (one undo step); false when it cannot go on that page. */
+function placeStamp(tool: StampTool | null, point: Point, documentId: string, pageIndex: number): boolean {
+  if (!tool) {
+    toast({ title: NO_STAMP, variant: "info" });
+    return false;
+  }
+  const markups = stampMarkups(tool, point, documentId, pageIndex);
+  if (!markups) {
+    if (!toolScale(tool.content, { calibration: calibrationOf(documentId, pageIndex), userUnit: 1 })) {
+      toast({ title: `“${tool.name}” needs this page's scale`, description: `${NEEDS_SCALE}.`, variant: "warning" });
+    } else toast({ title: `“${tool.name}” is still loading its image`, description: "Try again in a moment.", variant: "info" });
+    return false;
+  }
+  executeOp({ kind: "markups.add", documentId, markups }, PLACE_TOOL);
+  return true;
+}
+
+function paintStampGhost(c: CanvasRenderingContext2D, tool: StampTool, pointer: Point, view: LayerView): void {
+  const markups = stampMarkups(tool, pointer, view.documentId, view.pageIndex, view.userUnit);
+  if (!markups) return;
+  c.save();
+  c.globalAlpha = 0.5;
+  paintMarkupsPreview(c, markups, view, calibrationOf(view.documentId, view.pageIndex));
+  c.restore();
+}
+
 function placeImage(point: Point, documentId: string, pageId: string): "done" | "ignored" {
   const picked = pickedImage();
   if (!picked) return "ignored";
@@ -1309,6 +1366,8 @@ function markupOf(d: Drawing): Markup {
       return { ...base, type: d.tool, points: [a, b, c] };
     case "image":
       throw new Error("an image is placed from its picked file (image-tool.ts)");
+    case "stamp":
+      throw new Error("a tool is placed from the Tool Chest (placeStamp)");
     case "underline":
     case "strikethrough":
       throw new Error("marked text is added by its drag (text-mark-tool.ts)");

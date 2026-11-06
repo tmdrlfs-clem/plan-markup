@@ -14,6 +14,7 @@ import type { LayerView } from "@/features/viewer";
 
 /** Image data URLs by signed URL's path (a signed URL changes; its object does not). */
 const images = new Map<string, Promise<string | null>>();
+const loaded = new Map<string, string>();
 
 function keyOf(url: string): string {
   try {
@@ -42,11 +43,17 @@ export function toolImageDataUrl(url: string): Promise<string | null> {
       )
       .catch(() => null);
     images.set(key, pending);
-    pending.then((v) => {
+    void pending.then((v) => {
       if (v === null) images.delete(key);
+      else loaded.set(key, v);
     });
   }
   return pending;
+}
+
+/** Story 7.3: the tool image at `url` if it has been read already (a drag starts synchronously). */
+export function cachedToolImage(url: string): string | null {
+  return loaded.get(keyOf(url)) ?? null;
 }
 
 const PREVIEW_COLORS = { halo: "#ffffff", warning: "#b45309", selection: "#2563eb", fontFamily: "sans-serif" };

@@ -1,4 +1,4 @@
-// Story 7.2: save a markup as a tool (production build in CI).
+// Stories 7.2 / 7.3: save a markup as a tool, and place tools (production build in CI).
 //   snap.pdf (Story 4.1): page 1 A4 landscape, a rectangle (100, 100)-(300, 250).
 // Covers: a rectangle drawn on the fixture, selected, right-click → Add to
 // Tool Chest…; the dialog suggests the name, makes a new set when there is
@@ -6,6 +6,9 @@
 // shows in the Tool Chest and is still there after a reload. An image tool:
 // its pixels go to the private bucket and its preview comes back after a
 // reload (fetched by its signed URL; the CSP keeps img-src to self/blob/data).
+// Story 7.3: a tile click arms the tool, each click on the drawing places it
+// (Esc returns to Select, S arms it again), a tile dragged onto the drawing is
+// placed once; device placements show in the Markups List's Device column.
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
@@ -137,7 +140,9 @@ test("save a markup as a tool: Add to Tool Chest…, a new set, a device, the ti
   await showChest(page);
   await expect(chest(page).getByTestId("tool")).toHaveCount(1, { timeout: 15_000 });
   await expect(chest(page).getByTestId("tool")).toContainText("Riser zone");
-  await expect(chest(page).getByTestId("tool")).toHaveAttribute("title", "Riser zone (Zones: Riser)");
+  await expect(chest(page).getByTestId("tool")).toHaveAccessibleName("Riser zone (Zones: Riser)");
+  // Story 7.3: with no drawing open the tile says why it cannot be placed.
+  await expect(chest(page).getByTestId("tool")).toHaveAttribute("title", "Riser zone (Zones: Riser) — Open a drawing to place tools");
   await context.close();
 });
 
@@ -182,5 +187,75 @@ test("an image tool keeps its pixels in the bucket and shows them after a reload
   await showChest(page);
   await expect(chest(page).getByTestId("tool")).toHaveCount(1, { timeout: 15_000 });
   await expect.poll(() => redPixels(page), { timeout: 15_000 }).toBeGreaterThan(200);
+  await context.close();
+});
+
+test("place tools: a click arms, clicks place, Esc and S, a drag places once; devices are counted in the Markups List", async ({ browser }) => {
+  const context = await browser.newContext({ viewport: { width: 1600, height: 900 } });
+  const page = await context.newPage();
+  await page.goto("/sign-in");
+  await signIn(page, "admin@plan-markup.test");
+  await expect(page).toHaveURL("/workspace");
+  await showChest(page);
+  await open(page);
+
+  // A rectangle saved as a device tool.
+  await press(page, "r");
+  await expect(page.getByText(/^Rectangle: drag from one corner/)).toBeVisible();
+  await stable(page);
+  await snapTo(page, 100, 100);
+  await page.mouse.down();
+  await snapTo(page, 300, 250);
+  await page.mouse.up();
+  await expect(markups(page)).toHaveAttribute("data-captions", "Rectangle");
+  await press(page, "v");
+  await stable(page);
+  const inside = await screenOf(page, 150, 200);
+  await page.mouse.click(inside.x, inside.y);
+  await page.mouse.click(inside.x, inside.y, { button: "right" });
+  await page.getByRole("menu", { name: "Markup" }).getByRole("menuitem", { name: /Add to Tool Chest/ }).click();
+  await dialog(page).getByRole("textbox", { name: "Name", exact: true }).fill("Zone");
+  await dialog(page).getByRole("checkbox", { name: "Count as a device" }).click();
+  await dialog(page).getByRole("textbox", { name: "Group" }).fill("Zones");
+  await dialog(page).getByRole("textbox", { name: "Label" }).fill("Riser");
+  await dialog(page).getByRole("button", { name: "Add tool" }).click();
+  await expect(dialog(page)).toBeHidden();
+
+  // The first use shows one tip.
+  await expect(chest(page).getByRole("note")).toContainText("Click a tool, then click the drawing");
+
+  // A click arms it; each click on the drawing places one; it stays armed.
+  const tile = chest(page).getByRole("button", { name: "Zone (Zones: Riser)" });
+  await tile.click();
+  await expect(tile).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByText(/^Tool: click where it goes/)).toBeVisible();
+  await stable(page);
+  for (const [x, y] of [[500, 200], [600, 200]] as const) {
+    const at = await screenOf(page, x, y);
+    await page.mouse.click(at.x, at.y);
+  }
+  const rows = page.getByTestId("markups-list-row");
+  await expect(rows).toHaveCount(3);
+  await expect(tile).toHaveAttribute("aria-pressed", "true");
+
+  // Esc returns to Select; S arms the last tool again.
+  await press(page, "Escape");
+  await expect(tile).toHaveAttribute("aria-pressed", "false");
+  await press(page, "s");
+  await expect(tile).toHaveAttribute("aria-pressed", "true");
+  await stable(page);
+  const third = await screenOf(page, 500, 400);
+  await page.mouse.click(third.x, third.y);
+  await expect(rows).toHaveCount(4);
+  await press(page, "Escape");
+
+  // A drag places it once.
+  const drop = await screenOf(page, 650, 420);
+  const box = (await canvas(page).boundingBox())!;
+  await tile.dragTo(page.getByTestId("canvas-viewport"), { targetPosition: { x: drop.x - box.x, y: drop.y - box.y } });
+  await expect(rows).toHaveCount(5);
+
+  // The four placements count as Zones · Riser (the drawn rectangle is not a device).
+  await expect(page.getByRole("gridcell", { name: "Zones · Riser" })).toHaveCount(4);
   await context.close();
 });

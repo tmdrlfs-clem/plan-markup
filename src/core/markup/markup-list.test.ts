@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { factorForRatio, type Calibration } from "@/core/calibration/calibration";
 import { DEFAULT_MARKUP_STYLE, type Markup } from "@/core/schema/markup";
 
-import { EMPTY_VIEW, NO_LAYER, applyListView, countText, filterOptions, isFiltered, markupListRows, nextSort, pageIndexOf, visibleRange, type ListPage } from "./markup-list";
+import { EMPTY_VIEW, NO_DEVICE, NO_LAYER, applyListView, countText, filterOptions, isFiltered, markupListRows, nextSort, pageIndexOf, visibleRange, type ListPage } from "./markup-list";
 
 const k100 = factorForRatio(100);
 const CAL: Calibration = { xFactor: k100, yFactor: k100, unit: "mm", precision: "0", source: "ratio" } as Calibration;
@@ -116,5 +116,20 @@ describe("sort, filter and search (Story 6.8)", () => {
     expect(countText(1, 1, false)).toBe("1 markup");
     expect(isFiltered({ ...EMPTY_VIEW, quick: " " })).toBe(false);
     expect(isFiltered({ ...EMPTY_VIEW, filters: { page: ["A-101"] } })).toBe(true);
+  });
+
+  it("Story 7.3: a placed device's type is a column, a filter and a sort", () => {
+    const base = { pageId: `${"d".repeat(64)}:0`, createdAt: "2026-11-07T00:00:00.000Z", style: { color: "#ff0000", width: 1, fontSize: 10 }, type: "line", points: [{ x: 0, y: 0 }, { x: 1, y: 1 }] };
+    const ms = [
+      { ...base, id: "00000000-0000-7000-8000-000000000101", device: { group: "Sprinklers", label: "Pendant" } },
+      { ...base, id: "00000000-0000-7000-8000-000000000102" },
+      { ...base, id: "00000000-0000-7000-8000-000000000103", device: { group: "Alarms", label: "Bell" } },
+    ] as never[];
+    const rows = markupListRows(ms, "d".repeat(64), [{ label: "Page 1", calibration: null, userUnit: 1 }], []);
+    expect(rows.map((r) => r.device)).toEqual(["Sprinklers · Pendant", "", "Alarms · Bell"]);
+    expect(filterOptions(rows, "device")).toEqual(["Alarms · Bell", NO_DEVICE, "Sprinklers · Pendant"]);
+    expect(applyListView(rows, { ...EMPTY_VIEW, filters: { device: ["Sprinklers · Pendant"] } })).toHaveLength(1);
+    expect(applyListView(rows, { ...EMPTY_VIEW, sort: { key: "device", dir: "asc" } }).map((r) => r.device)).toEqual(["", "Alarms · Bell", "Sprinklers · Pendant"]);
+    expect(applyListView(rows, { ...EMPTY_VIEW, quick: "pendant" })).toHaveLength(1);
   });
 });

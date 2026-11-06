@@ -137,8 +137,10 @@ export function toolContentOf(
   let image: string | null = null;
   const moved = usable.map((m): ToolMarkup => {
     const t = translateMarkup(m, { x: -c.x, y: -c.y });
-    // On no page, layer or group; unlocked.
+    // On no page, layer or group; unlocked; not counted.
     const rest = { ...t, pageId: TOOL_PAGE } as Markup & { groupId?: string; layerId?: string; locked?: boolean };
+    // Story 7.3: a placed device's count mark stays with its placement (the tool's own device is typed).
+    delete rest.device;
     delete rest.groupId;
     delete rest.layerId;
     delete rest.locked;

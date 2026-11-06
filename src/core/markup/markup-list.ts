@@ -21,6 +21,8 @@ export type MarkupListRow = {
   color: string;
   /** The layer's name; "" without one. */
   layer: string;
+  /** Story 7.3: the device type a placed tool counts as ("Group · Label"); "" when it does not count. */
+  device: string;
   /** The measurement value as its caption reads; "" for other markups. */
   value: string;
   /** Story 6.8: the value as a number for sorting (mm, mm², count or degrees); null without one. */
@@ -70,6 +72,7 @@ export function markupListRows(
       date: markup.createdAt,
       color: markup.style.color,
       layer: markup.layerId ? (layerNames.get(markup.layerId) ?? "") : "",
+      device: markup.device ? `${markup.device.group} · ${markup.device.label}` : "",
       value,
       measure,
       markup,
@@ -88,17 +91,19 @@ export function visibleRange(scrollTop: number, height: number, rowHeight: numbe
 
 // ---- Story 6.8 (FR46, UX-DR28): sort, column filters and the quick filter ----
 
-export type SortKey = "type" | "subject" | "page" | "date" | "color" | "layer" | "value";
+export type SortKey = "type" | "subject" | "page" | "date" | "color" | "layer" | "device" | "value";
 export type ListSort = { key: SortKey; dir: "asc" | "desc" } | null;
-export type FilterKey = "type" | "page" | "color" | "layer";
+export type FilterKey = "type" | "page" | "color" | "layer" | "device";
 export type ColumnFilters = Partial<Record<FilterKey, readonly string[]>>;
 export type ListView = { sort: ListSort; filters: ColumnFilters; quick: string };
 
 export const EMPTY_VIEW: ListView = { sort: null, filters: {}, quick: "" };
-export const FILTER_KEYS: readonly FilterKey[] = ["type", "page", "color", "layer"];
-export const FILTER_LABELS: Record<FilterKey, string> = { type: "Type", page: "Page", color: "Colour", layer: "Layer" };
+export const FILTER_KEYS: readonly FilterKey[] = ["type", "page", "color", "layer", "device"];
+export const FILTER_LABELS: Record<FilterKey, string> = { type: "Type", page: "Page", color: "Colour", layer: "Layer", device: "Device" };
 /** The layer filter's value for markups on no layer. */
 export const NO_LAYER = "No layer";
+/** Story 7.3: the device filter's value for markups that are not counted. */
+export const NO_DEVICE = "Not a device";
 
 /** A row's value for column filter `key` (as the filter lists it). */
 export function filterValue(row: MarkupListRow, key: FilterKey): string {
@@ -111,6 +116,8 @@ export function filterValue(row: MarkupListRow, key: FilterKey): string {
       return row.color.toLowerCase();
     case "layer":
       return row.layer || NO_LAYER;
+    case "device":
+      return row.device || NO_DEVICE;
   }
 }
 
@@ -138,6 +145,8 @@ function compare(a: MarkupListRow, b: MarkupListRow, key: SortKey): number {
       return a.color.toLowerCase().localeCompare(b.color.toLowerCase());
     case "layer":
       return collator.compare(a.layer, b.layer);
+    case "device":
+      return collator.compare(a.device, b.device);
     case "value":
       return (a.measure ?? 0) - (b.measure ?? 0);
   }
@@ -146,7 +155,7 @@ function compare(a: MarkupListRow, b: MarkupListRow, key: SortKey): number {
 /** The quick filter: every word must appear in one of the row's texts (case-insensitive). */
 function matchesQuick(row: MarkupListRow, words: readonly string[]): boolean {
   if (words.length === 0) return true;
-  const text = [row.subject, SUBJECT_NAMES[row.type], row.page, row.layer, row.value, row.color].join("\n").toLocaleLowerCase();
+  const text = [row.subject, SUBJECT_NAMES[row.type], row.page, row.layer, row.device, row.value, row.color].join("\n").toLocaleLowerCase();
   return words.every((w) => text.includes(w));
 }
 

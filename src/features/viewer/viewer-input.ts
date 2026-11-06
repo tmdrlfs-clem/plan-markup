@@ -118,6 +118,8 @@ export function resolveViewerKey(
   if (isLetter(event, "h") && !event.shiftKey) return { type: "tool", tool: "highlight" };
   // Story 5.11: Shift+W White-out (the UX shortcut table; ours, Revu has none).
   if (isLetter(event, "w") && event.shiftKey) return { type: "tool", tool: "whiteout" };
+  // Story 7.3: S, the last Tool Chest tool (UX-DR19).
+  if (isLetter(event, "s") && !event.shiftKey) return { type: "tool", tool: "stamp" };
   return null;
 }
 

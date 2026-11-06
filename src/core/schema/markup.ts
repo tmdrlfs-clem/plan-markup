@@ -34,6 +34,13 @@ export type MarkupStyle = z.infer<typeof markupStyleSchema>;
 /** Story 5.10: the longest subject. */
 export const MAX_SUBJECT_LENGTH = 200;
 
+/** Story 7.3: the device type a placed tool counts as (on the placement's first markup only). */
+export const markupDeviceSchema = z.object({
+  group: z.string().trim().min(1).max(60),
+  label: z.string().trim().min(1).max(60),
+});
+export type MarkupDevice = z.infer<typeof markupDeviceSchema>;
+
 const base = {
   id: z.string().regex(UUID_PATTERN),
   /** The stable page id (sha256 + page index until page edits, AR8). */
@@ -49,6 +56,8 @@ const base = {
   layerId: z.string().regex(UUID_PATTERN).optional(),
   /** Story 5.10: the markup's subject (Properties); absent: its type's name. */
   subject: z.string().max(MAX_SUBJECT_LENGTH).optional(),
+  /** Story 7.3: a placed device-typed tool counts once, by this markup (absent: not a device). */
+  device: markupDeviceSchema.optional(),
 };
 
 /**

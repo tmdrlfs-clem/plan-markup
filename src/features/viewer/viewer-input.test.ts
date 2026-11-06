@@ -61,6 +61,8 @@ describe("resolveViewerKey (focus rule)", () => {
     expect(resolveViewerKey(key({ key: "P", code: "KeyP", shiftKey: true }), FOCUSED)).toEqual({ type: "tool", tool: "polygon" });
     // Story 5.11: Shift+W White-out (W alone: nothing).
     expect(resolveViewerKey(key({ key: "W", code: "KeyW", shiftKey: true }), FOCUSED)).toEqual({ type: "tool", tool: "whiteout" });
+    // Story 7.3: S, the last Tool Chest tool.
+    expect(resolveViewerKey(key({ key: "s", code: "KeyS" }), FOCUSED)).toEqual({ type: "tool", tool: "stamp" });
     expect(resolveViewerKey(key({ key: "w", code: "KeyW" }), FOCUSED)).toBeNull();
     expect(resolveViewerKey(key({ key: "n", code: "KeyN" }), FOCUSED)).toBeNull();
     // Story 5.5: R Rectangle, E Ellipse, C Cloud (Ctrl+C stays copy).

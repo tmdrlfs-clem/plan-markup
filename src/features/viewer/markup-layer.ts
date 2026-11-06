@@ -161,7 +161,12 @@ export interface MarkupPainter {
    * the window); true when it opened.
    */
   contextMenu?(point: Point, at: SelectContext, client: Point, keyboard: boolean): boolean;
+  /** Story 7.3: a Tool Chest tile dropped at `point` (user space): places it once; true when it did. */
+  drop?(point: Point, at: { documentId: string; pageIndex: number; view: LayerView }): boolean;
 }
+
+/** Story 7.3: the drag type of a Tool Chest tile (the canvas accepts it; the painter reads which tool). */
+export const TOOL_DRAG_TYPE = "application/x-plan-markup-tool";
 
 /** `activeOnly`: only the drawing in progress changed (review 4.10 R2: layer 2 is not painted again). */
 export type MarkupChange = { drawingEnded?: boolean; activeOnly?: boolean };

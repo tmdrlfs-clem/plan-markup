@@ -75,12 +75,12 @@ afterEach(() => {
 });
 
 describe("Markups List (Story 6.7)", () => {
-  it("shows each markup's type, subject, page, comments, date, author, status, colour, layer and value", () => {
+  it("shows each markup's type, subject, page, comments, date, author, status, colour, layer, device (7.3) and value", () => {
     const a = line(0, { subject: "Check this" });
     setup([a, line(1)]);
     const headers = screen.getAllByRole("columnheader").map((h) => h.textContent);
-    expect(headers).toEqual(["Type", "Subject", "Page", "Comments", "Date", "Author", "Status", "Colour", "Layer", "Measurement"]);
-    const cells = screen.getAllByRole("gridcell").slice(0, 10).map((c) => c.textContent);
+    expect(headers).toEqual(["Type", "Subject", "Page", "Comments", "Date", "Author", "Status", "Colour", "Layer", "Device", "Measurement"]);
+    const cells = screen.getAllByRole("gridcell").slice(0, 11).map((c) => c.textContent);
     expect(cells[0]).toBe("Line");
     expect(cells.slice(1, 4)).toEqual(["Check this", "Page 1", "—"]);
     expect(cells[5]).toBe("Dana Drafter");
@@ -153,7 +153,7 @@ describe("Markups List (Story 6.7)", () => {
     fireEvent.keyDown(grid, { key: "ArrowRight" });
     expect(activeCell()).toBe("markups-list-cell-2-2");
     fireEvent.keyDown(grid, { key: "End" });
-    expect(activeCell()).toBe("markups-list-cell-2-9");
+    expect(activeCell()).toBe("markups-list-cell-2-10");
     fireEvent.keyDown(grid, { key: "Home" });
     expect(activeCell()).toBe("markups-list-cell-2-0");
     fireEvent.keyDown(grid, { key: "End", ctrlKey: true });

@@ -167,6 +167,7 @@ export const MARKUP_LIST_COLUMNS: readonly Column[] = [
     ),
   },
   { key: "layer", label: "Layer", width: "minmax(72px, 1fr)", sort: "layer", cell: (row) => row.layer, title: (row) => row.layer },
+  { key: "device", label: "Device", width: "minmax(96px, 1fr)", sort: "device", cell: (row) => row.device, title: (row) => row.device },
   { key: "value", label: "Measurement", width: "minmax(96px, 1fr)", sort: "value", cell: (row) => <span className="num">{row.value}</span> },
 ];
 

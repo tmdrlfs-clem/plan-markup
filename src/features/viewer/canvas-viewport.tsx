@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { currentSheetLabel } from "./page-pager";
 import type { DeviceSize, ViewerEngine } from "./viewer-engine";
 import { ViewerInput } from "./viewer-input";
+import { TOOL_DRAG_TYPE } from "./markup-layer";
 import { VIEWER_ERROR_TEXT, canvasStateOf, viewerStore } from "./viewer-store";
 import { viewerTabs } from "./viewer-tabs";
 
@@ -52,6 +53,11 @@ export function measureDevice(
     c.style.height = `${device.height / dpr}px`;
   }
   return device;
+}
+
+/** Story 7.3: a Tool Chest tile being dragged. */
+function hasTool(event: DragEvent): boolean {
+  return Array.from(event.dataTransfer?.types ?? []).includes(TOOL_DRAG_TYPE);
 }
 
 function hasFiles(event: DragEvent): boolean {
@@ -167,12 +173,23 @@ export function CanvasViewport({ onOpen, onOpenFiles, createWorker = defaultWork
   }, [createWorker]);
 
   function onDragOver(event: DragEvent<HTMLDivElement>) {
+    if (hasTool(event) && status === "ready") {
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "copy";
+      return;
+    }
     if (!hasFiles(event)) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = "copy";
   }
 
   function onDrop(event: DragEvent<HTMLDivElement>) {
+    if (hasTool(event)) {
+      event.preventDefault();
+      const rect = event.currentTarget.getBoundingClientRect();
+      engineRef.current?.dropTool({ x: event.clientX - rect.left, y: event.clientY - rect.top });
+      return;
+    }
     if (!hasFiles(event)) return;
     event.preventDefault();
     onOpenFiles(Array.from(event.dataTransfer.files));

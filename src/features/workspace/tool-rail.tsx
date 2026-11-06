@@ -116,6 +116,8 @@ const COVERS = "It hides the drawing on screen; the PDF is not changed until you
 export const WHITEOUT_HINT = `White-out: drag from one corner to the opposite one, or click both. ${COVERS} Esc cancels; Esc again returns to Select.`;
 export const WHITEOUT_POLYGON_HINT = `White-out polygon: click each corner; double-click, Enter or a click on the first corner closes it. Backspace removes the last corner. ${COVERS} Esc cancels; Esc again returns to Select.`;
 export const ERASER_HINT = `Eraser: drag over the drawing to brush it out. ${COVERS} Esc while drawing drops the stroke; Esc again returns to Select.`;
+/** Story 7.3: the HintBar while a Tool Chest tool is armed. */
+export const STAMP_HINT = "Tool: click where it goes (its centre); it stays armed for the next. S arms the last tool again. Esc returns to Select.";
 export const DIMENSION_HINT = `Dimension: click the two points to dimension, then where its line goes. ${SNAPS} Esc cancels; Esc again returns to Select.`;
 const TOOL_HINTS: Partial<Record<ViewerTool, string>> = {
   length: SNAP_PREVIEW_HINT,
@@ -147,6 +149,7 @@ const TOOL_HINTS: Partial<Record<ViewerTool, string>> = {
   whiteout: WHITEOUT_HINT,
   whiteoutpolygon: WHITEOUT_POLYGON_HINT,
   eraser: ERASER_HINT,
+  stamp: STAMP_HINT,
 };
 export const EDITOR_LATER = "Arrives with the markup editor";
 

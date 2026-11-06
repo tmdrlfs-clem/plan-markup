@@ -5,7 +5,9 @@
 // names. Create set adds one (named in place); each set renames (double-click
 // or the pencil), moves up or down, and deletes after a confirmation that
 // names its tool count. Story 7.2: each tool is a tile with its preview and
-// name (a device shows its label). Import .btx comes with Story 7.4.
+// name (a device shows its label). Story 7.3: a click arms the tile (placed at
+// each click on the drawing until Esc), a drag places it once; a tile drawn at
+// a scale is disabled on a page without one. Import .btx comes with Story 7.4.
 
 import { useEffect, useState, type KeyboardEvent } from "react";
 import { ArrowDown, ArrowUp, FileUp, Pencil, Plus, Trash2 } from "lucide-react";
@@ -19,13 +21,22 @@ import { cx } from "@/components/ui/cx";
 import { fieldControlClasses } from "@/components/ui/field";
 import { IconButton } from "@/components/ui/icon-button";
 import { toast } from "@/components/ui/toast-store";
+import { pageIdOf } from "@/core/calibration/calibration";
+import { NEEDS_SCALE, needsScale } from "@/core/tools/place";
+import type { Tool } from "@/core/tools/tool";
 import { MAX_TOOL_SET_NAME, deleteSetText, searchToolSets, type ToolSet } from "@/core/tools/tool-set";
+import { FirstUseTip } from "@/features/tips";
+import { TOOL_DRAG_TYPE, setTool, viewerCommands, viewerStore } from "@/features/viewer";
 
 import { createToolSet, deleteToolSet, listToolSets, moveToolSet, renameToolSet } from "./actions";
-import { ToolPreview } from "./tool-preview";
+import { resetStamps, setArmedStamp, setDraggedStamp, stampStore, type StampTool } from "./stamp-store";
+import { ToolPreview, cachedToolImage, toolImageDataUrl } from "./tool-preview";
 
 export const EMPTY_TOOL_CHEST = "No tool sets yet";
 export const IMPORT_SOON = "Importing Revu tool sets (.btx) is coming soon.";
+export const NO_DRAWING_TO_PLACE = "Open a drawing to place tools";
+export const UNREADABLE_TOOL = "This tool could not be read";
+export const TOOL_CHEST_TIP = "Click a tool, then click the drawing to place it (it stays armed until Esc), or drag it onto the drawing. S arms the last tool again.";
 const NEW_SET_NAME = "New tool set";
 
 type ChestState = { status: "loading" | "ready" | "error"; sets: ToolSet[] };
@@ -41,6 +52,7 @@ export function setToolChestOwner(userId: string): void {
   if (owner !== userId) {
     loadSeq++;
     toolChestStore.setState({ status: "loading", sets: [] });
+    resetStamps();
   }
   owner = userId;
 }
@@ -107,6 +119,72 @@ async function remove(set: ToolSet): Promise<void> {
 }
 
 /** A set's name being typed: Enter or leaving keeps it, Esc cancels. */
+function stampOf(tool: Tool, imageSrc: string | null): StampTool | null {
+  return tool.content ? { id: tool.id, name: tool.name, content: tool.content, device: tool.device, imageSrc } : null;
+}
+
+/** Story 7.3: arms `tool` (its image read first) and gives the drawing the focus. */
+async function arm(tool: Tool): Promise<void> {
+  const imageSrc = tool.imageUrl ? await toolImageDataUrl(tool.imageUrl) : null;
+  if (tool.imageUrl && !imageSrc) return failed(`“${tool.name}” could not load its image. Try again.`);
+  const stamp = stampOf(tool, imageSrc);
+  if (!stamp) return;
+  setArmedStamp(stamp);
+  setTool("stamp");
+  viewerCommands.focusCanvas();
+}
+
+/** Why `tool` cannot be placed on the shown page; null when it can. */
+function useDisabledReason(tool: Tool): string | null {
+  const open = useStore(viewerStore, (s) => s.documentId !== null);
+  const calibrated = useStore(viewerStore, (s) => (s.documentId ? s.calibrations[pageIdOf(s.documentId, s.pageIndex)] !== undefined : false));
+  if (!tool.content) return UNREADABLE_TOOL;
+  if (!open) return NO_DRAWING_TO_PLACE;
+  if (needsScale(tool.content) && !calibrated) return NEEDS_SCALE;
+  return null;
+}
+
+function ToolTile({ tool }: { tool: Tool }) {
+  const reason = useDisabledReason(tool);
+  const stamping = useStore(viewerStore, (s) => s.tool === "stamp");
+  const mine = useStore(stampStore, (s) => s.armed?.id === tool.id);
+  const armed = stamping && mine;
+  const name = tool.device ? `${tool.name} (${tool.device.group}: ${tool.device.label})` : tool.name;
+  return (
+    <li className="min-w-0">
+      <button
+        type="button"
+        data-testid="tool"
+        aria-pressed={armed}
+        aria-disabled={reason !== null || undefined}
+        aria-label={name}
+        title={reason ? `${name} — ${reason}` : name}
+        draggable={reason === null}
+        onClick={() => {
+          if (reason === null) void arm(tool);
+        }}
+        onDragStart={(e) => {
+          const stamp = reason === null ? stampOf(tool, tool.imageUrl ? cachedToolImage(tool.imageUrl) : null) : null;
+          if (!stamp) return e.preventDefault();
+          e.dataTransfer.setData(TOOL_DRAG_TYPE, tool.id);
+          e.dataTransfer.effectAllowed = "copy";
+          setDraggedStamp(stamp);
+        }}
+        onDragEnd={() => setDraggedStamp(null)}
+        className={cx(
+          "flex w-full min-w-0 flex-col items-center gap-1 rounded-[2px] p-1 focus-ring",
+          reason === null ? "hover:bg-surface-2" : "cursor-not-allowed opacity-50",
+          armed && "bg-surface-2 ring-2 ring-accent",
+        )}
+      >
+        <ToolPreview content={tool.content} imageUrl={tool.imageUrl} />
+        <span className="w-full truncate text-center text-ws-sm">{tool.name}</span>
+        {tool.device ? <span className="w-full truncate text-center text-ws-xs text-muted">{tool.device.label}</span> : null}
+      </button>
+    </li>
+  );
+}
+
 function NameField({ initial, label, onDone }: { initial: string; label: string; onDone: (name: string | null) => void }) {
   const [draft, setDraft] = useState(initial);
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
@@ -202,6 +280,7 @@ export function ToolChestPanel() {
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="tool-chest">
       <div className="flex flex-col gap-2 border-b border-border px-3 py-2">
+        <FirstUseTip id="tool-chest">{TOOL_CHEST_TIP}</FirstUseTip>
         <input
           type="search"
           aria-label="Search tools"
@@ -269,16 +348,7 @@ export function ToolChestPanel() {
                 ) : (
                   <ul className="grid grid-cols-[repeat(auto-fill,minmax(72px,1fr))] gap-1" aria-label={`${set.name} tools`}>
                     {set.tools.map((tool) => (
-                      <li
-                        key={tool.id}
-                        data-testid="tool"
-                        title={tool.device ? `${tool.name} (${tool.device.group}: ${tool.device.label})` : tool.name}
-                        className="flex min-w-0 flex-col items-center gap-1 rounded-[2px] p-1 hover:bg-surface-2"
-                      >
-                        <ToolPreview content={tool.content} imageUrl={tool.imageUrl} />
-                        <span className="w-full truncate text-center text-ws-sm">{tool.name}</span>
-                        {tool.device ? <span className="w-full truncate text-center text-ws-xs text-muted">{tool.device.label}</span> : null}
-                      </li>
+                      <ToolTile key={tool.id} tool={tool} />
                     ))}
                   </ul>
                 )}
