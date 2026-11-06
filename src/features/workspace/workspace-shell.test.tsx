@@ -215,7 +215,7 @@ describe("WorkspaceShell layout", () => {
     setViewport(1366, 768);
     setup();
     expect(screen.queryByRole("complementary", { name: "Tool Chest" })).not.toBeInTheDocument();
-    expect(screen.getByText("Markups you add appear here.").parentElement).toHaveAttribute("hidden");
+    expect(screen.getByText("Open a drawing to see its markups.").parentElement).toHaveAttribute("hidden");
   });
 });
 
@@ -242,12 +242,12 @@ describe("panels", () => {
 
     render(<WorkspaceShell user={USER} />);
     expect(screen.getByRole("complementary", { name: "Properties" })).toBeInTheDocument();
-    expect(screen.getByText("Markups you add appear here.").parentElement).toHaveAttribute("hidden");
+    expect(screen.getByText("Open a drawing to see its markups.").parentElement).toHaveAttribute("hidden");
   });
 
   it("Alt+L twice in one frame toggles twice; a held Alt+X toggles once", () => {
     setup();
-    const body = () => screen.getByText("Markups you add appear here.").parentElement;
+    const body = () => screen.getByText("Open a drawing to see its markups.").parentElement;
     fireEvent.keyDown(window, { altKey: true, code: "KeyL", key: "l" });
     fireEvent.keyDown(window, { altKey: true, code: "KeyL", key: "l" });
     expect(body()).not.toHaveAttribute("hidden");
@@ -308,7 +308,7 @@ describe("panels", () => {
     await user.keyboard("{Shift>}{F4}{/Shift}");
     expect(screen.queryByRole("complementary", { name: "Tool Chest" })).not.toBeInTheDocument();
     fireEvent.keyDown(window, { altKey: true, code: "KeyL", key: "l" });
-    expect(screen.getByText("Markups you add appear here.").parentElement).not.toHaveAttribute("hidden");
+    expect(screen.getByText("Open a drawing to see its markups.").parentElement).not.toHaveAttribute("hidden");
   });
 });
 

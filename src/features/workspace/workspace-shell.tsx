@@ -15,7 +15,7 @@ import { CalibrateDialog, ScalePrompt, VerifyDialog, openCalibrate, useCalibrati
 import { redoActive, undoActive } from "@/features/editor";
 import { useFirstUseTipsPersistence } from "@/features/tips";
 import { chooseTheme, useWorkspaceTheme } from "@/features/appearance/theme-store";
-import { LayersPanel, MarkupContextMenu, MeasurementsPanel, PropertiesPanel, TextEditor, armArea, armCount, armLength, armPolylength, useEditorSession, useMeasureTools } from "@/features/editor";
+import { LayersPanel, MarkupContextMenu, MarkupsListPanel, MeasurementsPanel, PropertiesPanel, TextEditor, armArea, armCount, armLength, armPolylength, useEditorSession, useMeasureTools } from "@/features/editor";
 import {
   DocumentTabs,
   DocumentViewer,
@@ -32,7 +32,7 @@ import {
   viewerTabs,
 } from "@/features/viewer";
 
-import { AccountMenu, type WorkspaceUser } from "./account-menu";
+import { AccountMenu, displayName, type WorkspaceUser } from "./account-menu";
 import { EmptyWorkspace } from "./empty-workspace";
 import { LayoutProvider, useLayout, useLayoutStore } from "./layout-context";
 import { BOTTOM_SIZE, LEFT_SIZE } from "./layout-persistence";
@@ -284,7 +284,7 @@ function ShellBody({ user, initialTheme }: { user: WorkspaceUser; initialTheme: 
           minSize={BOTTOM_SIZE.min}
           maxSize={BOTTOM_SIZE.max}
         >
-          <p className="p-3 text-ws-md text-muted">Markups you add appear here.</p>
+          <MarkupsListPanel author={displayName(user)} />
         </Panel>
       </div>
 

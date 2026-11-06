@@ -1,6 +1,6 @@
 # Story 6.6: My markup sets
 
-Status: review
+Status: done
 
 ## Story
 
@@ -43,7 +43,7 @@ Claude Opus 5.5
 
 ### Completion Notes List
 
-- Unit: markup-set/workspace/viewer/core markup-set 361 pass. e2e (dev): open-markup-set, other-version, restore-markups, workspace-shell, document-tabs, open-drawing pass.
+- CI green (1749e13). Unit: markup-set/workspace/viewer/core markup-set 361 pass. e2e (dev): open-markup-set, other-version, restore-markups, workspace-shell, document-tabs, open-drawing pass.
 
 ### File List
 
