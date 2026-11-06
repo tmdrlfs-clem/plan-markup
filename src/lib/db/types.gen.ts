@@ -197,6 +197,11 @@ isOneToOne: false
 { Args: { "p_filename": string,"p_pages": Json,"p_sha256": string }; Returns: {
               "drawing_id": string,"file_id": string,"page_ids": (string)[]
             }[]
+                           },
+"list_markup_sets":
+{ Args: Record<PropertyKey, never>; Returns: {
+              "drawing_id": string,"filename": string,"last_modified": string,"markup_count": number,"page_count": number,"sha256": string,"title": string
+            }[]
                            }
           }
           Enums: {

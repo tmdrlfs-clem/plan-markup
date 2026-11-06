@@ -45,6 +45,7 @@ import { useFileDropGuard } from "./use-file-drop-guard";
 import { useRegionCycling } from "./use-region-cycling";
 import { useWorkspaceShortcuts } from "./use-workspace-shortcuts";
 import { SignatureDialog, openSignatureDialog } from "@/features/signature/signature-dialog";
+import { MarkupSetListDialog, useOtherVersionHint } from "@/features/markup-set/markup-sets-ui";
 import { useMarkupSetSync } from "@/features/markup-set/sync";
 
 import { WorkspaceMenuBar } from "./workspace-menu-bar";
@@ -65,6 +66,8 @@ export function WorkspaceShell({ user, theme = null }: { user: WorkspaceUser; th
   // Story 4.5: the editing session (markups, calibrations, undo) of this user's documents survives a reload.
   useEditorSession(user.id);
   useMarkupSetSync(user.id);
+  // Story 6.5: markups on another version of the shown file.
+  useOtherVersionHint();
   // Stories 4.5 / 4.6: the measuring tools paint and place through the viewer's markup layers.
   useMeasureTools();
   return (
@@ -72,6 +75,7 @@ export function WorkspaceShell({ user, theme = null }: { user: WorkspaceUser; th
       <TooltipProvider>
         <ShellBody user={user} initialTheme={theme} />
         <Toaster />
+        <MarkupSetListDialog />
       </TooltipProvider>
     </LayoutProvider>
   );

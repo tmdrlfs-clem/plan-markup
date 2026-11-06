@@ -103,3 +103,37 @@ export async function loadMarkupSet(client: SupabaseClient<Database>, sha256: st
 
   return { ids: { drawingId, fileId, pageIds }, markups, calibrations };
 }
+
+/** Stories 6.5 / 6.6 (FR51): one of the caller's markup sets as listed. */
+export type MarkupSetSummary = {
+  drawingId: string;
+  title: string;
+  filename: string;
+  sha256: string;
+  pageCount: number;
+  markupCount: number;
+  /** ISO time of the newest change to the set, its markups or calibrations. */
+  lastModified: string;
+};
+
+/** The caller's markup sets, newest change first (at most 1000). */
+export async function listMarkupSets(client: SupabaseClient<Database>): Promise<MarkupSetSummary[]> {
+  const { data, error } = await client.rpc("list_markup_sets");
+  if (error) throw new Error(`list_markup_sets failed: ${error.code ?? "unknown"}`);
+  return (data ?? []).map((r) => ({
+    drawingId: r.drawing_id,
+    title: r.title,
+    filename: r.filename,
+    sha256: r.sha256,
+    pageCount: r.page_count,
+    markupCount: r.markup_count,
+    lastModified: r.last_modified,
+  }));
+}
+
+/** Story 6.5 (FR81): whether the caller has a set of a file with this name but other bytes. */
+export async function hasOtherVersion(client: SupabaseClient<Database>, sha256: string, filename: string): Promise<boolean> {
+  const { data, error } = await client.from("drawing_files").select("id").eq("filename", filename).neq("sha256", sha256).limit(1);
+  if (error) throw new Error(`other version lookup failed: ${error.code ?? "unknown"}`);
+  return (data ?? []).length > 0;
+}

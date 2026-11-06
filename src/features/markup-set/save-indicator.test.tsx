@@ -5,7 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 const m = vi.hoisted(() => ({ saveNow: vi.fn() }));
-vi.mock("./actions", () => ({ ensureMarkupSet: vi.fn(), saveSetCalibrations: vi.fn(), applyMarkupOps: vi.fn() }));
+vi.mock("./actions", () => ({ ensureMarkupSet: vi.fn(), saveSetCalibrations: vi.fn(), applyMarkupOps: vi.fn(), loadMarkupSet: vi.fn(), hasMarkupsOnOtherVersion: vi.fn(), listMyMarkupSets: vi.fn() }));
 vi.mock("./sync", async (importOriginal) => ({ ...(await importOriginal<typeof import("./sync")>()), saveNow: m.saveNow }));
 
 import { TooltipProvider } from "@/components/ui/tooltip";

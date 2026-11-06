@@ -422,6 +422,41 @@ $_$;
 
 ALTER FUNCTION "public"."ensure_drawing_file"("p_sha256" "text", "p_filename" "text", "p_pages" "jsonb") OWNER TO "postgres";
 
+
+CREATE OR REPLACE FUNCTION "public"."list_markup_sets"() RETURNS TABLE("drawing_id" "uuid", "title" "text", "filename" "text", "sha256" "text", "page_count" integer, "markup_count" integer, "last_modified" timestamp with time zone)
+    LANGUAGE "sql" STABLE
+    SET "search_path" TO ''
+    AS $$
+  select d.id,
+         d.title,
+         f.filename,
+         f.sha256,
+         f.page_count,
+         (select count(*)::integer from public.markups m where m.drawing_id = d.id and m.deleted_at is null),
+         greatest(
+           d.updated_at,
+           (select max(m.updated_at) from public.markups m where m.drawing_id = d.id),
+           (select max(c.updated_at) from public.calibrations c
+              join public.pages p on p.id = c.page_id
+              join public.drawing_files pf on pf.id = p.drawing_file_id
+             where pf.drawing_id = d.id)
+         )
+  from public.drawings d
+  join lateral (
+    select f.filename, f.sha256, f.page_count
+    from public.drawing_files f
+    where f.drawing_id = d.id
+    order by f.created_at
+    limit 1
+  ) f on true
+  where d.owner_id = (select auth.uid())
+  order by 7 desc, d.id
+  limit 1000;
+$$;
+
+
+ALTER FUNCTION "public"."list_markup_sets"() OWNER TO "postgres";
+
 SET default_tablespace = '';
 
 SET default_table_access_method = "heap";
@@ -656,6 +691,10 @@ ALTER TABLE ONLY "public"."profiles"
 
 ALTER TABLE ONLY "public"."signatures"
     ADD CONSTRAINT "signatures_pkey" PRIMARY KEY ("user_id");
+
+
+
+CREATE INDEX "drawing_files_filename_idx" ON "public"."drawing_files" USING "btree" ("filename");
 
 
 
@@ -922,6 +961,12 @@ GRANT ALL ON FUNCTION "public"."consume_rate_limit"("p_bucket" "text", "p_key_ha
 REVOKE ALL ON FUNCTION "public"."ensure_drawing_file"("p_sha256" "text", "p_filename" "text", "p_pages" "jsonb") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."ensure_drawing_file"("p_sha256" "text", "p_filename" "text", "p_pages" "jsonb") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."ensure_drawing_file"("p_sha256" "text", "p_filename" "text", "p_pages" "jsonb") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."list_markup_sets"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."list_markup_sets"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."list_markup_sets"() TO "service_role";
 
 
 

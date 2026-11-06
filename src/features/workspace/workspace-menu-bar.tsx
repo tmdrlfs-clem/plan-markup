@@ -21,6 +21,8 @@ import { TAB_SHORTCUTS } from "@/core/documents/tabs";
 import { calibrationOf, openCalibrate, openVerify } from "@/features/calibration";
 import { activeUndoLabels, hasClipboard, redoActive, undoActive, editorStore, useSelectionState } from "@/features/editor";
 import { hasDocument, tabsStore, viewerCommands, viewerStore, viewerTabs, type SelectionCommand, type ViewerCommand } from "@/features/viewer";
+import { openMarkupSetList } from "@/features/markup-set/markup-sets-ui";
+import { saveNow } from "@/features/markup-set/sync";
 import { THEMES, THEME_LABELS, isTheme, type Theme } from "@/lib/theme";
 
 import { useLayout } from "./layout-context";
@@ -177,12 +179,18 @@ export function WorkspaceMenuBar({ onOpen, onSignOut, theme, onThemeChange, onAc
             Open…
           </MenuBarItem>
           <TabItem label="Close drawing" shortcut={TAB_SHORTCUTS.close} run={() => viewerTabs.closeActive()} minTabs={1} />
-          <Disabled label="Save" shortcut="Ctrl+S" />
+          {/* Story 6.3: saving is automatic; Save sends what waits now. */}
+          <MenuBarItem shortcut="Ctrl+S" onSelect={() => saveNow()}>
+            Save
+          </MenuBarItem>
           <Disabled label="Save as…" shortcut="Ctrl+Shift+S" />
           <Disabled label="Print…" shortcut="Ctrl+P" />
           <MenuBarSeparator />
           <Disabled label="Flatten…" shortcut="Ctrl+Shift+M" />
           <Disabled label="Export…" />
+          <MenuBarSeparator />
+          {/* Stories 6.5 / 6.6. */}
+          <MenuBarItem onSelect={() => openMarkupSetList()}>Markup sets…</MenuBarItem>
           <MenuBarSeparator />
           <MenuBarItem icon={LogOut} onSelect={onSignOut}>
             Sign out

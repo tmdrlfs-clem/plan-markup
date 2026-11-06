@@ -1,6 +1,6 @@
 # Story 6.4: Restore markups when reopening the same PDF
 
-Status: review
+Status: done
 
 ## Story
 

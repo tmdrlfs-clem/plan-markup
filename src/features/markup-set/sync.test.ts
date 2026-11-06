@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("./actions", () => ({ ensureMarkupSet: vi.fn(), saveSetCalibrations: vi.fn(), applyMarkupOps: vi.fn() }));
+vi.mock("./actions", () => ({ ensureMarkupSet: vi.fn(), saveSetCalibrations: vi.fn(), applyMarkupOps: vi.fn(), loadMarkupSet: vi.fn(), hasMarkupsOnOtherVersion: vi.fn(), listMyMarkupSets: vi.fn() }));
 
 import type { Calibration } from "@/core/calibration/calibration";
 import type { DocOp } from "@/core/commands/ops";
@@ -413,5 +413,34 @@ describe("restore when reopening the same PDF (Story 6.4)", () => {
     await second.sync.restore(SHA);
     expect(second.deps.apply).toHaveBeenCalled();
     expect(second.state.list).toEqual([a]);
+  });
+});
+
+describe("another version of the file (Story 6.5)", () => {
+  it("no set for these bytes but one for this filename: the user is told; nothing is moved", async () => {
+    const { state, deps, sync } = setup();
+    const otherVersion = vi.fn(async () => ({ ok: true as const, data: true }));
+    const onOtherVersion = vi.fn();
+    const withHint = createMarkupSetSync({ ...deps, otherVersion, onOtherVersion });
+    await withHint.restore(SHA);
+    expect(otherVersion).toHaveBeenCalledWith({ sha256: SHA, filename: "L17.pdf" });
+    expect(onOtherVersion).toHaveBeenCalledWith(SHA);
+    expect(deps.setMarkups).not.toHaveBeenCalled();
+    expect(state.list).toEqual([]);
+    sync.dispose();
+    withHint.dispose();
+  });
+
+  it("no other version: nothing is said; a set for these bytes never asks", async () => {
+    const { deps } = setup();
+    const otherVersion = vi.fn(async () => ({ ok: true as const, data: false }));
+    const onOtherVersion = vi.fn();
+    await createMarkupSetSync({ ...deps, otherVersion, onOtherVersion }).restore(SHA);
+    expect(onOtherVersion).not.toHaveBeenCalled();
+    const found = setup();
+    found.deps.load.mockResolvedValue({ ok: true, data: { ids: IDS, markups: [], calibrations: {} } });
+    const asked = vi.fn(async () => ({ ok: true as const, data: true }));
+    await createMarkupSetSync({ ...found.deps, otherVersion: asked }).restore(SHA);
+    expect(asked).not.toHaveBeenCalled();
   });
 });

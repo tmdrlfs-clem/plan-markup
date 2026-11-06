@@ -39,7 +39,8 @@ import type { Result, ResultCode } from "@/lib/result";
 import { editorStore, layersOf, setDocLayers, setDocMarkups, subscribeAppliedOps } from "@/features/editor";
 import { viewerStore } from "@/features/viewer";
 
-import { applyMarkupOps, ensureMarkupSet, loadMarkupSet, saveSetCalibrations } from "./actions";
+import { applyMarkupOps, ensureMarkupSet, hasMarkupsOnOtherVersion, loadMarkupSet, saveSetCalibrations } from "./actions";
+import { markOtherVersion } from "./markup-sets-ui";
 
 /** Changes wait this long for more before they are queued and sent. */
 export const SAVE_DELAY_MS = 300;
@@ -118,6 +119,9 @@ export type SyncDeps = {
   setCalibrations: (documentId: string, calibrations: Readonly<Record<string, Calibration>>) => void;
   layers: (documentId: string) => readonly Layer[];
   setLayers: (documentId: string, layers: readonly Layer[]) => void;
+  /** Story 6.5: whether a set has a file of this name with other bytes, and what to do when so. */
+  otherVersion?: (input: { sha256: string; filename: string }) => Promise<Result<boolean>>;
+  onOtherVersion?: (documentId: string) => void;
   queue: OpQueueBackend | Promise<OpQueueBackend>;
   snapshots?: SnapshotStore;
   /** False when the browser says it is offline. */
@@ -465,6 +469,15 @@ export function createMarkupSetSync(deps: SyncDeps): MarkupSetSync {
     if (await pendingFor(queue, documentId)) await flush();
     if (await pendingFor(queue, documentId)) return;
     const result = await deps.load(documentId).catch(() => null);
+    if (result?.ok && result.data === null) {
+      // Story 6.5 (FR81): no set for these bytes; one for this filename tells the user (nothing is moved).
+      const viewer = deps.viewer();
+      if (deps.otherVersion && viewer.documentId === documentId && viewer.fileName) {
+        const other = await deps.otherVersion({ sha256: documentId, filename: setFilename(viewer.fileName) }).catch(() => null);
+        if (other?.ok && other.data) deps.onOtherVersion?.(documentId);
+      }
+      return;
+    }
     if (!result?.ok || result.data === null || !fresh()) return;
     const set = result.data;
     sets.set(documentId, Promise.resolve(set.ids));
@@ -575,6 +588,8 @@ export function useMarkupSetSync(userId: string): void {
         })),
       layers: (documentId) => layersOf(editorStore.getState(), documentId),
       setLayers: setDocLayers,
+      otherVersion: hasMarkupsOnOtherVersion,
+      onOtherVersion: markOtherVersion,
       queue: openOpQueue(),
       snapshots: sessionSnapshots(userId),
       online: () => (typeof navigator === "undefined" ? true : navigator.onLine),
