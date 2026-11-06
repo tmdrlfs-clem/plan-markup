@@ -12,15 +12,24 @@
 // extends), Home / End the row's first / last cell, Ctrl+Home / Ctrl+End the
 // first / last row, Page Up / Page Down a screen, Space selects (Ctrl+Space
 // toggles).
+//
+// Story 6.8 (FR46): a header click sorts (ascending, descending, none); the
+// quick filter needs every word somewhere in a row; Filter adds column filters
+// (type, page, colour, layer). Active filters show as removable chips, and the
+// count reads "Showing 24 of 312". The view is the session's, for every
+// document (D1).
 
 import {
   Angle,
+  ArrowDown,
+  ArrowUp,
   ArrowUpRight,
   Circle,
   Cloud,
   CloudCog,
   Diameter,
   Eraser,
+  Filter,
   Hash,
   Hexagon,
   Highlighter,
@@ -41,15 +50,35 @@ import {
   Type,
   TypeOutline,
   Underline,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { useStore } from "zustand";
+import { createStore } from "zustand/vanilla";
 
+import { Button } from "@/components/ui/button";
 import { cx } from "@/components/ui/cx";
+import { Menu, MenuCheckboxItem, MenuContent, MenuSub, MenuSubContent, MenuSubTrigger, MenuTrigger } from "@/components/ui/menu";
 import { markupBounds } from "@/core/markup/geometry";
 import { withGroups } from "@/core/markup/arrange";
-import { markupListRows, visibleRange, type ListPage, type MarkupListRow } from "@/core/markup/markup-list";
+import {
+  EMPTY_VIEW,
+  FILTER_KEYS,
+  FILTER_LABELS,
+  applyListView,
+  countText,
+  filterOptions,
+  isFiltered,
+  markupListRows,
+  nextSort,
+  visibleRange,
+  type FilterKey,
+  type ListPage,
+  type ListView,
+  type MarkupListRow,
+  type SortKey,
+} from "@/core/markup/markup-list";
 import { SUBJECT_NAMES } from "@/core/markup/properties";
 import { pageIdOf } from "@/core/calibration/calibration";
 import { sheetLabelOf } from "@/core/pdf/sheet-label";
@@ -90,7 +119,7 @@ const TYPE_ICONS: Record<MarkupType, LucideIcon> = {
   eraser: Eraser,
 };
 
-type Column = { key: string; label: string; width: string; cell: (row: MarkupListRow, ctx: CellContext) => React.ReactNode; title?: (row: MarkupListRow) => string };
+type Column = { key: string; label: string; width: string; sort?: SortKey; cell: (row: MarkupListRow, ctx: CellContext) => React.ReactNode; title?: (row: MarkupListRow) => string };
 type CellContext = { author: string };
 
 /** "7 Nov 2026, 14:05" in the user's locale. */
@@ -117,17 +146,19 @@ export const MARKUP_LIST_COLUMNS: readonly Column[] = [
       );
     },
     title: (row) => SUBJECT_NAMES[row.type],
+    sort: "type",
   },
-  { key: "subject", label: "Subject", width: "minmax(120px, 2fr)", cell: (row) => row.subject, title: (row) => row.subject },
-  { key: "page", label: "Page", width: "minmax(64px, 1fr)", cell: (row) => row.page, title: (row) => row.page },
+  { key: "subject", label: "Subject", width: "minmax(120px, 2fr)", sort: "subject", cell: (row) => row.subject, title: (row) => row.subject },
+  { key: "page", label: "Page", width: "minmax(64px, 1fr)", sort: "page", cell: (row) => row.page, title: (row) => row.page },
   { key: "comments", label: "Comments", width: "80px", cell: () => NONE },
-  { key: "date", label: "Date", width: "minmax(132px, 1fr)", cell: (row) => when(row.date) },
+  { key: "date", label: "Date", width: "minmax(132px, 1fr)", sort: "date", cell: (row) => when(row.date) },
   { key: "author", label: "Author", width: "minmax(96px, 1fr)", cell: (_row, ctx) => ctx.author, title: () => "" },
   { key: "status", label: "Status", width: "72px", cell: () => NONE },
   {
     key: "color",
     label: "Colour",
     width: "84px",
+    sort: "color",
     cell: (row) => (
       <>
         <span aria-hidden="true" className="inline-block size-3 shrink-0 rounded-[2px] border border-strong" style={{ backgroundColor: row.color }} />
@@ -135,11 +166,31 @@ export const MARKUP_LIST_COLUMNS: readonly Column[] = [
       </>
     ),
   },
-  { key: "layer", label: "Layer", width: "minmax(72px, 1fr)", cell: (row) => row.layer, title: (row) => row.layer },
-  { key: "value", label: "Measurement", width: "minmax(96px, 1fr)", cell: (row) => <span className="num">{row.value}</span> },
+  { key: "layer", label: "Layer", width: "minmax(72px, 1fr)", sort: "layer", cell: (row) => row.layer, title: (row) => row.layer },
+  { key: "value", label: "Measurement", width: "minmax(96px, 1fr)", sort: "value", cell: (row) => <span className="num">{row.value}</span> },
 ];
 
 const TEMPLATE = MARKUP_LIST_COLUMNS.map((c) => c.width).join(" ");
+
+/** Story 6.8: the list's sort and filters this session (D1: one view for every document). */
+export const markupListView = createStore<ListView>(() => EMPTY_VIEW);
+
+function toggleFilter(key: FilterKey, value: string, on: boolean): void {
+  markupListView.setState((v) => {
+    const current = v.filters[key] ?? [];
+    const next = on ? [...current.filter((x) => x !== value), value] : current.filter((x) => x !== value);
+    return { filters: { ...v.filters, [key]: next } };
+  });
+}
+
+function clearFilter(key: FilterKey): void {
+  markupListView.setState((v) => ({ filters: { ...v.filters, [key]: [] } }));
+}
+
+/** Clears the filters and the quick filter (the sort stays). */
+export function clearListFilters(): void {
+  markupListView.setState({ filters: {}, quick: "" });
+}
 
 /** Selects `ids` of `row`'s page (showing that page first when another is shown); with their groups. */
 function selectOnPage(row: MarkupListRow, ids: readonly string[], rows: readonly MarkupListRow[]): void {
@@ -178,6 +229,9 @@ export function MarkupsListPanel({ author, emptyText = "Markups you add appear h
     return markupListRows(markups, documentId, listPages, layers);
   }, [documentId, pages, calibrations, pageLabels, sheetLabels, markups, layers]);
 
+  const view = useStore(markupListView);
+  const visible = useMemo(() => applyListView(rows, view), [rows, view]);
+
   if (!shown || !documentId) return <p className="p-3 text-ws-md text-muted">{noDrawingText}</p>;
   if (rows.length === 0) {
     return (
@@ -186,10 +240,97 @@ export function MarkupsListPanel({ author, emptyText = "Markups you add appear h
       </p>
     );
   }
-  return <MarkupGrid rows={rows} author={author} />;
+  const filtered = isFiltered(view);
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <ListToolbar rows={rows} view={view} count={countText(visible.length, rows.length, filtered)} />
+      {visible.length === 0 ? (
+        <div className="flex items-center gap-2 p-3 text-ws-md text-muted" data-testid="markups-list-no-match">
+          <span>No markups match the filters.</span>
+          <Button size="sm" onClick={clearListFilters}>
+            Clear filters
+          </Button>
+        </div>
+      ) : (
+        <MarkupGrid rows={visible} author={author} sort={view.sort} />
+      )}
+    </div>
+  );
 }
 
-function MarkupGrid({ rows, author }: { rows: readonly MarkupListRow[]; author: string }) {
+/** The quick filter, the Filter menu, the active filters as chips and the count. */
+function ListToolbar({ rows, view, count }: { rows: readonly MarkupListRow[]; view: ListView; count: string }) {
+  const chips = FILTER_KEYS.filter((k) => (view.filters[k]?.length ?? 0) > 0);
+  return (
+    <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-2 py-1" role="toolbar" aria-label="Markups list filters">
+      <input
+        type="search"
+        aria-label="Quick filter"
+        placeholder="Filter markups"
+        value={view.quick}
+        onChange={(event) => markupListView.setState({ quick: event.target.value })}
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && view.quick !== "") {
+            event.stopPropagation();
+            markupListView.setState({ quick: "" });
+          }
+        }}
+        className="h-6 w-48 rounded-sm border border-strong bg-surface-2 px-2 text-ws-md text-text placeholder:text-muted focus-ring"
+      />
+      <Menu>
+        <MenuTrigger asChild>
+          <Button size="sm">
+            <Filter size={14} aria-hidden="true" />
+            Filter
+          </Button>
+        </MenuTrigger>
+        <MenuContent align="start">
+          {FILTER_KEYS.map((key) => (
+            <MenuSub key={key}>
+              <MenuSubTrigger>{FILTER_LABELS[key]}</MenuSubTrigger>
+              <MenuSubContent className="max-h-80 overflow-y-auto">
+                {filterOptions(rows, key).map((value) => (
+                  <MenuCheckboxItem
+                    key={value}
+                    checked={view.filters[key]?.includes(value) ?? false}
+                    onCheckedChange={(on) => toggleFilter(key, value, on === true)}
+                    onSelect={(event) => event.preventDefault()}
+                  >
+                    {value}
+                  </MenuCheckboxItem>
+                ))}
+              </MenuSubContent>
+            </MenuSub>
+          ))}
+        </MenuContent>
+      </Menu>
+      {view.quick.trim() !== "" ? (
+        <Chip label={`“${view.quick.trim()}”`} remove="Remove quick filter" onRemove={() => markupListView.setState({ quick: "" })} />
+      ) : null}
+      {chips.map((key) => (
+        <Chip key={key} label={`${FILTER_LABELS[key]}: ${(view.filters[key] ?? []).join(", ")}`} remove={`Remove ${FILTER_LABELS[key]} filter`} onRemove={() => clearFilter(key)} />
+      ))}
+      <span className="ml-auto text-ws-sm text-muted num" data-testid="markups-list-count" aria-live="polite">
+        {count}
+      </span>
+    </div>
+  );
+}
+
+function Chip({ label, remove, onRemove }: { label: string; remove: string; onRemove: () => void }) {
+  return (
+    <span data-testid="markups-list-chip" className="inline-flex h-6 max-w-64 items-center gap-1 rounded-sm border border-strong bg-surface-2 pl-2 text-ws-sm">
+      <span className="truncate" title={label}>
+        {label}
+      </span>
+      <button type="button" aria-label={remove} title={remove} onClick={onRemove} className="flex size-6 shrink-0 items-center justify-center rounded-sm text-muted hover:text-text focus-ring">
+        <X size={12} aria-hidden="true" />
+      </button>
+    </span>
+  );
+}
+
+function MarkupGrid({ rows, author, sort }: { rows: readonly MarkupListRow[]; author: string; sort: ListView["sort"] }) {
   const selected = useStore(editorStore, (s) => s.selection.ids);
   const scroller = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
@@ -327,11 +468,30 @@ function MarkupGrid({ rows, author }: { rows: readonly MarkupListRow[]; author: 
       className="group relative h-full min-h-0 overflow-auto text-ws-md outline-none"
     >
       <div role="row" aria-rowindex={1} className="sticky top-0 z-10 grid min-w-max border-b border-border bg-surface-2 text-ws-sm text-muted" style={{ gridTemplateColumns: TEMPLATE, height: ROW_HEIGHT }}>
-        {MARKUP_LIST_COLUMNS.map((column) => (
-          <div key={column.key} role="columnheader" className="flex items-center truncate px-2 font-medium">
-            {column.label}
-          </div>
-        ))}
+        {MARKUP_LIST_COLUMNS.map((column) => {
+          const sorted = column.sort && sort?.key === column.sort ? sort.dir : null;
+          return (
+            <div
+              key={column.key}
+              role="columnheader"
+              aria-sort={sorted === "asc" ? "ascending" : sorted === "desc" ? "descending" : column.sort ? "none" : undefined}
+              className="flex min-w-0 items-center font-medium"
+            >
+              {column.sort ? (
+                <button
+                  type="button"
+                  onClick={() => markupListView.setState((v) => ({ sort: nextSort(v.sort, column.sort!) }))}
+                  className="flex h-full w-full min-w-0 items-center gap-1 px-2 text-left hover:text-text"
+                >
+                  <span className="truncate">{column.label}</span>
+                  {sorted === "asc" ? <ArrowUp size={12} aria-hidden="true" /> : sorted === "desc" ? <ArrowDown size={12} aria-hidden="true" /> : null}
+                </button>
+              ) : (
+                <span className="truncate px-2">{column.label}</span>
+              )}
+            </div>
+          );
+        })}
       </div>
       <div style={{ height: rows.length * ROW_HEIGHT, position: "relative" }}>
         {rows.slice(start, end).map((row, i) => {

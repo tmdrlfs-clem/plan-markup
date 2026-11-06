@@ -4,7 +4,9 @@
 // the bottom panel lists both (subject, page, author, value); a click on the
 // canvas marks its row; a row click selects on the canvas (Delete removes it,
 // undo brings it back); Ctrl+click adds; the keyboard moves and selects;
-// double-click zooms to the markup; Alt+L hides and shows the list.
+// double-click zooms to the markup; Alt+L hides and shows the list. Story 6.8:
+// the quick filter (no match → Clear filters), a Type filter chip, the count
+// and a header sort.
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
@@ -142,4 +144,29 @@ test("the Markups List lists, selects with the canvas, zooms and moves by keyboa
   await expect(grid(page)).toBeHidden();
   await page.keyboard.press("Alt+l");
   await expect(grid(page)).toBeVisible();
+
+  // Story 6.8: the quick filter, column filters as chips, the count, and sorting.
+  const count = page.getByTestId("markups-list-count");
+  await expect(count).toHaveText("2 markups");
+  const quick = page.getByRole("searchbox", { name: "Quick filter" });
+  await quick.fill("zzz");
+  await expect(page.getByTestId("markups-list-no-match")).toBeVisible();
+  await expect(count).toHaveText("Showing 0 of 2");
+  await page.getByRole("button", { name: "Clear filters" }).click();
+  await expect(rows(page)).toHaveCount(2);
+  await quick.fill("7056");
+  await expect(count).toHaveText("Showing 2 of 2");
+  await page.getByRole("button", { name: "Remove quick filter" }).click();
+  await page.getByRole("toolbar", { name: "Markups list filters" }).getByRole("button", { name: "Filter" }).click();
+  await page.getByRole("menuitem", { name: "Type" }).click();
+  await page.getByRole("menuitemcheckbox", { name: "Length" }).click();
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("markups-list-chip")).toHaveText("Type: Length");
+  await expect(count).toHaveText("Showing 2 of 2");
+  await page.getByRole("button", { name: "Remove Type filter" }).click();
+  await expect(page.getByTestId("markups-list-chip")).toHaveCount(0);
+  const header = page.getByRole("columnheader", { name: "Measurement" });
+  await header.getByRole("button").click();
+  await expect(header).toHaveAttribute("aria-sort", "ascending");
 });

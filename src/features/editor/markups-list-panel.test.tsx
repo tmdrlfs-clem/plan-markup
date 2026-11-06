@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import "@/test/radix-jsdom";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -10,7 +10,9 @@ import { viewerStore } from "@/features/viewer/viewer-store";
 import { resetViewer } from "@/features/viewer/viewer-tabs";
 
 import { editorStore, resetEditor, setDocMarkups, setSelection } from "./editor-store";
-import { MarkupsListPanel } from "./markups-list-panel";
+import { EMPTY_VIEW } from "@/core/markup/markup-list";
+
+import { MarkupsListPanel, markupListView } from "./markups-list-panel";
 
 const SHEET = { width: 842, height: 595, rotate: 0 };
 
@@ -59,6 +61,7 @@ const rows = () => screen.queryAllByTestId("markups-list-row");
 const selection = () => editorStore.getState().selection.ids;
 
 beforeEach(() => {
+  markupListView.setState(EMPTY_VIEW, true);
   reveal.mockReset();
   goToPage.mockReset();
 });
@@ -161,5 +164,74 @@ describe("Markups List (Story 6.7)", () => {
     expect(selection()).toEqual([list[0].id]);
     fireEvent.keyDown(grid, { key: " ", ctrlKey: true });
     expect([...selection()].sort()).toEqual([list[0].id, list[1].id].sort());
+  });
+});
+
+describe("sort, filter and search (Story 6.8)", () => {
+  const subjects = () => rows().map((r) => r.querySelectorAll("[role='gridcell']")[1].textContent);
+  const count = () => screen.getByTestId("markups-list-count").textContent;
+
+  it("a header click sorts ascending, then descending, then not at all", async () => {
+    const user = setup([line(0, { subject: "b" }), line(1, { subject: "c" }), line(0, { subject: "a" })]);
+    expect(subjects()).toEqual(["b", "a", "c"]);
+    const header = () => screen.getByRole("columnheader", { name: "Subject" });
+    expect(header()).toHaveAttribute("aria-sort", "none");
+    await user.click(within(header()).getByRole("button"));
+    expect(subjects()).toEqual(["a", "b", "c"]);
+    expect(header()).toHaveAttribute("aria-sort", "ascending");
+    await user.click(within(header()).getByRole("button"));
+    expect(subjects()).toEqual(["c", "b", "a"]);
+    expect(header()).toHaveAttribute("aria-sort", "descending");
+    await user.click(within(header()).getByRole("button"));
+    expect(subjects()).toEqual(["b", "a", "c"]);
+    // Columns without data do not sort.
+    expect(screen.getByRole("columnheader", { name: "Comments" })).not.toHaveAttribute("aria-sort");
+    expect(count()).toBe("3 markups");
+  });
+
+  it("the quick filter updates rows at once, shows a removable chip and the count", async () => {
+    const user = setup([line(0, { subject: "Duct run" }), line(0, { subject: "Pipe" }), line(1, { subject: "Duct drop" })]);
+    await user.type(screen.getByRole("searchbox", { name: "Quick filter" }), "duct");
+    expect(subjects()).toEqual(["Duct run", "Duct drop"]);
+    expect(count()).toBe("Showing 2 of 3");
+    expect(screen.getAllByTestId("markups-list-chip").map((c) => c.textContent)).toEqual(["“duct”"]);
+    await user.click(screen.getByRole("button", { name: "Remove quick filter" }));
+    expect(subjects()).toHaveLength(3);
+    expect(screen.getByRole("searchbox", { name: "Quick filter" })).toHaveValue("");
+  });
+
+  it("column filters show as chips; nothing matching offers Clear filters", async () => {
+    const user = setup([line(0), line(1), line(1)]);
+    act(() => markupListView.setState({ filters: { page: ["A-102"] } }));
+    expect(rows()).toHaveLength(2);
+    expect(count()).toBe("Showing 2 of 3");
+    expect(screen.getAllByTestId("markups-list-chip").map((c) => c.textContent)).toEqual(["Page: A-102"]);
+    await user.click(screen.getByRole("button", { name: "Remove Page filter" }));
+    expect(rows()).toHaveLength(3);
+
+    act(() => markupListView.setState({ filters: { type: ["Arrow"] } }));
+    expect(screen.getByTestId("markups-list-no-match")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Clear filters" }));
+    expect(rows()).toHaveLength(3);
+  });
+
+  it("Filter lists each column's values and toggles them", async () => {
+    const user = setup([line(0), line(1)]);
+    await user.click(screen.getByRole("button", { name: "Filter" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Page" }));
+    // The submenu item by keyboard (jsdom has no pointer grace area for submenus).
+    (await screen.findByRole("menuitemcheckbox", { name: "Page 1" })).focus();
+    await user.keyboard(" ");
+    expect(markupListView.getState().filters.page).toEqual(["Page 1"]);
+    expect(rows()).toHaveLength(1);
+  });
+
+  it("selecting a filtered row jumps to the markup's page", async () => {
+    const target = line(1, { subject: "Far" });
+    const user = setup([line(0), target]);
+    await user.type(screen.getByRole("searchbox", { name: "Quick filter" }), "far");
+    await user.click(rows()[0]);
+    expect(goToPage).toHaveBeenCalledWith(1);
+    expect(selection()).toEqual([target.id]);
   });
 });

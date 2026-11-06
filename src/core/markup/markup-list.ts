@@ -7,7 +7,7 @@ import { DEFAULT_PRECISION, formatValue, measurementValue, panelPrecision, type 
 import type { Layer } from "@/core/schema/layer";
 import { isMeasureMarkup, type Markup, type MarkupType } from "@/core/schema/markup";
 
-import { subjectOf } from "./properties";
+import { SUBJECT_NAMES, subjectOf } from "./properties";
 
 export type MarkupListRow = {
   id: string;
@@ -23,6 +23,8 @@ export type MarkupListRow = {
   layer: string;
   /** The measurement value as its caption reads; "" for other markups. */
   value: string;
+  /** Story 6.8: the value as a number for sorting (mm, mm², count or degrees); null without one. */
+  measure: number | null;
   markup: Markup;
 };
 
@@ -51,10 +53,13 @@ export function markupListRows(
     if (pageIndex === null) return;
     const page = pages[pageIndex];
     let value = "";
+    let measure: number | null = null;
     if (isMeasureMarkup(markup)) {
       const unit = page.calibration?.unit ?? "m";
       const units: PanelUnits = { unit, precision: page.calibration ? panelPrecision(unit, page.calibration) : DEFAULT_PRECISION[unit] };
-      value = formatValue(markup.type, measurementValue(markup, { calibration: page.calibration, userUnit: page.userUnit }), units);
+      const v = measurementValue(markup, { calibration: page.calibration, userUnit: page.userUnit });
+      value = formatValue(markup.type, v, units);
+      measure = v.kind === "length" ? v.mm : v.kind === "area" ? v.mm2 : v.kind === "count" ? v.n : v.kind === "angle" ? v.degrees : null;
     }
     rows.push({
       id: markup.id,
@@ -66,6 +71,7 @@ export function markupListRows(
       color: markup.style.color,
       layer: markup.layerId ? (layerNames.get(markup.layerId) ?? "") : "",
       value,
+      measure,
       markup,
     });
   });
@@ -78,4 +84,106 @@ export function visibleRange(scrollTop: number, height: number, rowHeight: numbe
   const first = Math.floor(Math.max(0, scrollTop) / rowHeight);
   const last = Math.ceil((Math.max(0, scrollTop) + Math.max(0, height)) / rowHeight);
   return { start: Math.max(0, first - overscan), end: Math.min(count, last + overscan) };
+}
+
+// ---- Story 6.8 (FR46, UX-DR28): sort, column filters and the quick filter ----
+
+export type SortKey = "type" | "subject" | "page" | "date" | "color" | "layer" | "value";
+export type ListSort = { key: SortKey; dir: "asc" | "desc" } | null;
+export type FilterKey = "type" | "page" | "color" | "layer";
+export type ColumnFilters = Partial<Record<FilterKey, readonly string[]>>;
+export type ListView = { sort: ListSort; filters: ColumnFilters; quick: string };
+
+export const EMPTY_VIEW: ListView = { sort: null, filters: {}, quick: "" };
+export const FILTER_KEYS: readonly FilterKey[] = ["type", "page", "color", "layer"];
+export const FILTER_LABELS: Record<FilterKey, string> = { type: "Type", page: "Page", color: "Colour", layer: "Layer" };
+/** The layer filter's value for markups on no layer. */
+export const NO_LAYER = "No layer";
+
+/** A row's value for column filter `key` (as the filter lists it). */
+export function filterValue(row: MarkupListRow, key: FilterKey): string {
+  switch (key) {
+    case "type":
+      return SUBJECT_NAMES[row.type];
+    case "page":
+      return row.page;
+    case "color":
+      return row.color.toLowerCase();
+    case "layer":
+      return row.layer || NO_LAYER;
+  }
+}
+
+/** The distinct values of `key` in `rows`: pages in page order, the rest alphabetical. */
+export function filterOptions(rows: readonly MarkupListRow[], key: FilterKey): string[] {
+  const seen = new Set<string>();
+  for (const row of rows) seen.add(filterValue(row, key));
+  const values = [...seen];
+  return key === "page" ? values : values.sort((a, b) => a.localeCompare(b));
+}
+
+const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+
+function compare(a: MarkupListRow, b: MarkupListRow, key: SortKey): number {
+  switch (key) {
+    case "type":
+      return collator.compare(SUBJECT_NAMES[a.type], SUBJECT_NAMES[b.type]);
+    case "subject":
+      return collator.compare(a.subject, b.subject);
+    case "page":
+      return a.pageIndex - b.pageIndex;
+    case "date":
+      return a.date < b.date ? -1 : a.date > b.date ? 1 : 0;
+    case "color":
+      return a.color.toLowerCase().localeCompare(b.color.toLowerCase());
+    case "layer":
+      return collator.compare(a.layer, b.layer);
+    case "value":
+      return (a.measure ?? 0) - (b.measure ?? 0);
+  }
+}
+
+/** The quick filter: every word must appear in one of the row's texts (case-insensitive). */
+function matchesQuick(row: MarkupListRow, words: readonly string[]): boolean {
+  if (words.length === 0) return true;
+  const text = [row.subject, SUBJECT_NAMES[row.type], row.page, row.layer, row.value, row.color].join("\n").toLocaleLowerCase();
+  return words.every((w) => text.includes(w));
+}
+
+/**
+ * The rows `view` shows: column filters (any of a column's values; every
+ * filtered column), the quick filter, then the sort (stable; when sorting by
+ * value, rows without one sort last either way). Without a sort, list order.
+ */
+export function applyListView(rows: readonly MarkupListRow[], view: ListView): MarkupListRow[] {
+  const words = view.quick.toLocaleLowerCase().split(/\s+/).filter(Boolean);
+  const active = FILTER_KEYS.filter((k) => (view.filters[k]?.length ?? 0) > 0).map((k) => [k, new Set(view.filters[k])] as const);
+  const shown = rows.filter((row) => active.every(([k, values]) => values.has(filterValue(row, k))) && matchesQuick(row, words));
+  const sort = view.sort;
+  if (!sort) return shown;
+  const sign = sort.dir === "asc" ? 1 : -1;
+  return shown
+    .map((row, i) => ({ row, i }))
+    .sort((a, b) => {
+      if (sort.key === "value" && (a.row.measure === null) !== (b.row.measure === null)) return a.row.measure === null ? 1 : -1;
+      return sign * compare(a.row, b.row, sort.key) || a.i - b.i;
+    })
+    .map(({ row }) => row);
+}
+
+/** The next sort after clicking column `key`'s header: ascending, descending, then none. */
+export function nextSort(current: ListSort, key: SortKey): ListSort {
+  if (!current || current.key !== key) return { key, dir: "asc" };
+  return current.dir === "asc" ? { key, dir: "desc" } : null;
+}
+
+/** "Showing 24 of 312" while something filters, else "312 markups". */
+export function countText(shown: number, total: number, filtered: boolean): string {
+  if (filtered) return `Showing ${shown} of ${total}`;
+  return `${total} ${total === 1 ? "markup" : "markups"}`;
+}
+
+/** Whether `view` filters anything. */
+export function isFiltered(view: ListView): boolean {
+  return view.quick.trim() !== "" || FILTER_KEYS.some((k) => (view.filters[k]?.length ?? 0) > 0);
 }
