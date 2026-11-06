@@ -15,7 +15,7 @@ vi.mock("@/lib/supabase/server", () => ({
   }),
 }));
 
-import { ensureMarkupSet, saveSetCalibrations } from "./actions";
+import { applyMarkupOps, ensureMarkupSet, saveSetCalibrations } from "./actions";
 
 const USER = { id: "11111111-1111-4111-8111-111111111111", email: "a@b.test", name: "A", isPlatformAdmin: false, theme: "blueprint" };
 const SHA = "c".repeat(64);
@@ -54,5 +54,46 @@ describe("markup set actions (Story 6.1)", () => {
     await expect(saveSetCalibrations([{ pageId: PAGE_ID, calibration: CAL }, { pageId: other, calibration: null }])).resolves.toEqual({ ok: true, data: null });
     expect(m.upsert).toHaveBeenCalledWith([expect.objectContaining({ page_id: PAGE_ID, calibration: CAL })]);
     expect(m.deleteIn).toHaveBeenCalledWith("page_id", [other]);
+  });
+});
+
+describe("applyMarkupOps (Story 6.2)", () => {
+  const DRAWING = "01890a5d-ac96-774b-bcce-b302099a8001";
+  const MARKUP = "01890a5d-ac96-774b-bcce-b302099a8002";
+  const OP = "01890a5d-ac96-774b-bcce-b302099a8003";
+  const create = {
+    opId: OP,
+    markupId: MARKUP,
+    kind: "create",
+    type: "line",
+    pageId: PAGE_ID,
+    baseVersion: 0,
+    clientTs: 1,
+    fields: { geometry: { points: [{ x: 0, y: 0 }, { x: 1, y: 1 }] }, style: { color: "#ff0000", width: 1, fontSize: 10 }, props: { createdAt: "x" }, z: 0 },
+  };
+
+  it("sends validated ops to the RPC and returns its results", async () => {
+    m.rpc.mockResolvedValue({ data: [{ opId: OP, markupId: MARKUP, status: "applied", version: 1 }], error: null });
+    await expect(applyMarkupOps({ drawingId: DRAWING, ops: [create] })).resolves.toEqual({ ok: true, data: [{ opId: OP, markupId: MARKUP, status: "applied", version: 1 }] });
+    expect(m.rpc).toHaveBeenCalledWith("apply_markup_ops", { p_drawing_id: DRAWING, p_ops: [create] });
+  });
+
+  it("refuses bad ops before the database (shared schemas, protected fields)", async () => {
+    await expect(applyMarkupOps({ drawingId: DRAWING, ops: [{ ...create, fields: { ...create.fields, version: 2 } }] })).resolves.toMatchObject({ ok: false, code: "INVALID_INPUT" });
+    await expect(applyMarkupOps({ drawingId: DRAWING, ops: [{ ...create, fields: { ...create.fields, geometry: { points: [] } } }] })).resolves.toMatchObject({ ok: false, code: "INVALID_INPUT" });
+    await expect(applyMarkupOps({ drawingId: DRAWING, ops: [] })).resolves.toMatchObject({ ok: false, code: "INVALID_INPUT" });
+    m.getAuthUser.mockResolvedValue(null);
+    await expect(applyMarkupOps({ drawingId: DRAWING, ops: [create] })).resolves.toMatchObject({ ok: false, code: "UNAUTHENTICATED" });
+    expect(m.rpc).not.toHaveBeenCalled();
+  });
+
+  it("maps refusals to codes and other errors to INTERNAL", async () => {
+    m.rpc.mockResolvedValue({ data: null, error: { code: "42501" } });
+    await expect(applyMarkupOps({ drawingId: DRAWING, ops: [create] })).resolves.toMatchObject({ ok: false, code: "FORBIDDEN" });
+    m.rpc.mockResolvedValue({ data: null, error: { code: "PT429" } });
+    await expect(applyMarkupOps({ drawingId: DRAWING, ops: [create] })).resolves.toMatchObject({ ok: false, code: "RATE_LIMITED" });
+    m.rpc.mockResolvedValue({ data: [], error: null });
+    await expect(applyMarkupOps({ drawingId: DRAWING, ops: [create] })).resolves.toMatchObject({ ok: false, code: "INTERNAL" });
+    expect(m.error).toHaveBeenCalledWith("markup_set.ops_failed", expect.anything());
   });
 });

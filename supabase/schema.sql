@@ -29,6 +29,17 @@ COMMENT ON SCHEMA "public" IS 'standard public schema';
 
 
 
+CREATE OR REPLACE FUNCTION "app"."fn_effective_access"("p_drawing_id" "uuid") RETURNS "text"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+  select case when app.fn_owns_drawing(p_drawing_id) then 'owner' end;
+$$;
+
+
+ALTER FUNCTION "app"."fn_effective_access"("p_drawing_id" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "app"."fn_handle_new_user"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO ''
@@ -109,6 +120,189 @@ $$;
 
 
 ALTER FUNCTION "app"."fn_set_updated_at"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."apply_markup_ops"("p_drawing_id" "uuid", "p_ops" "jsonb") RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $_$
+declare
+  c_fields constant text[] := array['geometry', 'style', 'props', 'z'];
+  c_uuid constant text := '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$';
+  v_uid uuid := (select auth.uid());
+  v_access text;
+  v_allowed boolean;
+  v_now timestamptz := pg_catalog.now();
+  v_now_ms bigint := (extract(epoch from pg_catalog.now()) * 1000)::bigint;
+  v_results jsonb := '[]'::jsonb;
+  v_op jsonb;
+  v_fields jsonb;
+  v_key text;
+  v_kind text;
+  v_markup uuid;
+  v_op_id uuid;
+  v_page uuid;
+  v_base integer;
+  v_ts bigint;
+  v_row public.markups%rowtype;
+  v_found boolean;
+  v_version integer;
+  v_fv jsonb;
+  v_write jsonb;
+  v_status text;
+begin
+  if v_uid is null or not app.fn_is_active_user() then
+    raise exception 'not allowed' using errcode = '42501';
+  end if;
+  v_access := app.fn_effective_access(p_drawing_id);
+  if v_access is null or v_access not in ('owner', 'edit') then
+    raise exception 'not allowed' using errcode = '42501';
+  end if;
+  if jsonb_typeof(p_ops) is distinct from 'array' or jsonb_array_length(p_ops) not between 1 and 10000 then
+    raise exception 'invalid ops' using errcode = '22023';
+  end if;
+
+  select r.allowed into v_allowed
+  from public.consume_rate_limit('markup_ops', encode(pg_catalog.sha256(convert_to(v_uid::text, 'UTF8')), 'hex'), 600, 60) r;
+  if not v_allowed then
+    raise exception 'rate limited' using errcode = 'PT429';
+  end if;
+
+  for v_op in select e from jsonb_array_elements(p_ops) e loop
+    -- Shape.
+    if jsonb_typeof(v_op) is distinct from 'object'
+       or coalesce(v_op ->> 'opId', '') !~ c_uuid
+       or coalesce(v_op ->> 'markupId', '') !~ c_uuid
+       or coalesce(v_op ->> 'kind', '') not in ('create', 'update', 'delete')
+       or jsonb_typeof(v_op -> 'baseVersion') is distinct from 'number'
+       or jsonb_typeof(v_op -> 'clientTs') is distinct from 'number' then
+      raise exception 'invalid op' using errcode = '22023';
+    end if;
+    v_kind := v_op ->> 'kind';
+    v_op_id := (v_op ->> 'opId')::uuid;
+    v_markup := (v_op ->> 'markupId')::uuid;
+    v_base := (v_op ->> 'baseVersion')::numeric::integer;
+    v_ts := least((v_op ->> 'clientTs')::numeric::bigint, v_now_ms);
+    if v_base < 0 then
+      raise exception 'invalid op' using errcode = '22023';
+    end if;
+    v_fields := coalesce(v_op -> 'fields', '{}'::jsonb);
+    if jsonb_typeof(v_fields) is distinct from 'object' then
+      raise exception 'invalid op' using errcode = '22023';
+    end if;
+    for v_key in select jsonb_object_keys(v_fields) loop
+      if not v_key = any (c_fields) then
+        raise exception 'protected or unknown field' using errcode = '22023';
+      end if;
+    end loop;
+    if (v_fields ? 'geometry' and jsonb_typeof(v_fields -> 'geometry') <> 'object')
+       or (v_fields ? 'style' and jsonb_typeof(v_fields -> 'style') <> 'object')
+       or (v_fields ? 'props' and jsonb_typeof(v_fields -> 'props') <> 'object')
+       or (v_fields ? 'z' and jsonb_typeof(v_fields -> 'z') <> 'number') then
+      raise exception 'invalid field' using errcode = '22023';
+    end if;
+    if v_kind = 'create' and not (v_fields ?& c_fields) then
+      raise exception 'a create sets every field' using errcode = '22023';
+    end if;
+    if v_kind = 'update' and v_fields = '{}'::jsonb then
+      raise exception 'an update sets a field' using errcode = '22023';
+    end if;
+
+    select * into v_row from public.markups m where m.id = v_markup for update;
+    v_found := found;
+    if v_found and v_row.drawing_id <> p_drawing_id then
+      raise exception 'not allowed' using errcode = '42501';
+    end if;
+    if v_found and v_row.type is distinct from coalesce(v_op ->> 'type', v_row.type) then
+      raise exception 'a markup''s type does not change' using errcode = '22023';
+    end if;
+
+    v_status := 'applied';
+    if v_found and v_row.last_op_id = v_op_id then
+      -- A replay: nothing changes.
+      v_status := case when v_row.deleted_at is null then 'applied' else 'deleted' end;
+      v_version := v_row.version;
+
+    elsif v_kind = 'create' and not v_found then
+      if coalesce(v_op ->> 'type', '') !~ '^[a-z]{1,32}$' or coalesce(v_op ->> 'pageId', '') !~ c_uuid then
+        raise exception 'invalid create' using errcode = '22023';
+      end if;
+      v_page := (v_op ->> 'pageId')::uuid;
+      if not exists (
+        select 1 from public.pages p join public.drawing_files f on f.id = p.drawing_file_id
+        where p.id = v_page and f.drawing_id = p_drawing_id
+      ) then
+        raise exception 'not allowed' using errcode = '42501';
+      end if;
+      v_write := jsonb_build_object('v', 1, 'ts', v_ts);
+      insert into public.markups (id, drawing_id, page_id, type, geometry, style, props, z, version, field_versions,
+                                  author_id, updated_by, last_op_id, created_at, updated_at)
+      values (v_markup, p_drawing_id, v_page, v_op ->> 'type', v_fields -> 'geometry', v_fields -> 'style',
+              v_fields -> 'props', (v_fields ->> 'z')::double precision, 1,
+              jsonb_build_object('geometry', v_write, 'style', v_write, 'props', v_write, 'z', v_write),
+              v_uid, v_uid, v_op_id, v_now, v_now);
+      v_version := 1;
+
+    elsif not v_found then
+      v_status := 'missing';
+      v_version := 0;
+
+    elsif v_row.deleted_at is not null and not (v_kind = 'create' and v_base >= v_row.version) then
+      -- The tombstone wins (a delete again is already done).
+      v_status := 'deleted';
+      v_version := v_row.version;
+
+    elsif v_kind = 'delete' then
+      v_version := v_row.version + 1;
+      update public.markups m
+      set deleted_at = v_now, version = v_version,
+          field_versions = m.field_versions || jsonb_build_object('deleted', jsonb_build_object('v', v_version, 'ts', v_ts)),
+          updated_by = v_uid, last_op_id = v_op_id, updated_at = v_now
+      where m.id = v_markup;
+      v_status := 'deleted';
+
+    else
+      -- An update, a create replayed on a live markup, or a restore (a create
+      -- after a tombstone the client has seen). Restores write every field.
+      v_version := v_row.version + 1;
+      v_fv := v_row.field_versions;
+      v_write := jsonb_build_object('v', v_version, 'ts', v_ts);
+      for v_key in select jsonb_object_keys(v_fields) loop
+        if v_row.deleted_at is null
+           and coalesce((v_fv -> v_key ->> 'v')::integer, 0) > v_base
+           and coalesce((v_fv -> v_key ->> 'ts')::bigint, 0) > v_ts then
+          -- A later write by someone else since the op's base: it is kept.
+          v_fields := v_fields - v_key;
+        else
+          v_fv := v_fv || jsonb_build_object(v_key, v_write);
+        end if;
+      end loop;
+      if v_fields = '{}'::jsonb then
+        v_version := v_row.version;
+        update public.markups m set last_op_id = v_op_id where m.id = v_markup;
+      else
+        update public.markups m
+        set geometry = coalesce(v_fields -> 'geometry', m.geometry),
+            style = coalesce(v_fields -> 'style', m.style),
+            props = coalesce(v_fields -> 'props', m.props),
+            z = coalesce((v_fields ->> 'z')::double precision, m.z),
+            deleted_at = null,
+            version = v_version, field_versions = v_fv,
+            updated_by = v_uid, last_op_id = v_op_id, updated_at = v_now
+        where m.id = v_markup;
+      end if;
+    end if;
+
+    v_results := v_results || jsonb_build_array(jsonb_build_object(
+      'opId', v_op_id, 'markupId', v_markup, 'status', v_status, 'version', v_version));
+  end loop;
+
+  return v_results;
+end;
+$_$;
+
+
+ALTER FUNCTION "public"."apply_markup_ops"("p_drawing_id" "uuid", "p_ops" "jsonb") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."consume_rate_limit"("p_bucket" "text", "p_key_hash" "text", "p_max_hits" integer, "p_window_seconds" integer) RETURNS TABLE("allowed" boolean, "retry_after_seconds" integer)
@@ -310,6 +504,40 @@ COMMENT ON TABLE "public"."drawings" IS 'A markup set (Story 6.1). Owner only.';
 
 
 
+CREATE TABLE IF NOT EXISTS "public"."markups" (
+    "id" "uuid" NOT NULL,
+    "drawing_id" "uuid" NOT NULL,
+    "page_id" "uuid" NOT NULL,
+    "type" "text" NOT NULL,
+    "geometry" "jsonb" NOT NULL,
+    "style" "jsonb" NOT NULL,
+    "props" "jsonb" DEFAULT '{}'::"jsonb" NOT NULL,
+    "z" double precision DEFAULT 0 NOT NULL,
+    "version" integer DEFAULT 1 NOT NULL,
+    "field_versions" "jsonb" DEFAULT '{}'::"jsonb" NOT NULL,
+    "author_id" "uuid" NOT NULL,
+    "updated_by" "uuid",
+    "last_op_id" "uuid",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "deleted_at" timestamp with time zone,
+    CONSTRAINT "markups_field_versions_check" CHECK (("jsonb_typeof"("field_versions") = 'object'::"text")),
+    CONSTRAINT "markups_geometry_check" CHECK ((("jsonb_typeof"("geometry") = 'object'::"text") AND ("pg_column_size"("geometry") <= 4194304))),
+    CONSTRAINT "markups_props_check" CHECK ((("jsonb_typeof"("props") = 'object'::"text") AND ("pg_column_size"("props") <= 16777216))),
+    CONSTRAINT "markups_style_check" CHECK ((("jsonb_typeof"("style") = 'object'::"text") AND ("pg_column_size"("style") <= 2048))),
+    CONSTRAINT "markups_type_check" CHECK (("type" ~ '^[a-z]{1,32}$'::"text")),
+    CONSTRAINT "markups_version_check" CHECK (("version" >= 1)),
+    CONSTRAINT "markups_z_check" CHECK ((("z" >= ('-1000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000'::numeric)::double precision) AND ("z" <= ('1000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000'::numeric)::double precision)))
+);
+
+
+ALTER TABLE "public"."markups" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."markups" IS 'A markup of a markup set (Story 6.2). Written only by public.apply_markup_ops.';
+
+
+
 CREATE TABLE IF NOT EXISTS "public"."pages" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "drawing_file_id" "uuid" NOT NULL,
@@ -406,6 +634,11 @@ ALTER TABLE ONLY "public"."drawings"
 
 
 
+ALTER TABLE ONLY "public"."markups"
+    ADD CONSTRAINT "markups_pkey" PRIMARY KEY ("id");
+
+
+
 ALTER TABLE ONLY "public"."pages"
     ADD CONSTRAINT "pages_index_unique" UNIQUE ("drawing_file_id", "index");
 
@@ -438,6 +671,18 @@ CREATE INDEX "drawings_owner_idx" ON "public"."drawings" USING "btree" ("owner_i
 
 
 
+CREATE INDEX "markups_drawing_page_idx" ON "public"."markups" USING "btree" ("drawing_id", "page_id");
+
+
+
+CREATE INDEX "markups_drawing_updated_idx" ON "public"."markups" USING "btree" ("drawing_id", "updated_at");
+
+
+
+CREATE INDEX "markups_page_idx" ON "public"."markups" USING "btree" ("page_id");
+
+
+
 CREATE OR REPLACE TRIGGER "trg_profiles_updated_at" BEFORE UPDATE ON "public"."profiles" FOR EACH ROW EXECUTE FUNCTION "app"."fn_set_updated_at"();
 
 
@@ -464,6 +709,26 @@ ALTER TABLE ONLY "public"."drawings"
 
 ALTER TABLE ONLY "public"."profiles"
     ADD CONSTRAINT "fk_profiles_user" FOREIGN KEY ("id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."markups"
+    ADD CONSTRAINT "markups_author_id_fkey" FOREIGN KEY ("author_id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."markups"
+    ADD CONSTRAINT "markups_drawing_id_fkey" FOREIGN KEY ("drawing_id") REFERENCES "public"."drawings"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."markups"
+    ADD CONSTRAINT "markups_page_id_fkey" FOREIGN KEY ("page_id") REFERENCES "public"."pages"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."markups"
+    ADD CONSTRAINT "markups_updated_by_fkey" FOREIGN KEY ("updated_by") REFERENCES "auth"."users"("id") ON DELETE SET NULL;
 
 
 
@@ -552,6 +817,13 @@ CREATE POLICY "drawings_update_own" ON "public"."drawings" FOR UPDATE TO "authen
 
 
 
+ALTER TABLE "public"."markups" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "markups_select_access" ON "public"."markups" FOR SELECT TO "authenticated" USING (("app"."fn_effective_access"("drawing_id") IS NOT NULL));
+
+
+
 ALTER TABLE "public"."pages" ENABLE ROW LEVEL SECURITY;
 
 
@@ -608,6 +880,11 @@ GRANT USAGE ON SCHEMA "public" TO "service_role";
 
 
 
+REVOKE ALL ON FUNCTION "app"."fn_effective_access"("p_drawing_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "app"."fn_effective_access"("p_drawing_id" "uuid") TO "authenticated";
+
+
+
 REVOKE ALL ON FUNCTION "app"."fn_handle_new_user"() FROM PUBLIC;
 
 
@@ -628,6 +905,12 @@ GRANT ALL ON FUNCTION "app"."fn_owns_drawing"("p_drawing_id" "uuid") TO "authent
 
 
 REVOKE ALL ON FUNCTION "app"."fn_set_updated_at"() FROM PUBLIC;
+
+
+
+REVOKE ALL ON FUNCTION "public"."apply_markup_ops"("p_drawing_id" "uuid", "p_ops" "jsonb") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."apply_markup_ops"("p_drawing_id" "uuid", "p_ops" "jsonb") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."apply_markup_ops"("p_drawing_id" "uuid", "p_ops" "jsonb") TO "service_role";
 
 
 
@@ -654,6 +937,11 @@ GRANT SELECT,INSERT,DELETE ON TABLE "public"."drawing_files" TO "authenticated";
 
 GRANT ALL ON TABLE "public"."drawings" TO "service_role";
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE "public"."drawings" TO "authenticated";
+
+
+
+GRANT ALL ON TABLE "public"."markups" TO "service_role";
+GRANT SELECT ON TABLE "public"."markups" TO "authenticated";
 
 
 

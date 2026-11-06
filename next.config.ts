@@ -31,6 +31,11 @@ export const nextConfig: NextConfig = {
   outputFileTracingExcludes: {
     "/**": ["./fixtures/private/**/*"],
   },
+  // Story 6.2: markup ops go through a server action; an image markup can be up to
+  // 12 MB of data URL (the sync splits requests at about 4 MB, one op always goes).
+  experimental: {
+    serverActions: { bodySizeLimit: "16mb" },
+  },
   // Server actions: Next.js compares Origin with Host / X-Forwarded-Host and rejects
   // mismatches. Same-origin only, so serverActions.allowedOrigins stays unset. Add the
   // public host here (and to EXTRA_ALLOWED_HOSTS in src/lib/http/origin.ts) only if a

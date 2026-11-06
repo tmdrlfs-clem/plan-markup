@@ -1,6 +1,6 @@
 # Story 6.2: Save markups through the ops RPC
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -25,11 +25,11 @@ so that my work is safe without pressing Save.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Database** — migration `20261107090000_markups.sql` (`app.fn_effective_access`, `markups`, select policy, `public.apply_markup_ops`); `supabase/tests/markups_rls.test.sql`; schema.sql and types.gen.ts regenerated.
-- [ ] **Task 2: Core** — `core/markup-set/markup-ops.ts`: split/join a markup into type/page/geometry/style/props, per-type part schemas, op and input schemas, `diffMarkups` with fractional z; unit tests.
-- [ ] **Task 3: Server** — `lib/db/markups.ts` (casing, error codes); `features/markup-set/actions.ts` `applyMarkupOps`; `serverActions.bodySizeLimit` for image markups.
-- [ ] **Task 4: Client** — `features/markup-set/sync.ts`: markups ops mark the document dirty; diff, send, keep versions; one request in flight per document; unit tests.
-- [ ] **Task 5: Tests** — `e2e/markup-ops.spec.ts` (rows after draw/edit/delete/undo, op round trip p95).
+- [x] **Task 1: Database** — migration `20261107090000_markups.sql` (`app.fn_effective_access`, `markups`, select policy, `public.apply_markup_ops`); `supabase/tests/markups_rls.test.sql`; schema.sql and types.gen.ts regenerated.
+- [x] **Task 2: Core** — `core/markup-set/markup-ops.ts`: split/join a markup into type/page/geometry/style/props, per-type part schemas, op and input schemas, `diffMarkups` with fractional z; unit tests.
+- [x] **Task 3: Server** — `lib/db/markups.ts` (casing, error codes); `features/markup-set/actions.ts` `applyMarkupOps`; `serverActions.bodySizeLimit` for image markups.
+- [x] **Task 4: Client** — `features/markup-set/sync.ts`: markups ops mark the document dirty; diff, send, keep versions; one request in flight per document; unit tests.
+- [x] **Task 5: Tests** — `e2e/markup-ops.spec.ts` (rows after draw/edit/delete/undo, op round trip p95).
 
 ## Dev Notes
 
@@ -56,4 +56,18 @@ Claude Opus 5.5
 
 ### Completion Notes List
 
+- Task 1: `field_versions` holds `{v, ts}` per field; a field is kept only when another write changed it after the op's base at a later (clamped) client time. A create with `baseVersion` ≥ the tombstone's version restores (undo); otherwise the tombstone wins. Replays are recognised by `last_op_id`. pgTAP: 37 tests.
+- Task 2: geometry = `points`, `holes`, `captionOffset`; props = the rest (incl. the client `createdAt`). Part schemas are derived from `markupSchema` (strict), so a props update carries the whole props.
+- Task 4: only what the server confirmed becomes the saved state; a failed or partly sent batch is diffed again with the next change. Requests split at ~4 MB (`serverActions.bodySizeLimit` 16 MB for image markups).
+- Local: unit 1941 pass; db:test 151 pass; e2e markup-ops + markup-set pass (dev server); op round trip median 57 ms, p95 80 ms (n=20).
+- Local Docker note: after Docker Desktop starts, the Supabase containers can come up without published ports (API connection refused); `npm run db:stop && npm run db:start` fixes it.
+
 ### File List
+
+- supabase/migrations/20261107090000_markups.sql (new), supabase/tests/markups_rls.test.sql (new), supabase/schema.sql, src/lib/db/types.gen.ts
+- src/core/markup-set/markup-ops.ts (new), markup-ops.test.ts (new)
+- src/lib/db/markups.ts (new)
+- src/features/markup-set/actions.ts, actions.test.ts, sync.ts, sync.test.ts
+- src/features/workspace/workspace-shell.test.tsx
+- next.config.ts
+- e2e/markup-ops.spec.ts (new)

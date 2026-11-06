@@ -1,8 +1,10 @@
 "use server";
 
+import { applyMarkupOpsSchema, type ApplyMarkupOpsInput, type MarkupOpResult } from "@/core/markup-set/markup-ops";
 import { ensureMarkupSetSchema, saveCalibrationsSchema, type MarkupSetIds } from "@/core/markup-set/markup-set";
 import { getAuthUser } from "@/lib/auth";
 import { ensureDrawingFile, saveCalibrations } from "@/lib/db/drawings";
+import { applyMarkupOps as applyOps, MarkupOpsError } from "@/lib/db/markups";
 import { fail, internalError, type Result } from "@/lib/result";
 import { createServerSupabase } from "@/lib/supabase/server";
 
@@ -35,5 +37,23 @@ export async function saveSetCalibrations(input: unknown): Promise<Result<null>>
     return { ok: true, data: null };
   } catch (error) {
     return internalError("markup_set.calibrations_failed", error);
+  }
+}
+
+/**
+ * Story 6.2 (AR10, NFR24): applies markup ops `{ drawingId, ops }` to the
+ * user's markup set, validated with the shared schemas first. The RPC re-checks
+ * access, rate-limits and applies field-level last-write-wins.
+ */
+export async function applyMarkupOps(input: unknown): Promise<Result<MarkupOpResult[]>> {
+  const user = await getAuthUser();
+  if (!user) return fail("UNAUTHENTICATED");
+  const parsed = applyMarkupOpsSchema.safeParse(input);
+  if (!parsed.success) return fail("INVALID_INPUT");
+  try {
+    return { ok: true, data: await applyOps(await createServerSupabase(), parsed.data as ApplyMarkupOpsInput) };
+  } catch (error) {
+    if (error instanceof MarkupOpsError && error.code !== "INTERNAL") return fail(error.code);
+    return internalError("markup_set.ops_failed", error);
   }
 }

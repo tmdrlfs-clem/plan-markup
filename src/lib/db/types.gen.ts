@@ -24,7 +24,10 @@ export type Database = {
             [_ in never]: never
           }
           Functions: {
-            "fn_is_active_user":
+            "fn_effective_access":
+{ Args: { "p_drawing_id": string }; Returns: string
+                           },
+"fn_is_active_user":
 { Args: Record<PropertyKey, never>; Returns: boolean
                            },
 "fn_is_platform_admin":
@@ -102,6 +105,32 @@ isOneToOne: false
                   Relationships: [
 
                   ]
+                },"markups": {
+                  Row: {
+                    "author_id": string,"created_at": string,"deleted_at": string | null,"drawing_id": string,"field_versions": NonNullable<Json>,"geometry": NonNullable<Json>,"id": string,"last_op_id": string | null,"page_id": string,"props": NonNullable<Json>,"style": NonNullable<Json>,"type": string,"updated_at": string,"updated_by": string | null,"version": number,"z": number
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "author_id": string,"created_at"?: string,"deleted_at"?: string | null,"drawing_id": string,"field_versions"?: NonNullable<Json>,"geometry": NonNullable<Json>,"id": string,"last_op_id"?: string | null,"page_id": string,"props"?: NonNullable<Json>,"style": NonNullable<Json>,"type": string,"updated_at"?: string,"updated_by"?: string | null,"version"?: number,"z"?: number
+                  }
+                  Update: {
+                    "author_id"?: string,"created_at"?: string,"deleted_at"?: string | null,"drawing_id"?: string,"field_versions"?: NonNullable<Json>,"geometry"?: NonNullable<Json>,"id"?: string,"last_op_id"?: string | null,"page_id"?: string,"props"?: NonNullable<Json>,"style"?: NonNullable<Json>,"type"?: string,"updated_at"?: string,"updated_by"?: string | null,"version"?: number,"z"?: number
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "markups_drawing_id_fkey"
+      columns: ["drawing_id"]
+isOneToOne: false
+      referencedRelation: "drawings"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "markups_page_id_fkey"
+      columns: ["page_id"]
+isOneToOne: false
+      referencedRelation: "pages"
+      referencedColumns: ["id"]
+    }
+                  ]
                 },"pages": {
                   Row: {
                     "crop_box": (number)[],"drawing_file_id": string,"height": number,"id": string,"index": number,"rotation": number,"width": number
@@ -156,7 +185,10 @@ isOneToOne: false
             [_ in never]: never
           }
           Functions: {
-            "consume_rate_limit":
+            "apply_markup_ops":
+{ Args: { "p_drawing_id": string,"p_ops": Json }; Returns: Json
+                           },
+"consume_rate_limit":
 { Args: { "p_bucket": string,"p_key_hash": string,"p_max_hits": number,"p_window_seconds": number }; Returns: {
               "allowed": boolean,"retry_after_seconds": number
             }[]
