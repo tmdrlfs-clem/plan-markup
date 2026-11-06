@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import { calibrationSchema, type Calibration } from "@/core/calibration/calibration";
 import { joinMarkup, markupOpResultSchema, type ApplyMarkupOpsInput, type MarkupOpResult } from "@/core/markup-set/markup-ops";
-import type { MarkupSetIds } from "@/core/markup-set/markup-set";
+import { MAX_PAGES, type MarkupSetIds, type PageGeometry } from "@/core/markup-set/markup-set";
 import type { Markup } from "@/core/schema/markup";
 import type { Database, Json } from "./types.gen";
 
@@ -136,4 +136,40 @@ export async function hasOtherVersion(client: SupabaseClient<Database>, sha256: 
   const { data, error } = await client.from("drawing_files").select("id").eq("filename", filename).neq("sha256", sha256).limit(1);
   if (error) throw new Error(`other version lookup failed: ${error.code ?? "unknown"}`);
   return (data ?? []).length > 0;
+}
+
+/** Story 6.6: a set's file and page geometry (blank pages stand in for a PDF that is not at hand). */
+export type MarkupSetPages = { sha256: string; filename: string; pages: PageGeometry[] };
+
+/** The first file of the caller's set `drawingId` and its pages in order, or null (none or not theirs). */
+export async function loadMarkupSetPages(client: SupabaseClient<Database>, drawingId: string): Promise<MarkupSetPages | null> {
+  const { data: file, error } = await client
+    .from("drawing_files")
+    .select("id, sha256, filename")
+    .eq("drawing_id", drawingId)
+    .order("created_at")
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(`set file lookup failed: ${error.code ?? "unknown"}`);
+  if (!file) return null;
+  // Pages of 1000 rows (the API's row cap).
+  const rows: { rotation: number; crop_box: number[]; width: number; height: number }[] = [];
+  for (let from = 0; from < MAX_PAGES; from += 1000) {
+    const { data, error: pagesError } = await client
+      .from("pages")
+      .select("rotation, crop_box, width, height")
+      .eq("drawing_file_id", file.id)
+      .order("index")
+      .range(from, from + 999);
+    if (pagesError) throw new Error(`set pages lookup failed: ${pagesError.code ?? "unknown"}`);
+    rows.push(...(data ?? []));
+    if ((data ?? []).length < 1000) break;
+  }
+  const pages = rows.map((r) => ({
+    rotation: r.rotation as PageGeometry["rotation"],
+    cropBox: [r.crop_box[0], r.crop_box[1], r.crop_box[2], r.crop_box[3]] as PageGeometry["cropBox"],
+    width: r.width,
+    height: r.height,
+  }));
+  return pages.length > 0 ? { sha256: file.sha256, filename: file.filename, pages } : null;
 }

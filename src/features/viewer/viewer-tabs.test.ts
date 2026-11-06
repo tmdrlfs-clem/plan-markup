@@ -6,7 +6,7 @@ import { BACKGROUND_TILE_BUDGET, MAX_TABS, TOTAL_TILE_BUDGET } from "@/core/docu
 import { viewerCommands } from "./viewer-commands";
 import type { ViewerCanvases, ViewerEngine } from "./viewer-engine";
 import { dismissNotice, setTool, viewerStore } from "./viewer-store";
-import { openDocument, openDocuments, resetViewer, tabsStore, viewerTabs, type ViewerHost } from "./viewer-tabs";
+import { openDocument, openDocumentAs, openDocuments, resetViewer, tabsStore, viewerTabs, type ViewerHost } from "./viewer-tabs";
 
 type Msg = { type: string; reqId: number; payload: unknown };
 
@@ -184,6 +184,26 @@ describe("viewerTabs", () => {
     expect(all.map((t) => t.title)).toEqual([`Up to ${MAX_TABS} drawings can be open at once. Close one to open 3 files.`]);
     // d0.pdf was open already: its tab is shown.
     expect(viewerStore.getState().fileName).toBe("d0.pdf");
+  });
+
+  it("blank pages stand in for a set's document (its id, not the blank file's hash); the PDF itself replaces them (Story 6.6)", async () => {
+    openDocumentAs(file("L17.pdf", 9), "sha-set");
+    await flush();
+    const blank = workers.at(-1)!;
+    blank.reply(blank.last("render.open"), { sha256: "sha-blank", pageCount: 2, pages: [PAGE, PAGE], pageLabels: null, fromCache: false });
+    await flush();
+    expect(viewerStore.getState().documentId).toBe("sha-set");
+    // Asking again shows the same tab.
+    openDocumentAs(file("L17.pdf", 9, 2), "sha-set");
+    await flush();
+    expect(tabsStore.getState().tabs).toHaveLength(1);
+    // The PDF itself: its tab stays, the stand-in closes.
+    const real = await openFile("L17.pdf", "sha-set", 2, file("L17.pdf", 50, 3));
+    await flush();
+    expect(tabsStore.getState().tabs).toHaveLength(1);
+    expect(blank.terminated).toBe(true);
+    expect(real.terminated).toBe(false);
+    expect(viewerStore.getState().documentId).toBe("sha-set");
   });
 
   it("a copy hashed in the background closes without taking the shown tab's place", async () => {

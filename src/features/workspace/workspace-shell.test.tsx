@@ -27,7 +27,7 @@ vi.mock("@/features/account/actions", () => ({ signOut: () => signOut() }));
 const saveTheme = vi.fn(async (theme: string) => ({ ok: true as const, data: { theme } }));
 vi.mock("@/features/appearance/actions", () => ({ setTheme: (theme: string) => saveTheme(theme) }));
 vi.mock("@/features/signature/actions", () => ({ getSignature: async () => ({ ok: true, data: null }), saveSignature: vi.fn(), deleteSignature: vi.fn() }));
-vi.mock("@/features/markup-set/actions", () => ({ ensureMarkupSet: vi.fn(), saveSetCalibrations: vi.fn(), applyMarkupOps: vi.fn(), loadMarkupSet: vi.fn(async () => ({ ok: true, data: null })), hasMarkupsOnOtherVersion: vi.fn(async () => ({ ok: true, data: false })), listMyMarkupSets: vi.fn(async () => ({ ok: true, data: [] })) }));
+vi.mock("@/features/markup-set/actions", () => ({ ensureMarkupSet: vi.fn(), saveSetCalibrations: vi.fn(), applyMarkupOps: vi.fn(), loadMarkupSet: vi.fn(async () => ({ ok: true, data: null })), hasMarkupsOnOtherVersion: vi.fn(async () => ({ ok: true, data: false })), listMyMarkupSets: vi.fn(async () => ({ ok: true, data: [] })), loadMarkupSetPages: vi.fn() }));
 
 // The real viewport starts a render worker (none in jsdom); its own tests cover it.
 vi.mock("@/features/viewer/canvas-viewport", () => ({

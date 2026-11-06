@@ -45,7 +45,14 @@ import { useFileDropGuard } from "./use-file-drop-guard";
 import { useRegionCycling } from "./use-region-cycling";
 import { useWorkspaceShortcuts } from "./use-workspace-shortcuts";
 import { SignatureDialog, openSignatureDialog } from "@/features/signature/signature-dialog";
-import { MarkupSetListDialog, useOtherVersionHint } from "@/features/markup-set/markup-sets-ui";
+import {
+  MarkupSetListDialog,
+  OpenMarkupSetDialog,
+  openRecentSet,
+  useBlankPagesHint,
+  useOtherVersionHint,
+  useRecentSets,
+} from "@/features/markup-set/markup-sets-ui";
 import { useMarkupSetSync } from "@/features/markup-set/sync";
 
 import { WorkspaceMenuBar } from "./workspace-menu-bar";
@@ -68,6 +75,8 @@ export function WorkspaceShell({ user, theme = null }: { user: WorkspaceUser; th
   useMarkupSetSync(user.id);
   // Story 6.5: markups on another version of the shown file.
   useOtherVersionHint();
+  // Story 6.6: a set's markups shown on blank pages.
+  useBlankPagesHint();
   // Stories 4.5 / 4.6: the measuring tools paint and place through the viewer's markup layers.
   useMeasureTools();
   return (
@@ -76,6 +85,7 @@ export function WorkspaceShell({ user, theme = null }: { user: WorkspaceUser; th
         <ShellBody user={user} initialTheme={theme} />
         <Toaster />
         <MarkupSetListDialog />
+        <OpenMarkupSetDialog />
       </TooltipProvider>
     </LayoutProvider>
   );
@@ -114,6 +124,8 @@ function ShellBody({ user, initialTheme }: { user: WorkspaceUser; initialTheme: 
   const hideAllPanels = useLayout((s) => s.hideAllPanels);
 
   const viewerStatus = useStore(viewerStore, (s) => s.status);
+  // Story 6.6: the newest markup sets, listed while no drawing is open.
+  const recentSets = useRecentSets(viewerStatus === "empty");
   const fileName = useStore(viewerStore, (s) => s.fileName);
   const zoom = useStore(viewerStore, (s) => s.zoom);
   // The shown page's facts for the status bar (Story 3.7): they follow the active tab and page.
@@ -239,7 +251,7 @@ function ShellBody({ user, initialTheme }: { user: WorkspaceUser; initialTheme: 
         )}
         <main data-region="canvas" tabIndex={-1} className="relative min-w-0 flex-1 bg-surface-0 focus-ring">
           {viewerStatus === "empty" ? (
-            <EmptyWorkspace onOpen={open} onOpenFiles={openFiles} recent={[]} />
+            <EmptyWorkspace onOpen={open} onOpenFiles={openFiles} recent={recentSets} onOpenRecent={openRecentSet} />
           ) : (
             <DocumentTabs>
               <DocumentViewer onOpen={open} onOpenFiles={openFiles} overlay={<TextEditor />} />

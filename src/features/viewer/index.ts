@@ -53,4 +53,4 @@ export {
   type TextTool,
   type ViewerTool,
 } from "./viewer-store";
-export { openDocument, openDocuments, resetViewer, tabTitle, tabsStore, viewerTabs, type DocumentTab } from "./viewer-tabs";
+export { openDocument, openDocumentAs, openDocuments, resetViewer, tabTitle, tabsStore, viewerTabs, type DocumentTab } from "./viewer-tabs";

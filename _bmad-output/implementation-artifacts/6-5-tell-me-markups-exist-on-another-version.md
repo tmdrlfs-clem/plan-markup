@@ -1,6 +1,6 @@
 # Story 6.5: Tell me markups exist on another version
 
-Status: review
+Status: done
 
 ## Story
 
@@ -41,7 +41,7 @@ Claude Opus 5.5
 
 ### Completion Notes List
 
-- db:test pass (list_markup_sets 5); unit markup-set/workspace pass; e2e other-version, restore-markups, workspace-shell pass (dev).
+- CI green (faed0c7). db:test pass (list_markup_sets 5); unit markup-set/workspace pass; e2e other-version, restore-markups, workspace-shell pass (dev).
 
 ### File List
 

@@ -53,6 +53,8 @@ type Entry = {
   file: File;
   fileKey: string;
   sha256: string | null;
+  /** Story 6.6: the document the file stands in for (blank pages of a markup set). */
+  documentId?: string;
   snapshot: ViewerState;
   engine: ViewerEngine | null;
 };
@@ -123,9 +125,9 @@ class ViewerTabs {
    * tab instead. Past MAX_TABS nothing opens ("limit"; openDocuments explains
    * it in one quiet toast, AC 6).
    */
-  open(file: File): OpenOutcome {
+  open(file: File, documentId?: string): OpenOutcome {
     const fileKey = fileKeyOf(file);
-    const duplicate = findDuplicate(this.entries, { fileKey });
+    const duplicate = findDuplicate(this.entries, { fileKey, sha256: documentId });
     if (duplicate) {
       this.activate(duplicate.id);
       return "activated";
@@ -137,7 +139,8 @@ class ViewerTabs {
       id,
       file,
       fileKey,
-      sha256: null,
+      sha256: documentId ?? null,
+      documentId,
       // A new tab starts with the tool in use (the tool is per tab from then on).
       snapshot: this.loadingState(file, id, current.tool),
       engine: null,
@@ -152,7 +155,7 @@ class ViewerTabs {
     const entry = this.active();
     if (!entry) return;
     viewerStore.setState(this.loadingState(entry.file, entry.id, viewerStore.getState().tool), true);
-    if (entry.engine) void entry.engine.open(entry.file);
+    if (entry.engine) void entry.engine.open(entry.file, entry.documentId);
     else this.startEngine(entry);
   }
 
@@ -297,7 +300,7 @@ class ViewerTabs {
       engine.suspend();
     }
     this.applyBudgets();
-    void engine.open(entry.file);
+    void engine.open(entry.file, entry.documentId);
   }
 
   /** An engine's state update: to the store while its tab is active, else to its snapshot. */
@@ -318,8 +321,14 @@ class ViewerTabs {
   private hashed(entry: Entry, sha256: string): void {
     entry.sha256 = sha256;
     const duplicate = findDuplicate(this.entries, { sha256 }, entry.id);
+    if (!duplicate) return;
+    // Story 6.6: the PDF itself replaces blank pages standing in for it.
+    if (duplicate.documentId && !entry.documentId) {
+      queueMicrotask(() => this.close(duplicate.id, entry.id));
+      return;
+    }
     // After the engine's update returns (it is still inside its open()).
-    if (duplicate) queueMicrotask(() => this.close(entry.id, duplicate.id));
+    queueMicrotask(() => this.close(entry.id, duplicate.id));
   }
 
   /** Background tabs keep a small tile budget, the active one the rest (AC 6). */
@@ -374,4 +383,14 @@ export function openDocument(file: File): void {
 export function resetViewer(): void {
   viewerTabs.closeAll();
   viewerStore.setState({ ...INITIAL_VIEWER_STATE, openSeq: nextOpenSeq() }, true);
+}
+
+/**
+ * Story 6.6: opens `file` as the pages of document `documentId` (blank pages
+ * standing in for a markup set's PDF), or shows the tab that already has it.
+ */
+export function openDocumentAs(file: File, documentId: string): void {
+  if (viewerTabs.open(file, documentId) === "limit") {
+    toast({ title: `Up to ${MAX_TABS} drawings can be open at once. Close one to open ${file.name}.`, variant: "info" });
+  }
 }

@@ -6,7 +6,7 @@ import { applyMarkupOpsSchema, type ApplyMarkupOpsInput, type MarkupOpResult } f
 import { ensureMarkupSetSchema, saveCalibrationsSchema, type MarkupSetIds } from "@/core/markup-set/markup-set";
 import { getAuthUser } from "@/lib/auth";
 import { ensureDrawingFile, saveCalibrations } from "@/lib/db/drawings";
-import { applyMarkupOps as applyOps, hasOtherVersion, listMarkupSets, loadMarkupSet as loadSet, MarkupOpsError, type LoadedMarkupSet, type MarkupSetSummary } from "@/lib/db/markups";
+import { applyMarkupOps as applyOps, hasOtherVersion, listMarkupSets, loadMarkupSet as loadSet, loadMarkupSetPages as loadSetPages, MarkupOpsError, type LoadedMarkupSet, type MarkupSetPages, type MarkupSetSummary } from "@/lib/db/markups";
 import { fail, internalError, type Result } from "@/lib/result";
 import { createServerSupabase } from "@/lib/supabase/server";
 
@@ -95,5 +95,18 @@ export async function listMyMarkupSets(): Promise<Result<MarkupSetSummary[]>> {
     return { ok: true, data: await listMarkupSets(await createServerSupabase()) };
   } catch (error) {
     return internalError("markup_set.list_failed", error);
+  }
+}
+
+/** Story 6.6: the file and page geometry of the user's set `drawingId` (null when it is not theirs). */
+export async function loadMarkupSetPages(drawingId: unknown): Promise<Result<MarkupSetPages | null>> {
+  const user = await getAuthUser();
+  if (!user) return fail("UNAUTHENTICATED");
+  const parsed = z.guid().safeParse(drawingId);
+  if (!parsed.success) return fail("INVALID_INPUT");
+  try {
+    return { ok: true, data: await loadSetPages(await createServerSupabase(), parsed.data) };
+  } catch (error) {
+    return internalError("markup_set.pages_failed", error);
   }
 }

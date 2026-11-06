@@ -9,6 +9,8 @@ import { cx } from "@/components/ui/cx";
 export interface RecentDrawing {
   id: string;
   name: string;
+  /** e.g. "12 pages · 3 Nov 2026" (Story 6.6). */
+  detail?: string;
 }
 
 export interface EmptyWorkspaceProps {
@@ -16,8 +18,10 @@ export interface EmptyWorkspaceProps {
   onOpen: () => void;
   /** Dropped files. */
   onOpenFiles: (files: File[]) => void;
-  /** Local history; empty until the viewer keeps one. */
+  /** Story 6.6: the user's newest markup sets. */
   recent: readonly RecentDrawing[];
+  /** Opens a recent drawing (asks for its PDF). */
+  onOpenRecent?: (id: string) => void;
 }
 
 function hasFiles(event: DragEvent): boolean {
@@ -25,7 +29,7 @@ function hasFiles(event: DragEvent): boolean {
 }
 
 /** Canvas area before a drawing is open: drop zone, Open and recent drawings (UX-DR30). */
-export function EmptyWorkspace({ onOpen, onOpenFiles, recent }: EmptyWorkspaceProps) {
+export function EmptyWorkspace({ onOpen, onOpenFiles, recent, onOpenRecent }: EmptyWorkspaceProps) {
   // dragenter/dragleave fire for every child; count them so the state does not flicker.
   const depth = useRef(0);
   const [dragging, setDragging] = useState(false);
@@ -85,8 +89,16 @@ export function EmptyWorkspace({ onOpen, onOpenFiles, recent }: EmptyWorkspacePr
           ) : (
             <ul className="mt-1 flex flex-col">
               {recent.map((drawing) => (
-                <li key={drawing.id} className="truncate text-ws-md">
-                  {drawing.name}
+                <li key={drawing.id}>
+                  <button
+                    type="button"
+                    data-testid="recent-drawing"
+                    onClick={() => onOpenRecent?.(drawing.id)}
+                    className="flex w-full items-baseline gap-2 rounded-sm px-1 py-0.5 text-left text-ws-md hover:bg-surface-1 focus-ring"
+                  >
+                    <span className="min-w-0 flex-1 truncate">{drawing.name}</span>
+                    {drawing.detail ? <span className="num shrink-0 text-ws-sm text-muted">{drawing.detail}</span> : null}
+                  </button>
                 </li>
               ))}
             </ul>

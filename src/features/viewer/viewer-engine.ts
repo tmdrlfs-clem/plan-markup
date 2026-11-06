@@ -287,6 +287,11 @@ export class ViewerEngine {
   /** The shown page's preview failed (multi-page documents; Retry asks again). */
   private previewFailed = false;
   private sha256: string | null = null;
+  /**
+   * Story 6.6: the document id markups use. The file's sha256, or the markup
+   * set's when blank pages stand in for a PDF that is not at hand.
+   */
+  private documentId: string | null = null;
   /** Thumbnail rasters by `<page>:<w>x<h>` (1-based page), and the requests in flight. */
   private readonly thumbs = new LruByteCache<ImageBitmap>(THUMBNAIL_BUDGET, (_k, b) => closeBitmap(b));
   private readonly thumbPending = new Map<string, PendingThumbnail>();
@@ -553,8 +558,12 @@ export class ViewerEngine {
 
   // ---- open ---------------------------------------------------------------
 
-  /** Opens a file: reads it locally and hands the bytes to the render worker. */
-  async open(file: File): Promise<void> {
+  /**
+   * Opens a file: reads it locally and hands the bytes to the render worker.
+   * `documentId` (Story 6.6) shows the file as that document's pages: blank
+   * pages for a markup set whose PDF is not open.
+   */
+  async open(file: File, documentId?: string): Promise<void> {
     this.rememberView();
     this.resetDocument();
     const generation = ++this.generation;
@@ -586,6 +595,7 @@ export class ViewerEngine {
     this.contents = opened.pages.map(() => null);
     this.pageLabels = opened.pageLabels ?? null;
     this.sha256 = opened.sha256;
+    this.documentId = documentId ?? opened.sha256;
     this.snap.setDocument(opened.sha256);
     // A document seen before in this session comes back to the page and views it was left at.
     const saved = documentViews.get(opened.sha256);
@@ -598,7 +608,8 @@ export class ViewerEngine {
       pageCount: opened.pageCount,
       pageIndex: this.pageIndex,
       pages: opened.pages,
-      documentId: opened.sha256,
+      documentId: this.documentId,
+      standIn: this.documentId !== opened.sha256,
       pageLabels: this.pageLabels,
       sheetLabels: {},
       pageScales: {},
@@ -990,6 +1001,7 @@ export class ViewerEngine {
     this.firstFrameShown = false;
     this.previewFailed = false;
     this.sha256 = null;
+    this.documentId = null;
     this.snap.setDocument(null);
     this.cancelCalibrationPick();
     this.pickLine = null;
@@ -1715,11 +1727,11 @@ export class ViewerEngine {
     const point = this.toolPoint;
     this.snapFrom = point ? { x: point.x, y: point.y } : null;
     if (this.pick && point) this.pickPoint({ x: point.x, y: point.y });
-    else if (point && this.sha256 && isDrawTool(viewerStore.getState().tool)) {
+    else if (point && this.documentId && isDrawTool(viewerStore.getState().tool)) {
       // Story 4.5 / 4.6 (5.4: and the markup tools): the measuring tool places the point; a finished measurement starts the next one afresh.
       const linear = this.userToScreenLinear();
       const tolerance = DOUBLE_CLICK_SLOP_PX / (Math.hypot(linear[0], linear[1]) || 1);
-      const placed = markupPainter()?.place({ x: point.x, y: point.y }, { documentId: this.sha256, pageIndex: this.pageIndex, tolerance });
+      const placed = markupPainter()?.place({ x: point.x, y: point.y }, { documentId: this.documentId, pageIndex: this.pageIndex, tolerance });
       if (placed === "done") this.snapFrom = null;
     }
     this.paintOverlay();
@@ -2131,7 +2143,7 @@ export class ViewerEngine {
   /** Story 4.5: how the markup painter sees this page on the canvases. */
   private layerView(): LayerView | null {
     const page = this.page;
-    const documentId = this.sha256;
+    const documentId = this.documentId;
     if (!page || !documentId) return null;
     const k = this.dpr;
     const userUnit = page.userUnit && page.userUnit > 0 ? page.userUnit : 1;
