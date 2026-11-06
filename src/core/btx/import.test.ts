@@ -26,8 +26,11 @@ describe(".btx import (Story 7.4)", () => {
     const out = await importItems(set, render, 1024);
     expect(out.title).toBe("Synthetic Tools");
     expect(out.items.map((i) => i.ok)).toEqual([true, true, true, true, true]);
+    // Story 7.5: only the stamp is drawn; the other four convert to markups.
+    expect(out.items.map((i) => (i.ok ? i.kind : null))).toEqual(["image", "markups", "markups", "markups", "markups"]);
+    expect(render).toHaveBeenCalledTimes(1);
     expect(out.items.map((i) => i.name)).toEqual(set.items.map((item, n) => itemName(item, n)));
-    for (const item of out.items) if (item.ok) expect(item.widthPt).toBeGreaterThan(0);
+    for (const item of out.items) if (item.ok && item.kind === "image") expect(item.widthPt).toBeGreaterThan(0);
     // Each item is a one-page PDF, drawn at 4 px a point.
     const [pdf, size] = render.mock.calls[0]!;
     expect(new TextDecoder().decode(pdf.subarray(0, 5))).toBe("%PDF-");
@@ -35,7 +38,9 @@ describe(".btx import (Story 7.4)", () => {
   });
 
   it("reports an item that draws nothing, fails to draw or is too large; the others still import", async () => {
-    const set = await synthetic();
+    const synth = await synthetic();
+    // Five copies of the stamp (the only item drawn as an image).
+    const set = { ...synth, items: Array.from({ length: 5 }, () => synth.items[0]!) };
     let n = 0;
     const render: ItemRenderer = async () => {
       n++;

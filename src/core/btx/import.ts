@@ -1,14 +1,20 @@
-// Story 7.4 (FR42, NFR31): a parsed .btx tool set → one image per item, ready
-// to become Tool Chest tools (framework-free; runs in the .btx worker).
+// Story 7.4 (FR42, NFR31): a parsed .btx tool set → one tool per item, ready
+// for the Tool Chest (framework-free; runs in the .btx worker).
 //
-// Every item is drawn the way Story 2.1 proved: its annotations (root and
-// children at their -(X, Y) offsets, generated appearances where the file has
-// none) on a one-page PDF the size of their bounds, rendered by pdf.js. The
-// image keeps the item's paper size. An item that cannot be drawn is reported
-// with its reason; the others still import. Faithful per-kind conversion
-// (vector markups, counts, fonts) is Story 7.5.
+// Story 7.5: an item Revu stores as bare shapes, lines, ink or text converts
+// to our own markups (convert.ts), so the tool stays editable. Every other
+// item is drawn the way Story 2.1 proved: its annotations (root and children
+// at their -(X, Y) offsets, generated appearances where the file has none) on
+// a one-page PDF the size of their bounds, rendered by pdf.js; the image
+// keeps the item's paper size, and a count measurement's image is typed as a
+// device. An item that cannot be imported is reported with its reason; the
+// others still import.
 
 import type { Box } from "./appearance";
+import { uuidv7 } from "../ids/uuid";
+import type { Markup } from "../schema/markup";
+import { MAX_TOOL_CONTENT_BYTES, MAX_TOOL_MARKUPS } from "../tools/tool";
+import { convertItem, isCountItem } from "./convert";
 import { getText } from "./pdf-object";
 import type { BtxItem, BtxToolSet } from "./parse";
 import { buildItemPdf } from "./to-pdf";
@@ -29,8 +35,18 @@ export const REASON_UNREADABLE = "Unreadable in the file";
 export type ItemRenderer = (pdf: Uint8Array, size: { widthPx: number; heightPx: number; scale: number }) => Promise<Uint8Array | null>;
 
 export type ImportedItem =
-  | { name: string; ok: true; widthPt: number; heightPt: number; png: Uint8Array; warnings: string[] }
+  | { name: string; ok: true; kind: "image"; widthPt: number; heightPt: number; png: Uint8Array; warnings: string[]; count: boolean }
+  | { name: string; ok: true; kind: "markups"; markups: Markup[] }
   | { name: string; ok: false; reason: string };
+
+/** Story 7.5: the item as our markups when it converts and fits in a tool; else null (drawn as an image). */
+export function itemMarkups(item: BtxItem, name: string, newId: () => string = uuidv7, createdAt = new Date().toISOString()): Markup[] | null {
+  const markups = convertItem(item, name, newId, createdAt);
+  if (!markups || markups.length > MAX_TOOL_MARKUPS) return null;
+  // The tool's stored content must fit too (ink with many points stays an image).
+  if (new TextEncoder().encode(JSON.stringify(markups)).length > MAX_TOOL_CONTENT_BYTES * 0.9) return null;
+  return markups;
+}
 
 export type ImportedToolSet = { title: string; items: ImportedItem[]; warnings: string[] };
 
@@ -57,6 +73,11 @@ export async function importItems(set: BtxToolSet, render: ItemRenderer, maxPngB
   for (const [i, item] of set.items.entries()) {
     const name = itemName(item, i);
     try {
+      const markups = itemMarkups(item, name);
+      if (markups) {
+        items.push({ name, ok: true, kind: "markups", markups });
+        continue;
+      }
       const built = await buildItemPdf(item, { margin: 0 });
       if (built.annotations.length === 0) {
         items.push({ name, ok: false, reason: REASON_NOTHING });
@@ -76,7 +97,7 @@ export async function importItems(set: BtxToolSet, render: ItemRenderer, maxPngB
       const png = await render(built.bytes, renderSize(box));
       if (!png) items.push({ name, ok: false, reason: REASON_BLANK });
       else if (png.byteLength > maxPngBytes) items.push({ name, ok: false, reason: REASON_TOO_LARGE });
-      else items.push({ name, ok: true, widthPt, heightPt, png, warnings: built.warnings });
+      else items.push({ name, ok: true, kind: "image", widthPt, heightPt, png, warnings: built.warnings, count: isCountItem(item) });
     } catch {
       items.push({ name, ok: false, reason: REASON_FAILED });
     }

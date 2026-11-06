@@ -14,7 +14,7 @@ import { viewerStore } from "@/features/viewer";
 
 const m = vi.hoisted(() => ({ list: vi.fn() }));
 vi.mock("./actions", () => ({ listToolSets: m.list, createToolSet: vi.fn(), renameToolSet: vi.fn(), moveToolSet: vi.fn(), deleteToolSet: vi.fn(), addTool: vi.fn() }));
-vi.mock("@/features/editor", () => ({ paintMarkupsPreview: vi.fn(), decodeMarkupImage: async () => undefined }));
+vi.mock("@/features/editor", () => ({ paintMarkupsPreview: vi.fn(), decodeMarkupImage: async () => undefined, loadMarkupFonts: async () => undefined }));
 
 import { stampStore, resetStamps } from "./stamp-store";
 import { NO_DRAWING_TO_PLACE, TOOL_CHEST_TIP, ToolChestPanel, UNREADABLE_TOOL, toolChestStore } from "./tool-chest-panel";

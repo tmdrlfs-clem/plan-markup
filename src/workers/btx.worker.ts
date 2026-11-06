@@ -79,7 +79,7 @@ export function btxReplyTransfer(reply: BtxWorkerReply): ArrayBuffer[] {
   if (reply.type === "imported") {
     const out: ArrayBuffer[] = [];
     for (const item of reply.set.items) {
-      if (!item.ok) continue;
+      if (!item.ok || item.kind !== "image") continue;
       item.png = owned(item.png);
       out.push(item.png.buffer as ArrayBuffer);
     }

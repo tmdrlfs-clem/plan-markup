@@ -26,6 +26,8 @@ const CHANGE_LABELS: Record<keyof PropertyChange, string> = {
   fill: "Change fill",
   opacity: "Change opacity",
   fontSize: "Change text size",
+  dash: "Change dash",
+  font: "Change font",
   subject: "Change subject",
   text: "Edit text",
 };

@@ -2,8 +2,9 @@
 // worker (limits, no external entities, items drawn by pdf.js there, NFR31),
 // so a malformed or huge file never blocks the page; the worker is ended
 // after each import (or when it takes too long). Then a set named after the
-// file's title is created and each drawn item is added to it as an image tool
-// at its paper size, one request each.
+// file's title is created and each item is added to it, one request each: as
+// our own markups when it converts (Story 7.5), else as an image at its paper
+// size (a count measurement's typed as a device).
 //
 // Outcomes (F7): all ok → the set, toast "<title> — n tools"; partial → the
 // set and a per-item report with reasons; invalid → "Not a Revu tool set
@@ -11,10 +12,10 @@
 
 import { BTX_LIMITS } from "@/core/btx/limits";
 import type { BtxErrorCode } from "@/core/btx/errors";
-import type { ImportedToolSet } from "@/core/btx/import";
+import type { ImportedItem, ImportedToolSet } from "@/core/btx/import";
 import { uuidv7 } from "@/core/ids/uuid";
 import { DEFAULT_MARKUP_STYLE, type ImageMarkup } from "@/core/schema/markup";
-import { MAX_TOOL_IMAGE_BYTES, imageUpload, toolContentOf, type Tool } from "@/core/tools/tool";
+import { MAX_TOOL_IMAGE_BYTES, imageUpload, toolContentOf, type Device, type Tool } from "@/core/tools/tool";
 import type { ToolSet } from "@/core/tools/tool-set";
 import type { BtxWorkerReply } from "@/workers/btx.worker";
 
@@ -99,6 +100,24 @@ function itemMarkup(name: string, widthPt: number, heightPt: number, png: Uint8A
   };
 }
 
+/**
+ * Story 7.5: a count measurement imports as a device of the set (group: the set's name), so placing
+ * it counts; its label is its name, numbered when several share one ("Count Measurement 2").
+ */
+export function deviceLabels(items: readonly ImportedItem[], title: string): Map<number, Device> {
+  const out = new Map<number, Device>();
+  const seen = new Map<string, number>();
+  const group = title.slice(0, 60);
+  items.forEach((item, n) => {
+    if (!item.ok || item.kind !== "image" || !item.count) return;
+    const base = item.name.slice(0, 55);
+    const k = (seen.get(base) ?? 0) + 1;
+    seen.set(base, k);
+    out.set(n, { group, label: k === 1 ? base : `${base} ${k}`, description: "" });
+  });
+  return out;
+}
+
 /** Imports `file` (see the header); never throws. */
 export async function importBtx(file: File, deps: ImportDeps): Promise<ImportOutcome> {
   if (file.size > BTX_LIMITS.maxFileBytes) return { kind: "invalid", reason: invalidReason("file-too-large") };
@@ -117,14 +136,17 @@ export async function importBtx(file: File, deps: ImportDeps): Promise<ImportOut
   const created = await deps.createToolSet({ name: title }).catch(() => null);
   if (!created?.ok) return { kind: "invalid", reason: created?.message ?? "The tool set could not be created. Try again." };
   const tools: Tool[] = [];
-  for (const item of drawn) {
-    const made = toolContentOf([itemMarkup(item.name, item.widthPt, item.heightPt, item.png)], { calibration: null, userUnit: 1 });
+  const devices = deviceLabels(drawn, title);
+  for (const [n, item] of drawn.entries()) {
+    const markups = item.kind === "markups" ? item.markups : [itemMarkup(item.name, item.widthPt, item.heightPt, item.png)];
+    const made = toolContentOf(markups, { calibration: null, userUnit: 1 });
     const image = made?.image ? imageUpload(made.image) : null;
-    if (!made || !image) {
+    if (!made || (made.image !== null && !image)) {
       failed.push({ name: item.name, reason: REASON_NOT_SAVED });
       continue;
     }
-    const result = await deps.addTool({ set: { id: created.data.id }, name: item.name, content: made.content, device: null, image }).catch(() => null);
+    const device = devices.get(n) ?? null;
+    const result = await deps.addTool({ set: { id: created.data.id }, name: item.name, content: made.content, device, image }).catch(() => null);
     if (result?.ok) tools.push(result.data.tool);
     else failed.push({ name: item.name, reason: result?.message ?? REASON_NOT_SAVED });
   }

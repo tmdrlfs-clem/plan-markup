@@ -28,6 +28,10 @@ export const markupStyleSchema = z.object({
   fill: color.optional(),
   /** Story 5.5: the whole markup's opacity, 0–1; absent: 1. */
   opacity: z.number().finite().min(0).max(1).optional(),
+  /** Story 7.5: a dash pattern in points (on, off, …; a Revu import's /BS /D); absent: solid. */
+  dash: z.array(z.number().finite().min(0).max(144)).min(1).max(8).optional(),
+  /** Story 7.5: the text's face when not the app's own: Carlito (bundled, metric-compatible with Calibri). */
+  font: z.enum(["carlito"]).optional(),
 });
 export type MarkupStyle = z.infer<typeof markupStyleSchema>;
 

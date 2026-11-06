@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { ImportedToolSet } from "@/core/btx/import";
 import type { ToolSet } from "@/core/tools/tool-set";
 
-import { NOTHING_IMPORTED, REASON_NOT_SAVED, importBtx, importedText, invalidReason, readInWorker, setNameOf, type ImportDeps } from "./import-btx";
+import { NOTHING_IMPORTED, REASON_NOT_SAVED, deviceLabels, importBtx, importedText, invalidReason, readInWorker, setNameOf, type ImportDeps } from "./import-btx";
 
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0]);
 const SET: ToolSet = { id: "00000000-0000-4000-8000-000000000001", name: "Sprinkler Tools", position: 1, tools: [] };
@@ -26,7 +26,7 @@ function deps(set: ImportedToolSet | { code?: "structure-invalid" | "file-too-la
   };
 }
 
-const ok = (name: string) => ({ name, ok: true as const, widthPt: 20, heightPt: 10, png: PNG, warnings: [] });
+const ok = (name: string) => ({ name, ok: true as const, kind: "image" as const, widthPt: 20, heightPt: 10, png: PNG, warnings: [], count: false });
 
 describe("Import .btx (Story 7.4, F7)", () => {
   it("all ok: a set named after the title with every item as an image tool at its paper size", async () => {
@@ -72,6 +72,30 @@ describe("Import .btx (Story 7.4, F7)", () => {
     expect((await importBtx(file(), thrown)).kind).toBe("invalid");
     expect(NOTHING_IMPORTED).toBe("No tools could be imported");
     expect(REASON_NOT_SAVED).toBe("It could not be saved");
+  });
+
+  it("Story 7.5: a converted item is a tool of its markups (no image); a count is a device of the set", async () => {
+    const pen = {
+      id: "00000000-0000-4000-8000-0000000000aa",
+      pageId: "import:0",
+      createdAt: "2026-11-07T00:00:00.000Z",
+      type: "pen" as const,
+      subject: "Pen",
+      style: { color: "#000000", width: 2, fontSize: 10 },
+      points: [{ x: 0, y: 0 }, { x: 10, y: 4 }],
+    };
+    const count = { ...ok("Count Measurement"), count: true };
+    const d = deps({ title: "Sprinkler Tools", items: [{ name: "Pen", ok: true, kind: "markups", markups: [pen] }, count, { ...count }], warnings: [] });
+    const out = await importBtx(file(), d);
+    expect(out.kind).toBe("ok");
+    const [first, second, third] = d.added as { image: unknown; device: unknown; content: { markups: { type: string; points: unknown[] }[] } }[];
+    expect(first!.image).toBeNull();
+    expect(first!.device).toBeNull();
+    // Centred on the origin like any tool.
+    expect(first!.content.markups[0]).toMatchObject({ type: "pen", points: [{ x: -5, y: -2 }, { x: 5, y: 2 }] });
+    expect(second!.device).toEqual({ group: "Sprinkler Tools", label: "Count Measurement", description: "" });
+    expect(third!.device).toEqual({ group: "Sprinkler Tools", label: "Count Measurement 2", description: "" });
+    expect(deviceLabels([ok("Head")], "x").size).toBe(0);
   });
 
   it("names: the title, else the file name; at most 100 characters", () => {

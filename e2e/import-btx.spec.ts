@@ -4,7 +4,8 @@
 //   polyline; a line).
 // Covers: all five import as tiles of a new set "Synthetic Tools" with the
 // toast "Synthetic Tools — 5 tools"; every tile draws; the set survives a
-// reload. A file that is not a tool set: "Not a Revu tool set file" and
+// reload. Story 7.5: the four drawn-by-Revu items convert to our markups, so
+// the arrow placed on a drawing is an editable Arrow. A file that is not a tool set: "Not a Revu tool set file" and
 // nothing changes; a file with XML entities is refused. Locally (never in CI), the founder's private sets import
 // with a report of the items that cannot be drawn.
 import { existsSync, readFileSync } from "node:fs";
@@ -14,6 +15,8 @@ import { signIn } from "./helpers";
 
 const SYNTHETIC = path.join(__dirname, "..", "fixtures", "btx", "synthetic.btx");
 const PRIVATE = path.join(__dirname, "..", "fixtures", "private", "btx", "sprinkler-tools.btx");
+const PDF = path.join(__dirname, "..", "fixtures", "pdf", "snap.pdf");
+const OUT = path.join(__dirname, "..", "fixtures", "private", "btx", "out");
 
 const chest = (page: Page) => page.getByRole("complementary", { name: "Tool Chest" });
 const setNames = (page: Page) => chest(page).getByTestId("tool-set").locator("button[aria-expanded]");
@@ -77,6 +80,20 @@ test("Import .btx: every item of the synthetic set becomes a tool; a file that i
 
   await page.reload();
   await expect(setNames(page)).toHaveText(["Synthetic Tools (5)"], { timeout: 15_000 });
+
+  // Story 7.5: the arrow item is our own Arrow once placed (editable, not an image).
+  await showChest(page);
+  const chooser = page.waitForEvent("filechooser");
+  await page.getByRole("toolbar", { name: "Document" }).getByRole("button", { name: "Open…" }).click();
+  await (await chooser).setFiles({ name: "snap.pdf", mimeType: "application/pdf", buffer: readFileSync(PDF) });
+  const canvas = page.getByTestId("drawing-canvas");
+  await expect(canvas).toHaveAttribute("data-state", "ready");
+  const arrow = chest(page).getByRole("button", { name: "Synthetic arrow" });
+  await arrow.click();
+  await expect(arrow).toHaveAttribute("aria-pressed", "true");
+  const box = (await canvas.boundingBox())!;
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await expect(page.getByTestId("markups-canvas")).toHaveAttribute("data-captions", "Arrow");
 });
 
 test("Import .btx: a real Revu set imports with a report of the items that cannot be drawn (local only)", async ({ page }) => {
@@ -91,4 +108,6 @@ test("Import .btx: a real Revu set imports with a report of the items that canno
   await expect(report).toContainText("draws nothing");
   await report.getByRole("button", { name: "Done" }).click();
   await expect(chest(page).getByTestId("tool")).toHaveCount(65);
+  // The founder's review sheet (gitignored with the private files).
+  await chest(page).screenshot({ path: path.join(OUT, "import-sprinkler-tools.png") });
 });

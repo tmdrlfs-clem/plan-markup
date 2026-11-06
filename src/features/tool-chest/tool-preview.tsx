@@ -9,7 +9,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { markupBounds, type Point } from "@/core/markup/geometry";
 import { toolMarkups, type ToolContent } from "@/core/tools/tool";
-import { decodeMarkupImage, paintMarkupsPreview } from "@/features/editor";
+import { decodeMarkupImage, loadMarkupFonts, paintMarkupsPreview } from "@/features/editor";
 import type { LayerView } from "@/features/viewer";
 
 /** Image data URLs by signed URL's path (a signed URL changes; its object does not). */
@@ -111,6 +111,19 @@ export function ToolPreview({ content, imageUrl, imageData = null, size = 48 }: 
     };
   }, [wanted]);
 
+  // Story 7.5: painted again once the faces its text asks for have loaded.
+  const [fonts, setFonts] = useState(0);
+  useEffect(() => {
+    if (!content?.markups.some((m) => m.style.font)) return;
+    let live = true;
+    void loadMarkupFonts(content.markups).then(() => {
+      if (live) setFonts((n) => n + 1);
+    });
+    return () => {
+      live = false;
+    };
+  }, [content]);
+
   useEffect(() => {
     if (!imageUrl) return;
     let live = true;
@@ -134,7 +147,7 @@ export function ToolPreview({ content, imageUrl, imageData = null, size = 48 }: 
     const markups = toolMarkups(content, src);
     if (markups.length === 0) return;
     paintMarkupsPreview(c, markups, previewView(markups, size, dpr), content.calibration);
-  }, [content, src, size]);
+  }, [content, src, size, fonts]);
 
   return <canvas ref={ref} aria-hidden="true" data-testid="tool-preview" className="rounded-[2px] border border-border" style={{ width: size, height: size }} />;
 }

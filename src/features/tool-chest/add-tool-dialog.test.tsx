@@ -17,7 +17,7 @@ vi.mock("./actions", () => ({
   addTool: m.add,
 }));
 vi.mock("@/components/ui/toast-store", () => ({ toast: m.toast }));
-vi.mock("@/features/editor", () => ({ paintMarkupsPreview: vi.fn(), decodeMarkupImage: async () => undefined }));
+vi.mock("@/features/editor", () => ({ paintMarkupsPreview: vi.fn(), decodeMarkupImage: async () => undefined, loadMarkupFonts: async () => undefined }));
 
 import { AddToolDialog, NEW_SET, ONE_IMAGE } from "./add-tool-dialog";
 import { addToolStore, requestAddTool } from "./add-tool-store";

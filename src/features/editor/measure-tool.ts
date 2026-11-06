@@ -134,6 +134,7 @@ import {
 } from "./text-tool";
 import { ADD_STRIKETHROUGH, ADD_UNDERLINE, paintTextMark, paintTextMarkActive, textMarkDrag, textMarkLabel } from "./text-mark-tool";
 import { executeOp, registerDrawingUndo } from "./undo-store";
+import { fontFamilyOf } from "./fonts";
 import { toast } from "@/components/ui/toast-store";
 import { NEEDS_SCALE, placedMarkups, toolScale } from "@/core/tools/place";
 import { stampStore, type StampTool } from "@/features/tool-chest/stamp-store";
@@ -287,7 +288,10 @@ function stroke(c: CanvasRenderingContext2D, style: MarkupStyle, view: LayerView
   c.lineCap = "butt";
   c.lineJoin = "miter";
   c.strokeStyle = style.color;
+  // Story 7.5: an imported dash pattern, in page units.
+  if (style.dash) c.setLineDash(style.dash.map((d) => d * view.devicePerPt));
   c.stroke();
+  if (style.dash) c.setLineDash([]);
 }
 
 /** Story 4.11: the selection outline (UX-DR13: accent with a white halo) around device points, under the markup. */
@@ -467,7 +471,7 @@ function drawText(c: CanvasRenderingContext2D, box: readonly Point[], text: stri
   if ((style.opacity ?? 1) < 1) c.globalAlpha = style.opacity ?? 1;
   c.translate(d0.x, d0.y);
   c.rotate(Math.atan2(d1.y - d0.y, d1.x - d0.x));
-  c.font = `${size}px ${view.colors.fontFamily}`;
+  c.font = `${size}px ${fontFamilyOf(style, view.colors.fontFamily)}`;
   c.textAlign = "left";
   c.textBaseline = "top";
   c.fillStyle = style.color;

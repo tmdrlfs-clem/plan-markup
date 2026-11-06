@@ -101,7 +101,9 @@ describe("btx worker import (Story 7.4)", () => {
     expect(reply.reqId).toBe(9);
     expect(reply.set.title).toBe("Synthetic Tools");
     expect(reply.set.items).toHaveLength(5);
-    expect(btxReplyTransfer(reply)).toHaveLength(5);
+    // Story 7.5: the stamp is drawn; the shapes, group, polyline and arrow convert to markups.
+    expect(reply.set.items.map((i) => (i.ok ? i.kind : "failed"))).toEqual(["image", "markups", "markups", "markups", "markups"]);
+    expect(btxReplyTransfer(reply)).toHaveLength(1);
   });
 
   it("a file that is not a tool set is an error with its code; no renderer is an error", async () => {
