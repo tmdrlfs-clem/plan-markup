@@ -16,9 +16,10 @@ vi.mock("./actions", () => ({
   renameToolSet: m.rename,
   moveToolSet: m.move,
   deleteToolSet: m.remove,
+  addTool: vi.fn(),
 }));
 
-import { EMPTY_TOOL_CHEST, IMPORT_SOON, ToolChestPanel, setToolChestOwner, toolChestStore } from "./tool-chest-panel";
+import { EMPTY_TOOL_CHEST, ToolChestPanel, setToolChestOwner, toolChestStore } from "./tool-chest-panel";
 
 const A: ToolSet = { id: "a", name: "Sprinkler", position: 1, tools: [tool("1", "Pendant"), tool("2", "Upright")] };
 const B: ToolSet = { id: "b", name: "Alarm", position: 2, tools: [] };
@@ -37,12 +38,11 @@ beforeEach(() => {
 });
 
 describe("Tool Chest panel (Story 7.1)", () => {
-  it("the empty state offers Import .btx (soon) and Create set", async () => {
+  it("the empty state offers Import .btx (Story 7.4) and Create set", async () => {
     const user = setup([]);
     expect(await screen.findByText(EMPTY_TOOL_CHEST)).toBeTruthy();
     const importButton = screen.getByRole("button", { name: "Import .btx" });
-    expect(importButton).toBeDisabled();
-    expect(importButton).toHaveAttribute("title", IMPORT_SOON);
+    expect(importButton).toBeEnabled();
     m.create.mockResolvedValue({ ok: true, data: { id: "n", name: "Heads", position: 1, tools: [] } });
     await user.click(screen.getByRole("button", { name: "Create set" }));
     const name = screen.getByRole("textbox", { name: "New tool set name" });

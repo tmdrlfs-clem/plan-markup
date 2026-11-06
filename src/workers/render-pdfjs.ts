@@ -40,7 +40,7 @@ type CanvasAndContext = { canvas: OffscreenCanvas | null; context: OffscreenCanv
 
 /** pdf.js CanvasFactory backed by OffscreenCanvas (pdf.js's default needs `document`). */
 // pdf.js constructs it with { ownerDocument, enableHWA }; neither is needed here.
-class OffscreenCanvasFactory {
+export class OffscreenCanvasFactory {
   create(width: number, height: number): CanvasAndContext {
     if (width <= 0 || height <= 0) throw new Error("Invalid canvas size");
     const canvas = new OffscreenCanvas(width, height);
@@ -61,7 +61,7 @@ class OffscreenCanvasFactory {
 }
 
 /** pdf.js FilterFactory without SVG filters (pdf.js's base behaviour; the DOM one needs `document`). */
-class NoFilterFactory {
+export class NoFilterFactory {
   addFilter(): string { return "none"; }
   addHCMFilter(): string { return "none"; }
   addAlphaFilter(): string { return "none"; }

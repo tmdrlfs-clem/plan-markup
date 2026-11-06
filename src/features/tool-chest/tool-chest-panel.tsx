@@ -7,10 +7,10 @@
 // names its tool count. Story 7.2: each tool is a tile with its preview and
 // name (a device shows its label). Story 7.3: a click arms the tile (placed at
 // each click on the drawing until Esc), a drag places it once; a tile drawn at
-// a scale is disabled on a page without one. Import .btx comes with Story 7.4.
+// a scale is disabled on a page without one. Story 7.4: Import .btx (import-btx-ui).
 
 import { useEffect, useState, type KeyboardEvent } from "react";
-import { ArrowDown, ArrowUp, FileUp, Pencil, Plus, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Pencil, Plus, Trash2 } from "lucide-react";
 import { useStore } from "zustand";
 import { createStore } from "zustand/vanilla";
 
@@ -30,10 +30,10 @@ import { TOOL_DRAG_TYPE, setTool, viewerCommands, viewerStore } from "@/features
 
 import { createToolSet, deleteToolSet, listToolSets, moveToolSet, renameToolSet } from "./actions";
 import { resetStamps, setArmedStamp, setDraggedStamp, stampStore, type StampTool } from "./stamp-store";
+import { ImportBtxButton } from "./import-btx-ui";
 import { ToolPreview, cachedToolImage, toolImageDataUrl } from "./tool-preview";
 
 export const EMPTY_TOOL_CHEST = "No tool sets yet";
-export const IMPORT_SOON = "Importing Revu tool sets (.btx) is coming soon.";
 export const NO_DRAWING_TO_PLACE = "Open a drawing to place tools";
 export const UNREADABLE_TOOL = "This tool could not be read";
 export const TOOL_CHEST_TIP = "Click a tool, then click the drawing to place it (it stays armed until Esc), or drag it onto the drawing. S arms the last tool again.";
@@ -212,13 +212,13 @@ function NameField({ initial, label, onDone }: { initial: string; label: string;
   );
 }
 
+/** Story 7.4: an imported set joins the end of the Tool Chest. */
+function addImportedSet(set: ToolSet): void {
+  toolChestStore.setState((s) => ({ status: "ready", sets: [...s.sets.filter((x) => x.id !== set.id), set] }));
+}
+
 function ImportButton() {
-  return (
-    <Button size="sm" variant="ghost" disabled title={IMPORT_SOON} aria-description={IMPORT_SOON}>
-      <FileUp size={14} aria-hidden="true" />
-      Import .btx
-    </Button>
-  );
+  return <ImportBtxButton onSet={addImportedSet} />;
 }
 
 export function ToolChestPanel() {

@@ -24,7 +24,7 @@ test("tool sets: create, rename, reorder, search, persist and delete", async ({ 
     await page.getByRole("radio", { name: "Tool Chest" }).click();
   }
   await expect(panel(page).getByText("No tool sets yet")).toBeVisible();
-  await expect(panel(page).getByRole("button", { name: "Import .btx" })).toBeDisabled();
+  await expect(panel(page).getByRole("button", { name: "Import .btx" })).toBeEnabled();
 
   await createSet(page, "Sprinkler");
   await expect(setNames(page)).toHaveText(["Sprinkler (0)"]);

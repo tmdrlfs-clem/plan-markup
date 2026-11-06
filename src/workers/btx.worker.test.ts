@@ -4,7 +4,8 @@ import { describe, expect, it } from "vitest";
 
 import { isStream, type PdfString } from "@/core/btx/pdf-object";
 
-import { btxParseRequest, btxReplyTransfer, handleBtxMessage } from "./btx.worker";
+import { drawsSomething } from "./btx-render";
+import { btxImportRequest, btxParseRequest, btxReplyTransfer, handleBtxMessage } from "./btx.worker";
 
 const SYNTHETIC = new URL("../../fixtures/btx/synthetic.btx", import.meta.url);
 
@@ -87,5 +88,31 @@ describe("btxReplyTransfer", () => {
 
   it("transfers nothing for an error reply", async () => {
     expect(btxReplyTransfer(await handleBtxMessage(null))).toEqual([]);
+  });
+});
+
+describe("btx worker import (Story 7.4)", () => {
+  it("parses, draws each item with the renderer and transfers the PNGs", async () => {
+    const [msg] = btxImportRequest(9, new Uint8Array(readFileSync(SYNTHETIC)), 1024);
+    const png = () => new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+    const reply = await handleBtxMessage(msg, async () => async () => png());
+    expect(reply.type).toBe("imported");
+    if (reply.type !== "imported") return;
+    expect(reply.reqId).toBe(9);
+    expect(reply.set.title).toBe("Synthetic Tools");
+    expect(reply.set.items).toHaveLength(5);
+    expect(btxReplyTransfer(reply)).toHaveLength(5);
+  });
+
+  it("a file that is not a tool set is an error with its code; no renderer is an error", async () => {
+    const bad = await handleBtxMessage({ type: "import", reqId: 2, bytes: new TextEncoder().encode("<Other/>") }, async () => async () => null);
+    expect(bad).toMatchObject({ type: "error", reqId: 2, code: "structure-invalid" });
+    const none = await handleBtxMessage({ type: "import", reqId: 3, bytes: new Uint8Array(readFileSync(SYNTHETIC)) });
+    expect(none).toMatchObject({ type: "error", reqId: 3 });
+  });
+
+  it("a fully transparent image draws nothing", () => {
+    expect(drawsSomething(new Uint8ClampedArray([0, 0, 0, 0, 255, 255, 255, 0]))).toBe(false);
+    expect(drawsSomething(new Uint8ClampedArray([0, 0, 0, 0, 255, 0, 0, 1]))).toBe(true);
   });
 });
