@@ -217,6 +217,22 @@ export type RevisionMeta = z.infer<typeof revisionMetaSchema>;
 export const revisionMarkupSchema = z.object({ ...base, type: z.literal("revision"), points: fourPoints, revision: revisionMetaSchema });
 export type RevisionMarkup = z.infer<typeof revisionMarkupSchema>;
 
+/**
+ * Story 7.8 (FR38, UX-DR27): a legend, its box's four corners ordered like a stamp's, its title and
+ * what it counts (the device placements on its page, or in the whole document). Its rows are drawn
+ * from the markups, never stored.
+ */
+export const MAX_LEGEND_TITLE = 60;
+export const LEGEND_SCOPES = ["page", "document"] as const;
+export const legendMetaSchema = z.object({
+  title: z.string().trim().min(1, "Enter a title.").max(MAX_LEGEND_TITLE, `At most ${MAX_LEGEND_TITLE} characters.`),
+  scope: z.enum(LEGEND_SCOPES),
+});
+export type LegendMeta = z.infer<typeof legendMetaSchema>;
+export type LegendScope = LegendMeta["scope"];
+export const legendMarkupSchema = z.object({ ...base, type: z.literal("legend"), points: fourPoints, legend: legendMetaSchema });
+export type LegendMarkup = z.infer<typeof legendMarkupSchema>;
+
 /** Every markup type (more join with Epic 5). */
 export const markupSchema = z.discriminatedUnion("type", [
   lengthMarkupSchema,
@@ -247,6 +263,7 @@ export const markupSchema = z.discriminatedUnion("type", [
   underlineMarkupSchema,
   strikethroughMarkupSchema,
   revisionMarkupSchema,
+  legendMarkupSchema,
 ]);
 
 export type Markup = z.infer<typeof markupSchema>;

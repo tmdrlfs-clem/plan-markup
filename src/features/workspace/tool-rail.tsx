@@ -31,6 +31,7 @@ import {
   SquareDashed,
   Stamp,
   FileBadge,
+  TableProperties,
   StickyNote,
   Strikethrough,
   Type,
@@ -61,7 +62,7 @@ interface Tool {
  * Tools that work today: Select and Pan (Story 3.2), and Length (snapping from
  * Story 4.1, measuring from Story 4.5). The others arrive with the editor.
  */
-const LIVE_TOOLS: ReadonlySet<string> = new Set<ViewerTool>(["select", "pan", "length", "polylength", "area", "count", "angle", "radius", "diameter", "line", "arrow", "polyline", "polygon", "rectangle", "ellipse", "cloud", "text", "callout", "typewriter", "note", "cloudplus", "pen", "highlight", "image", "dimension", "underline", "strikethrough", "whiteout", "whiteoutpolygon", "eraser", "revision"]);
+const LIVE_TOOLS: ReadonlySet<string> = new Set<ViewerTool>(["select", "pan", "length", "polylength", "area", "count", "angle", "radius", "diameter", "line", "arrow", "polyline", "polygon", "rectangle", "ellipse", "cloud", "text", "callout", "typewriter", "note", "cloudplus", "pen", "highlight", "image", "dimension", "underline", "strikethrough", "whiteout", "whiteoutpolygon", "eraser", "revision", "legend"]);
 
 export const SNAP_PREVIEW_HINT_ID = "snap-preview";
 /** Review S3: a page past the segment cap. */
@@ -119,6 +120,8 @@ export const WHITEOUT_POLYGON_HINT = `White-out polygon: click each corner; doub
 export const ERASER_HINT = `Eraser: drag over the drawing to brush it out. ${COVERS} Esc while drawing drops the stroke; Esc again returns to Select.`;
 /** Story 7.3: the HintBar while a Tool Chest tool is armed. */
 export const REVISION_HINT = "Revision stamp: click where it goes. Edit its revision, description, author and date in Properties.";
+/** Story 7.8. */
+export const LEGEND_HINT = "Legend: click where it goes. It lists the devices placed on this page with their counts and keeps them up to date. Set its title and scope (page or document) in Properties.";
 export const STAMP_HINT = "Tool: click where it goes (its centre); it stays armed for the next. S arms the last tool again. Esc returns to Select.";
 export const DIMENSION_HINT = `Dimension: click the two points to dimension, then where its line goes. ${SNAPS} Esc cancels; Esc again returns to Select.`;
 const TOOL_HINTS: Partial<Record<ViewerTool, string>> = {
@@ -153,6 +156,7 @@ const TOOL_HINTS: Partial<Record<ViewerTool, string>> = {
   eraser: ERASER_HINT,
   stamp: STAMP_HINT,
   revision: REVISION_HINT,
+  legend: LEGEND_HINT,
 };
 export const EDITOR_LATER = "Arrives with the markup editor";
 
@@ -179,6 +183,8 @@ const GROUPS: { label: string; tools: Tool[] }[] = [
       { id: "stamp", label: "Stamp", icon: Stamp, shortcut: "S" },
       // Story 7.7: no key (D).
       { id: "revision", label: "Revision stamp", icon: FileBadge },
+      // Story 7.8: no key (D).
+      { id: "legend", label: "Legend", icon: TableProperties },
     ],
   },
   // The measuring tools share one button and a menu (FlyoutGroup).

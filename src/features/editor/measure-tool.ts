@@ -85,6 +85,7 @@ import {
   isTextMarkup,
   type DimensionMarkup,
   type InkMarkup,
+  type LegendMarkup,
   type Markup,
   type MarkupStyle,
   type MeasureMarkup,
@@ -138,6 +139,8 @@ import { executeOp, registerDrawingUndo } from "./undo-store";
 import { fontFamilyOf } from "./fonts";
 import { revisionLabel, revisionText } from "@/core/markup/revision";
 import { ADD_REVISION, placeRevision, revisionAt } from "./revision-tool";
+import { LEGEND_EMPTY, LEGEND_QTY, LEGEND_TEXT, LEGEND_TOTAL, fitSymbol, legendLabel, legendLayout, legendRows, legendScopeMarkups, legendTotal, type LegendRow, type MeasureText } from "@/core/markup/legend";
+import { ADD_LEGEND, legendAt, placeLegend } from "./legend-tool";
 import { toast } from "@/components/ui/toast-store";
 import { NEEDS_SCALE, placedMarkups, toolScale } from "@/core/tools/place";
 import { stampStore, type StampTool } from "@/features/tool-chest/stamp-store";
@@ -200,6 +203,7 @@ const ADD_LABEL: Record<DrawTool, string> = {
   eraser: ADD_ERASER,
   stamp: PLACE_TOOL,
   revision: ADD_REVISION,
+  legend: ADD_LEGEND,
 };
 /** Story 4.8: what the live value says while an area crosses itself (it cannot be added). */
 export const CROSSES_ITSELF = "Crosses itself";
@@ -236,6 +240,7 @@ const MIN_POINTS: Record<DrawTool, number> = {
   eraser: 2,
   stamp: 1,
   revision: 1,
+  legend: 1,
 };
 /** Tools with a fixed number of points: the click that places the last one adds the measurement. */
 const FIXED_POINTS: Partial<Record<DrawTool, number>> = { length: 2, angle: 3, radius: 3, diameter: 3, line: 2, arrow: 2, rectangle: 2, ellipse: 2, text: 2, callout: 2, typewriter: 1, note: 1, dimension: 3, whiteout: 2 };
@@ -524,6 +529,84 @@ function paintRevision(c: CanvasRenderingContext2D, m: RevisionMarkup, box: read
   c.textAlign = "left";
   lines.forEach((text, i) => c.fillText(text, pad, header + pad + i * line));
   c.restore();
+}
+
+/** Story 7.8: the rows a legend shows now (its page's or its document's device placements). */
+function legendRowsOf(m: LegendMarkup, documentId: string): LegendRow[] {
+  return legendRows(legendScopeMarkups(markupsOf(editorStore.getState(), documentId), m.legend.scope, m.pageId));
+}
+
+/**
+ * Story 7.8 (FR38, UX-DR27): a legend (device corners p0 top left, p1 top right, p3 bottom left):
+ * its box, a title row ("QTY" on the right), a row per device type (its symbol, its label, its
+ * count) and a total row, laid out in legend units and scaled to fit the box, clipped to it.
+ */
+function paintLegend(c: CanvasRenderingContext2D, m: LegendMarkup, rows: readonly LegendRow[], box: readonly Point[], view: LayerView): void {
+  strokeShape(c, "rectangle", box, m.style, view);
+  const [d0, d1, , d3] = box;
+  const width = Math.hypot(d1.x - d0.x, d1.y - d0.y);
+  const height = Math.hypot(d3.x - d0.x, d3.y - d0.y);
+  const family = fontFamilyOf(m.style, view.colors.fontFamily);
+  const font = (bold: boolean) => `${bold ? "bold " : ""}${LEGEND_TEXT}px ${family}`;
+  c.save();
+  const measure: MeasureText = (text, bold) => {
+    c.font = font(bold);
+    return c.measureText(text).width || 0;
+  };
+  const layout = legendLayout(rows, m.legend.title, measure);
+  const s = Math.min(width / layout.width, height / layout.height);
+  if (!(s > 0) || LEGEND_TEXT * s < 1) return void c.restore();
+  if ((m.style.opacity ?? 1) < 1) c.globalAlpha = m.style.opacity ?? 1;
+  c.translate(d0.x, d0.y);
+  c.rotate(Math.atan2(d1.y - d0.y, d1.x - d0.x));
+  c.beginPath();
+  c.rect(0, 0, width, height);
+  c.clip();
+  c.scale(s, s);
+  // Rules: in legend units, at the markup's width on screen.
+  const inner: LayerView = { ...view, devicePerPt: view.devicePerPt / s, dpr: view.dpr / s };
+  const rule = (x0: number, y0: number, x1: number, y1: number) => {
+    c.beginPath();
+    c.moveTo(x0, y0);
+    c.lineTo(x1, y1);
+    stroke(c, m.style, inner);
+  };
+  const { pad, header, row, symbol, qty, textX, countX, rowsY, totalY } = layout;
+  const end = header + rowsY.length * row;
+  rule(0, header, layout.width, header);
+  for (const y of rowsY.slice(1)) rule(0, y, layout.width, y);
+  rule(symbol, header, symbol, end);
+  rule(layout.width - qty, header, layout.width - qty, end);
+  if (totalY !== null) rule(0, totalY, layout.width, totalY);
+  c.fillStyle = m.style.color;
+  c.textBaseline = "middle";
+  const text = (t: string, x: number, y: number, bold: boolean, align: CanvasTextAlign) => {
+    c.font = font(bold);
+    c.textAlign = align;
+    c.fillText(t, x, y);
+  };
+  text(m.legend.title, pad, header / 2, true, "left");
+  text(LEGEND_QTY, countX, header / 2, true, "right");
+  if (rows.length === 0) text(LEGEND_EMPTY, textX, rowsY[0] + row / 2, false, "left");
+  rows.forEach((r, i) => {
+    const mid = rowsY[i] + row / 2;
+    text(r.text, textX, mid, false, "left");
+    text(String(r.count), countX, mid, true, "right");
+    paintLegendSymbol(c, r.symbol, { x: symbol / 2, y: mid }, Math.min(symbol, row) - 2 * pad, view);
+  });
+  if (totalY !== null) {
+    text(LEGEND_TOTAL, textX, totalY + header / 2, true, "left");
+    text(String(legendTotal(rows)), countX, totalY + header / 2, true, "right");
+  }
+  c.restore();
+}
+
+/** Story 7.8: a device placement drawn as a legend row's symbol, fitted in a `size` square at `centre` (legend units). */
+function paintLegendSymbol(c: CanvasRenderingContext2D, symbol: readonly Markup[], centre: Point, size: number, view: LayerView): void {
+  const fit = fitSymbol(symbol.flatMap((m) => devicePoints(m.points, view)), centre, size);
+  if (!fit) return;
+  const sub: LayerView = { ...view, toDevice: (p) => fit.map(view.toDevice(p)), devicePerPt: view.devicePerPt * fit.scale, dpr: view.dpr * fit.scale, width: 0, height: 0 };
+  paintList(c, symbol, sub, null, { selected: new Set(), captions: [], boxes: [], selectedShown: [] });
 }
 
 /** Story 5.6 (D7): a note's icon, a page (folded corner) in page units, upright, centred on its point. */
@@ -912,6 +995,16 @@ function paintList(c: CanvasRenderingContext2D, markups: readonly Markup[], view
       paintRevision(c, any, pts, view);
       continue;
     }
+    if (any.type === "legend") {
+      // Story 7.8: a legend, its rows counted from the markups now.
+      const rows = legendRowsOf(any, view.documentId);
+      captions.push(legendLabel(any.legend, legendTotal(rows)));
+      const pts = devicePoints(any.points, view);
+      if (!onCanvas(pts, any.style, view)) continue;
+      if (selected.has(any.id)) strokeSelection(c, pts, view);
+      paintLegend(c, any, rows, pts, view);
+      continue;
+    }
     if (!isMeasure(any)) {
       // Story 5.4: a shape, no caption (its label stands in layer 2's list).
       captions.push(SHAPE_LABEL[any.type]);
@@ -1025,6 +1118,17 @@ export const measurePainter: MarkupPainter = {
       }
       return null;
     }
+    // Story 7.8: the legend under the pointer, at half strength.
+    if (viewerStore.getState().tool === "legend") {
+      if (pointer) {
+        const ghost = legendAt(pointer, view.documentId, pageIdOf(view.documentId, view.pageIndex));
+        c.save();
+        c.globalAlpha = 0.5;
+        paintLegend(c, ghost, legendRowsOf(ghost, view.documentId), devicePoints(ghost.points, view), view);
+        c.restore();
+      }
+      return null;
+    }
     const d = drawing();
     if (d?.tool === "fill") return paintFillActive(c, view, pointer);
     // Story 5.9: the words selected so far.
@@ -1076,7 +1180,7 @@ export const measurePainter: MarkupPainter = {
       paintCover(c, pts);
       strokeShape(c, d.tool === "whiteout" ? "rectangle" : "polyline", pts, DEFAULT_MARKUP_STYLE, view);
     }
-    else if (isMarkupTool(d.tool) && !isTextTool(d.tool) && !isInkTool(d.tool) && !isCoverTool(d.tool) && d.tool !== "image" && d.tool !== "stamp" && d.tool !== "revision" && d.tool !== "underline" && d.tool !== "strikethrough") strokeShape(c, d.tool, pts, DEFAULT_MARKUP_STYLE, view);
+    else if (isMarkupTool(d.tool) && !isTextTool(d.tool) && !isInkTool(d.tool) && !isCoverTool(d.tool) && d.tool !== "image" && d.tool !== "stamp" && d.tool !== "revision" && d.tool !== "legend" && d.tool !== "underline" && d.tool !== "strikethrough") strokeShape(c, d.tool, pts, DEFAULT_MARKUP_STYLE, view);
     else strokeMeasure(c, pts, DEFAULT_MEASURE_STYLE, view);
     c.restore();
     if (!live) return null;
@@ -1114,6 +1218,8 @@ export const measurePainter: MarkupPainter = {
     if (tool === "stamp") return placeStamp(stampStore.getState().armed, point, at.documentId, at.pageIndex) ? "done" : "ignored";
     // Story 7.7: a revision stamp centred on the click.
     if (tool === "revision") return placeRevision(point, at.documentId, pageId);
+    // Story 7.8: a legend centred on the click.
+    if (tool === "legend") return placeLegend(point, at.documentId, pageId);
     const d = drawing();
     if (!d || d.pageId !== pageId || d.tool !== tool) {
       setDrawing({ tool, pageId, pageIndex: at.pageIndex, points: [point] });
@@ -1442,6 +1548,8 @@ function markupOf(d: Drawing): Markup {
       throw new Error("a tool is placed from the Tool Chest (placeStamp)");
     case "revision":
       throw new Error("a revision stamp is placed by one click (revision-tool.ts)");
+    case "legend":
+      throw new Error("a legend is placed by one click (legend-tool.ts)");
     case "underline":
     case "strikethrough":
       throw new Error("marked text is added by its drag (text-mark-tool.ts)");

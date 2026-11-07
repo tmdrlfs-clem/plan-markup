@@ -20,13 +20,17 @@ import { NumberField } from "@/components/ui/number-field";
 import { Select } from "@/components/ui/select";
 import { toast } from "@/components/ui/toast-store";
 import {
+  MAX_LEGEND_TITLE,
   MAX_REVISION_AUTHOR,
   MAX_REVISION_DESCRIPTION,
   MAX_REVISION_LENGTH,
   MAX_SUBJECT_LENGTH,
   MAX_TEXT_LENGTH,
   isTextMarkup,
+  legendMetaSchema,
   revisionMetaSchema,
+  type LegendMarkup,
+  type LegendScope,
   type Markup,
   type RevisionMarkup,
   type RevisionMeta,
@@ -105,6 +109,33 @@ function RevisionFields({ markup, onChange }: { markup: RevisionMarkup; onChange
       <TextValueField key={`desc:${markup.id}`} label="Description" value={r.description} maxLength={MAX_REVISION_DESCRIPTION} onCommit={commit("description")} />
       <TextValueField key={`author:${markup.id}`} label="Author" value={r.author} maxLength={MAX_REVISION_AUTHOR} onCommit={commit("author")} />
       <TextValueField key={`date:${markup.id}`} label="Date" value={r.date} placeholder="YYYY-MM-DD" maxLength={10} onCommit={commit("date")} />
+    </>
+  );
+}
+
+/** Story 7.8: a legend's title and scope; an empty or too long title is refused with why. */
+function LegendFields({ markup, onChange }: { markup: LegendMarkup; onChange: (change: PropertyChange) => void }) {
+  const l = markup.legend;
+  const commitTitle = (title: string) => {
+    const parsed = legendMetaSchema.shape.title.safeParse(title);
+    if (!parsed.success) {
+      toast({ title: "Not changed", description: parsed.error.issues[0]?.message, variant: "warning" });
+      return;
+    }
+    onChange({ legend: { title: parsed.data } });
+  };
+  return (
+    <>
+      <TextValueField key={`legend:${markup.id}`} label="Title" value={l.title} maxLength={MAX_LEGEND_TITLE} onCommit={commitTitle} />
+      <Select
+        label="Counts"
+        value={l.scope}
+        options={[
+          { value: "page", label: "This page" },
+          { value: "document", label: "Whole document" },
+        ]}
+        onValueChange={(v) => onChange({ legend: { scope: v as LegendScope } })}
+      />
     </>
   );
 }
@@ -206,6 +237,7 @@ export function PropertiesPanel({ emptyText }: { emptyText: string }) {
           />
         ) : null}
         {fields.has("revision") && one?.type === "revision" ? <RevisionFields markup={one} onChange={change} /> : null}
+        {fields.has("legend") && one?.type === "legend" ? <LegendFields markup={one} onChange={change} /> : null}
         {fields.has("color") ? <ColorField label="Colour" value={value((m) => m.style.color.toLowerCase())} onChange={(c) => c && change({ color: c })} /> : null}
         {fields.has("fill") ? <ColorField label="Fill" none value={value((m) => m.style.fill?.toLowerCase() ?? null)} onChange={(c) => change({ fill: c })} /> : null}
         {fields.has("width") ? (

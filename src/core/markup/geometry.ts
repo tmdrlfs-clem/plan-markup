@@ -107,6 +107,8 @@ export function hitMarkup(m: Markup, p: Point, tol: number, userUnit = 1): boole
     case "image":
     // Story 7.7: a revision stamp, its whole box.
     case "revision":
+    // Story 7.8: a legend, its whole box.
+    case "legend":
     // Story 5.11: a white-out, inside and on its outline.
     case "whiteout":
       return nearPolyline(p, m.points, tol, true) || insidePolygon(p, m.points);

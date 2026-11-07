@@ -3,12 +3,12 @@
 // markup has; a change applies only to the markups it fits (pure; the editor
 // makes it one undo step).
 
-import { isMeasureMarkup, isTextMarkup, revisionMetaSchema, type Markup, type MarkupStyle, type MarkupType, type RevisionMeta } from "@/core/schema/markup";
+import { isMeasureMarkup, isTextMarkup, legendMetaSchema, revisionMetaSchema, type LegendMeta, type Markup, type MarkupStyle, type MarkupType, type RevisionMeta } from "@/core/schema/markup";
 
-export type PropertyField = "color" | "width" | "fill" | "opacity" | "fontSize" | "text" | "subject" | "revision";
+export type PropertyField = "color" | "width" | "fill" | "opacity" | "fontSize" | "text" | "subject" | "revision" | "legend";
 
 /** The panel's order. */
-export const PROPERTY_FIELDS: readonly PropertyField[] = ["subject", "revision", "color", "fill", "width", "opacity", "fontSize", "text"];
+export const PROPERTY_FIELDS: readonly PropertyField[] = ["subject", "revision", "legend", "color", "fill", "width", "opacity", "fontSize", "text"];
 
 /** The default subject: the type's name. */
 export const SUBJECT_NAMES: Record<MarkupType, string> = {
@@ -40,10 +40,11 @@ export const SUBJECT_NAMES: Record<MarkupType, string> = {
   whiteout: "White-out",
   eraser: "Eraser",
   revision: "Revision stamp",
+  legend: "Legend",
 };
 
 /** Closed shapes and the text boxes drawn around text: a fill fills them under their stroke. */
-const FILLED: ReadonlySet<MarkupType> = new Set<MarkupType>(["polygon", "rectangle", "ellipse", "cloud", "text", "callout", "cloudplus", "revision"]);
+const FILLED: ReadonlySet<MarkupType> = new Set<MarkupType>(["polygon", "rectangle", "ellipse", "cloud", "text", "callout", "cloudplus", "revision", "legend"]);
 
 /** The fields `m` has: an image has only its opacity (and a subject); a typewriter has no frame to give a width. */
 export function fieldsOf(m: Markup): ReadonlySet<PropertyField> {
@@ -58,6 +59,8 @@ export function fieldsOf(m: Markup): ReadonlySet<PropertyField> {
   if (isTextMarkup(m) || isMeasureMarkup(m) || m.type === "dimension" || m.type === "revision") fields.add("fontSize");
   // Story 7.7: a revision stamp's revision, description, author and date.
   if (m.type === "revision") fields.add("revision");
+  // Story 7.8: a legend's title and scope (its text is sized to its box, so no font size).
+  if (m.type === "legend") fields.add("legend");
   if (isTextMarkup(m)) fields.add("text");
   return fields;
 }
@@ -66,7 +69,7 @@ export function fieldsOf(m: Markup): ReadonlySet<PropertyField> {
 export function sharedFields(markups: readonly Markup[]): PropertyField[] {
   if (markups.length === 0) return [];
   const each = markups.map(fieldsOf);
-  return PROPERTY_FIELDS.filter((f) => ((f !== "text" && f !== "revision") || markups.length === 1) && each.every((s) => s.has(f)));
+  return PROPERTY_FIELDS.filter((f) => ((f !== "text" && f !== "revision" && f !== "legend") || markups.length === 1) && each.every((s) => s.has(f)));
 }
 
 /** What a size field is called: "Font size" for text, "Caption size" for measurements and dimensions, "Text size" for both. */
@@ -90,7 +93,7 @@ export function subjectOf(m: Markup): string {
 }
 
 /** A change from the panel: style fields (fill null: none), the subject (empty: the type's name), the text. */
-export type PropertyChange = Partial<Omit<MarkupStyle, "fill">> & { fill?: string | null; subject?: string; text?: string; revision?: Partial<RevisionMeta> };
+export type PropertyChange = Partial<Omit<MarkupStyle, "fill">> & { fill?: string | null; subject?: string; text?: string; revision?: Partial<RevisionMeta>; legend?: Partial<LegendMeta> };
 
 /** `m` with the change's fields it has (the others are left alone); the same object when nothing changes. */
 export function withChange(m: Markup, change: PropertyChange): Markup {
@@ -124,6 +127,12 @@ export function withChange(m: Markup, change: PropertyChange): Markup {
     const r = parsed.success ? parsed.data : null;
     const was = next.revision;
     if (r && (r.rev !== was.rev || r.description !== was.description || r.author !== was.author || r.date !== was.date)) next = { ...next, revision: r };
+  }
+  // Story 7.8: a legend's title and scope, kept only when valid.
+  if (change.legend !== undefined && next.type === "legend") {
+    const parsed = legendMetaSchema.safeParse({ ...next.legend, ...change.legend });
+    const l = parsed.success ? parsed.data : null;
+    if (l && (l.title !== next.legend.title || l.scope !== next.legend.scope)) next = { ...next, legend: l };
   }
   return next;
 }
