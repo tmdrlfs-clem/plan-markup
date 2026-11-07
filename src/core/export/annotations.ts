@@ -31,6 +31,8 @@ export type ExportOptions = {
   date: Date;
   /** Page to annotate (0-based). Default 0. */
   pageIndex?: number;
+  /** Story 8.1: the layers' optional content groups already added (several pages share them); absent: added here. */
+  ocgs?: Map<string, PDFRef>;
 };
 
 /** One PDF annotation produced from a markup (plain data, before pdf-lib). */
@@ -377,7 +379,7 @@ export function writeAnnotations(doc: PDFDocument, model: ExportDocument, option
   const context = doc.context;
   const page: PDFPage = doc.getPage(options.pageIndex ?? 0);
   const forms = new FormWriter(context);
-  const ocgs = addLayers(doc, model.layers);
+  const ocgs = options.ocgs ?? addLayers(doc, model.layers);
   const roots = new Map<string, PDFRef>();
   const specs: AnnotationSpec[] = [];
   const refs: PDFRef[] = [];

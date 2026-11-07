@@ -34,6 +34,7 @@ import {
 
 import { AccountMenu, displayName, type WorkspaceUser } from "./account-menu";
 import { AddToolDialog } from "@/features/tool-chest/add-tool-dialog";
+import { ExportDialog, setExportAuthor } from "@/features/export";
 import { ImportReportDialog } from "@/features/tool-chest/import-btx-ui";
 import { ToolChestPanel, setToolChestOwner } from "@/features/tool-chest/tool-chest-panel";
 
@@ -78,7 +79,11 @@ export function WorkspaceShell({ user, theme = null }: { user: WorkspaceUser; th
     setToolChestOwner(user.id);
   }, [user.id]);
   // Story 7.7: a new revision stamp's author.
-  useMemo(() => setRevisionAuthor(displayName(user)), [user]);
+  useMemo(() => {
+    setRevisionAuthor(displayName(user));
+    // Story 8.1: an exported annotation's author.
+    setExportAuthor(displayName(user));
+  }, [user]);
   // Story 4.5: the editing session (markups, calibrations, undo) of this user's documents survives a reload.
   useEditorSession(user.id);
   useMarkupSetSync(user.id);
@@ -272,6 +277,7 @@ function ShellBody({ user, initialTheme }: { user: WorkspaceUser; initialTheme: 
           {/* Story 5.3: the markups' context menu (a right-click with Select). */}
           <MarkupContextMenu />
           <AddToolDialog />
+          <ExportDialog />
           <ImportReportDialog />
         </main>
         <aside aria-label="Tools" data-region="tool-rail" className="w-11 shrink-0 border-l border-border bg-surface-2">

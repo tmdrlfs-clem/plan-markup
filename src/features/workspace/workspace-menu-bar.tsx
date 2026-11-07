@@ -1,6 +1,6 @@
 "use client";
 
-import { FolderOpen, LogOut, Palette } from "lucide-react";
+import { FileDown, FolderOpen, LogOut, Palette } from "lucide-react";
 import { useStore } from "zustand";
 
 import {
@@ -22,6 +22,7 @@ import { calibrationOf, openCalibrate, openVerify } from "@/features/calibration
 import { activeUndoLabels, hasClipboard, redoActive, undoActive, editorStore, useSelectionState } from "@/features/editor";
 import { hasDocument, tabsStore, viewerCommands, viewerStore, viewerTabs, type SelectionCommand, type ViewerCommand } from "@/features/viewer";
 import { openMarkupSetList } from "@/features/markup-set/markup-sets-ui";
+import { openExport } from "@/features/export";
 import { saveNow } from "@/features/markup-set/sync";
 import { THEMES, THEME_LABELS, isTheme, type Theme } from "@/lib/theme";
 
@@ -64,6 +65,22 @@ function TabItem({ label, shortcut, run, minTabs }: { label: string; shortcut: s
     <MenuBarItem disabled={count < minTabs} shortcut={shortcut} onSelect={run}>
       {label}
     </MenuBarItem>
+  );
+}
+
+/** Story 8.1: File → Export (the flattened PDF arrives with Story 8.2). */
+function ExportMenu() {
+  const open = useStore(viewerStore, (s) => hasDocument(s) && !s.standIn);
+  return (
+    <MenuBarSub>
+      <MenuBarSubTrigger icon={FileDown}>Export</MenuBarSubTrigger>
+      <MenuBarSubContent>
+        <MenuBarItem disabled={!open} onSelect={() => openExport()}>
+          Editable PDF…
+        </MenuBarItem>
+        <Disabled label="Flattened PDF…" />
+      </MenuBarSubContent>
+    </MenuBarSub>
   );
 }
 
@@ -187,7 +204,7 @@ export function WorkspaceMenuBar({ onOpen, onSignOut, theme, onThemeChange, onAc
           <Disabled label="Print…" shortcut="Ctrl+P" />
           <MenuBarSeparator />
           <Disabled label="Flatten…" shortcut="Ctrl+Shift+M" />
-          <Disabled label="Export…" />
+          <ExportMenu />
           <MenuBarSeparator />
           {/* Stories 6.5 / 6.6. */}
           <MenuBarItem onSelect={() => openMarkupSetList()}>Markup sets…</MenuBarItem>

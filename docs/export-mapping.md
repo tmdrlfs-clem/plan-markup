@@ -219,3 +219,27 @@ Fallbacks marked below are re-checked cell by cell in Epic 8.
 - Count, angle, radius and diameter values are not recomputed by other viewers (no ISO intent).
 - White-out is a visual cover only; the covered text remains extractable.
 - Revu keys are only observed for counts; their effect on other measurement types is unknown.
+
+## Story 8.1: the app's markups in File → Export → Editable PDF
+
+`src/core/export/from-app.ts` converts the app's markup types to the model above; the export
+worker (`src/workers/export.worker.ts`) writes them onto the original PDF, page by page, layers
+shared as one set of OCGs. Measurement `/Contents` (and the appearance's label) is the caption the
+app shows, in its unit and precision (NFR8); the `/Measure` dictionary carries the page's scale
+(an uncalibrated page measures in points).
+
+| App type | Written as | Notes |
+| --- | --- | --- |
+| length, polylength, area, count, angle, radius, diameter, dimension | the measurement rows above | area holes are not cut out of the appearance (the value is right) |
+| line, arrow, polyline, polygon, cloud, pen | as above | an arrow's head is `/LE /ClosedArrow` |
+| rectangle, ellipse | `Square` / `Circle` when upright; `Polygon` when turned | an ISO `/Rect` cannot turn |
+| text, typewriter, callout, Cloud+, note | FreeText / Text as above | a turned text box is written upright around it |
+| highlight (freehand) | `Ink` at its opacity | no multiply blend |
+| underline, strikethrough | `Underline` / `StrikeOut` quads | |
+| image, signature stamp | `Stamp` with the image (`/SMask` keeps transparency) | |
+| revision stamp, legend | `FreeText` holding the text they show | the legend's symbols are not drawn |
+| white-out, eraser | written, then **flattened** into the page (A5) | the PDF's own content under it remains |
+
+Checklist for the release (NFR41), on a file exported from the app: Chrome / pdf.js ✓ (e2e and
+render checked 2026-11-08); Revu 21 and Acrobat: opens without repair, each type editable, the
+length value shown — `?` until the founder's check before Story 8.5.

@@ -70,8 +70,13 @@ function fixed(n: number, decimals: number): string {
   return n.toFixed(decimals);
 }
 
-/** The value of a measurement markup, or undefined for other types. */
+/** The value of a measurement markup, or undefined for other types (Story 8.1: its text as the app shows it, when given). */
 export function measureValue(m: Markup, cal: Calibration): MeasureValue | undefined {
+  const v = computedValue(m, cal);
+  return v && m.valueText !== undefined ? { ...v, text: m.valueText } : v;
+}
+
+function computedValue(m: Markup, cal: Calibration): MeasureValue | undefined {
   const k = cal.unitsPerPoint;
   const len = (pt: number): MeasureValue => {
     const value = pt * k;

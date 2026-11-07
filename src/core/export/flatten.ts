@@ -171,8 +171,8 @@ function propertiesDict(page: PDFPage): PDFDict {
   return props;
 }
 
-/** Flattens the annotations of one page. */
-export function flattenPage(doc: PDFDocument, pageIndex: number): FlattenResult {
+/** Flattens the annotations of one page (Story 8.1: with `only`, just those; the others are kept as they are). */
+export function flattenPage(doc: PDFDocument, pageIndex: number, only?: ReadonlySet<PDFRef>): FlattenResult {
   const context = doc.context;
   const page = doc.getPage(pageIndex);
   const annots = page.node.Annots();
@@ -187,6 +187,10 @@ export function flattenPage(doc: PDFDocument, pageIndex: number): FlattenResult 
     const entry = annots.get(i);
     const annot = annots.lookup(i);
     if (!(annot instanceof PDFDict)) continue;
+    if (only && !(entry instanceof PDFRef && only.has(entry))) {
+      keep.push(entry);
+      continue;
+    }
     const subtype = annot.lookupMaybe(PDFName.of("Subtype"), PDFName)?.asString();
     if (subtype === "/Widget") {
       keep.push(entry);

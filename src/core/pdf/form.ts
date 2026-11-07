@@ -5,8 +5,8 @@ import { PDFDict, PDFName, PDFNumber, type PDFContext, type PDFRef } from "@cant
 
 import type { Box } from "./content";
 
-/** Raw 8-bit RGB image (width × height × 3 bytes). */
-export type ImageResource = { width: number; height: number; rgb: Uint8Array };
+/** Raw 8-bit RGB image (width × height × 3 bytes), with an optional 8-bit alpha (width × height bytes, an /SMask). */
+export type ImageResource = { width: number; height: number; rgb: Uint8Array; alpha?: Uint8Array };
 export type ExtGStateResource = { CA?: number; ca?: number; BM?: string };
 
 /** A form's content (operators) plus the resources it names. */
@@ -35,6 +35,13 @@ export class FormWriter {
     const known = this.images.get(img);
     if (known) return known;
     if (img.rgb.length !== img.width * img.height * 3) throw new Error("Image data size does not match width × height × 3");
+    if (img.alpha && img.alpha.length !== img.width * img.height) throw new Error("Alpha data size does not match width × height");
+    // Story 8.1: a transparent image (a signature) keeps its transparency as a soft mask.
+    const smask = img.alpha
+      ? this.context.register(
+          this.context.flateStream(img.alpha, { Type: "XObject", Subtype: "Image", Width: img.width, Height: img.height, ColorSpace: "DeviceGray", BitsPerComponent: 8 }),
+        )
+      : undefined;
     const ref = this.context.register(
       this.context.flateStream(img.rgb, {
         Type: "XObject",
@@ -43,6 +50,7 @@ export class FormWriter {
         Height: img.height,
         ColorSpace: "DeviceRGB",
         BitsPerComponent: 8,
+        ...(smask ? { SMask: smask } : {}),
       }),
     );
     this.images.set(img, ref);

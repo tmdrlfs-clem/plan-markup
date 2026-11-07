@@ -61,6 +61,8 @@ export type MarkupBase = {
   group?: string;
   /** Free comment text (/Contents for non-text, non-measurement markups). */
   comment?: string;
+  /** Story 8.1: a measurement's value as the app shows it (its unit and precision); overrides the computed text. */
+  valueText?: string;
 };
 
 export type TextStyle = { fontSize: number; textColor: Rgb };
@@ -91,7 +93,7 @@ export type Markup = MarkupBase &
     | { type: "highlight" | "underline" | "strikeout"; quads: Box[] }
     | { type: "pen"; strokes: Pt[][] }
     | { type: "stamp"; rect: Box; label: string }
-    | { type: "imageStamp"; rect: Box; image: { width: number; height: number; rgb: Uint8Array } }
+    | { type: "imageStamp"; rect: Box; image: { width: number; height: number; rgb: Uint8Array; alpha?: Uint8Array } }
     | { type: "flag"; rect: Box }
     | { type: "deviceStamp"; center: Pt; size: number; device: DeviceMeta }
     | { type: "hyperlink"; rect: Box; uri: string }
