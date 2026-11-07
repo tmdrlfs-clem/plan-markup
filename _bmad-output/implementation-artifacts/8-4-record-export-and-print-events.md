@@ -1,6 +1,6 @@
 # Story 8.4: Record export and print events
 
-Status: review
+Status: done
 
 ## Story
 
