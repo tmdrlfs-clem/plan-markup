@@ -127,7 +127,7 @@ development_status:
   epic-7-retrospective: optional
   # Epic 8: Flatten, Export and Print
   epic-8: in-progress
-  8-1-export-a-pdf-with-editable-markups: review
+  8-1-export-a-pdf-with-editable-markups: done
   8-2-flatten-markups-and-export-a-flattened-pdf: backlog
   8-3-print: backlog
   8-4-record-export-and-print-events: backlog

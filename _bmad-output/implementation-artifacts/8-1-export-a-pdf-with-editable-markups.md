@@ -1,6 +1,6 @@
 # Story 8.1: Export a PDF with editable markups
 
-Status: review
+Status: done
 
 ## Story
 
@@ -47,6 +47,7 @@ Claude Opus 5.5
 
 - Local: typecheck, lint clean; vitest 213 files / 2091 tests pass; build ok; check:* pass; e2e export-pdf, legend, whiteout, workspace-shell pass (11).
 - pdf.js render of the e2e's exported PDF matches the canvas (length, rectangle, white-out burned in).
+- CI green on 8073a19 (unit, guards, Playwright e2e, gitleaks).
 
 ### File List
 
