@@ -1,6 +1,6 @@
 # Story 7.8: Auto legend
 
-Status: review
+Status: done
 
 ## Story
 
@@ -48,6 +48,7 @@ Claude Opus 5.5
 
 - Local: typecheck, lint clean; vitest 209 files / 2077 tests pass; build ok; check:* pass; e2e legend, revision-stamp, save-tool, properties-panel, workspace-shell, markups-list pass (15).
 - Screenshot checked: title/QTY row, the Riser symbol, its count and the total.
+- CI green on 0679ccc (unit, guards, Playwright e2e, gitleaks).
 
 ### File List
 
