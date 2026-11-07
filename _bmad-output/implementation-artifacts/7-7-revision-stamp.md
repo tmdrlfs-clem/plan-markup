@@ -1,6 +1,6 @@
 # Story 7.7: Revision stamp
 
-Status: review
+Status: done
 
 ## Story
 
@@ -45,6 +45,7 @@ Claude Opus 5.5
 ### Completion Notes List
 
 - Local: typecheck, lint clean; vitest 207 files / 2068 tests pass; build ok; check:* pass; e2e revision-stamp, properties-panel, workspace-shell, markups-list, save-tool, text-tools pass.
+- CI green on 7313b54 (unit, guards, Playwright e2e, gitleaks).
 
 ### File List
 

@@ -122,7 +122,7 @@ development_status:
   7-4-import-a-btx-file-safely: done
   7-5-faithful-btx-tool-conversion: done
   7-6-export-and-import-tool-sets-in-our-format: done
-  7-7-revision-stamp: review
+  7-7-revision-stamp: done
   7-8-auto-legend: backlog
   epic-7-retrospective: optional
   # Epic 8: Flatten, Export and Print
