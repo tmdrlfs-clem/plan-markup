@@ -23,6 +23,7 @@ import { activeUndoLabels, hasClipboard, redoActive, undoActive, editorStore, us
 import { hasDocument, tabsStore, viewerCommands, viewerStore, viewerTabs, type SelectionCommand, type ViewerCommand } from "@/features/viewer";
 import { openMarkupSetList } from "@/features/markup-set/markup-sets-ui";
 import { openExport, openPrint } from "@/features/export";
+import { openShortcuts } from "./shortcuts-dialog";
 import { saveNow } from "@/features/markup-set/sync";
 import { THEMES, THEME_LABELS, isTheme, type Theme } from "@/lib/theme";
 
@@ -298,7 +299,7 @@ export function WorkspaceMenuBar({ onOpen, onSignOut, theme, onThemeChange, onAc
         <MenuBarTrigger>Settings</MenuBarTrigger>
         <MenuBarContent>
           <MenuBarItem onSelect={() => onAccount?.()}>Account &amp; signature…</MenuBarItem>
-          <Disabled label="Keyboard shortcuts…" />
+          <MenuBarItem onSelect={openShortcuts}>Keyboard shortcuts…</MenuBarItem>
           {/* Story 3.8: radio items in a submenu (no dialog): one click, the current theme checked. */}
           <MenuBarSub>
             <MenuBarSubTrigger icon={Palette}>Appearance</MenuBarSubTrigger>
@@ -323,7 +324,7 @@ export function WorkspaceMenuBar({ onOpen, onSignOut, theme, onThemeChange, onAc
       <MenuBarMenu>
         <MenuBarTrigger>Help</MenuBarTrigger>
         <MenuBarContent>
-          <Disabled label="Keyboard shortcuts" />
+          <MenuBarItem onSelect={openShortcuts}>Keyboard shortcuts</MenuBarItem>
           <Disabled label="About Plan Markup" />
         </MenuBarContent>
       </MenuBarMenu>

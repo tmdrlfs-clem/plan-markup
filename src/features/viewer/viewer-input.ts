@@ -196,6 +196,9 @@ const NUDGE: Readonly<Record<string, Point>> = {
   ArrowDown: { x: 0, y: 1 },
 };
 
+/** Story 8.5 (UX-DR39): the keyboard pointer's step (viewport CSS px); Shift moves ×10. */
+export const KEY_POINTER_STEP = 4;
+
 /** Tools that place points (Length, Polylength, the calibration pick): a click places one, Alt suspends snapping. */
 function pointTool(tool: ViewerTool): boolean {
   return isDrawTool(tool) || tool === "calibrate";
@@ -223,6 +226,13 @@ function rectOf(a: Point, b: Point): Rect {
 export class ViewerInput {
   private drag: Drag | null = null;
   private pointer: Point | null = null;
+  /**
+   * Story 8.5 (UX-DR39): the keyboard pointer. With a point-placing tool and the canvas
+   * focused, the arrows move it (from the canvas centre) like the mouse (snapping, the
+   * status bar's X/Y); Enter places a point there, Enter again without moving finishes.
+   * `moved`: it moved since its last point. A mouse move ends it.
+   */
+  private keyPointer: { at: Point; moved: boolean } | null = null;
   private altDown = false;
   /** Story 5.1 / 5.2: the Select cursor at the pointer (a markup or a handle), null elsewhere. */
   private overCursor: string | null = null;
@@ -395,6 +405,7 @@ export class ViewerInput {
   private onPointerMove(e: PointerEvent): void {
     const p = this.point(e);
     this.pointer = p;
+    this.keyPointer = null;
     this.target.pointerAt?.(p, { alt: e.altKey, shift: e.shiftKey });
     const drag = this.drag;
     // Story 5.1 / 5.2: the move cursor over a markup, a handle's cursor over a handle, with Select.
@@ -495,6 +506,11 @@ export class ViewerInput {
       this.endDrag(false);
       return;
     }
+    // Story 8.5: the keyboard pointer (arrows move it, Enter places a point there).
+    if (this.keyPlacement(e)) {
+      e.preventDefault();
+      return;
+    }
     // Story 4.6: Enter finishes a polylength, Backspace removes its last vertex (the canvas's keys only).
     if ((e.key === "Enter" || e.key === "Backspace") && this.active() && isDrawTool(viewerStore.getState().tool) && !e.defaultPrevented && this.canvasKeys()) {
       const handled = e.key === "Enter" ? this.target.finishTool?.() : this.target.removeToolPoint?.();
@@ -513,6 +529,7 @@ export class ViewerInput {
     }
     // Story 4.3: Esc while picking calibration points cancels the pick (the dialog comes back).
     if (e.key === "Escape" && viewerStore.getState().tool === "calibrate") this.target.cancelCalibrationPick?.();
+    if (e.key === "Escape") this.keyPointer = null;
     if (this.selectionKeys(e)) {
       e.preventDefault();
       return;
@@ -554,6 +571,37 @@ export class ViewerInput {
         return;
       }
     }
+  }
+
+  /** Story 8.5: a tool that places points by click (not strokes, brushes or text drags). */
+  private keyPlacingTool(): boolean {
+    const tool = viewerStore.getState().tool;
+    return pointTool(tool) && !isInkTool(tool) && !isTextMarkTool(tool) && tool !== "fill";
+  }
+
+  /** Story 8.5: arrows move the keyboard pointer, Enter places a point at it; true when the key was used. */
+  private keyPlacement(e: KeyboardEvent): boolean {
+    if (e.defaultPrevented || e.isComposing || e.ctrlKey || e.metaKey || e.altKey || this.drag || !this.active()) return false;
+    if (this.canvas.ownerDocument.activeElement !== this.canvas || !this.keyPlacingTool()) return false;
+    const dir = NUDGE[e.key];
+    if (dir) {
+      const step = KEY_POINTER_STEP * (e.shiftKey ? 10 : 1);
+      const r = this.canvas.getBoundingClientRect();
+      const from = this.keyPointer?.at ?? this.pointer ?? { x: r.width / 2, y: r.height / 2 };
+      const at = { x: Math.min(Math.max(from.x + dir.x * step, 0), r.width), y: Math.min(Math.max(from.y + dir.y * step, 0), r.height) };
+      this.keyPointer = { at, moved: true };
+      this.pointer = at;
+      this.target.pointerAt?.(at, { alt: false, shift: false });
+      return true;
+    }
+    if (e.key === "Enter" && !e.shiftKey && this.keyPointer?.moved) {
+      if (e.repeat) return true;
+      this.target.pointerAt?.(this.keyPointer.at, { alt: false, shift: false });
+      this.target.snapClick?.();
+      this.keyPointer.moved = false;
+      return true;
+    }
+    return false;
   }
 
   /**

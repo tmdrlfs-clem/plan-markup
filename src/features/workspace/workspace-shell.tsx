@@ -61,6 +61,7 @@ import {
 import { useMarkupSetSync } from "@/features/markup-set/sync";
 
 import { WorkspaceMenuBar } from "./workspace-menu-bar";
+import { ShortcutsDialog } from "./shortcuts-dialog";
 import { WorkspaceStatusBar } from "./workspace-status-bar";
 import { WorkspaceToolbar } from "./workspace-toolbar";
 import type { Theme } from "@/lib/theme";
@@ -279,9 +280,10 @@ function ShellBody({ user, initialTheme }: { user: WorkspaceUser; initialTheme: 
           <AddToolDialog />
           <ExportDialog />
           <PrintDialog />
+          <ShortcutsDialog />
           <ImportReportDialog />
         </main>
-        <aside aria-label="Tools" data-region="tool-rail" className="w-11 shrink-0 border-l border-border bg-surface-2">
+        <aside aria-label="Tools" data-region="tool-rail" className="box-content w-11 shrink-0 border-l border-border bg-surface-2">
           <ToolRail />
         </aside>
       </div>

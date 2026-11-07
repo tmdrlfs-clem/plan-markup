@@ -10,7 +10,8 @@ import { cspModeFor } from "@/lib/security/route-policy";
  * covers is protected (default-deny). The marketing site (Epic 13) adds its
  * paths here or excludes them in the matcher.
  */
-const PUBLIC_PATHS: ReadonlySet<string> = new Set(["/", "/sign-in"]);
+// Story 8.5: /api/health is the uptime monitor's check (no session, nothing secret).
+const PUBLIC_PATHS: ReadonlySet<string> = new Set(["/", "/sign-in", "/api/health"]);
 
 function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATHS.has(pathname);

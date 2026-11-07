@@ -158,7 +158,8 @@ describe("Settings > Appearance (Story 3.8)", () => {
     screen.getByRole("menuitem", { name: "Settings" }).focus();
     await user.keyboard("{Enter}");
     await screen.findByRole("menuitem", { name: /Keyboard shortcuts/ });
-    await user.keyboard("{ArrowDown}");
+    // Account & signature…, then Keyboard shortcuts… (Story 8.5), then Appearance.
+    await user.keyboard("{ArrowDown}{ArrowDown}");
     await waitFor(() => expect(document.activeElement).toHaveTextContent("Appearance"));
     await user.keyboard("{ArrowRight}");
     await waitFor(() => expect(document.activeElement).toHaveAttribute("role", "menuitemradio"));

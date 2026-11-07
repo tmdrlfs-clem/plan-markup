@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  KEY_POINTER_STEP,
   CLICK_SLOP,
   ViewerInput,
   WHEEL_LINE_PX,
@@ -712,5 +713,67 @@ describe("ViewerInput", () => {
     const other = pointer("contextmenu", { x: 60, y: 70, button: 2 });
     canvas.dispatchEvent(other);
     expect(other.defaultPrevented).toBe(false);
+  });
+});
+
+describe("ViewerInput keyboard pointer (Story 8.5)", () => {
+  let canvas: HTMLCanvasElement;
+  let t: ReturnType<typeof target>;
+  let input: ViewerInput;
+  const key = (k: string, init: KeyboardEventInit = {}) => {
+    const e = new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true, ...init });
+    window.dispatchEvent(e);
+    return e;
+  };
+
+  beforeEach(() => {
+    resetViewer();
+    viewerStore.setState({ status: "ready", pageCount: 1, tool: "length", tempPan: false });
+    canvas = document.createElement("canvas");
+    canvas.tabIndex = 0;
+    canvas.getBoundingClientRect = () => ({ x: 0, y: 0, left: 0, top: 0, width: 200, height: 100, right: 200, bottom: 100, toJSON: () => ({}) });
+    document.body.append(canvas);
+    t = target();
+    Object.assign(t, { finishTool: vi.fn(() => true) });
+    input = new ViewerInput(canvas, t);
+    canvas.focus();
+  });
+  afterEach(() => {
+    input.detach();
+    canvas.remove();
+  });
+
+  it("arrows move it from the canvas centre (Shift ×10), Enter places a point, Enter again finishes", () => {
+    expect(key("ArrowRight").defaultPrevented).toBe(true);
+    expect(t.pointerAt).toHaveBeenLastCalledWith({ x: 100 + KEY_POINTER_STEP, y: 50 }, { alt: false, shift: false });
+    key("ArrowUp", { shiftKey: true });
+    expect(t.pointerAt).toHaveBeenLastCalledWith({ x: 100 + KEY_POINTER_STEP, y: 50 - 10 * KEY_POINTER_STEP }, { alt: false, shift: false });
+    key("ArrowUp", { shiftKey: true });
+    key("ArrowUp", { shiftKey: true });
+    // Kept on the canvas.
+    expect(t.pointerAt).toHaveBeenLastCalledWith({ x: 100 + KEY_POINTER_STEP, y: 0 }, { alt: false, shift: false });
+    key("Enter");
+    expect(t.snapClick).toHaveBeenCalledTimes(1);
+    expect(t.finishTool).not.toHaveBeenCalled();
+    key("Enter");
+    expect(t.snapClick).toHaveBeenCalledTimes(1);
+    expect(t.finishTool).toHaveBeenCalledTimes(1);
+  });
+
+  it("only with a point-placing tool and the canvas focused; a mouse move or Esc ends it", () => {
+    viewerStore.setState({ tool: "pen" });
+    expect(key("ArrowLeft").defaultPrevented).toBe(false);
+    viewerStore.setState({ tool: "count" });
+    canvas.blur();
+    expect(key("ArrowLeft").defaultPrevented).toBe(false);
+    canvas.focus();
+    key("ArrowLeft");
+    key("Escape");
+    key("Enter");
+    expect(t.snapClick).not.toHaveBeenCalled();
+    key("ArrowLeft");
+    canvas.dispatchEvent(pointer("pointermove", { x: 10, y: 10 }));
+    key("Enter");
+    expect(t.snapClick).not.toHaveBeenCalled();
   });
 });

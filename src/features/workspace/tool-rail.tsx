@@ -39,7 +39,7 @@ import {
   TypeOutline,
   Underline,
 } from "lucide-react";
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useStore } from "zustand";
 
 import { Menu, MenuContent, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "@/components/ui/menu";
@@ -261,6 +261,26 @@ export const MORE_COVER_TOOLS = "More white-out tools";
  * Tools sharing one rail slot (Measure, Story 4.11; Lines, Story 5.4): the slot shows the armed
  * (or last armed) one and a menu lists them all.
  */
+/**
+ * Story 8.5 (UX-DR39): ArrowUp / ArrowDown on a flyout's "More" button move along the
+ * vertical rail like on every other rail button (a menu trigger would open its menu on
+ * ArrowDown and trap keyboard users there); Enter, Space or ArrowLeft open the menu.
+ */
+export function railArrowKey(event: KeyboardEvent<HTMLElement>): void {
+  if (event.key !== "ArrowDown" && event.key !== "ArrowUp" && event.key !== "ArrowLeft") return;
+  event.preventDefault();
+  if (event.key === "ArrowLeft") {
+    event.currentTarget.click();
+    return;
+  }
+  const rail = event.currentTarget.closest("[role='toolbar']");
+  if (!rail) return;
+  const items = Array.from(rail.querySelectorAll<HTMLElement>("[data-radix-collection-item]")).filter((el) => !el.hasAttribute("disabled") && el.getAttribute("data-disabled") === null);
+  const at = items.indexOf(event.currentTarget);
+  const next = items[(at + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length];
+  next?.focus();
+}
+
 function FlyoutGroup<T extends ViewerTool>({
   label,
   more,
@@ -309,7 +329,7 @@ function FlyoutGroup<T extends ViewerTool>({
       </ToolbarToggleGroup>
       <Menu open={usable && menuOpen} onOpenChange={(next) => setMenuOpen(usable && next)}>
         <MenuTrigger asChild>
-          <ToolbarButton label={more} icon={ChevronDown} size="xs" className="h-4 w-8" disabled={!usable} disabledReason={reason} />
+          <ToolbarButton label={more} icon={ChevronDown} size="xs" className="h-4 w-8" disabled={!usable} disabledReason={reason} onKeyDown={railArrowKey} />
         </MenuTrigger>
         <MenuContent side="left" align="start">
           <MenuRadioGroup value={member(active) ? active : ""} onValueChange={(value) => setTool(value as ViewerTool)}>
