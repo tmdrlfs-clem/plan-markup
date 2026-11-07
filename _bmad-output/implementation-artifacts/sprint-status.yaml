@@ -129,7 +129,7 @@ development_status:
   epic-8: in-progress
   8-1-export-a-pdf-with-editable-markups: done
   8-2-flatten-markups-and-export-a-flattened-pdf: done
-  8-3-print: backlog
+  8-3-print: review
   8-4-record-export-and-print-events: backlog
   8-5-m1-release-readiness: backlog
   epic-8-retrospective: optional

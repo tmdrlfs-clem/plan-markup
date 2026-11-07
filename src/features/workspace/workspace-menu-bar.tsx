@@ -22,7 +22,7 @@ import { calibrationOf, openCalibrate, openVerify } from "@/features/calibration
 import { activeUndoLabels, hasClipboard, redoActive, undoActive, editorStore, useSelectionState } from "@/features/editor";
 import { hasDocument, tabsStore, viewerCommands, viewerStore, viewerTabs, type SelectionCommand, type ViewerCommand } from "@/features/viewer";
 import { openMarkupSetList } from "@/features/markup-set/markup-sets-ui";
-import { openExport } from "@/features/export";
+import { openExport, openPrint } from "@/features/export";
 import { saveNow } from "@/features/markup-set/sync";
 import { THEMES, THEME_LABELS, isTheme, type Theme } from "@/lib/theme";
 
@@ -83,6 +83,16 @@ function ExportMenu() {
         </MenuBarItem>
       </MenuBarSubContent>
     </MenuBarSub>
+  );
+}
+
+/** Story 8.3: Print… (Ctrl+P). */
+function PrintItem() {
+  const open = useStore(viewerStore, hasDocument);
+  return (
+    <MenuBarItem disabled={!open} shortcut="Ctrl+P" onSelect={openPrint}>
+      Print…
+    </MenuBarItem>
   );
 }
 
@@ -213,7 +223,7 @@ export function WorkspaceMenuBar({ onOpen, onSignOut, theme, onThemeChange, onAc
             Save
           </MenuBarItem>
           <Disabled label="Save as…" shortcut="Ctrl+Shift+S" />
-          <Disabled label="Print…" shortcut="Ctrl+P" />
+          <PrintItem />
           <MenuBarSeparator />
           <FlattenItem />
           <ExportMenu />

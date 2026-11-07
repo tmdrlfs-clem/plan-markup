@@ -34,7 +34,7 @@ import {
 
 import { AccountMenu, displayName, type WorkspaceUser } from "./account-menu";
 import { AddToolDialog } from "@/features/tool-chest/add-tool-dialog";
-import { ExportDialog, setExportAuthor } from "@/features/export";
+import { ExportDialog, PrintDialog, setExportAuthor } from "@/features/export";
 import { ImportReportDialog } from "@/features/tool-chest/import-btx-ui";
 import { ToolChestPanel, setToolChestOwner } from "@/features/tool-chest/tool-chest-panel";
 
@@ -278,6 +278,7 @@ function ShellBody({ user, initialTheme }: { user: WorkspaceUser; initialTheme: 
           <MarkupContextMenu />
           <AddToolDialog />
           <ExportDialog />
+          <PrintDialog />
           <ImportReportDialog />
         </main>
         <aside aria-label="Tools" data-region="tool-rail" className="w-11 shrink-0 border-l border-border bg-surface-2">

@@ -8,9 +8,15 @@
 // Story 8.2 (FR58, FR61): Flatten (Ctrl+Shift+M) or File → Export → Flattened
 // PDF writes the same markups drawn into the pages instead, as a new file
 // ("… (flattened).pdf"); the markups in the app stay editable.
+//
+// Story 8.3 (FR68): Print (Ctrl+P) builds a print PDF the same way (markups
+// drawn in, or none), laid on the chosen paper at fit or actual size
+// (core/export/print.ts), and prints it from a hidden frame through the
+// browser's PDF viewer, so actual size measures right on paper.
 
 import { pageIdOf } from "@/core/calibration/calibration";
 import { exportJob, type DecodedImage, type ExportJob } from "@/core/export/from-app";
+import type { Paper, PrintOptions, PrintScale } from "@/core/export/print";
 import type { Markup } from "@/core/schema/markup";
 import { editorStore, layersOf, markupsOf } from "@/features/editor";
 import { viewerStore } from "@/features/viewer";
@@ -49,8 +55,8 @@ export function exportBlocked(): string | null {
   return null;
 }
 
-/** Exports the open drawing (see the header); never throws. */
-export async function runExport(choice: ExportChoice, deps: ExportDeps = browserDeps): Promise<ExportOutcome> {
+/** The drawing's file and the job for `choice` (images decoded), or why not. */
+async function prepare(choice: Pick<ExportChoice, "pages" | "includeHidden">, decode: ExportDeps["decode"]): Promise<{ ok: true; file: File; bytes: Uint8Array; job: ExportJob } | { ok: false; reason: string }> {
   const blocked = exportBlocked();
   if (blocked) return { ok: false, reason: blocked };
   const v = viewerStore.getState();
@@ -69,7 +75,7 @@ export async function runExport(choice: ExportChoice, deps: ExportDeps = browser
   const images = new Map<string, DecodedImage>();
   for (const m of markups) {
     if (m.type !== "image" || !chosen.has(m.pageId)) continue;
-    const decoded = await deps.decode(m.src).catch(() => null);
+    const decoded = await decode(m.src).catch(() => null);
     if (decoded) images.set(m.id, decoded);
   }
   const job = exportJob({ markups, layers: layersOf(state, documentId), pages, author, images, includeHidden: choice.includeHidden });
@@ -79,12 +85,42 @@ export async function runExport(choice: ExportChoice, deps: ExportDeps = browser
   } catch {
     return { ok: false, reason: "The drawing's file could not be read again." };
   }
+  return { ok: true, file, bytes, job };
+}
+
+/** Exports the open drawing (see the header); never throws. */
+export async function runExport(choice: ExportChoice, deps: ExportDeps = browserDeps): Promise<ExportOutcome> {
+  const ready = await prepare(choice, deps.decode);
+  if (!ready.ok) return ready;
+  const { file, bytes, job } = ready;
   const flatten = choice.kind === "flattened";
   const out = await deps.write(bytes, job, new Date(), flatten).catch(() => null);
   if (!out) return { ok: false, reason: EXPORT_FAILED };
   const name = exportName(file.name, choice.kind);
   deps.save(name, out.bytes);
   return { ok: true, name, annotations: out.annotations, flattened: out.flattened, pages: out.pages };
+}
+
+/** Story 8.3: what to print. */
+export type PrintChoice = { pages: readonly number[]; includeHidden: boolean; markups: boolean; paper: Paper; scale: PrintScale };
+export type PrintOutcome = { ok: true; sheets: number; clipped: number } | { ok: false; reason: string };
+export type PrintDeps = {
+  decode: ExportDeps["decode"];
+  build: (bytes: Uint8Array, job: ExportJob | null, date: Date, options: PrintOptions) => Promise<{ bytes: Uint8Array; sheets: number; clipped: number } | null>;
+  print: (bytes: Uint8Array) => Promise<boolean>;
+};
+export const PRINT_FAILED = "The print file could not be made.";
+export const PRINT_BLOCKED = "The browser did not open its print dialog.";
+
+/** Prints the open drawing (see the header); never throws. */
+export async function runPrint(choice: PrintChoice, deps: PrintDeps = printDeps): Promise<PrintOutcome> {
+  const ready = await prepare(choice, deps.decode);
+  if (!ready.ok) return ready;
+  // Markups on hidden layers that were chosen print too: their layers start shown.
+  const job = choice.markups ? { ...ready.job, layers: ready.job.layers.map((l) => ({ ...l, visible: true })), pages: ready.job.pages.map((p) => ({ ...p, model: { ...p.model, layers: p.model.layers.map((l) => ({ ...l, visible: true })) } })) } : null;
+  const out = await deps.build(ready.bytes, job, new Date(), { pages: choice.pages, paper: choice.paper, scale: choice.scale }).catch(() => null);
+  if (!out || out.sheets === 0) return { ok: false, reason: PRINT_FAILED };
+  return (await deps.print(out.bytes).catch(() => false)) ? { ok: true, sheets: out.sheets, clipped: out.clipped } : { ok: false, reason: PRINT_BLOCKED };
 }
 
 /** The exported file's name: the drawing's own (a .pdf); Story 8.2: "… (flattened).pdf" when flattened. */
@@ -134,23 +170,66 @@ async function decodeImage(src: string): Promise<DecodedImage | null> {
   return opaque ? { width, height, rgb } : { width, height, rgb, alpha };
 }
 
-/** Writes the job in a fresh export worker (ended after the reply, or after EXPORT_TIMEOUT_MS). */
-function writeInWorker(bytes: Uint8Array, job: ExportJob, date: Date, flatten: boolean): Promise<WriteResult | null> {
+/** Sends one request to a fresh export worker (ended after the reply, or after EXPORT_TIMEOUT_MS). */
+function inWorker(message: object, bytes: Uint8Array): Promise<ExportWorkerReply | null> {
   return new Promise((resolve) => {
     const worker = new Worker(new URL("../../workers/export.worker.ts", import.meta.url), { type: "module" });
-    const done = (value: WriteResult | null) => {
+    const done = (value: ExportWorkerReply | null) => {
       clearTimeout(timer);
       worker.terminate();
       resolve(value);
     };
     const timer = setTimeout(() => done(null), EXPORT_TIMEOUT_MS);
-    worker.addEventListener("message", (event: MessageEvent<ExportWorkerReply>) => {
-      const reply = event.data;
-      done(reply.type === "exported" ? { bytes: reply.bytes, annotations: reply.annotations, flattened: reply.flattened, pages: reply.pages } : null);
-    });
+    worker.addEventListener("message", (event: MessageEvent<ExportWorkerReply>) => done(event.data));
     worker.addEventListener("error", () => done(null));
-    worker.postMessage({ type: "export", reqId: 1, bytes, job, date: date.toISOString(), flatten }, [bytes.buffer as ArrayBuffer]);
+    worker.postMessage({ ...message, reqId: 1, bytes }, [bytes.buffer as ArrayBuffer]);
   });
+}
+
+async function buildInWorker(bytes: Uint8Array, job: ExportJob | null, date: Date, print: PrintOptions) {
+  const reply = await inWorker({ type: "print", job, date: date.toISOString(), print }, bytes);
+  return reply?.type === "printed" ? { bytes: reply.bytes, sheets: reply.sheets, clipped: reply.clipped } : null;
+}
+
+let printFrame: HTMLIFrameElement | null = null;
+
+/** Opens the browser's print dialog for the PDF (a hidden blob: frame; it stays until the next print). */
+function printInFrame(bytes: Uint8Array): Promise<boolean> {
+  printFrame?.remove();
+  if (printFrame?.src) URL.revokeObjectURL(printFrame.src);
+  const frame = document.createElement("iframe");
+  printFrame = frame;
+  frame.title = "Print";
+  frame.setAttribute("aria-hidden", "true");
+  frame.tabIndex = -1;
+  Object.assign(frame.style, { position: "fixed", right: "0", bottom: "0", width: "1px", height: "1px", border: "0", opacity: "0", pointerEvents: "none" });
+  frame.src = URL.createObjectURL(new Blob([bytes as Uint8Array<ArrayBuffer>], { type: "application/pdf" }));
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(false), 30_000);
+    frame.addEventListener("load", () => {
+      clearTimeout(timer);
+      // The PDF viewer needs a moment after load before print() shows its pages.
+      setTimeout(() => {
+        try {
+          frame.contentWindow?.focus();
+          frame.contentWindow?.print();
+          resolve(true);
+        } catch {
+          resolve(false);
+        }
+      }, 300);
+    });
+    document.body.append(frame);
+  });
+}
+
+const printDeps: PrintDeps = { decode: decodeImage, build: buildInWorker, print: printInFrame };
+
+/** Writes the job in a fresh export worker (ended after the reply, or after EXPORT_TIMEOUT_MS). */
+function writeInWorker(bytes: Uint8Array, job: ExportJob, date: Date, flatten: boolean): Promise<WriteResult | null> {
+  return inWorker({ type: "export", job, date: date.toISOString(), flatten }, bytes).then((reply) =>
+    reply?.type === "exported" ? { bytes: reply.bytes, annotations: reply.annotations, flattened: reply.flattened, pages: reply.pages } : null,
+  );
 }
 
 function saveFile(name: string, bytes: Uint8Array): void {

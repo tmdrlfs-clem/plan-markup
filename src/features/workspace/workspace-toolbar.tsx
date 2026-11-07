@@ -18,6 +18,7 @@ import {
 import { useStore } from "zustand";
 
 import { Toolbar, ToolbarButton, ToolbarSeparator } from "@/components/ui/toolbar";
+import { openPrint } from "@/features/export";
 import { hasDocument, viewerCommands, viewerStore, type ViewerCommand } from "@/features/viewer";
 
 export const NO_DRAWING = "Open a drawing first";
@@ -33,6 +34,13 @@ function ViewButton({ label, icon, shortcut, command }: { label: string; icon: L
   return <ToolbarButton label={label} icon={icon} shortcut={shortcut} onClick={() => viewerCommands[command]()} />;
 }
 
+/** Story 8.3: Print… opens the print dialog while a drawing is shown. */
+function PrintButton() {
+  const open = useStore(viewerStore, hasDocument);
+  if (!open) return <Needs label="Print…" icon={Printer} shortcut="Ctrl+P" />;
+  return <ToolbarButton label="Print…" icon={Printer} shortcut="Ctrl+P" onClick={openPrint} />;
+}
+
 /** Row 1: document and view commands. Row 2: options of the active tool. */
 export function WorkspaceToolbar({ onOpen }: { onOpen: () => void }) {
   return (
@@ -40,7 +48,7 @@ export function WorkspaceToolbar({ onOpen }: { onOpen: () => void }) {
       <Toolbar aria-label="Document" className="border-b border-border">
         <ToolbarButton label="Open…" icon={FolderOpen} shortcut="Ctrl+O" onClick={onOpen} />
         <Needs label="Save" icon={Save} shortcut="Ctrl+S" />
-        <Needs label="Print…" icon={Printer} shortcut="Ctrl+P" />
+        <PrintButton />
         <ToolbarSeparator />
         <Needs label="Undo" icon={Undo2} shortcut="Ctrl+Z" />
         <Needs label="Redo" icon={Redo2} shortcut="Ctrl+Y" />

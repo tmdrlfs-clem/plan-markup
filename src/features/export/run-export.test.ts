@@ -6,7 +6,8 @@ import { resetEditor, setDocLayers, setDocMarkups } from "@/features/editor";
 import { viewerStore } from "@/features/viewer";
 
 import { isFlattenShortcut } from "./export-dialog";
-import { NO_DRAWING, STAND_IN, exportBlocked, exportCount, exportName, runExport, setExportAuthor, type ExportDeps } from "./run-export";
+import { isPrintShortcut } from "./print-dialog";
+import { NO_DRAWING, PRINT_BLOCKED, PRINT_FAILED, STAND_IN, exportBlocked, exportCount, exportName, runExport, runPrint, setExportAuthor, type ExportDeps, type PrintDeps } from "./run-export";
 
 const SHA = "c".repeat(64);
 const HIDDEN = "00000000-0000-7000-8000-00000000bbbb";
@@ -102,5 +103,38 @@ describe("Export editable PDF (Story 8.1)", () => {
     expect(save).toHaveBeenCalledWith("A1721 Rev C (flattened).pdf", new Uint8Array([2]));
     expect(isFlattenShortcut({ key: "M", ctrlKey: true, metaKey: false, shiftKey: true, altKey: false })).toBe(true);
     expect(isFlattenShortcut({ key: "m", ctrlKey: true, metaKey: false, shiftKey: false, altKey: false })).toBe(false);
+  });
+});
+
+describe("Print (Story 8.3)", () => {
+  it("prints the chosen pages with their markups, hidden layers shown when chosen", async () => {
+    show();
+    setDocLayers(SHA, [{ id: HIDDEN, name: "Old", hidden: true }]);
+    setDocMarkups(SHA, [line(0), line(0, { layerId: HIDDEN })]);
+    const build = vi.fn<PrintDeps["build"]>(async () => ({ bytes: new Uint8Array([3]), sheets: 1, clipped: 0 }));
+    const print = vi.fn<PrintDeps["print"]>(async () => true);
+    const out = await runPrint({ pages: [0], includeHidden: true, markups: true, paper: "A3", scale: "actual" }, { decode: async () => null, build, print });
+    expect(out).toEqual({ ok: true, sheets: 1, clipped: 0 });
+    const [, job, , options] = build.mock.calls[0];
+    expect(options).toEqual({ pages: [0], paper: "A3", scale: "actual" });
+    expect(job!.pages[0].model.markups).toHaveLength(2);
+    expect(job!.layers.every((l) => l.visible)).toBe(true);
+    expect(job!.pages[0].model.layers.every((l) => l.visible)).toBe(true);
+    expect(print).toHaveBeenCalledWith(new Uint8Array([3]));
+  });
+
+  it("prints without markups, and says why when it cannot", async () => {
+    show();
+    setDocMarkups(SHA, [line(0)]);
+    const build = vi.fn<PrintDeps["build"]>(async () => ({ bytes: new Uint8Array([4]), sheets: 2, clipped: 1 }));
+    expect(await runPrint({ pages: [0, 1], includeHidden: false, markups: false, paper: "same", scale: "fit" }, { decode: async () => null, build, print: async () => true })).toEqual({ ok: true, sheets: 2, clipped: 1 });
+    expect(build.mock.calls[0][1]).toBeNull();
+    const choice = { pages: [0], includeHidden: false, markups: true, paper: "same", scale: "fit" } as const;
+    expect(await runPrint(choice, { decode: async () => null, build: async () => null, print: async () => true })).toEqual({ ok: false, reason: PRINT_FAILED });
+    expect(await runPrint(choice, { decode: async () => null, build, print: async () => false })).toEqual({ ok: false, reason: PRINT_BLOCKED });
+    show({ standIn: true });
+    expect(await runPrint(choice, { decode: async () => null, build, print: async () => true })).toEqual({ ok: false, reason: STAND_IN });
+    expect(isPrintShortcut({ key: "p", ctrlKey: true, metaKey: false, shiftKey: false, altKey: false })).toBe(true);
+    expect(isPrintShortcut({ key: "P", ctrlKey: true, metaKey: false, shiftKey: true, altKey: false })).toBe(false);
   });
 });

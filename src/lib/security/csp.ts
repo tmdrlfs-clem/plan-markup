@@ -98,6 +98,8 @@ export function buildNonceCsp({ nonce, supabaseUrl, sentryDsn, isDev, devHost }:
     ["img-src", ["'self'", "blob:", "data:"]],
     ["font-src", ["'self'"]],
     ["connect-src", connectSrc],
+    // Story 8.3: the print PDF is shown in a hidden blob: frame (Chrome's PDF viewer prints it).
+    ["frame-src", ["'self'", "blob:"]],
     ...commonTail(isDev),
   ]);
 }
