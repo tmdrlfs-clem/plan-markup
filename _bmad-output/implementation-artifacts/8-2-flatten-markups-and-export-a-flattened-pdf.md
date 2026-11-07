@@ -1,6 +1,6 @@
 # Story 8.2: Flatten markups and export a flattened PDF
 
-Status: review
+Status: done
 
 ## Story
 
@@ -45,6 +45,7 @@ Claude Opus 5.5
 
 - Local: typecheck, lint clean; vitest 213 files / 2093 tests pass; build ok; check:* pass; e2e export-pdf (2), workspace-shell, whiteout pass.
 - pdf.js render of the flattened download matches the canvas.
+- CI green on a77ac2d (unit, guards, Playwright e2e, gitleaks).
 
 ### File List
 
