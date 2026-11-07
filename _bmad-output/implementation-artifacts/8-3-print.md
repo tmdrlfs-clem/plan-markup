@@ -1,6 +1,6 @@
 # Story 8.3: Print
 
-Status: review
+Status: done
 
 ## Story
 
