@@ -68,7 +68,7 @@ function TabItem({ label, shortcut, run, minTabs }: { label: string; shortcut: s
   );
 }
 
-/** Story 8.1: File → Export (the flattened PDF arrives with Story 8.2). */
+/** Story 8.1: File → Export; 8.2: Flattened PDF too. */
 function ExportMenu() {
   const open = useStore(viewerStore, (s) => hasDocument(s) && !s.standIn);
   return (
@@ -78,9 +78,21 @@ function ExportMenu() {
         <MenuBarItem disabled={!open} onSelect={() => openExport()}>
           Editable PDF…
         </MenuBarItem>
-        <Disabled label="Flattened PDF…" />
+        <MenuBarItem disabled={!open} onSelect={() => openExport("flattened")}>
+          Flattened PDF…
+        </MenuBarItem>
       </MenuBarSubContent>
     </MenuBarSub>
+  );
+}
+
+/** Story 8.2: Flatten… (Ctrl+Shift+M): the flattened PDF. */
+function FlattenItem() {
+  const open = useStore(viewerStore, (s) => hasDocument(s) && !s.standIn);
+  return (
+    <MenuBarItem disabled={!open} shortcut="Ctrl+Shift+M" onSelect={() => openExport("flattened")}>
+      Flatten…
+    </MenuBarItem>
   );
 }
 
@@ -203,7 +215,7 @@ export function WorkspaceMenuBar({ onOpen, onSignOut, theme, onThemeChange, onAc
           <Disabled label="Save as…" shortcut="Ctrl+Shift+S" />
           <Disabled label="Print…" shortcut="Ctrl+P" />
           <MenuBarSeparator />
-          <Disabled label="Flatten…" shortcut="Ctrl+Shift+M" />
+          <FlattenItem />
           <ExportMenu />
           <MenuBarSeparator />
           {/* Stories 6.5 / 6.6. */}

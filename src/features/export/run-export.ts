@@ -4,6 +4,10 @@
 // decoded images), then the export worker writes them onto the original PDF
 // with pdf-lib; the result downloads under the drawing's own file name. The
 // original file and the markup set are not changed.
+//
+// Story 8.2 (FR58, FR61): Flatten (Ctrl+Shift+M) or File → Export → Flattened
+// PDF writes the same markups drawn into the pages instead, as a new file
+// ("… (flattened).pdf"); the markups in the app stay editable.
 
 import { pageIdOf } from "@/core/calibration/calibration";
 import { exportJob, type DecodedImage, type ExportJob } from "@/core/export/from-app";
@@ -25,12 +29,15 @@ export function setExportAuthor(name: string): void {
   author = name;
 }
 
-export type ExportChoice = { pages: readonly number[]; includeHidden: boolean };
-export type ExportOutcome = { ok: true; name: string; annotations: number; pages: number } | { ok: false; reason: string };
+/** Story 8.2: editable annotations, or markups drawn into the pages. */
+export type ExportKind = "editable" | "flattened";
+export type ExportChoice = { kind?: ExportKind; pages: readonly number[]; includeHidden: boolean };
+export type WriteResult = { bytes: Uint8Array; annotations: number; flattened: number; pages: number };
+export type ExportOutcome = ({ ok: true; name: string } & Omit<WriteResult, "bytes">) | { ok: false; reason: string };
 
 export type ExportDeps = {
   decode: (src: string) => Promise<DecodedImage | null>;
-  write: (bytes: Uint8Array, job: ExportJob, date: Date) => Promise<{ bytes: Uint8Array; annotations: number; pages: number } | null>;
+  write: (bytes: Uint8Array, job: ExportJob, date: Date, flatten: boolean) => Promise<WriteResult | null>;
   save: (name: string, bytes: Uint8Array) => void;
 };
 
@@ -72,17 +79,18 @@ export async function runExport(choice: ExportChoice, deps: ExportDeps = browser
   } catch {
     return { ok: false, reason: "The drawing's file could not be read again." };
   }
-  const out = await deps.write(bytes, job, new Date()).catch(() => null);
+  const flatten = choice.kind === "flattened";
+  const out = await deps.write(bytes, job, new Date(), flatten).catch(() => null);
   if (!out) return { ok: false, reason: EXPORT_FAILED };
-  const name = exportName(file.name);
+  const name = exportName(file.name, choice.kind);
   deps.save(name, out.bytes);
-  return { ok: true, name, annotations: out.annotations, pages: out.pages };
+  return { ok: true, name, annotations: out.annotations, flattened: out.flattened, pages: out.pages };
 }
 
-/** The exported file's name: the drawing's own (a .pdf). */
-export function exportName(fileName: string): string {
+/** The exported file's name: the drawing's own (a .pdf); Story 8.2: "… (flattened).pdf" when flattened. */
+export function exportName(fileName: string, kind: ExportKind = "editable"): string {
   const stem = fileName.replace(/\.pdf$/i, "").trim() || "drawing";
-  return `${stem}.pdf`;
+  return kind === "flattened" ? `${stem} (flattened).pdf` : `${stem}.pdf`;
 }
 
 /** The markups an export of `choice` would write (the dialog's count). */
@@ -127,10 +135,10 @@ async function decodeImage(src: string): Promise<DecodedImage | null> {
 }
 
 /** Writes the job in a fresh export worker (ended after the reply, or after EXPORT_TIMEOUT_MS). */
-function writeInWorker(bytes: Uint8Array, job: ExportJob, date: Date): Promise<{ bytes: Uint8Array; annotations: number; pages: number } | null> {
+function writeInWorker(bytes: Uint8Array, job: ExportJob, date: Date, flatten: boolean): Promise<WriteResult | null> {
   return new Promise((resolve) => {
     const worker = new Worker(new URL("../../workers/export.worker.ts", import.meta.url), { type: "module" });
-    const done = (value: { bytes: Uint8Array; annotations: number; pages: number } | null) => {
+    const done = (value: WriteResult | null) => {
       clearTimeout(timer);
       worker.terminate();
       resolve(value);
@@ -138,10 +146,10 @@ function writeInWorker(bytes: Uint8Array, job: ExportJob, date: Date): Promise<{
     const timer = setTimeout(() => done(null), EXPORT_TIMEOUT_MS);
     worker.addEventListener("message", (event: MessageEvent<ExportWorkerReply>) => {
       const reply = event.data;
-      done(reply.type === "exported" ? { bytes: reply.bytes, annotations: reply.annotations, pages: reply.pages } : null);
+      done(reply.type === "exported" ? { bytes: reply.bytes, annotations: reply.annotations, flattened: reply.flattened, pages: reply.pages } : null);
     });
     worker.addEventListener("error", () => done(null));
-    worker.postMessage({ type: "export", reqId: 1, bytes, job, date: date.toISOString() }, [bytes.buffer as ArrayBuffer]);
+    worker.postMessage({ type: "export", reqId: 1, bytes, job, date: date.toISOString(), flatten }, [bytes.buffer as ArrayBuffer]);
   });
 }
 

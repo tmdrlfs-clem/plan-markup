@@ -1,4 +1,4 @@
-// Story 8.1: File → Export → Editable PDF on the committed fixture fixtures/pdf/snap.pdf.
+// Stories 8.1 / 8.2: File → Export → Editable PDF, and Flatten, on the committed fixture fixtures/pdf/snap.pdf.
 // Covers: a length, a rectangle and a white-out drawn; the ExportDialog (all
 // pages, the count it writes); the download is the drawing's own name and
 // holds the length (its caption as /Contents) and the rectangle as native
@@ -110,4 +110,42 @@ test("export an editable PDF: native annotations, the caption as shown, white-ou
   expect(xobjects.keys().some((k) => k.asString().startsWith("/FlatAp"))).toBe(true);
   // The drawing in the app is unchanged.
   await expect(markups(page)).toHaveAttribute("data-captions", captions);
+});
+
+// Story 8.2: Flatten (Ctrl+Shift+M) writes a new PDF with the markups drawn into the pages.
+test("flatten: Ctrl+Shift+M, the markups drawn into the page, a new file, the markups here unchanged", async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await page.goto("/sign-in");
+  await signIn(page, "admin@plan-markup.test");
+  await expect(page).toHaveURL("/workspace");
+  await open(page);
+
+  await press(page, "r");
+  await stable(page);
+  await drag(page, [500, 300], [650, 400]);
+  await press(page, "Shift+W");
+  await stable(page);
+  await drag(page, [700, 300], [760, 360]);
+  await expect(markups(page)).toHaveAttribute("data-captions", "Rectangle | White-out");
+
+  // File → Flatten… shows the key.
+  await page.getByRole("menubar").getByRole("menuitem", { name: "File" }).click();
+  await expect(page.getByRole("menuitem", { name: /^Flatten…/ })).toBeEnabled();
+  await page.keyboard.press("Escape");
+
+  await press(page, "Control+Shift+M");
+  const dialog = page.getByRole("dialog", { name: "Flatten and export" });
+  await expect(dialog.getByTestId("export-count")).toHaveText("2 markups will be written.");
+  const download = page.waitForEvent("download");
+  await dialog.getByRole("button", { name: "Flatten", exact: true }).click();
+  const file = await download;
+  expect(file.suggestedFilename()).toBe("snap (flattened).pdf");
+  await expect(page.getByText("Exported snap (flattened).pdf", { exact: true })).toBeVisible();
+
+  const doc = await PDFDocument.load(readFileSync(await file.path()));
+  expect(doc.getPage(0).node.Annots()?.size() ?? 0).toBe(0);
+  const xobjects = doc.getPage(0).node.Resources()!.lookup(PDFName.of("XObject"), PDFDict);
+  expect(xobjects.keys().filter((k) => k.asString().startsWith("/FlatAp"))).toHaveLength(2);
+  // The markups here stay editable, as they were.
+  await expect(markups(page)).toHaveAttribute("data-captions", "Rectangle | White-out");
 });

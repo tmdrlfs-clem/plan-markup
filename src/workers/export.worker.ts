@@ -1,7 +1,7 @@
 // Story 8.1 (FR60, AR25): the export worker. Request:
-// { type: "export", reqId, bytes, job, date } (the base PDF's bytes are
+// { type: "export", reqId, bytes, job, date, flatten? } (the base PDF's bytes are
 // transferred; `job` comes from core/export/from-app.ts). Reply:
-// { type: "exported", reqId, bytes, annotations, pages } with the new PDF's
+// { type: "exported", reqId, bytes, annotations, flattened, pages } with the new PDF's
 // buffer transferred, or { type: "error", reqId, error }. Every message gets
 // exactly one reply. pdf-lib never runs on the main thread.
 
@@ -9,10 +9,10 @@ import { exportJobPdf } from "@/core/export/export";
 import type { ExportJob } from "@/core/export/from-app";
 import { serializeWorkerError, type SerializedWorkerError } from "@/core/worker/error";
 
-export type ExportWorkerRequest = { type: "export"; reqId: number; bytes: Uint8Array | ArrayBuffer; job: ExportJob; date: string };
+export type ExportWorkerRequest = { type: "export"; reqId: number; bytes: Uint8Array | ArrayBuffer; job: ExportJob; date: string; flatten?: boolean };
 
 export type ExportWorkerReply =
-  | { type: "exported"; reqId: number; bytes: Uint8Array; annotations: number; pages: number }
+  | { type: "exported"; reqId: number; bytes: Uint8Array; annotations: number; flattened: number; pages: number }
   | { type: "error"; reqId: number | null; error: SerializedWorkerError };
 
 /** Handles one message; exported so tests can call it without a real Worker. Always replies. */
@@ -31,7 +31,7 @@ export async function handleExportMessage(data: unknown): Promise<ExportWorkerRe
     const job = msg.job as ExportJob | undefined;
     if (!job || !Array.isArray(job.pages) || !Array.isArray(job.layers)) throw new TypeError("job must be an export job");
     const date = typeof msg.date === "string" ? new Date(msg.date) : new Date();
-    const out = await exportJobPdf(bytes, job, Number.isNaN(date.getTime()) ? new Date() : date);
+    const out = await exportJobPdf(bytes, job, Number.isNaN(date.getTime()) ? new Date() : date, { flatten: msg.flatten === true });
     return { type: "exported", reqId, ...out };
   } catch (e) {
     return fail(e);

@@ -4,8 +4,10 @@
 // the pages (all, the current one or a range), whether markups on hidden
 // layers go too (only asked when there are hidden layers), the count it will
 // write; Export writes and downloads it, then a toast says so.
+// Story 8.2 (FR58, FR61): the same dialog for Flatten (Ctrl+Shift+M) and
+// File → Export → Flattened PDF: the markups drawn into the pages, a new file.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createStore } from "zustand/vanilla";
 import { useStore } from "zustand";
 
@@ -19,29 +21,60 @@ import { parsePageRange } from "@/core/export/page-range";
 import { editorStore, layersOf } from "@/features/editor";
 import { viewerStore } from "@/features/viewer";
 
-import { exportBlocked, exportCount, runExport } from "./run-export";
+import { exportBlocked, exportCount, runExport, type ExportKind } from "./run-export";
 
-export const exportDialogStore = createStore<{ open: boolean }>(() => ({ open: false }));
+/** The open dialog's kind (null: closed). */
+export const exportDialogStore = createStore<{ open: ExportKind | null }>(() => ({ open: null }));
 
-/** Opens the dialog (or says why the drawing cannot be exported). */
-export function openExport(): void {
+/** Opens the dialog for `kind` (or says why the drawing cannot be exported). */
+export function openExport(kind: ExportKind = "editable"): void {
   const blocked = exportBlocked();
-  if (blocked) return void toast({ title: "Cannot export", description: blocked, variant: "warning" });
-  exportDialogStore.setState({ open: true });
+  if (blocked) return void toast({ title: kind === "flattened" ? "Cannot flatten" : "Cannot export", description: blocked, variant: "warning" });
+  exportDialogStore.setState({ open: kind });
 }
 
 function closeExport(): void {
-  exportDialogStore.setState({ open: false });
+  exportDialogStore.setState({ open: null });
 }
+
+/** Story 8.2: Ctrl+Shift+M (⌘⇧M) flattens, instead of the browser's own use of the keys. */
+export function isFlattenShortcut(event: Pick<KeyboardEvent, "key" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey">): boolean {
+  return (event.ctrlKey || event.metaKey) && event.shiftKey && !event.altKey && event.key.toLowerCase() === "m";
+}
+
+const COPY: Record<ExportKind, { title: string; description: string; action: string; busy: string }> = {
+  editable: {
+    title: "Export editable PDF",
+    description: "Markups become standard PDF annotations that Acrobat and Revu can edit. White-out is burned in.",
+    action: "Export",
+    busy: "Exporting…",
+  },
+  flattened: {
+    title: "Flatten and export",
+    description: "Markups are drawn into the pages of a new PDF, so nobody can change them by accident. Your markups here stay editable.",
+    action: "Flatten",
+    busy: "Flattening…",
+  },
+};
 
 type PageChoice = "all" | "current" | "range";
 
 export function ExportDialog() {
   const open = useStore(exportDialogStore, (s) => s.open);
-  return open ? <ExportForm /> : null;
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (!isFlattenShortcut(event)) return;
+      event.preventDefault();
+      openExport("flattened");
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, []);
+  return open ? <ExportForm key={open} kind={open} /> : null;
 }
 
-function ExportForm() {
+function ExportForm({ kind }: { kind: ExportKind }) {
+  const copy = COPY[kind];
   const pageCount = useStore(viewerStore, (s) => s.pageCount);
   const pageIndex = useStore(viewerStore, (s) => s.pageIndex);
   const documentId = useStore(viewerStore, (s) => s.documentId);
@@ -59,10 +92,12 @@ function ExportForm() {
   async function submit() {
     if (busy || pages.length === 0) return;
     setBusy(true);
-    const outcome = await runExport({ pages, includeHidden });
+    const outcome = await runExport({ kind, pages, includeHidden });
     setBusy(false);
-    if (!outcome.ok) return void toast({ title: "Export failed", description: outcome.reason, variant: "danger" });
-    toast({ title: `Exported ${outcome.name}`, description: `${outcome.annotations} ${outcome.annotations === 1 ? "markup" : "markups"} as editable PDF annotations.`, variant: "success" });
+    if (!outcome.ok) return void toast({ title: kind === "flattened" ? "Flatten failed" : "Export failed", description: outcome.reason, variant: "danger" });
+    const n = (k: number) => `${k} ${k === 1 ? "markup" : "markups"}`;
+    const description = kind === "flattened" ? `${n(outcome.flattened)} drawn into the pages.` : `${n(outcome.annotations)} as editable PDF annotations.`;
+    toast({ title: `Exported ${outcome.name}`, description, variant: "success" });
     closeExport();
   }
 
@@ -70,8 +105,8 @@ function ExportForm() {
     <Dialog
       open
       onOpenChange={(o) => (o ? undefined : closeExport())}
-      title="Export editable PDF"
-      description="Markups become standard PDF annotations that Acrobat and Revu can edit. White-out is burned in."
+      title={copy.title}
+      description={copy.description}
       size="sm"
       footer={
         <DialogFooter
@@ -82,7 +117,7 @@ function ExportForm() {
           }
           primary={
             <DialogPrimary disabled={busy || pages.length === 0} onClick={() => void submit()}>
-              {busy ? "Exporting…" : "Export"}
+              {busy ? copy.busy : copy.action}
             </DialogPrimary>
           }
         />

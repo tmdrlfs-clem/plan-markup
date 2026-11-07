@@ -151,4 +151,24 @@ describe("app markups → export model (Story 8.1, FR60)", () => {
     const xobjects = doc.getPage(0).node.Resources()!.lookup(PDFName.of("XObject"), PDFDict);
     expect(xobjects.keys().some((k) => k.asString().startsWith("/FlatAp"))).toBe(true);
   });
+
+  it("flattened (Story 8.2): every markup drawn into its page, none left as an annotation; the base's own kept", async () => {
+    const base = await PDFDocument.create();
+    const page = base.addPage([842, 595]);
+    // The PDF's own annotation (a link) stays as it is.
+    const link = base.context.register(base.context.obj({ Type: "Annot", Subtype: "Link", Rect: [0, 0, 10, 10] }));
+    page.node.addAnnot(link);
+    const bytes = await base.save();
+    const a = mk("rectangle", box(50, 50, 150, 120));
+    const b = mk("line", [{ x: 0, y: 0 }, { x: 99, y: 99 }]);
+    const job = exportJob({ markups: [a, b], layers: [], pages: [{ pageIndex: 0, pageId: P0, calibration: null, userUnit: 1 }], author: "Kim", images: new Map(), includeHidden: false });
+    const out = await exportJobPdf(bytes, job, new Date("2026-11-08T00:00:00Z"), { flatten: true });
+    expect(out).toMatchObject({ annotations: 0, flattened: 2, pages: 1 });
+    const doc = await PDFDocument.load(out.bytes);
+    const annots = doc.getPage(0).node.Annots()!;
+    expect(annots.size()).toBe(1);
+    expect(annots.lookup(0, PDFDict).lookup(PDFName.of("Subtype"))!.toString()).toBe("/Link");
+    const xobjects = doc.getPage(0).node.Resources()!.lookup(PDFName.of("XObject"), PDFDict);
+    expect(xobjects.keys().filter((k) => k.asString().startsWith("/FlatAp"))).toHaveLength(2);
+  });
 });

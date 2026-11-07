@@ -5,6 +5,7 @@ import { DEFAULT_MARKUP_STYLE, type Markup } from "@/core/schema/markup";
 import { resetEditor, setDocLayers, setDocMarkups } from "@/features/editor";
 import { viewerStore } from "@/features/viewer";
 
+import { isFlattenShortcut } from "./export-dialog";
 import { NO_DRAWING, STAND_IN, exportBlocked, exportCount, exportName, runExport, setExportAuthor, type ExportDeps } from "./run-export";
 
 const SHA = "c".repeat(64);
@@ -55,6 +56,7 @@ describe("Export editable PDF (Story 8.1)", () => {
     expect(exportBlocked()).toBeNull();
     expect(exportName("A1721 Rev C.pdf")).toBe("A1721 Rev C.pdf");
     expect(exportName("plan.PDF")).toBe("plan.pdf");
+    expect(exportName("A1721 Rev C.pdf", "flattened")).toBe("A1721 Rev C (flattened).pdf");
   });
 
   it("writes the chosen pages' markups (hidden layers only when chosen) and saves under the drawing's name", async () => {
@@ -68,10 +70,11 @@ describe("Export editable PDF (Story 8.1)", () => {
     expect(exportCount({ pages: [0, 1], includeHidden: false })).toBe(2);
     expect(exportCount({ pages: [0, 1], includeHidden: true })).toBe(3);
 
-    const write = vi.fn<ExportDeps["write"]>(async () => ({ bytes: new Uint8Array([1]), annotations: 1, pages: 1 }));
+    const write = vi.fn<ExportDeps["write"]>(async () => ({ bytes: new Uint8Array([1]), annotations: 1, flattened: 0, pages: 1 }));
     const save = vi.fn<ExportDeps["save"]>();
     const out = await runExport({ pages: [1], includeHidden: false }, { decode: async () => null, write, save });
-    expect(out).toEqual({ ok: true, name: "A1721 Rev C.pdf", annotations: 1, pages: 1 });
+    expect(out).toEqual({ ok: true, name: "A1721 Rev C.pdf", annotations: 1, flattened: 0, pages: 1 });
+    expect(write.mock.calls[0][3]).toBe(false);
     const [bytes, job] = write.mock.calls[0];
     expect([...bytes]).toEqual([37, 80, 68, 70]);
     expect(job.pages).toHaveLength(1);
@@ -86,5 +89,18 @@ describe("Export editable PDF (Story 8.1)", () => {
     const out = await runExport({ pages: [0], includeHidden: false }, { decode: async () => null, write: async () => null, save });
     expect(out).toEqual({ ok: false, reason: "The PDF could not be written." });
     expect(save).not.toHaveBeenCalled();
+  });
+
+  it("Story 8.2: flattened writes the markups into the pages, a new file name", async () => {
+    show();
+    setDocMarkups(SHA, [line(0)]);
+    const write = vi.fn<ExportDeps["write"]>(async () => ({ bytes: new Uint8Array([2]), annotations: 0, flattened: 1, pages: 1 }));
+    const save = vi.fn<ExportDeps["save"]>();
+    const out = await runExport({ kind: "flattened", pages: [0], includeHidden: false }, { decode: async () => null, write, save });
+    expect(out).toEqual({ ok: true, name: "A1721 Rev C (flattened).pdf", annotations: 0, flattened: 1, pages: 1 });
+    expect(write.mock.calls[0][3]).toBe(true);
+    expect(save).toHaveBeenCalledWith("A1721 Rev C (flattened).pdf", new Uint8Array([2]));
+    expect(isFlattenShortcut({ key: "M", ctrlKey: true, metaKey: false, shiftKey: true, altKey: false })).toBe(true);
+    expect(isFlattenShortcut({ key: "m", ctrlKey: true, metaKey: false, shiftKey: false, altKey: false })).toBe(false);
   });
 });
