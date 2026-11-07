@@ -48,7 +48,27 @@ export type Database = {
           }
         },"public": {
           Tables: {
-            "calibrations": {
+            "activity_events": {
+                  Row: {
+                    "drawing_id": string | null,"id": string,"kind": string,"markup_count": number,"name": string,"occurred_at": string,"page_count": number,"user_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "drawing_id"?: string | null,"id"?: string,"kind": string,"markup_count"?: number,"name": string,"occurred_at"?: string,"page_count": number,"user_id"?: string
+                  }
+                  Update: {
+                    "drawing_id"?: string | null,"id"?: string,"kind"?: string,"markup_count"?: number,"name"?: string,"occurred_at"?: string,"page_count"?: number,"user_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "activity_events_drawing_id_fkey"
+      columns: ["drawing_id"]
+isOneToOne: false
+      referencedRelation: "drawings"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"calibrations": {
                   Row: {
                     "calibration": NonNullable<Json>,"page_id": string,"updated_at": string
                   }

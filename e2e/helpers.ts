@@ -67,10 +67,30 @@ async function isolatedAdmin(): Promise<string> {
     await client.query(`delete from public.drawings where owner_id = (select id from auth.users where email = $1)`, [email]);
     // Story 7.1: and its tool sets (a rerun starts from an empty Tool Chest).
     await client.query(`delete from public.tool_sets where owner_id = (select id from auth.users where email = $1)`, [email]);
+    // Story 8.4: and its activity events.
+    await client.query(`delete from public.activity_events where user_id = (select id from auth.users where email = $1)`, [email]);
   } finally {
     await client.end();
   }
   return email;
+}
+
+/** Story 8.4: the activity events of this test's own account, oldest first. */
+export async function activityEvents(): Promise<{ name: string; kind: string; page_count: number; markup_count: number; has_set: boolean }[]> {
+  const info = test.info();
+  const email = `e2e-${info.testId}-r${info.retry}@plan-markup.test`.toLowerCase();
+  const client = new pg.Client({ connectionString: DB_URL });
+  await client.connect();
+  try {
+    const { rows } = await client.query(
+      `select name, kind, page_count, markup_count, drawing_id is not null as has_set from public.activity_events
+       where user_id = (select id from auth.users where email = $1) order by occurred_at`,
+      [email],
+    );
+    return rows;
+  } finally {
+    await client.end();
+  }
 }
 
 export async function signIn(page: Page, email: string, password = PASSWORD, options: { keepRateLimits?: boolean } = {}) {

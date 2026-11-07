@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { PDFDict, PDFDocument, PDFHexString, PDFName, PDFString } from "@cantoo/pdf-lib";
 import { expect, test, type Page } from "@playwright/test";
-import { signIn } from "./helpers";
+import { activityEvents, signIn } from "./helpers";
 
 const PDF = path.join(__dirname, "..", "fixtures", "pdf", "snap.pdf");
 const A4_HEIGHT = 595;
@@ -146,6 +146,8 @@ test("flatten: Ctrl+Shift+M, the markups drawn into the page, a new file, the ma
   expect(doc.getPage(0).node.Annots()?.size() ?? 0).toBe(0);
   const xobjects = doc.getPage(0).node.Resources()!.lookup(PDFName.of("XObject"), PDFDict);
   expect(xobjects.keys().filter((k) => k.asString().startsWith("/FlatAp"))).toHaveLength(2);
+  // Story 8.4: recorded with the user's markup set, the kind and the counts (never the file name).
+  await expect.poll(activityEvents).toEqual([{ name: "markup.exported", kind: "flattened", page_count: 2, markup_count: 2, has_set: true }]);
   // The markups here stay editable, as they were.
   await expect(markups(page)).toHaveAttribute("data-captions", "Rectangle | White-out");
 });

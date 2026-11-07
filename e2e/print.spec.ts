@@ -3,10 +3,11 @@
 // pages, the markups choice, the paper and the scale; Print makes the print
 // PDF and hands it to a hidden blob: frame for the browser's print dialog,
 // then closes. File → Print… and the toolbar's Print… open the same dialog.
+// Story 8.4: the print is recorded as a drawing.printed activity event.
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { signIn } from "./helpers";
+import { activityEvents, signIn } from "./helpers";
 
 const PDF = path.join(__dirname, "..", "fixtures", "pdf", "snap.pdf");
 const canvas = (page: Page) => page.getByTestId("drawing-canvas");
@@ -52,6 +53,8 @@ test("Ctrl+P opens the print dialog and Print hands a print PDF to the browser",
   await expect(dialog).toBeHidden({ timeout: 20_000 });
   await expect(page.locator('iframe[title="Print"]')).toHaveAttribute("src", /^blob:/);
   expect(await page.evaluate(() => (window as unknown as { printed?: number }).printed)).toBe(1);
+  // Story 8.4: the print is recorded: kind and counts, no markup set yet (nothing was edited).
+  await expect.poll(activityEvents).toEqual([{ name: "drawing.printed", kind: "without_markups", page_count: 2, markup_count: 0, has_set: false }]);
 
   await page.getByRole("toolbar", { name: "Document" }).getByRole("button", { name: "Print…" }).click();
   await expect(dialog).toBeVisible();

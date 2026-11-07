@@ -29,6 +29,37 @@ COMMENT ON SCHEMA "public" IS 'standard public schema';
 
 
 
+CREATE OR REPLACE FUNCTION "app"."fn_activity_event_defaults"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+declare
+  v_uid uuid := (select auth.uid());
+  v_allowed boolean;
+begin
+  if v_uid is null then
+    raise exception 'not signed in' using errcode = '42501';
+  end if;
+  -- The user stays as given: RLS (checked after this trigger) refuses anyone else.
+  new.occurred_at := pg_catalog.now();
+  select r.allowed into v_allowed
+  from public.consume_rate_limit(
+    'activity_events',
+    pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(v_uid::text, 'UTF8')), 'hex'),
+    120,
+    60
+  ) r;
+  if not v_allowed then
+    raise exception 'rate limited' using errcode = 'PT429';
+  end if;
+  return new;
+end;
+$$;
+
+
+ALTER FUNCTION "app"."fn_activity_event_defaults"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "app"."fn_effective_access"("p_drawing_id" "uuid") RETURNS "text"
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO ''
@@ -498,6 +529,29 @@ COMMENT ON TABLE "app"."rate_limits" IS 'Fixed-window rate-limit counters. Writt
 
 
 
+CREATE TABLE IF NOT EXISTS "public"."activity_events" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "occurred_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "user_id" "uuid" DEFAULT "auth"."uid"() NOT NULL,
+    "name" "text" NOT NULL,
+    "drawing_id" "uuid",
+    "page_count" integer NOT NULL,
+    "markup_count" integer DEFAULT 0 NOT NULL,
+    "kind" "text" NOT NULL,
+    CONSTRAINT "activity_events_kind_check" CHECK (((("name" = 'markup.exported'::"text") AND ("kind" = ANY (ARRAY['editable'::"text", 'flattened'::"text"]))) OR (("name" = 'drawing.printed'::"text") AND ("kind" = ANY (ARRAY['with_markups'::"text", 'without_markups'::"text"]))))),
+    CONSTRAINT "activity_events_markup_count_check" CHECK ((("markup_count" >= 0) AND ("markup_count" <= 10000000))),
+    CONSTRAINT "activity_events_name_check" CHECK (("name" = ANY (ARRAY['markup.exported'::"text", 'drawing.printed'::"text"]))),
+    CONSTRAINT "activity_events_page_count_check" CHECK ((("page_count" >= 1) AND ("page_count" <= 100000)))
+);
+
+
+ALTER TABLE "public"."activity_events" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."activity_events" IS 'Product activity events (Story 8.4, FR80): no drawing content. Insert own; platform admin reads.';
+
+
+
 CREATE TABLE IF NOT EXISTS "public"."calibrations" (
     "page_id" "uuid" NOT NULL,
     "calibration" "jsonb" NOT NULL,
@@ -711,6 +765,11 @@ ALTER TABLE ONLY "app"."rate_limits"
 
 
 
+ALTER TABLE ONLY "public"."activity_events"
+    ADD CONSTRAINT "activity_events_pkey" PRIMARY KEY ("id");
+
+
+
 ALTER TABLE ONLY "public"."calibrations"
     ADD CONSTRAINT "calibrations_pkey" PRIMARY KEY ("page_id");
 
@@ -766,6 +825,22 @@ ALTER TABLE ONLY "public"."tools"
 
 
 
+CREATE INDEX "activity_events_drawing_idx" ON "public"."activity_events" USING "btree" ("drawing_id");
+
+
+
+CREATE INDEX "activity_events_name_idx" ON "public"."activity_events" USING "btree" ("name", "occurred_at" DESC);
+
+
+
+CREATE INDEX "activity_events_occurred_idx" ON "public"."activity_events" USING "btree" ("occurred_at" DESC);
+
+
+
+CREATE INDEX "activity_events_user_idx" ON "public"."activity_events" USING "btree" ("user_id");
+
+
+
 CREATE INDEX "drawing_files_filename_idx" ON "public"."drawing_files" USING "btree" ("filename");
 
 
@@ -806,7 +881,21 @@ CREATE INDEX "tools_set_idx" ON "public"."tools" USING "btree" ("tool_set_id", "
 
 
 
+CREATE OR REPLACE TRIGGER "activity_events_defaults" BEFORE INSERT ON "public"."activity_events" FOR EACH ROW EXECUTE FUNCTION "app"."fn_activity_event_defaults"();
+
+
+
 CREATE OR REPLACE TRIGGER "trg_profiles_updated_at" BEFORE UPDATE ON "public"."profiles" FOR EACH ROW EXECUTE FUNCTION "app"."fn_set_updated_at"();
+
+
+
+ALTER TABLE ONLY "public"."activity_events"
+    ADD CONSTRAINT "activity_events_drawing_id_fkey" FOREIGN KEY ("drawing_id") REFERENCES "public"."drawings"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."activity_events"
+    ADD CONSTRAINT "activity_events_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
 
 
 
@@ -884,6 +973,19 @@ ALTER TABLE "app"."rate_limits" ENABLE ROW LEVEL SECURITY;
 
 
 CREATE POLICY "rate_limits_all_none" ON "app"."rate_limits" TO "authenticated", "anon" USING (false) WITH CHECK (false);
+
+
+
+ALTER TABLE "public"."activity_events" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "activity_events_insert_own" ON "public"."activity_events" FOR INSERT TO "authenticated" WITH CHECK ((("user_id" = ( SELECT "auth"."uid"() AS "uid")) AND ( SELECT "app"."fn_is_active_user"() AS "fn_is_active_user") AND (("drawing_id" IS NULL) OR (EXISTS ( SELECT 1
+   FROM "public"."drawings" "d"
+  WHERE (("d"."id" = "activity_events"."drawing_id") AND ("d"."owner_id" = ( SELECT "auth"."uid"() AS "uid"))))))));
+
+
+
+CREATE POLICY "activity_events_select_admin" ON "public"."activity_events" FOR SELECT TO "authenticated" USING (( SELECT "app"."fn_is_platform_admin"() AS "fn_is_platform_admin"));
 
 
 
@@ -1060,6 +1162,10 @@ GRANT USAGE ON SCHEMA "public" TO "service_role";
 
 
 
+REVOKE ALL ON FUNCTION "app"."fn_activity_event_defaults"() FROM PUBLIC;
+
+
+
 REVOKE ALL ON FUNCTION "app"."fn_effective_access"("p_drawing_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "app"."fn_effective_access"("p_drawing_id" "uuid") TO "authenticated";
 
@@ -1113,6 +1219,11 @@ GRANT ALL ON FUNCTION "public"."ensure_drawing_file"("p_sha256" "text", "p_filen
 REVOKE ALL ON FUNCTION "public"."list_markup_sets"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."list_markup_sets"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."list_markup_sets"() TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."activity_events" TO "service_role";
+GRANT SELECT,INSERT ON TABLE "public"."activity_events" TO "authenticated";
 
 
 

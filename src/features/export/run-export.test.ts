@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+vi.mock("@/features/activity/actions", () => ({ recordActivity: vi.fn(async () => ({ ok: true, data: null })) }));
+vi.mock("@/features/markup-set/actions", () => ({ ensureMarkupSet: vi.fn(), saveSetCalibrations: vi.fn(), applyMarkupOps: vi.fn(), loadMarkupSet: vi.fn(), hasMarkupsOnOtherVersion: vi.fn(), listMyMarkupSets: vi.fn(), loadMarkupSetPages: vi.fn() }));
 
 import { pageIdOf } from "@/core/calibration/calibration";
 import { DEFAULT_MARKUP_STYLE, type Markup } from "@/core/schema/markup";
@@ -73,7 +75,9 @@ describe("Export editable PDF (Story 8.1)", () => {
 
     const write = vi.fn<ExportDeps["write"]>(async () => ({ bytes: new Uint8Array([1]), annotations: 1, flattened: 0, pages: 1 }));
     const save = vi.fn<ExportDeps["save"]>();
-    const out = await runExport({ pages: [1], includeHidden: false }, { decode: async () => null, write, save });
+    const record = vi.fn<NonNullable<ExportDeps["record"]>>();
+    const out = await runExport({ pages: [1], includeHidden: false }, { decode: async () => null, write, save, record });
+    expect(record).toHaveBeenCalledWith({ name: "markup.exported", kind: "editable", pageCount: 1, markupCount: 1 });
     expect(out).toEqual({ ok: true, name: "A1721 Rev C.pdf", annotations: 1, flattened: 0, pages: 1 });
     expect(write.mock.calls[0][3]).toBe(false);
     const [bytes, job] = write.mock.calls[0];
@@ -87,7 +91,9 @@ describe("Export editable PDF (Story 8.1)", () => {
     show();
     setDocMarkups(SHA, [line(0)]);
     const save = vi.fn<ExportDeps["save"]>();
-    const out = await runExport({ pages: [0], includeHidden: false }, { decode: async () => null, write: async () => null, save });
+    const record = vi.fn<NonNullable<ExportDeps["record"]>>();
+    const out = await runExport({ pages: [0], includeHidden: false }, { decode: async () => null, write: async () => null, save, record });
+    expect(record).not.toHaveBeenCalled();
     expect(out).toEqual({ ok: false, reason: "The PDF could not be written." });
     expect(save).not.toHaveBeenCalled();
   });
@@ -113,7 +119,9 @@ describe("Print (Story 8.3)", () => {
     setDocMarkups(SHA, [line(0), line(0, { layerId: HIDDEN })]);
     const build = vi.fn<PrintDeps["build"]>(async () => ({ bytes: new Uint8Array([3]), sheets: 1, clipped: 0 }));
     const print = vi.fn<PrintDeps["print"]>(async () => true);
-    const out = await runPrint({ pages: [0], includeHidden: true, markups: true, paper: "A3", scale: "actual" }, { decode: async () => null, build, print });
+    const record = vi.fn<NonNullable<PrintDeps["record"]>>();
+    const out = await runPrint({ pages: [0], includeHidden: true, markups: true, paper: "A3", scale: "actual" }, { decode: async () => null, build, print, record });
+    expect(record).toHaveBeenCalledWith({ name: "drawing.printed", kind: "with_markups", pageCount: 1, markupCount: 2 });
     expect(out).toEqual({ ok: true, sheets: 1, clipped: 0 });
     const [, job, , options] = build.mock.calls[0];
     expect(options).toEqual({ pages: [0], paper: "A3", scale: "actual" });
@@ -127,11 +135,14 @@ describe("Print (Story 8.3)", () => {
     show();
     setDocMarkups(SHA, [line(0)]);
     const build = vi.fn<PrintDeps["build"]>(async () => ({ bytes: new Uint8Array([4]), sheets: 2, clipped: 1 }));
-    expect(await runPrint({ pages: [0, 1], includeHidden: false, markups: false, paper: "same", scale: "fit" }, { decode: async () => null, build, print: async () => true })).toEqual({ ok: true, sheets: 2, clipped: 1 });
+    const record = vi.fn<NonNullable<PrintDeps["record"]>>();
+    expect(await runPrint({ pages: [0, 1], includeHidden: false, markups: false, paper: "same", scale: "fit" }, { decode: async () => null, build, print: async () => true, record })).toEqual({ ok: true, sheets: 2, clipped: 1 });
+    expect(record).toHaveBeenCalledWith({ name: "drawing.printed", kind: "without_markups", pageCount: 2, markupCount: 0 });
     expect(build.mock.calls[0][1]).toBeNull();
     const choice = { pages: [0], includeHidden: false, markups: true, paper: "same", scale: "fit" } as const;
     expect(await runPrint(choice, { decode: async () => null, build: async () => null, print: async () => true })).toEqual({ ok: false, reason: PRINT_FAILED });
-    expect(await runPrint(choice, { decode: async () => null, build, print: async () => false })).toEqual({ ok: false, reason: PRINT_BLOCKED });
+    expect(await runPrint(choice, { decode: async () => null, build, print: async () => false, record })).toEqual({ ok: false, reason: PRINT_BLOCKED });
+    expect(record).toHaveBeenCalledTimes(1);
     show({ standIn: true });
     expect(await runPrint(choice, { decode: async () => null, build, print: async () => true })).toEqual({ ok: false, reason: STAND_IN });
     expect(isPrintShortcut({ key: "p", ctrlKey: true, metaKey: false, shiftKey: false, altKey: false })).toBe(true);

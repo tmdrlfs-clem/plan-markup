@@ -13,12 +13,19 @@
 // drawn in, or none), laid on the chosen paper at fit or actual size
 // (core/export/print.ts), and prints it from a hidden frame through the
 // browser's PDF viewer, so actual size measures right on paper.
+//
+// Story 8.4 (FR80): a completed export or print is recorded as an activity
+// event (markup.exported / drawing.printed): the kind, the page and markup
+// counts and the user's markup set, never the file name or content.
 
+import type { ActivityEvent } from "@/core/activity/activity-event";
 import { pageIdOf } from "@/core/calibration/calibration";
 import { exportJob, type DecodedImage, type ExportJob } from "@/core/export/from-app";
 import type { Paper, PrintOptions, PrintScale } from "@/core/export/print";
 import type { Markup } from "@/core/schema/markup";
+import { recordActivity } from "@/features/activity/actions";
 import { editorStore, layersOf, markupsOf } from "@/features/editor";
+import { markupSetIdOf } from "@/features/markup-set/sync";
 import { viewerStore } from "@/features/viewer";
 import type { ExportWorkerReply } from "@/workers/export.worker";
 
@@ -45,7 +52,21 @@ export type ExportDeps = {
   decode: (src: string) => Promise<DecodedImage | null>;
   write: (bytes: Uint8Array, job: ExportJob, date: Date, flatten: boolean) => Promise<WriteResult | null>;
   save: (name: string, bytes: Uint8Array) => void;
+  /** Story 8.4: records the completed action (never awaited; never fails the export). */
+  record?: (event: ReportedEvent) => void;
 };
+
+/** Story 8.4: what is reported of a completed export or print; the markup set is added on the way. */
+export type ReportedEvent = Omit<ActivityEvent, "drawingId">;
+
+/** Story 8.4 (FR80): records the event with the user's markup set for the shown file (fire and forget). */
+function reportActivity(event: ReportedEvent): void {
+  const documentId = viewerStore.getState().documentId;
+  void (async () => {
+    const drawingId = documentId ? await markupSetIdOf(documentId) : null;
+    await recordActivity({ ...event, drawingId });
+  })().catch(() => undefined);
+}
 
 /** Whether the shown drawing can be exported now (null), else why not. */
 export function exportBlocked(): string | null {
@@ -98,6 +119,7 @@ export async function runExport(choice: ExportChoice, deps: ExportDeps = browser
   if (!out) return { ok: false, reason: EXPORT_FAILED };
   const name = exportName(file.name, choice.kind);
   deps.save(name, out.bytes);
+  deps.record?.({ name: "markup.exported", kind: flatten ? "flattened" : "editable", pageCount: choice.pages.length, markupCount: out.annotations + out.flattened });
   return { ok: true, name, annotations: out.annotations, flattened: out.flattened, pages: out.pages };
 }
 
@@ -108,6 +130,7 @@ export type PrintDeps = {
   decode: ExportDeps["decode"];
   build: (bytes: Uint8Array, job: ExportJob | null, date: Date, options: PrintOptions) => Promise<{ bytes: Uint8Array; sheets: number; clipped: number } | null>;
   print: (bytes: Uint8Array) => Promise<boolean>;
+  record?: ExportDeps["record"];
 };
 export const PRINT_FAILED = "The print file could not be made.";
 export const PRINT_BLOCKED = "The browser did not open its print dialog.";
@@ -120,7 +143,10 @@ export async function runPrint(choice: PrintChoice, deps: PrintDeps = printDeps)
   const job = choice.markups ? { ...ready.job, layers: ready.job.layers.map((l) => ({ ...l, visible: true })), pages: ready.job.pages.map((p) => ({ ...p, model: { ...p.model, layers: p.model.layers.map((l) => ({ ...l, visible: true })) } })) } : null;
   const out = await deps.build(ready.bytes, job, new Date(), { pages: choice.pages, paper: choice.paper, scale: choice.scale }).catch(() => null);
   if (!out || out.sheets === 0) return { ok: false, reason: PRINT_FAILED };
-  return (await deps.print(out.bytes).catch(() => false)) ? { ok: true, sheets: out.sheets, clipped: out.clipped } : { ok: false, reason: PRINT_BLOCKED };
+  if (!(await deps.print(out.bytes).catch(() => false))) return { ok: false, reason: PRINT_BLOCKED };
+  const markupCount = job ? job.pages.reduce((n, p) => n + p.model.markups.length, 0) : 0;
+  deps.record?.({ name: "drawing.printed", kind: job ? "with_markups" : "without_markups", pageCount: out.sheets, markupCount });
+  return { ok: true, sheets: out.sheets, clipped: out.clipped };
 }
 
 /** The exported file's name: the drawing's own (a .pdf); Story 8.2: "… (flattened).pdf" when flattened. */
@@ -223,7 +249,7 @@ function printInFrame(bytes: Uint8Array): Promise<boolean> {
   });
 }
 
-const printDeps: PrintDeps = { decode: decodeImage, build: buildInWorker, print: printInFrame };
+const printDeps: PrintDeps = { decode: decodeImage, build: buildInWorker, print: printInFrame, record: reportActivity };
 
 /** Writes the job in a fresh export worker (ended after the reply, or after EXPORT_TIMEOUT_MS). */
 function writeInWorker(bytes: Uint8Array, job: ExportJob, date: Date, flatten: boolean): Promise<WriteResult | null> {
@@ -244,4 +270,4 @@ function saveFile(name: string, bytes: Uint8Array): void {
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
-const browserDeps: ExportDeps = { decode: decodeImage, write: writeInWorker, save: saveFile };
+const browserDeps: ExportDeps = { decode: decodeImage, write: writeInWorker, save: saveFile, record: reportActivity };

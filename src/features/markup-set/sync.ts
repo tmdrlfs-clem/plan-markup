@@ -564,6 +564,11 @@ export function isSaveShortcut(event: Pick<KeyboardEvent, "key" | "ctrlKey" | "m
 
 let activeSync: MarkupSetSync | null = null;
 
+/** Story 8.4: the id of the user's markup set for the document, when they have one. */
+export async function markupSetIdOf(documentId: string): Promise<string | null> {
+  return (await activeSync?.ids(documentId).catch(() => null))?.drawingId ?? null;
+}
+
 /** Sends now (the SaveIndicator's Retry). */
 export function saveNow(): void {
   void activeSync?.saveNow();

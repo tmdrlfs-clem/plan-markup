@@ -28,6 +28,7 @@ const saveTheme = vi.fn(async (theme: string) => ({ ok: true as const, data: { t
 vi.mock("@/features/appearance/actions", () => ({ setTheme: (theme: string) => saveTheme(theme) }));
 vi.mock("@/features/signature/actions", () => ({ getSignature: async () => ({ ok: true, data: null }), saveSignature: vi.fn(), deleteSignature: vi.fn() }));
 vi.mock("@/features/markup-set/actions", () => ({ ensureMarkupSet: vi.fn(), saveSetCalibrations: vi.fn(), applyMarkupOps: vi.fn(), loadMarkupSet: vi.fn(async () => ({ ok: true, data: null })), hasMarkupsOnOtherVersion: vi.fn(async () => ({ ok: true, data: false })), listMyMarkupSets: vi.fn(async () => ({ ok: true, data: [] })), loadMarkupSetPages: vi.fn() }));
+vi.mock("@/features/activity/actions", () => ({ recordActivity: vi.fn(async () => ({ ok: true, data: null })) }));
 vi.mock("@/features/tool-chest/actions", () => ({ listToolSets: async () => ({ ok: true, data: [] }), createToolSet: vi.fn(), renameToolSet: vi.fn(), moveToolSet: vi.fn(), deleteToolSet: vi.fn(), addTool: vi.fn() }));
 
 // The real viewport starts a render worker (none in jsdom); its own tests cover it.
