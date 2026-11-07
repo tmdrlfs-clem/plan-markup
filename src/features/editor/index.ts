@@ -11,6 +11,7 @@ export { LayersPanel } from "./layers-panel";
 export { MarkupsListPanel } from "./markups-list-panel";
 export { decodeMarkupImage, pickImage, pickImageFile } from "./image-tool";
 export { loadMarkupFonts } from "./fonts";
+export { setRevisionAuthor } from "./revision-tool";
 export { hasClipboard } from "./select-tool";
 export {
   ADD_ANGLE,

@@ -57,7 +57,8 @@ export type ViewerTool =
   | "whiteout"
   | "whiteoutpolygon"
   | "eraser"
-  | "stamp";
+  | "stamp"
+  | "revision";
 
 /** Stories 4.6, 4.8, 4.9, 4.10: the measuring tools (they draw markups through the editor's painter). */
 export type MeasureTool = "length" | "polylength" | "area" | "count" | "angle" | "radius" | "diameter" | "fill";
@@ -108,11 +109,12 @@ export function isTextMarkTool(tool: ViewerTool): tool is TextMarkTool {
  * Stories 5.4, 5.5, 5.6: the markup tools that draw by points (no value, no caption); 5.7: by a
  * stroke; 5.8: Image (one click places the picked image) and Dimension (its caption is its length).
  * Story 7.3: Stamp places the armed Tool Chest tool at each click (S: the last one).
+ * Story 7.7: Revision stamp places one stamp by a click.
  */
-export type MarkupTool = LineTool | BoxTool | "cloud" | TextTool | InkTool | "image" | "dimension" | TextMarkTool | CoverTool | "stamp";
+export type MarkupTool = LineTool | BoxTool | "cloud" | TextTool | InkTool | "image" | "dimension" | TextMarkTool | CoverTool | "stamp" | "revision";
 export function isMarkupTool(tool: ViewerTool): tool is MarkupTool {
   return (
-    LINE_TOOLS.has(tool) || isBoxTool(tool) || tool === "cloud" || TEXT_TOOLS.has(tool) || isInkTool(tool) || tool === "image" || tool === "dimension" || isTextMarkTool(tool) || isCoverTool(tool) || tool === "stamp"
+    LINE_TOOLS.has(tool) || isBoxTool(tool) || tool === "cloud" || TEXT_TOOLS.has(tool) || isInkTool(tool) || tool === "image" || tool === "dimension" || isTextMarkTool(tool) || isCoverTool(tool) || tool === "stamp" || tool === "revision"
   );
 }
 

@@ -5,7 +5,8 @@
 // (label left, field right). It shows the fields every selected markup has
 // (a value they do not share is left blank); a change applies at once to the
 // ones not locked, as one undo step. Copy format takes the one selected
-// markup's style for the format painter (properties.ts).
+// markup's style for the format painter (properties.ts). Story 7.7: a
+// revision stamp's revision, description, author and date.
 
 import { useId, useState, type KeyboardEvent } from "react";
 import { Paintbrush } from "lucide-react";
@@ -17,7 +18,19 @@ import { cx } from "@/components/ui/cx";
 import { FieldShell, fieldControlClasses } from "@/components/ui/field";
 import { NumberField } from "@/components/ui/number-field";
 import { Select } from "@/components/ui/select";
-import { MAX_SUBJECT_LENGTH, MAX_TEXT_LENGTH, isTextMarkup, type Markup } from "@/core/schema/markup";
+import { toast } from "@/components/ui/toast-store";
+import {
+  MAX_REVISION_AUTHOR,
+  MAX_REVISION_DESCRIPTION,
+  MAX_REVISION_LENGTH,
+  MAX_SUBJECT_LENGTH,
+  MAX_TEXT_LENGTH,
+  isTextMarkup,
+  revisionMetaSchema,
+  type Markup,
+  type RevisionMarkup,
+  type RevisionMeta,
+} from "@/core/schema/markup";
 import { sharedFields, sharedValue, sizeLabel, subjectOf, type PropertyChange } from "@/core/markup/properties";
 import { viewerStore } from "@/features/viewer";
 
@@ -72,6 +85,27 @@ function ColorField({ label, value, onChange, none }: { label: string; value: st
         ) : null}
       </div>
     </FieldShell>
+  );
+}
+
+/** Story 7.7: a revision stamp's fields; a value that would not make a valid stamp is refused with why. */
+function RevisionFields({ markup, onChange }: { markup: RevisionMarkup; onChange: (change: PropertyChange) => void }) {
+  const r = markup.revision;
+  const commit = (field: keyof RevisionMeta) => (value: string) => {
+    const parsed = revisionMetaSchema.safeParse({ ...r, [field]: value });
+    if (!parsed.success) {
+      toast({ title: "Not changed", description: parsed.error.issues[0]?.message, variant: "warning" });
+      return;
+    }
+    onChange({ revision: { [field]: parsed.data[field] } });
+  };
+  return (
+    <>
+      <TextValueField key={`rev:${markup.id}`} label="Revision" value={r.rev} maxLength={MAX_REVISION_LENGTH} onCommit={commit("rev")} />
+      <TextValueField key={`desc:${markup.id}`} label="Description" value={r.description} maxLength={MAX_REVISION_DESCRIPTION} onCommit={commit("description")} />
+      <TextValueField key={`author:${markup.id}`} label="Author" value={r.author} maxLength={MAX_REVISION_AUTHOR} onCommit={commit("author")} />
+      <TextValueField key={`date:${markup.id}`} label="Date" value={r.date} placeholder="YYYY-MM-DD" maxLength={10} onCommit={commit("date")} />
+    </>
   );
 }
 
@@ -171,6 +205,7 @@ export function PropertiesPanel({ emptyText }: { emptyText: string }) {
             onCommit={(s) => change({ subject: s })}
           />
         ) : null}
+        {fields.has("revision") && one?.type === "revision" ? <RevisionFields markup={one} onChange={change} /> : null}
         {fields.has("color") ? <ColorField label="Colour" value={value((m) => m.style.color.toLowerCase())} onChange={(c) => c && change({ color: c })} /> : null}
         {fields.has("fill") ? <ColorField label="Fill" none value={value((m) => m.style.fill?.toLowerCase() ?? null)} onChange={(c) => change({ fill: c })} /> : null}
         {fields.has("width") ? (

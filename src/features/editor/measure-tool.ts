@@ -88,6 +88,7 @@ import {
   type Markup,
   type MarkupStyle,
   type MeasureMarkup,
+  type RevisionMarkup,
   type ShapeMarkup,
   type TextMarkup,
 } from "@/core/schema/markup";
@@ -135,6 +136,8 @@ import {
 import { ADD_STRIKETHROUGH, ADD_UNDERLINE, paintTextMark, paintTextMarkActive, textMarkDrag, textMarkLabel } from "./text-mark-tool";
 import { executeOp, registerDrawingUndo } from "./undo-store";
 import { fontFamilyOf } from "./fonts";
+import { revisionLabel, revisionText } from "@/core/markup/revision";
+import { ADD_REVISION, placeRevision, revisionAt } from "./revision-tool";
 import { toast } from "@/components/ui/toast-store";
 import { NEEDS_SCALE, placedMarkups, toolScale } from "@/core/tools/place";
 import { stampStore, type StampTool } from "@/features/tool-chest/stamp-store";
@@ -196,6 +199,7 @@ const ADD_LABEL: Record<DrawTool, string> = {
   whiteoutpolygon: ADD_WHITEOUT,
   eraser: ADD_ERASER,
   stamp: PLACE_TOOL,
+  revision: ADD_REVISION,
 };
 /** Story 4.8: what the live value says while an area crosses itself (it cannot be added). */
 export const CROSSES_ITSELF = "Crosses itself";
@@ -231,6 +235,7 @@ const MIN_POINTS: Record<DrawTool, number> = {
   whiteoutpolygon: 3,
   eraser: 2,
   stamp: 1,
+  revision: 1,
 };
 /** Tools with a fixed number of points: the click that places the last one adds the measurement. */
 const FIXED_POINTS: Partial<Record<DrawTool, number>> = { length: 2, angle: 3, radius: 3, diameter: 3, line: 2, arrow: 2, rectangle: 2, ellipse: 2, text: 2, callout: 2, typewriter: 1, note: 1, dimension: 3, whiteout: 2 };
@@ -477,6 +482,47 @@ function drawText(c: CanvasRenderingContext2D, box: readonly Point[], text: stri
   c.fillStyle = style.color;
   const lines = wrapText(text, wrap ? Math.max(size, width - 2 * pad) : null, (s) => c.measureText(s).width);
   lines.forEach((line, i) => c.fillText(line, pad, pad + i * size * TEXT_LINE_HEIGHT));
+  c.restore();
+}
+
+/**
+ * Story 7.7: a revision stamp (device corners p0 top left, p1 top right, p3 bottom left): its box,
+ * a header row with the revision on the left and the date on the right, a rule under it, then the
+ * description and the author, clipped to the box.
+ */
+function paintRevision(c: CanvasRenderingContext2D, m: RevisionMarkup, box: readonly Point[], view: LayerView): void {
+  strokeShape(c, "rectangle", box, m.style, view);
+  const size = m.style.fontSize * view.devicePerPt;
+  if (size < 1) return;
+  const [d0, d1, , d3] = box;
+  const width = Math.hypot(d1.x - d0.x, d1.y - d0.y);
+  const height = Math.hypot(d3.x - d0.x, d3.y - d0.y);
+  const pad = TEXT_PAD_PT * view.devicePerPt;
+  const line = size * TEXT_LINE_HEIGHT;
+  const header = Math.min(height, line + 2 * pad);
+  const { left, right, lines } = revisionText(m.revision);
+  c.save();
+  if ((m.style.opacity ?? 1) < 1) c.globalAlpha = m.style.opacity ?? 1;
+  c.translate(d0.x, d0.y);
+  c.rotate(Math.atan2(d1.y - d0.y, d1.x - d0.x));
+  c.beginPath();
+  c.rect(0, 0, width, height);
+  c.clip();
+  c.beginPath();
+  c.moveTo(0, header);
+  c.lineTo(width, header);
+  stroke(c, m.style, view);
+  c.fillStyle = m.style.color;
+  c.textBaseline = "top";
+  const family = fontFamilyOf(m.style, view.colors.fontFamily);
+  c.font = `bold ${size}px ${family}`;
+  c.textAlign = "left";
+  c.fillText(left, pad, pad);
+  c.font = `${size}px ${family}`;
+  c.textAlign = "right";
+  c.fillText(right, width - pad, pad);
+  c.textAlign = "left";
+  lines.forEach((text, i) => c.fillText(text, pad, header + pad + i * line));
   c.restore();
 }
 
@@ -857,6 +903,15 @@ function paintList(c: CanvasRenderingContext2D, markups: readonly Markup[], view
       if (selected.has(any.id)) strokeSelection(c, pts, view);
       continue;
     }
+    if (any.type === "revision") {
+      // Story 7.7: a revision stamp, its fields drawn in its box.
+      captions.push(revisionLabel(any.revision));
+      const pts = devicePoints(any.points, view);
+      if (!onCanvas(pts, any.style, view)) continue;
+      if (selected.has(any.id)) strokeSelection(c, pts, view);
+      paintRevision(c, any, pts, view);
+      continue;
+    }
     if (!isMeasure(any)) {
       // Story 5.4: a shape, no caption (its label stands in layer 2's list).
       captions.push(SHAPE_LABEL[any.type]);
@@ -959,6 +1014,17 @@ export const measurePainter: MarkupPainter = {
       if (armed && pointer) paintStampGhost(c, armed, pointer, view);
       return null;
     }
+    // Story 7.7: the stamp under the pointer, at half strength.
+    if (viewerStore.getState().tool === "revision") {
+      if (pointer) {
+        const ghost = revisionAt(pointer, view.documentId, pageIdOf(view.documentId, view.pageIndex));
+        c.save();
+        c.globalAlpha = 0.5;
+        paintRevision(c, ghost, devicePoints(ghost.points, view), view);
+        c.restore();
+      }
+      return null;
+    }
     const d = drawing();
     if (d?.tool === "fill") return paintFillActive(c, view, pointer);
     // Story 5.9: the words selected so far.
@@ -1010,7 +1076,7 @@ export const measurePainter: MarkupPainter = {
       paintCover(c, pts);
       strokeShape(c, d.tool === "whiteout" ? "rectangle" : "polyline", pts, DEFAULT_MARKUP_STYLE, view);
     }
-    else if (isMarkupTool(d.tool) && !isTextTool(d.tool) && !isInkTool(d.tool) && !isCoverTool(d.tool) && d.tool !== "image" && d.tool !== "stamp" && d.tool !== "underline" && d.tool !== "strikethrough") strokeShape(c, d.tool, pts, DEFAULT_MARKUP_STYLE, view);
+    else if (isMarkupTool(d.tool) && !isTextTool(d.tool) && !isInkTool(d.tool) && !isCoverTool(d.tool) && d.tool !== "image" && d.tool !== "stamp" && d.tool !== "revision" && d.tool !== "underline" && d.tool !== "strikethrough") strokeShape(c, d.tool, pts, DEFAULT_MARKUP_STYLE, view);
     else strokeMeasure(c, pts, DEFAULT_MEASURE_STYLE, view);
     c.restore();
     if (!live) return null;
@@ -1046,6 +1112,8 @@ export const measurePainter: MarkupPainter = {
     if (tool === "image") return placeImage(point, at.documentId, pageId);
     // Story 7.3: the armed tool, centred on the click; it stays armed (Esc returns to Select).
     if (tool === "stamp") return placeStamp(stampStore.getState().armed, point, at.documentId, at.pageIndex) ? "done" : "ignored";
+    // Story 7.7: a revision stamp centred on the click.
+    if (tool === "revision") return placeRevision(point, at.documentId, pageId);
     const d = drawing();
     if (!d || d.pageId !== pageId || d.tool !== tool) {
       setDrawing({ tool, pageId, pageIndex: at.pageIndex, points: [point] });
@@ -1372,6 +1440,8 @@ function markupOf(d: Drawing): Markup {
       throw new Error("an image is placed from its picked file (image-tool.ts)");
     case "stamp":
       throw new Error("a tool is placed from the Tool Chest (placeStamp)");
+    case "revision":
+      throw new Error("a revision stamp is placed by one click (revision-tool.ts)");
     case "underline":
     case "strikethrough":
       throw new Error("marked text is added by its drag (text-mark-tool.ts)");

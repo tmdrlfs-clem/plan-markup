@@ -52,6 +52,7 @@ import {
   Underline,
   X,
   type LucideIcon,
+  FileBadge,
 } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { useStore } from "zustand";
@@ -117,6 +118,7 @@ const TYPE_ICONS: Record<MarkupType, LucideIcon> = {
   strikethrough: Strikethrough,
   whiteout: SquareDashed,
   eraser: Eraser,
+  revision: FileBadge,
 };
 
 type Column = { key: string; label: string; width: string; sort?: SortKey; cell: (row: MarkupListRow, ctx: CellContext) => React.ReactNode; title?: (row: MarkupListRow) => string };

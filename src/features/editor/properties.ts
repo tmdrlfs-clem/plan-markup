@@ -28,6 +28,7 @@ const CHANGE_LABELS: Record<keyof PropertyChange, string> = {
   fontSize: "Change text size",
   dash: "Change dash",
   font: "Change font",
+  revision: "Edit revision stamp",
   subject: "Change subject",
   text: "Edit text",
 };

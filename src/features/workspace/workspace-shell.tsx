@@ -12,7 +12,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { signOut } from "@/features/account/actions";
 import { pageIdOf } from "@/core/calibration/calibration";
 import { CalibrateDialog, ScalePrompt, VerifyDialog, openCalibrate, useCalibrationPrefsPersistence } from "@/features/calibration";
-import { redoActive, undoActive } from "@/features/editor";
+import { redoActive, setRevisionAuthor, undoActive } from "@/features/editor";
 import { useFirstUseTipsPersistence } from "@/features/tips";
 import { chooseTheme, useWorkspaceTheme } from "@/features/appearance/theme-store";
 import { LayersPanel, MarkupContextMenu, MarkupsListPanel, MeasurementsPanel, PropertiesPanel, TextEditor, armArea, armCount, armLength, armPolylength, useEditorSession, useMeasureTools } from "@/features/editor";
@@ -77,6 +77,8 @@ export function WorkspaceShell({ user, theme = null }: { user: WorkspaceUser; th
     viewerTabs.setOwner(user.id);
     setToolChestOwner(user.id);
   }, [user.id]);
+  // Story 7.7: a new revision stamp's author.
+  useMemo(() => setRevisionAuthor(displayName(user)), [user]);
   // Story 4.5: the editing session (markups, calibrations, undo) of this user's documents survives a reload.
   useEditorSession(user.id);
   useMarkupSetSync(user.id);

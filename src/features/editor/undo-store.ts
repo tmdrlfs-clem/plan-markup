@@ -129,6 +129,7 @@ export const DRAWING_POINT_LABEL: Readonly<Record<DrawTool, string>> = {
   strikethrough: "Strikethrough selection",
   // Story 7.3 (a placement is one click).
   stamp: "Tool placement",
+  revision: "Revision stamp",
 };
 
 /**

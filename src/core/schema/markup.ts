@@ -199,6 +199,24 @@ const quadPoints = z
 export const underlineMarkupSchema = z.object({ ...base, type: z.literal("underline"), points: quadPoints, text: z.string().max(MAX_TEXT_LENGTH).optional() });
 export const strikethroughMarkupSchema = z.object({ ...base, type: z.literal("strikethrough"), points: quadPoints, text: z.string().max(MAX_TEXT_LENGTH).optional() });
 
+/**
+ * Story 7.7 (FR37, UX-DR27): a revision stamp, its box's four corners ordered like a text box's
+ * (p0 the screen's top left when placed, p0→p1 along its lines), and what it shows: the revision,
+ * its description, who made it and when. Its text is drawn from these fields, never stored.
+ */
+export const MAX_REVISION_LENGTH = 10;
+export const MAX_REVISION_DESCRIPTION = 200;
+export const MAX_REVISION_AUTHOR = 100;
+export const revisionMetaSchema = z.object({
+  rev: z.string().trim().min(1, "Enter a revision.").max(MAX_REVISION_LENGTH, `At most ${MAX_REVISION_LENGTH} characters.`),
+  description: z.string().max(MAX_REVISION_DESCRIPTION, `At most ${MAX_REVISION_DESCRIPTION} characters.`),
+  author: z.string().max(MAX_REVISION_AUTHOR, `At most ${MAX_REVISION_AUTHOR} characters.`),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Enter a date as YYYY-MM-DD."),
+});
+export type RevisionMeta = z.infer<typeof revisionMetaSchema>;
+export const revisionMarkupSchema = z.object({ ...base, type: z.literal("revision"), points: fourPoints, revision: revisionMetaSchema });
+export type RevisionMarkup = z.infer<typeof revisionMarkupSchema>;
+
 /** Every markup type (more join with Epic 5). */
 export const markupSchema = z.discriminatedUnion("type", [
   lengthMarkupSchema,
@@ -228,6 +246,7 @@ export const markupSchema = z.discriminatedUnion("type", [
   dimensionMarkupSchema,
   underlineMarkupSchema,
   strikethroughMarkupSchema,
+  revisionMarkupSchema,
 ]);
 
 export type Markup = z.infer<typeof markupSchema>;
