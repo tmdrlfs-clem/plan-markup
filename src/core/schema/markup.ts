@@ -233,6 +233,33 @@ export type LegendScope = LegendMeta["scope"];
 export const legendMarkupSchema = z.object({ ...base, type: z.literal("legend"), points: fourPoints, legend: legendMetaSchema });
 export type LegendMarkup = z.infer<typeof legendMarkupSchema>;
 
+/**
+ * Story 9.2 (FR70): a 4541 sprinkler zone, a closed polygon (the outer ring)
+ * less its holes, each hole tagged a column or a shaft / void (index-aligned
+ * with `holes`; a missing tag is the default for the hole's size). `zone`: its
+ * name, its use (the hazard class comes from the use → hazard map) and its
+ * placement options (Story 9.5). Never exported or listed with the markups.
+ */
+export const HOLE_TAGS = ["column", "shaft"] as const;
+export type HoleTag = (typeof HOLE_TAGS)[number];
+export const MAX_ZONE_NAME = 40;
+export const ZONE_USE_PATTERN = /^[A-Za-z][A-Za-z0-9 /&-]{0,39}$/;
+export const zoneMetaSchema = z.object({
+  name: z.string().trim().min(1, "Enter a name.").max(MAX_ZONE_NAME, `At most ${MAX_ZONE_NAME} characters.`),
+  use: z.string().regex(ZONE_USE_PATTERN),
+  holeTags: z.array(z.enum(HOLE_TAGS)).max(MAX_AREA_HOLES).optional(),
+  options: z.record(z.string().max(40), z.union([z.string().max(100), z.number().finite(), z.boolean()])).optional(),
+});
+export type ZoneMeta = z.infer<typeof zoneMetaSchema>;
+export const zoneMarkupSchema = z.object({
+  ...base,
+  type: z.literal("zone"),
+  points: z.array(pointSchema).min(3).max(MAX_POLYLINE_POINTS),
+  holes: z.array(z.array(pointSchema).min(3).max(MAX_POLYLINE_POINTS)).max(MAX_AREA_HOLES).optional(),
+  zone: zoneMetaSchema,
+});
+export type ZoneMarkup = z.infer<typeof zoneMarkupSchema>;
+
 /** Every markup type (more join with Epic 5). */
 export const markupSchema = z.discriminatedUnion("type", [
   lengthMarkupSchema,
@@ -264,6 +291,7 @@ export const markupSchema = z.discriminatedUnion("type", [
   strikethroughMarkupSchema,
   revisionMarkupSchema,
   legendMarkupSchema,
+  zoneMarkupSchema,
 ]);
 
 export type Markup = z.infer<typeof markupSchema>;

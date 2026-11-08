@@ -238,6 +238,9 @@ export function exportMarkup(m: AppMarkup, ctx: ConvertContext): Markup | null {
       const rows = legendRows(legendScopeMarkups(ctx.documentMarkups, m.legend.scope, m.pageId));
       return { ...base, ...text, type: "textBox", rect: box(m.points), text: legendText(m.legend.title, rows) };
     }
+    // Story 9.2: a 4541 zone is design data, never written to the PDF.
+    case "zone":
+      return null;
   }
 }
 

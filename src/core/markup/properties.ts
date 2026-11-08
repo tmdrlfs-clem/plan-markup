@@ -41,6 +41,7 @@ export const SUBJECT_NAMES: Record<MarkupType, string> = {
   eraser: "Eraser",
   revision: "Revision stamp",
   legend: "Legend",
+  zone: "Zone",
 };
 
 /** Closed shapes and the text boxes drawn around text: a fill fills them under their stroke. */

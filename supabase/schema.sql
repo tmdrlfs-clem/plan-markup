@@ -805,6 +805,30 @@ COMMENT ON TABLE "public"."use_hazard_map" IS 'Use → hazard class (Story 9.1).
 
 
 
+CREATE OR REPLACE VIEW "public"."zones" WITH ("security_invoker"='true', "security_barrier"='true') AS
+ SELECT "id",
+    "drawing_id",
+    "page_id",
+    ("geometry" -> 'points'::"text") AS "polygon",
+    COALESCE(("geometry" -> 'holes'::"text"), '[]'::"jsonb") AS "holes",
+    COALESCE((("props" -> 'zone'::"text") -> 'holeTags'::"text"), '[]'::"jsonb") AS "hole_tags",
+    (("props" -> 'zone'::"text") ->> 'name'::"text") AS "name",
+    (("props" -> 'zone'::"text") ->> 'use'::"text") AS "use",
+    COALESCE((("props" -> 'zone'::"text") -> 'options'::"text"), '{}'::"jsonb") AS "options",
+    "version",
+    "created_at",
+    "updated_at"
+   FROM "public"."markups" "m"
+  WHERE (("type" = 'zone'::"text") AND ("deleted_at" IS NULL));
+
+
+ALTER VIEW "public"."zones" OWNER TO "postgres";
+
+
+COMMENT ON VIEW "public"."zones" IS 'Story 9.2: the 4541 zones (markups of type zone, not deleted), under the caller''s markups RLS.';
+
+
+
 ALTER TABLE ONLY "app"."rate_limits"
     ADD CONSTRAINT "rate_limits_pkey" PRIMARY KEY ("bucket", "key_hash");
 
@@ -1376,6 +1400,11 @@ GRANT ALL ON TABLE "public"."tools" TO "service_role";
 
 GRANT ALL ON TABLE "public"."use_hazard_map" TO "authenticated";
 GRANT ALL ON TABLE "public"."use_hazard_map" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."zones" TO "service_role";
+GRANT SELECT ON TABLE "public"."zones" TO "authenticated";
 
 
 

@@ -54,6 +54,7 @@ import {
   type LucideIcon,
   FileBadge,
   TableProperties,
+  LandPlot,
 } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { useStore } from "zustand";
@@ -121,6 +122,7 @@ const TYPE_ICONS: Record<MarkupType, LucideIcon> = {
   eraser: Eraser,
   revision: FileBadge,
   legend: TableProperties,
+  zone: LandPlot,
 };
 
 type Column = { key: string; label: string; width: string; sort?: SortKey; cell: (row: MarkupListRow, ctx: CellContext) => React.ReactNode; title?: (row: MarkupListRow) => string };
@@ -231,7 +233,8 @@ export function MarkupsListPanel({ author, emptyText = "Markups you add appear h
       calibration: calibrations[pageIdOf(documentId, i)] ?? null,
       userUnit: p.userUnit && p.userUnit > 0 ? p.userUnit : 1,
     }));
-    return markupListRows(markups, documentId, listPages, layers);
+    // Story 9.2: zones are listed in the 4541 panel, not here.
+    return markupListRows(markups.filter((m) => m.type !== "zone"), documentId, listPages, layers);
   }, [documentId, pages, calibrations, pageLabels, sheetLabels, markups, layers]);
 
   const view = useStore(markupListView);

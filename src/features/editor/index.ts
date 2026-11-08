@@ -13,6 +13,9 @@ export { decodeMarkupImage, pickImage, pickImageFile } from "./image-tool";
 export { loadMarkupFonts } from "./fonts";
 export { setRevisionAuthor } from "./revision-tool";
 export { hasClipboard } from "./select-tool";
+// Story 9.2: the 4541 panel's zone mode.
+export { ADD_ZONE, armZoneDraw, endZoneDraw, zoneDrawStore, type ZoneDrawTool } from "./zone-draw";
+export { setSelection } from "./editor-store";
 export {
   ADD_ANGLE,
   ADD_AREA,

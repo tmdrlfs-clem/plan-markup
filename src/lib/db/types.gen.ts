@@ -267,7 +267,33 @@ isOneToOne: false
                 }
           }
           Views: {
-            [_ in never]: never
+            "zones": {
+                  Row: {
+                    "created_at": string | null,"drawing_id": string | null,"hole_tags": Json | null,"holes": Json | null,"id": string | null,"name": string | null,"options": Json | null,"page_id": string | null,"polygon": Json | null,"updated_at": string | null,"use": string | null,"version": number | null
+                  }
+                  ComputedFields: never
+                  Insert: {
+                           "created_at"?: string | null,"drawing_id"?: string | null,"hole_tags"?: never,"holes"?: never,"id"?: string | null,"name"?: never,"options"?: never,"page_id"?: string | null,"polygon"?: never,"updated_at"?: string | null,"use"?: never,"version"?: number | null
+                         }
+                        Update: {
+                           "created_at"?: string | null,"drawing_id"?: string | null,"hole_tags"?: never,"holes"?: never,"id"?: string | null,"name"?: never,"options"?: never,"page_id"?: string | null,"polygon"?: never,"updated_at"?: string | null,"use"?: never,"version"?: number | null
+                         }
+                        Relationships: [
+                    {
+      foreignKeyName: "markups_drawing_id_fkey"
+      columns: ["drawing_id"]
+isOneToOne: false
+      referencedRelation: "drawings"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "markups_page_id_fkey"
+      columns: ["page_id"]
+isOneToOne: false
+      referencedRelation: "pages"
+      referencedColumns: ["id"]
+    }
+                  ]
+                }
           }
           Functions: {
             "apply_markup_ops":

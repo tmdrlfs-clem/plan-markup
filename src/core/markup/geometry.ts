@@ -153,7 +153,9 @@ export function hitMarkup(m: Markup, p: Point, tol: number, userUnit = 1): boole
       if (local && Math.hypot(local.x, local.y) <= 1) return true;
       return nearPolyline(p, outlinePoints(m), tol, true);
     }
-    case "area": {
+    case "area":
+    // Story 9.2: a zone, inside (less its holes) and on its outlines.
+    case "zone": {
       const holes = m.holes ?? [];
       if (nearPolyline(p, m.points, tol, true) || holes.some((h) => nearPolyline(p, h, tol, true))) return true;
       return insidePolygon(p, m.points) && !holes.some((h) => insidePolygon(p, h));

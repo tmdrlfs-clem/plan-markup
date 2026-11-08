@@ -44,7 +44,8 @@ export class MarkupIndex {
   /** The topmost markup at `p` within `tol` user units; null when none. */
   hit(p: Point, tol: number): Markup | null {
     const near = this.tree.search({ minX: p.x - tol, minY: p.y - tol, maxX: p.x + tol, maxY: p.y + tol });
-    near.sort((a, b) => b.order - a.order);
+    // Story 9.2: a zone (under everything, room-sized) is hit only where no other markup is.
+    near.sort((a, b) => Number(a.markup.type === "zone") - Number(b.markup.type === "zone") || b.order - a.order);
     return near.find((item) => hitMarkup(item.markup, p, tol, this.userUnit))?.markup ?? null;
   }
 

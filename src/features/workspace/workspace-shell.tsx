@@ -13,6 +13,7 @@ import { signOut } from "@/features/account/actions";
 import { pageIdOf } from "@/core/calibration/calibration";
 import { CalibrateDialog, ScalePrompt, VerifyDialog, openCalibrate, useCalibrationPrefsPersistence } from "@/features/calibration";
 import { redoActive, setRevisionAuthor, undoActive } from "@/features/editor";
+import { SprinklerPanel } from "@/features/sprinkler";
 import { useFirstUseTipsPersistence } from "@/features/tips";
 import { chooseTheme, useWorkspaceTheme } from "@/features/appearance/theme-store";
 import { LayersPanel, MarkupContextMenu, MarkupsListPanel, MeasurementsPanel, PropertiesPanel, TextEditor, armArea, armCount, armLength, armPolylength, useEditorSession, useMeasureTools } from "@/features/editor";
@@ -117,6 +118,8 @@ function LeftPanelBody() {
   if (panel.id === "properties") return <PropertiesPanel emptyText={panel.empty} />;
   // Story 5.12: the document's layers.
   if (panel.id === "layers") return <LayersPanel emptyText={panel.empty} />;
+  // Story 9.2: the 4541 panel (zones).
+  if (panel.id === "sprinkler") return <SprinklerPanel emptyText={panel.empty} />;
   return (
     <div className="flex flex-col gap-1 p-3 text-ws-md">
       <p>{panel.empty}</p>

@@ -138,6 +138,8 @@ import { ADD_STRIKETHROUGH, ADD_UNDERLINE, paintTextMark, paintTextMarkActive, t
 import { executeOp, registerDrawingUndo } from "./undo-store";
 import { fontFamilyOf } from "./fonts";
 import { revisionLabel, revisionText } from "@/core/markup/revision";
+import { ZONE_FILL_OPACITY, isZone } from "@/core/sprinkler/zone";
+import { ADD_ZONE, makesZone, zoneOf } from "./zone-draw";
 import { ADD_REVISION, placeRevision, revisionAt } from "./revision-tool";
 import { LEGEND_EMPTY, LEGEND_QTY, LEGEND_TEXT, LEGEND_TOTAL, fitSymbol, legendLabel, legendLayout, legendRows, legendScopeMarkups, legendTotal, type LegendRow, type MeasureText } from "@/core/markup/legend";
 import { ADD_LEGEND, legendAt, placeLegend } from "./legend-tool";
@@ -291,6 +293,20 @@ const drawing = (): Drawing | null => editorStore.getState().tools.drawing;
 
 function calibrationOf(documentId: string, pageIndex: number): Calibration | null {
   return viewerStore.getState().calibrations[pageIdOf(documentId, pageIndex)] ?? null;
+}
+
+/** The page's user unit (1 when it has none). */
+function userUnitOf(pageIndex: number): number {
+  const u = viewerStore.getState().pages[pageIndex]?.userUnit;
+  return u && u > 0 ? u : 1;
+}
+
+/** Story 9.2: a zone from a finished ring, selected so the 4541 panel shows it. */
+function addZone(documentId: string, ring: { pageId: string; outer: readonly Point[]; holes: readonly (readonly Point[])[] }, tabId?: string): void {
+  const pageIndex = Number(ring.pageId.slice(ring.pageId.lastIndexOf(":") + 1));
+  const zone = zoneOf(documentId, { id: uuidv7(), createdAt: new Date().toISOString(), ...ring }, calibrationOf(documentId, pageIndex), userUnitOf(pageIndex));
+  executeOp({ kind: "markups.add", documentId, markups: [zone] }, ADD_ZONE, tabId);
+  setSelection([zone.id]);
 }
 
 function stroke(c: CanvasRenderingContext2D, style: MarkupStyle, view: LayerView): void {
@@ -1005,6 +1021,16 @@ function paintList(c: CanvasRenderingContext2D, markups: readonly Markup[], view
       paintLegend(c, any, rows, pts, view);
       continue;
     }
+    if (any.type === "zone") {
+      // Story 9.2: a zone's outline (its fill is under the markups) and its name.
+      captions.push(any.zone.name);
+      const rings = [any.points, ...(any.holes ?? [])].map((r) => devicePoints(r, view));
+      if (!onCanvas(rings[0], any.style, view)) continue;
+      if (selected.has(any.id)) strokeSelection(c, rings[0], view);
+      strokeRings(c, rings, any.style, view);
+      paintZoneName(c, any.zone.name, devicePoints([polygonCentroid(any.points)], view)[0], any.style, view);
+      continue;
+    }
     if (!isMeasure(any)) {
       // Story 5.4: a shape, no caption (its label stands in layer 2's list).
       captions.push(SHAPE_LABEL[any.type]);
@@ -1081,6 +1107,11 @@ export const measurePainter: MarkupPainter = {
     const preview = editorStore.getState().tools.preview;
     const added = preview && preview.documentId === view.documentId ? preview.added.filter((m) => m.pageId === pageId) : [];
     for (const one of [...pageMarkups(editorStore.getState(), view.documentId, pageId), ...added]) {
+      if (isZone(one)) {
+        const z = shown(one);
+        if (isZone(z)) paintZoneFill(c, [z.points, ...(z.holes ?? [])].map((r) => devicePoints(r, view)), z.style.color);
+        continue;
+      }
       if (one.type !== "highlight") continue;
       const m = shown(one);
       const pts = devicePoints(m.points, view);
@@ -1376,6 +1407,10 @@ function addFilledArea(): "done" | "ignored" {
   if (!d || !documentId || !d.pageId.startsWith(`${documentId}:`)) return "ignored";
   const rings = takeFillRings();
   if (!rings) return "ignored";
+  if (makesZone("fill")) {
+    addZone(documentId, rings);
+    return "done";
+  }
   const markup: MeasureMarkup = {
     id: uuidv7(),
     pageId: rings.pageId,
@@ -1407,6 +1442,35 @@ function finishDrawing(documentId: string): "done" | "continue" | "ignored" {
 function inkStyle(tool: InkTool): MarkupStyle {
   // Story 5.11 (D2): an eraser, the sheet's white, 10 pt.
   return tool === "highlight" ? DEFAULT_HIGHLIGHT_STYLE : tool === "eraser" ? DEFAULT_COVER_STYLE : DEFAULT_MARKUP_STYLE;
+}
+
+/** Story 9.2: a zone's faint fill (device rings; its holes left out). */
+function paintZoneFill(c: CanvasRenderingContext2D, rings: readonly (readonly Point[])[], color: string): void {
+  if (rings[0].length < 3) return;
+  c.save();
+  c.beginPath();
+  for (const ring of rings) {
+    c.moveTo(ring[0].x, ring[0].y);
+    for (let i = 1; i < ring.length; i++) c.lineTo(ring[i].x, ring[i].y);
+    c.closePath();
+  }
+  c.globalAlpha = ZONE_FILL_OPACITY;
+  c.fillStyle = color;
+  c.fill("evenodd");
+  c.restore();
+}
+
+/** Story 9.2: a zone's name at its centroid, in its colour. */
+function paintZoneName(c: CanvasRenderingContext2D, name: string, at: Point, style: MarkupStyle, view: LayerView): void {
+  const size = style.fontSize * view.devicePerPt;
+  if (size < 4) return;
+  c.save();
+  c.font = `600 ${size}px ${view.colors.fontFamily}`;
+  c.textAlign = "center";
+  c.textBaseline = "middle";
+  c.fillStyle = style.color;
+  c.fillText(name, at.x, at.y);
+  c.restore();
 }
 
 /** Story 5.11: a white-out's cover (device points): filled with the sheet's white, no stroke. */
@@ -1577,6 +1641,11 @@ function commit(documentId: string, tabId?: string): "done" | "continue" {
     }
     setDrawing(null);
     beginTextEdit(draftOf(d.tool, d.pageId, d.points, d.ring), documentId, tabId ?? viewerStore.getState().tabId);
+    return "done";
+  }
+  if (d.tool === "area" && makesZone("area")) {
+    setDrawing(null);
+    addZone(documentId, { pageId: d.pageId, outer: [...d.points], holes: [] }, tabId);
     return "done";
   }
   const markup = markupOf(d);
