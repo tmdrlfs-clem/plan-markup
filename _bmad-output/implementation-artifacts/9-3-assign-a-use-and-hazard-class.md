@@ -1,6 +1,6 @@
 # Story 9.3: Assign a use and hazard class
 
-Status: review
+Status: done
 
 ## Story
 
