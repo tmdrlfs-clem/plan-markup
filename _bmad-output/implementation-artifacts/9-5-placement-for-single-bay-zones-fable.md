@@ -1,6 +1,6 @@
 # Story 9.5: Placement for single-bay zones (Fable)
 
-Status: review
+Status: done
 
 ## Story
 

@@ -139,7 +139,7 @@ development_status:
   9-2-create-zones-in-the-4541-panel: done
   9-3-assign-a-use-and-hazard-class: done
   9-4-independent-coverage-oracle-fable: done
-  9-5-placement-for-single-bay-zones-fable: review  # gate: founder baseline times in docs/spikes/m2-baseline.md before running the engine on B1-B3 (A16)
+  9-5-placement-for-single-bay-zones-fable: done  # gate: founder baseline times in docs/spikes/m2-baseline.md before running the engine on B1-B3 (A16)
   9-6-placement-for-irregular-zones-with-holes-fable: backlog
   9-7-pattern-ceiling-grid-and-preferences-fable: backlog
   9-8-place-heads-from-the-panel: backlog
