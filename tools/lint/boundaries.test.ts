@@ -100,6 +100,26 @@ describe("lint boundaries are active", () => {
     TIMEOUT,
   );
 
+  it(
+    "Story 9.5: bans an oracle import in the placer",
+    async () => {
+      for (const spec of ["../oracle", "@/core/sprinkler/oracle/check"]) {
+        const ids = await ruleIds(`import { x } from '${spec}';\nexport const y = x;\n`, "src/core/sprinkler/placer/__probe__.ts");
+        expect(ids).toContain("no-restricted-imports");
+      }
+    },
+    TIMEOUT,
+  );
+
+  it(
+    "Story 9.5: lets a clean placer file pass (its own modules only)",
+    async () => {
+      const ids = await ruleIds("import { bbox } from './geometry';\nexport const y = bbox;\n", "src/core/sprinkler/placer/__probe__.ts");
+      expect(ids).toEqual([]);
+    },
+    TIMEOUT,
+  );
+
   it.each(["src/core/__probe__.ts", "src/features/__probe__.ts", "src/app/__probe__.tsx", "src/components/__probe__.tsx", "src/proxy.ts"])(
     "bans @sentry/* in %s",
     async (filePath) => {

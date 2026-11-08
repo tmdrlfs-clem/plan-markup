@@ -39,6 +39,16 @@ const PLACER_BAN = {
   message: "The 4541 oracle must stay independent of the placer.",
 };
 
+const ORACLE_BAN = {
+  group: [
+    "**/oracle",
+    "**/oracle/*",
+    "@/core/sprinkler/oracle",
+    "@/core/sprinkler/oracle/*",
+  ],
+  message: "The 4541 placer must never see the oracle (AR24).",
+};
+
 // Raw auth calls only inside src/lib/auth (NFR11).
 const AUTH_SYNTAX = [
   {
@@ -145,6 +155,26 @@ const eslintConfig = defineConfig([
             ...CORE_BANNED.patterns,
             PLACER_BAN,
             { group: ["@/*", "../*", "node:*"], message: "The 4541 oracle imports only its own modules (./...)." },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // Story 9.5 (AR24): the placer's own modules import only each other, and
+    // never the oracle (its tests may read fixtures and the rule set).
+    // placer-independence.test.ts checks the same in CI.
+    files: ["src/core/sprinkler/placer/**/*.{ts,tsx}"],
+    ignores: ["src/core/sprinkler/placer/**/*.test.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: CORE_BANNED.paths,
+          patterns: [
+            ...CORE_BANNED.patterns,
+            ORACLE_BAN,
+            { group: ["@/*", "../*", "node:*"], message: "The 4541 placer imports only its own modules (./...)." },
           ],
         },
       ],
