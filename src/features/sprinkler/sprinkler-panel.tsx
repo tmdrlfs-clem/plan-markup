@@ -3,8 +3,11 @@
 // calibration first; a calibrated one shows the checklist, Fill zone and
 // Polygon zone, and the page's zones (name, use, hazard chip, area). A row
 // and the canvas share the selection; a selected zone's holes are tagged here.
+// Story 9.3 (FR71): each row's use dropdown sets the hazard class through the
+// use -> hazard mapping (the company's, else the platform's); the selected
+// zone shows its rule figures and ruleset version to check against the standard.
 import { Check, LandPlot, PaintBucket, Pentagon, Ruler, Square } from "lucide-react";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { useStore } from "zustand";
 
 import { Button } from "@/components/ui/button";
@@ -13,17 +16,25 @@ import { cx } from "@/components/ui/cx";
 import { pageIdOf, type Calibration } from "@/core/calibration/calibration";
 import { markupBounds } from "@/core/markup/geometry";
 import { HOLE_TAGS, type HoleTag, type ZoneMarkup } from "@/core/schema/markup";
+import type { UseHazardMap } from "@/core/sprinkler/rules/rules";
+import { MAPPING_SOURCE_LABELS, figureRows, figuresOf, useOptions, type MappingSource } from "@/core/sprinkler/use-map";
 import { HOLE_TAG_LABELS, ZONE_COLOR, formatZoneArea, holeTagOf, isZone, withHoleTag, zoneAreaM2, zoneChecklist, zoneHazard } from "@/core/sprinkler/zone";
 import { openCalibrate } from "@/features/calibration";
 import { editorStore, executeOp, markupsOf, armZoneDraw, setSelection, zoneDrawStore } from "@/features/editor";
 import { FirstUseTip } from "@/features/tips";
 import { hasDocument, setTool, viewerCommands, viewerStore } from "@/features/viewer";
 
+import { getUseHazardMap } from "./actions";
+import { loadUseMap, useMapStore } from "./use-map-store";
+
 export const CALIBRATE_FIRST = "Calibrate this page first";
 export const CALIBRATE_FIRST_HINT = "Zones and head spacing are in real units, so the 4541 tools need this page's scale.";
 export const ZONES_TIP = "Fill a room to make a zone, or draw its outline. Each zone takes a use; the use sets its hazard class.";
 export const NO_ZONES = "No zones on this page yet.";
 export const CHANGE_HOLE_TAG = "Change hole tag";
+export const CHANGE_USE = "Change use";
+export const UNMAPPED_USE = "This use is not in the mapping. Choose a use to set the hazard class.";
+export const DRAFT_MAPPING = "draft, not yet verified";
 
 function userUnitOf(pages: readonly { userUnit?: number }[], pageIndex: number): number {
   const u = pages[pageIndex]?.userUnit;
@@ -35,6 +46,11 @@ function revealZone(z: ZoneMarkup, pageIndex: number): void {
   if (viewerStore.getState().tool !== "select") setTool("select");
   viewerCommands.revealMarkup(pageIndex, markupBounds(z));
   setSelection([z.id]);
+}
+
+function setUse(documentId: string, z: ZoneMarkup, use: string): void {
+  if (use === z.zone.use) return;
+  executeOp({ kind: "markups.update", documentId, before: [z], after: [{ ...z, zone: { ...z.zone, use } }] }, CHANGE_USE);
 }
 
 function setHoleTag(documentId: string, z: ZoneMarkup, index: number, tag: HoleTag, calibration: Calibration | null, userUnit: number): void {
@@ -53,6 +69,13 @@ export function SprinklerPanel({ emptyText }: { emptyText: string }) {
   const selected = useStore(editorStore, (s) => s.selection.ids);
   const armed = useStore(zoneDrawStore, (s) => s.tool);
   const tool = useStore(viewerStore, (s) => s.tool);
+  const map = useStore(useMapStore, (s) => s.map);
+  const mapSource = useStore(useMapStore, (s) => s.source);
+
+  // Story 9.3: the mapping is read once per session (the built-in one until then).
+  useEffect(() => {
+    void loadUseMap(getUseHazardMap);
+  }, []);
 
   const pageId = documentId ? pageIdOf(documentId, pageIndex) : null;
   const calibration = pageId ? (calibrations[pageId] ?? null) : null;
@@ -79,7 +102,7 @@ export function SprinklerPanel({ emptyText }: { emptyText: string }) {
     );
   }
 
-  const checklist = zoneChecklist(zones);
+  const checklist = zoneChecklist(zones, map);
   const fillOn = armed === "fill" && tool === "fill";
   const polygonOn = armed === "area" && tool === "area";
   const current = zones.find((z) => selected.includes(z.id)) ?? null;
@@ -128,11 +151,14 @@ export function SprinklerPanel({ emptyText }: { emptyText: string }) {
               zone={z}
               selected={selected.includes(z.id)}
               areaText={formatZoneArea(zoneAreaM2(z, calibration, userUnit))}
+              map={map}
               onSelect={() => revealZone(z, pageIndex)}
+              onUse={(use) => setUse(documentId, z, use)}
             />
           ))}
         </ul>
       )}
+      {current ? <ZoneFiguresPanel zone={current} map={map} source={mapSource} /> : null}
       {current && (current.holes?.length ?? 0) > 0 ? (
         <div className="flex flex-col gap-2 border-t border-border p-3" data-testid="zone-holes">
           <p className="text-ws-sm font-semibold">Holes in {current.zone.name}</p>
@@ -164,28 +190,83 @@ function ChecklistItem({ label, done }: { label: string; done: boolean }) {
   );
 }
 
-function ZoneRow({ zone, selected, areaText, onSelect }: { zone: ZoneMarkup; selected: boolean; areaText: string; onSelect: () => void }) {
-  const hazard = zoneHazard(zone);
+function ZoneRow({
+  zone,
+  selected,
+  areaText,
+  map,
+  onSelect,
+  onUse,
+}: {
+  zone: ZoneMarkup;
+  selected: boolean;
+  areaText: string;
+  map: UseHazardMap;
+  onSelect: () => void;
+  onUse: (use: string) => void;
+}) {
+  const hazard = zoneHazard(zone, map);
   return (
-    <li>
+    <li data-testid="zone-row" data-selected={selected} className={cx("flex flex-col gap-1 px-3 py-1.5", selected ? "bg-accent-soft text-text" : "hover:bg-surface-3")}>
       <button
         type="button"
         aria-pressed={selected}
-        data-testid="zone-row"
         onClick={onSelect}
-        className={cx(
-          "flex w-full items-center gap-2 px-3 py-1 text-left text-ws-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent",
-          selected ? "bg-accent-soft text-text" : "hover:bg-surface-3",
-        )}
+        className="flex w-full items-center gap-2 rounded-sm text-left text-ws-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
       >
         <LandPlot size={14} aria-hidden="true" className="shrink-0" style={{ color: ZONE_COLOR }} />
         <span className="min-w-0 flex-1 truncate">{zone.zone.name}</span>
-        <span className="truncate text-ws-sm text-muted">{zone.zone.use}</span>
-        <span className="rounded-sm border border-border px-1 text-ws-sm font-semibold" data-testid="hazard-chip">
+        <span className="shrink-0 text-right tabular-nums text-ws-sm">{areaText}</span>
+      </button>
+      <div className="flex items-center gap-2 pl-6">
+        <div className="min-w-0 flex-1">
+          <Select
+            label={`Use of ${zone.zone.name}`}
+            labelHidden
+            value={zone.zone.use}
+            onValueChange={onUse}
+            options={useOptions(map, zone.zone.use).map((o) => ({ value: o.use, label: o.hazard ? `${o.use} (${o.hazard})` : `${o.use} (not mapped)` }))}
+          />
+        </div>
+        <span
+          className={cx("shrink-0 rounded-sm border px-1 text-ws-sm font-semibold", hazard ? "border-border" : "border-warning text-warning")}
+          data-testid="hazard-chip"
+          title={hazard ? `Hazard class ${hazard}` : "Use not in the mapping"}
+        >
           {hazard ?? "?"}
         </span>
-        <span className="w-16 shrink-0 text-right tabular-nums text-ws-sm">{areaText}</span>
-      </button>
+      </div>
     </li>
+  );
+}
+
+function ZoneFiguresPanel({ zone, map, source }: { zone: ZoneMarkup; map: UseHazardMap; source: MappingSource }) {
+  const figures = figuresOf(zoneHazard(zone, map));
+  return (
+    <section className="flex flex-col gap-1 border-t border-border p-3 text-ws-sm" aria-label={`Rule figures for ${zone.zone.name}`} data-testid="zone-figures">
+      {figures ? (
+        <>
+          <p className="font-semibold">
+            {figures.hazard} · {figures.ruleset}
+          </p>
+          <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-0.5">
+            {figureRows(figures.rule).map((r) => (
+              <div key={r.key} className="contents" data-testid={`figure-${r.key}`}>
+                <dt className="text-muted">
+                  {r.label} <span className="font-mono">({r.key})</span>
+                </dt>
+                <dd className="text-right tabular-nums">{r.value}</dd>
+              </div>
+            ))}
+          </dl>
+        </>
+      ) : (
+        <p className="text-warning">{UNMAPPED_USE}</p>
+      )}
+      <p className="text-muted" data-testid="mapping-source">
+        {MAPPING_SOURCE_LABELS[source]} v{map.version}
+        {map.verified ? "" : ` (${DRAFT_MAPPING})`}
+      </p>
+    </section>
   );
 }

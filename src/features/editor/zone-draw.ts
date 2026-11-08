@@ -9,6 +9,7 @@ import type { Calibration } from "@/core/calibration/calibration";
 import type { Point } from "@/core/markup/geometry";
 import type { ZoneMarkup } from "@/core/schema/markup";
 import { isZone, newZone } from "@/core/sprinkler/zone";
+import { useMapStore } from "@/features/sprinkler/use-map-store";
 import { setTool, viewerStore } from "@/features/viewer";
 
 import { editorStore, markupsOf } from "./editor-store";
@@ -62,5 +63,6 @@ export function zoneOf(
   calibration: Calibration | null,
   userUnit: number,
 ): ZoneMarkup {
-  return newZone(ring, zonesOf(documentId), calibration, userUnit);
+  // Story 9.3: the use is the mapping's default (the company's, else the platform's).
+  return newZone(ring, zonesOf(documentId), calibration, userUnit, useMapStore.getState().map);
 }

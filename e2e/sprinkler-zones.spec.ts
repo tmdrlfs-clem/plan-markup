@@ -4,7 +4,8 @@
 // opens Calibrate); at 1:100 the tip, the checklist and Polygon zone; a zone
 // around the rectangle is listed (Zone 1, Office, ELH, 37.3 m²) and ticks the
 // checklist; undo / redo; the canvas and the list share the selection; zones
-// stay out of the Markups List.
+// stay out of the Markups List. Story 9.3: the selected zone's figures and
+// mapping; a use change sets the hazard and figures at once; undo.
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
@@ -116,7 +117,7 @@ test("4541 panel: calibrate first, polygon zone listed with use, hazard and area
   await expect(row).toContainText("Office");
   await expect(row.getByTestId("hazard-chip")).toHaveText("ELH");
   await expect(row).toContainText(/37\.\d m²/);
-  await expect(row).toHaveAttribute("aria-pressed", "true");
+  await expect(row).toHaveAttribute("data-selected", "true");
   await expect(panel(page).getByTestId("sprinkler-checklist").getByRole("listitem").nth(0)).toHaveAttribute("data-done", "true");
   await expect(panel(page).getByTestId("sprinkler-checklist").getByRole("listitem").nth(1)).toHaveAttribute("data-done", "true");
 
@@ -130,13 +131,29 @@ test("4541 panel: calibrate first, polygon zone listed with use, hazard and area
   // The canvas and the list share the selection.
   await tool(page, "Select").click();
   await clickAt(page, 50, 50);
-  await expect(row).toHaveAttribute("aria-pressed", "false");
+  await expect(row).toHaveAttribute("data-selected", "false");
   await clickAt(page, 200, 175);
-  await expect(row).toHaveAttribute("aria-pressed", "true");
+  await expect(row).toHaveAttribute("data-selected", "true");
   await page.keyboard.press("Escape");
-  await expect(row).toHaveAttribute("aria-pressed", "false");
-  await row.click();
-  await expect(row).toHaveAttribute("aria-pressed", "true");
+  await expect(row).toHaveAttribute("data-selected", "false");
+  await row.getByRole("button", { name: /Zone 1/ }).click();
+  await expect(row).toHaveAttribute("data-selected", "true");
+
+  // Story 9.3: the figures of the selected zone, from the platform mapping read from the database.
+  const figures = panel(page).getByTestId("zone-figures");
+  await expect(figures).toContainText("ELH · NZS 4541 v1");
+  await expect(figures.getByTestId("figure-Amax")).toContainText("21 m²");
+  await expect(figures.getByTestId("mapping-source")).toHaveText("Platform default mapping v1 (draft, not yet verified)");
+  // A use change updates the hazard and the figures at once; undo restores them.
+  await row.getByRole("combobox", { name: "Use of Zone 1" }).click();
+  await page.getByRole("option", { name: "Storage (OH2)" }).click();
+  await expect(row.getByTestId("hazard-chip")).toHaveText("OH2");
+  await expect(figures).toContainText("OH2 · NZS 4541 v1");
+  await expect(figures.getByTestId("figure-Amax")).toContainText("12 m²");
+  await expect(figures.getByTestId("figure-Smax")).toContainText("4 m");
+  await canvas(page).focus();
+  await page.keyboard.press("Control+z");
+  await expect(row.getByTestId("hazard-chip")).toHaveText("ELH");
 
   // Zones are not markups to list.
   await page.keyboard.press("Shift+Alt+L");

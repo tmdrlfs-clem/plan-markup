@@ -2,7 +2,7 @@
 import "@/test/radix-jsdom";
 import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { factorForRatio, type Calibration } from "@/core/calibration/calibration";
 import type { ZoneMarkup } from "@/core/schema/markup";
@@ -16,7 +16,11 @@ import { registerViewerEngine } from "@/features/viewer/viewer-commands";
 import { setTool, viewerStore } from "@/features/viewer/viewer-store";
 import { resetViewer } from "@/features/viewer/viewer-tabs";
 
-import { CALIBRATE_FIRST, NO_ZONES, SprinklerPanel, ZONES_TIP } from "./sprinkler-panel";
+import { CALIBRATE_FIRST, NO_ZONES, SprinklerPanel, UNMAPPED_USE, ZONES_TIP } from "./sprinkler-panel";
+import { resetUseMap, useMapStore } from "./use-map-store";
+
+const getUseHazardMap = vi.hoisted(() => vi.fn());
+vi.mock("./actions", () => ({ getUseHazardMap: () => getUseHazardMap() }));
 
 vi.mock("@/features/markup-set/actions", () => ({
   ensureMarkupSet: vi.fn(),
@@ -95,12 +99,18 @@ function setup(markups: ZoneMarkup[], calibrations: Record<string, Calibration> 
   return userEvent.setup({ delay: null });
 }
 
+beforeEach(() => {
+  getUseHazardMap.mockReset();
+  getUseHazardMap.mockResolvedValue({ ok: false, code: "INTERNAL", message: "" });
+});
+
 afterEach(() => {
   unregister();
   reveal.mockReset();
   act(() => {
     zoneDrawStore.setState({ tool: null });
     resetEditor();
+    resetUseMap();
     resetViewer();
   });
 });
@@ -150,7 +160,7 @@ describe("SprinklerPanel (Story 9.2)", () => {
         .getAllByRole("listitem")
         .map((li) => li.getAttribute("data-done")),
     ).toEqual(["true", "true", "false"]);
-    await user.click(rows[0]);
+    await user.click(within(rows[0]).getByRole("button", { name: /Zone 1/ }));
     expect(editorStore.getState().selection.ids).toEqual([a.id]);
     expect(reveal).toHaveBeenCalledWith(0, {
       x: 100,
@@ -158,14 +168,15 @@ describe("SprinklerPanel (Story 9.2)", () => {
       width: 200,
       height: 150,
     });
-    expect(rows[0].getAttribute("aria-pressed")).toBe("true");
+    expect(rows[0].getAttribute("data-selected")).toBe("true");
+    expect(within(rows[0]).getByRole("button", { name: /Zone 1/ }).getAttribute("aria-pressed")).toBe("true");
   });
 
   it("tags a selected zone's holes (undoable)", async () => {
     const z = zone([ring(120, 120, 10, 10)]);
     const user = setup([z]);
     expect(screen.queryByTestId("zone-holes")).toBeNull();
-    await user.click(screen.getByTestId("zone-row"));
+    await user.click(screen.getByRole("button", { name: /Zone 1/ }));
     const holes = screen.getByTestId("zone-holes");
     const trigger = within(holes).getByRole("combobox", { name: "Hole 1" });
     expect(trigger.textContent).toContain("Column");
@@ -175,5 +186,49 @@ describe("SprinklerPanel (Story 9.2)", () => {
     expect(saved.zone.holeTags).toEqual(["shaft"]);
     act(() => void undoActive());
     expect((editorStore.getState().doc.markups.doc[0] as ZoneMarkup).zone.holeTags).toEqual(["column"]);
+  });
+
+  it("reads the mapping once; a use change sets the hazard and figures at once (undoable)", async () => {
+    getUseHazardMap.mockResolvedValue({
+      ok: true,
+      data: {
+        source: "platform",
+        map: { ...useMapStore.getState().map, version: "2", uses: [...useMapStore.getState().map.uses, { use: "Lab", hazard: "OH3" }] },
+      },
+    });
+    const z = zone();
+    const user = setup([z]);
+    await vi.waitFor(() => expect(useMapStore.getState().loaded).toBe(true));
+    expect(getUseHazardMap).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole("button", { name: /Zone 1/ }));
+    const figures = screen.getByTestId("zone-figures");
+    expect(figures.textContent).toContain("ELH · NZS 4541 v1");
+    expect(within(figures).getByTestId("figure-Amax").textContent).toContain("21 m²");
+    expect(within(figures).getByTestId("figure-Smax").textContent).toContain("4.6 m");
+    expect(within(figures).getByTestId("mapping-source").textContent).toBe("Platform default mapping v2 (draft, not yet verified)");
+
+    await user.click(screen.getByRole("combobox", { name: "Use of Zone 1" }));
+    await user.click(await screen.findByRole("option", { name: "Lab (OH3)" }));
+    expect((editorStore.getState().doc.markups.doc[0] as ZoneMarkup).zone.use).toBe("Lab");
+    expect(screen.getByTestId("hazard-chip").textContent).toBe("OH3");
+    expect(screen.getByTestId("zone-figures").textContent).toContain("OH3 · NZS 4541 v1");
+    expect(within(screen.getByTestId("zone-figures")).getByTestId("figure-Amax").textContent).toContain("12 m²");
+    act(() => void undoActive());
+    expect(screen.getByTestId("hazard-chip").textContent).toBe("ELH");
+  });
+
+  it("an unmapped use shows ? and asks for a use; the checklist's Uses stays open", async () => {
+    getUseHazardMap.mockResolvedValue({ ok: false, code: "INTERNAL", message: "x" });
+    const z = zone();
+    const user = setup([{ ...z, zone: { ...z.zone, use: "Hangar" } }]);
+    expect(screen.getByTestId("hazard-chip").textContent).toBe("?");
+    expect(
+      within(screen.getByTestId("sprinkler-checklist"))
+        .getAllByRole("listitem")
+        .map((li) => li.getAttribute("data-done")),
+    ).toEqual(["true", "false", "false"]);
+    await user.click(screen.getByRole("button", { name: /Zone 1/ }));
+    expect(screen.getByTestId("zone-figures").textContent).toContain(UNMAPPED_USE);
+    expect(screen.getByTestId("mapping-source").textContent).toContain("Built-in default mapping v1");
   });
 });
