@@ -131,6 +131,26 @@ const eslintConfig = defineConfig([
     },
   },
   {
+    // Story 9.4 (AR24): the oracle's own modules import only each other (its
+    // tests may read fixtures and the rule set). oracle-independence.test.ts
+    // checks the same in CI.
+    files: ["src/core/sprinkler/oracle/**/*.{ts,tsx}"],
+    ignores: ["src/core/sprinkler/oracle/**/*.test.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: CORE_BANNED.paths,
+          patterns: [
+            ...CORE_BANNED.patterns,
+            PLACER_BAN,
+            { group: ["@/*", "../*", "node:*"], message: "The 4541 oracle imports only its own modules (./...)." },
+          ],
+        },
+      ],
+    },
+  },
+  {
     // Raw auth calls only inside src/lib/auth (NFR11).
     files: ["src/**/*.{ts,tsx}"],
     ignores: ["src/lib/auth/**"],

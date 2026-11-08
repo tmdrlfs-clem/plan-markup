@@ -1,0 +1,84 @@
+{
+ "format": "plan-markup.zone-layout/1",
+ "sample": "STAG",
+ "hazard": "OH2",
+ "ruleSet": {
+  "id": "nzs4541",
+  "version": "1"
+ },
+ "generator": "spikes/4541-placement placer (reference data for the oracle tests only)",
+ "units": "mm",
+ "zones": [
+  {
+   "slug": "stag",
+   "zoneId": "STAG",
+   "heads": [
+    {
+     "id": "STAG:0:0:0",
+     "x": 1750,
+     "y": 1500
+    },
+    {
+     "id": "STAG:0:0:1",
+     "x": 5250,
+     "y": 1500
+    },
+    {
+     "id": "STAG:0:0:2",
+     "x": 8750,
+     "y": 1500
+    },
+    {
+     "id": "STAG:0:0:3",
+     "x": 12250,
+     "y": 1500
+    },
+    {
+     "id": "STAG:0:1:0",
+     "x": 1166.7,
+     "y": 4500
+    },
+    {
+     "id": "STAG:0:1:1",
+     "x": 3500,
+     "y": 4500
+    },
+    {
+     "id": "STAG:0:1:2",
+     "x": 7000,
+     "y": 4500
+    },
+    {
+     "id": "STAG:0:1:3",
+     "x": 10500,
+     "y": 4500
+    },
+    {
+     "id": "STAG:0:1:4",
+     "x": 12833.3,
+     "y": 4500
+    },
+    {
+     "id": "STAG:0:2:0",
+     "x": 1750,
+     "y": 7500
+    },
+    {
+     "id": "STAG:0:2:1",
+     "x": 5250,
+     "y": 7500
+    },
+    {
+     "id": "STAG:0:2:2",
+     "x": 8750,
+     "y": 7500
+    },
+    {
+     "id": "STAG:0:2:3",
+     "x": 12250,
+     "y": 7500
+    }
+   ]
+  }
+ ]
+}

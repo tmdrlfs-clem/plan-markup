@@ -1,0 +1,44 @@
+{
+ "format": "plan-markup.zone-layout/1",
+ "sample": "Z4r",
+ "hazard": "ELH",
+ "ruleSet": {
+  "id": "nzs4541",
+  "version": "1"
+ },
+ "generator": "spikes/4541-placement placer (reference data for the oracle tests only)",
+ "units": "mm",
+ "zones": [
+  {
+   "slug": "z4r",
+   "zoneId": "Z4r",
+   "heads": [
+    {
+     "id": "Z4r:0:0:0",
+     "x": -150,
+     "y": 2149.5
+    },
+    {
+     "id": "Z4r:0:0:1",
+     "x": 3600,
+     "y": 2149.5
+    },
+    {
+     "id": "Z4r:0:1:0",
+     "x": -1650,
+     "y": 6448.6
+    },
+    {
+     "id": "Z4r:0:1:1",
+     "x": 2950,
+     "y": 6448.6
+    },
+    {
+     "id": "Z4r:0:1:2",
+     "x": 7550,
+     "y": 6448.6
+    }
+   ]
+  }
+ ]
+}

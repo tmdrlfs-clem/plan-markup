@@ -83,13 +83,19 @@ describe("lint boundaries are active", () => {
   );
 
   it(
-    "lets a clean oracle file pass",
+    "lets a clean oracle file pass (its own modules only)",
     async () => {
-      const ids = await ruleIds(
-        "import { ptToMm } from '@/core/geometry/units';\nexport const y = ptToMm;\n",
-        ORACLE,
-      );
+      const ids = await ruleIds("import { insideRing } from './kernel';\nexport const y = insideRing;\n", ORACLE);
       expect(ids).toEqual([]);
+    },
+    TIMEOUT,
+  );
+
+  it(
+    "Story 9.4: refuses any oracle import outside its folder (design §4.1)",
+    async () => {
+      const ids = await ruleIds("import { ptToMm } from '@/core/geometry/units';\nexport const y = ptToMm;\n", ORACLE);
+      expect(ids).toContain("no-restricted-imports");
     },
     TIMEOUT,
   );

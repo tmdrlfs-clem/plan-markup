@@ -1,0 +1,64 @@
+{
+ "format": "plan-markup.zone-layout/1",
+ "sample": "Z2",
+ "hazard": "OH1",
+ "ruleSet": {
+  "id": "nzs4541",
+  "version": "1"
+ },
+ "generator": "spikes/4541-placement placer (reference data for the oracle tests only)",
+ "units": "mm",
+ "zones": [
+  {
+   "slug": "z2",
+   "zoneId": "Z2",
+   "heads": [
+    {
+     "id": "Z2:0:0:0",
+     "x": 1200,
+     "y": 2000
+    },
+    {
+     "id": "Z2:0:0:1",
+     "x": 3600,
+     "y": 2000
+    },
+    {
+     "id": "Z2:0:0:2",
+     "x": 6000,
+     "y": 2000
+    },
+    {
+     "id": "Z2:0:0:3",
+     "x": 8400,
+     "y": 2000
+    },
+    {
+     "id": "Z2:0:0:4",
+     "x": 10800,
+     "y": 2000
+    },
+    {
+     "id": "Z2:1:0:0",
+     "x": 1450,
+     "y": 5250
+    },
+    {
+     "id": "Z2:1:0:1",
+     "x": 4500,
+     "y": 5250
+    },
+    {
+     "id": "Z2:1:1:0",
+     "x": 1500,
+     "y": 7750
+    },
+    {
+     "id": "Z2:1:1:1",
+     "x": 4500,
+     "y": 7750
+    }
+   ]
+  }
+ ]
+}

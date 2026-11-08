@@ -109,3 +109,25 @@ last point is not repeated), any orientation.
 - **`grid.mode`** is `off`, `preferred` or `required`; tile stops are tile centres.
 - **`keepOuts`** come from design §5 (R1 panel lights, R2 downlights). The spike ignores them;
   Epic 9 tests must check that no head lies inside a keep-out.
+
+## `zones/layouts/*.json` (format `plan-markup.zone-layout/1`, Story 9.4)
+
+Reference head layouts for the oracle tests (`src/core/sprinkler/oracle/check.test.ts`), one file
+per sample and hazard: `<sample>.<hazard>.json`, all lower case. Written by
+`node scripts/fixtures/make-zone-layouts.mjs` from the Story 2.2 spike placer; `--check` reports
+any file that no longer matches. The production oracle never imports the spike or any placer: it
+only reads these files in tests and must find zero errors on each, keep-outs included (the spike
+placer ignored keep-outs, but none of its heads lands in one).
+
+```jsonc
+{
+  "format": "plan-markup.zone-layout/1",
+  "sample": "Z2",                     // sample id (several zones for open-plan samples)
+  "hazard": "ELH",
+  "ruleSet": { "id": "nzs4541", "version": "1" },
+  "units": "mm",
+  "zones": [
+    { "slug": "z2", "zoneId": "Z2", "heads": [{ "id": "Z2:0:0:0", "x": 1500, "y": 2250 }] }
+  ]
+}
+```

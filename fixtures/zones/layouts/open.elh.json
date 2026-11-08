@@ -1,0 +1,75 @@
+{
+ "format": "plan-markup.zone-layout/1",
+ "sample": "OPEN",
+ "hazard": "ELH",
+ "ruleSet": {
+  "id": "nzs4541",
+  "version": "1"
+ },
+ "generator": "spikes/4541-placement placer (reference data for the oracle tests only)",
+ "units": "mm",
+ "zones": [
+  {
+   "slug": "open-office",
+   "zoneId": "OFFICE",
+   "heads": [
+    {
+     "id": "OFFICE:0:0:0",
+     "x": 2000,
+     "y": 2250
+    },
+    {
+     "id": "OFFICE:0:0:1",
+     "x": 6000,
+     "y": 2250
+    },
+    {
+     "id": "OFFICE:0:0:2",
+     "x": 10000,
+     "y": 2250
+    },
+    {
+     "id": "OFFICE:0:1:0",
+     "x": 2000,
+     "y": 6750
+    },
+    {
+     "id": "OFFICE:0:1:1",
+     "x": 6000,
+     "y": 6750
+    },
+    {
+     "id": "OFFICE:0:1:2",
+     "x": 10000,
+     "y": 6750
+    }
+   ]
+  },
+  {
+   "slug": "open-kitchen",
+   "zoneId": "KITCHEN",
+   "heads": [
+    {
+     "id": "KITCHEN:0:0:0",
+     "x": 13500,
+     "y": 2250
+    },
+    {
+     "id": "KITCHEN:0:0:1",
+     "x": 16500,
+     "y": 2250
+    },
+    {
+     "id": "KITCHEN:0:1:0",
+     "x": 13500,
+     "y": 6750
+    },
+    {
+     "id": "KITCHEN:0:1:1",
+     "x": 16500,
+     "y": 6750
+    }
+   ]
+  }
+ ]
+}

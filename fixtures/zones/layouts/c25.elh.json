@@ -1,0 +1,39 @@
+{
+ "format": "plan-markup.zone-layout/1",
+ "sample": "C25",
+ "hazard": "ELH",
+ "ruleSet": {
+  "id": "nzs4541",
+  "version": "1"
+ },
+ "generator": "spikes/4541-placement placer (reference data for the oracle tests only)",
+ "units": "mm",
+ "zones": [
+  {
+   "slug": "c25",
+   "zoneId": "C25",
+   "heads": [
+    {
+     "id": "C25:0:0:0",
+     "x": 15750,
+     "y": 1250
+    },
+    {
+     "id": "C25:0:1:0",
+     "x": 11250,
+     "y": 1250
+    },
+    {
+     "id": "C25:0:2:0",
+     "x": 6750,
+     "y": 1250
+    },
+    {
+     "id": "C25:0:3:0",
+     "x": 2250,
+     "y": 1250
+    }
+   ]
+  }
+ ]
+}

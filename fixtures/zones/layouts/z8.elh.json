@@ -1,0 +1,44 @@
+{
+ "format": "plan-markup.zone-layout/1",
+ "sample": "Z8",
+ "hazard": "ELH",
+ "ruleSet": {
+  "id": "nzs4541",
+  "version": "1"
+ },
+ "generator": "spikes/4541-placement placer (reference data for the oracle tests only)",
+ "units": "mm",
+ "zones": [
+  {
+   "slug": "z8",
+   "zoneId": "Z8",
+   "heads": [
+    {
+     "id": "Z8:0:0:0",
+     "x": 1960.6,
+     "y": 2275.8
+    },
+    {
+     "id": "Z8:0:0:1",
+     "x": 5961.2,
+     "y": 2275.8
+    },
+    {
+     "id": "Z8:0:0:2",
+     "x": 9961.8,
+     "y": 2275.8
+    },
+    {
+     "id": "Z8:0:1:0",
+     "x": 1492.9,
+     "y": 6827.5
+    },
+    {
+     "id": "Z8:0:1:1",
+     "x": 4442.9,
+     "y": 6827.5
+    }
+   ]
+  }
+ ]
+}

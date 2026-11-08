@@ -1,0 +1,49 @@
+{
+ "format": "plan-markup.zone-layout/1",
+ "sample": "TILE",
+ "hazard": "ELH",
+ "ruleSet": {
+  "id": "nzs4541",
+  "version": "1"
+ },
+ "generator": "spikes/4541-placement placer (reference data for the oracle tests only)",
+ "units": "mm",
+ "zones": [
+  {
+   "slug": "tile",
+   "zoneId": "TILE",
+   "heads": [
+    {
+     "id": "TILE:0:0:0",
+     "x": 1800,
+     "y": 1500
+    },
+    {
+     "id": "TILE:0:0:1",
+     "x": 4200,
+     "y": 1500
+    },
+    {
+     "id": "TILE:0:0:2",
+     "x": 7800,
+     "y": 1500
+    },
+    {
+     "id": "TILE:0:1:0",
+     "x": 1800,
+     "y": 5100
+    },
+    {
+     "id": "TILE:0:1:1",
+     "x": 4200,
+     "y": 5100
+    },
+    {
+     "id": "TILE:0:1:2",
+     "x": 7800,
+     "y": 5100
+    }
+   ]
+  }
+ ]
+}

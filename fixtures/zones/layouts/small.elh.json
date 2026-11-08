@@ -1,0 +1,24 @@
+{
+ "format": "plan-markup.zone-layout/1",
+ "sample": "SMALL",
+ "hazard": "ELH",
+ "ruleSet": {
+  "id": "nzs4541",
+  "version": "1"
+ },
+ "generator": "spikes/4541-placement placer (reference data for the oracle tests only)",
+ "units": "mm",
+ "zones": [
+  {
+   "slug": "small",
+   "zoneId": "SMALL",
+   "heads": [
+    {
+     "id": "SMALL:0:0:0",
+     "x": 1500,
+     "y": 1400
+    }
+   ]
+  }
+ ]
+}
