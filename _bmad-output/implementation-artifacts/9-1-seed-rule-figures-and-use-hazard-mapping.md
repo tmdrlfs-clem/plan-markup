@@ -1,6 +1,6 @@
 # Story 9.1: Seed rule figures and use → hazard mapping
 
-Status: review
+Status: done (the founder's baseline timing, AC 4, is carried as a gate on Story 9.4)
 
 ## Story
 
