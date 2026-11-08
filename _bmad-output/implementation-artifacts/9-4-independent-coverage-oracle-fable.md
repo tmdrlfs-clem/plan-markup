@@ -1,6 +1,6 @@
 # Story 9.4: Independent coverage oracle (Fable)
 
-Status: review
+Status: done
 
 ## Story
 
