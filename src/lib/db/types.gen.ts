@@ -188,6 +188,20 @@ isOneToOne: false
                   Relationships: [
 
                   ]
+                },"rule_figures": {
+                  Row: {
+                    "created_at": string,"hazards": NonNullable<Json>,"ruleset_id": string,"source": string,"tables": NonNullable<Json>,"verified": boolean,"version": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "created_at"?: string,"hazards": NonNullable<Json>,"ruleset_id": string,"source": string,"tables"?: NonNullable<Json>,"verified": boolean,"version": string
+                  }
+                  Update: {
+                    "created_at"?: string,"hazards"?: NonNullable<Json>,"ruleset_id"?: string,"source"?: string,"tables"?: NonNullable<Json>,"verified"?: boolean,"version"?: string
+                  }
+                  Relationships: [
+
+                  ]
                 },"signatures": {
                   Row: {
                     "height": number,"storage_path": string,"updated_at": string,"user_id": string,"width": number
@@ -235,6 +249,20 @@ isOneToOne: false
       referencedRelation: "tool_sets"
       referencedColumns: ["id"]
     }
+                  ]
+                },"use_hazard_map": {
+                  Row: {
+                    "company_id": string | null,"created_at": string,"hazard": string,"id": string,"is_default": boolean,"map_version": string,"updated_at": string,"use": string,"verified": boolean
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "company_id"?: string | null,"created_at"?: string,"hazard": string,"id"?: string,"is_default"?: boolean,"map_version": string,"updated_at"?: string,"use": string,"verified"?: boolean
+                  }
+                  Update: {
+                    "company_id"?: string | null,"created_at"?: string,"hazard"?: string,"id"?: string,"is_default"?: boolean,"map_version"?: string,"updated_at"?: string,"use"?: string,"verified"?: boolean
+                  }
+                  Relationships: [
+
                   ]
                 }
           }

@@ -1,0 +1,17 @@
+{
+  "id": "use-hazard",
+  "version": "1",
+  "verified": false,
+  "source": "Draft mapping (4541 design section 2); founder to confirm",
+  "defaultUse": "Office",
+  "uses": [
+    { "use": "Office", "hazard": "ELH" },
+    { "use": "Meeting", "hazard": "ELH" },
+    { "use": "Corridor", "hazard": "ELH" },
+    { "use": "Kitchen", "hazard": "OH1" },
+    { "use": "Plant", "hazard": "OH1" },
+    { "use": "Storage", "hazard": "OH2" },
+    { "use": "Retail", "hazard": "OH2" },
+    { "use": "Carpark", "hazard": "OH2" }
+  ]
+}

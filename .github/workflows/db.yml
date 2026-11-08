@@ -8,6 +8,7 @@ on:
       - "scripts/check-*.mjs"
       - "scripts/pin-postgres-image.mjs"
       - "src/lib/db/**"
+      - "src/core/sprinkler/rules/**"
       - ".github/workflows/db.yml"
       - "package*.json"
   pull_request:
@@ -16,6 +17,7 @@ on:
       - "scripts/check-*.mjs"
       - "scripts/pin-postgres-image.mjs"
       - "src/lib/db/**"
+      - "src/core/sprinkler/rules/**"
       - ".github/workflows/db.yml"
       - "package*.json"
 
@@ -47,6 +49,8 @@ jobs:
         run: supabase start -x studio,imgproxy,mailpit,edge-runtime,logflare,vector,supavisor
       - name: Every table has RLS and a policy
         run: npm run check:rls
+      - name: Rule seed matches src/core/sprinkler/rules
+        run: npm run check:rules
       - name: pgTAP RLS tests
         run: npm run db:test
       - name: No schema drift

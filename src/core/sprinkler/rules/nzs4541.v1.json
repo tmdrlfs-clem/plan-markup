@@ -1,0 +1,25 @@
+{
+  "id": "nzs4541",
+  "version": "1",
+  "verified": true,
+  "source": "Placement figures founder-confirmed against NZS 4541, 2026-10-16",
+  "units": "m",
+  "hazards": {
+    "ELH": { "Amax": 21, "Smax": 4.6, "Smin": 1.8, "Wmax": 2.3, "Wmin": 0.05 },
+    "OH1": { "Amax": 12, "Smax": 4.0, "Smin": 1.8, "Wmax": 2.0, "Wmin": 0.05 },
+    "OH2": { "Amax": 12, "Smax": 4.0, "Smin": 1.8, "Wmax": 2.0, "Wmin": 0.05 },
+    "OH3": { "Amax": 12, "Smax": 4.0, "Smin": 1.8, "Wmax": 2.0, "Wmin": 0.05 }
+  },
+  "tables": {
+    "wallReduced": {
+      "verified": false,
+      "source": "EN 12845 reading (exposed joists or open sides); not used in M2 placement",
+      "values": { "ELH": 1.5, "OH1": 1.5, "OH2": 1.5, "OH3": 1.5 }
+    },
+    "designDensity": {
+      "verified": false,
+      "source": "Information only (mm/min); not used in placement",
+      "values": { "ELH": 2.25, "OH1": 5.0, "OH2": 5.0, "OH3": 5.0 }
+    }
+  }
+}

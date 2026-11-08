@@ -696,6 +696,28 @@ COMMENT ON COLUMN "public"."profiles"."theme" IS 'Workspace theme: blueprint (de
 
 
 
+CREATE TABLE IF NOT EXISTS "public"."rule_figures" (
+    "ruleset_id" "text" NOT NULL,
+    "version" "text" NOT NULL,
+    "verified" boolean NOT NULL,
+    "source" "text" NOT NULL,
+    "hazards" "jsonb" NOT NULL,
+    "tables" "jsonb" DEFAULT '{}'::"jsonb" NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "rule_figures_hazards_check" CHECK ((("jsonb_typeof"("hazards") = 'object'::"text") AND ("hazards" ?& ARRAY['ELH'::"text", 'OH1'::"text", 'OH2'::"text", 'OH3'::"text"]) AND ("pg_column_size"("hazards") <= 8192))),
+    CONSTRAINT "rule_figures_id_check" CHECK ((("ruleset_id" ~ '^[a-z0-9-]{1,40}$'::"text") AND ("version" ~ '^[0-9]{1,6}$'::"text"))),
+    CONSTRAINT "rule_figures_source_check" CHECK ((("length"("source") >= 1) AND ("length"("source") <= 500))),
+    CONSTRAINT "rule_figures_tables_check" CHECK ((("jsonb_typeof"("tables") = 'object'::"text") AND ("pg_column_size"("tables") <= 32768)))
+);
+
+
+ALTER TABLE "public"."rule_figures" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."rule_figures" IS 'NZS 4541 rule figures per ruleset version (Story 9.1). Read: active users; write: platform admin.';
+
+
+
 CREATE TABLE IF NOT EXISTS "public"."signatures" (
     "user_id" "uuid" NOT NULL,
     "storage_path" "text" NOT NULL,
@@ -760,6 +782,29 @@ COMMENT ON TABLE "public"."tools" IS 'A tool in a tool set (Story 7.1; content f
 
 
 
+CREATE TABLE IF NOT EXISTS "public"."use_hazard_map" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "company_id" "uuid",
+    "map_version" "text" NOT NULL,
+    "use" "text" NOT NULL,
+    "hazard" "text" NOT NULL,
+    "is_default" boolean DEFAULT false NOT NULL,
+    "verified" boolean DEFAULT false NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "use_hazard_map_hazard_check" CHECK (("hazard" = ANY (ARRAY['ELH'::"text", 'OH1'::"text", 'OH2'::"text", 'OH3'::"text"]))),
+    CONSTRAINT "use_hazard_map_use_check" CHECK (("use" ~ '^[A-Za-z][A-Za-z0-9 /&-]{0,39}$'::"text")),
+    CONSTRAINT "use_hazard_map_version_check" CHECK (("map_version" ~ '^[0-9]{1,6}$'::"text"))
+);
+
+
+ALTER TABLE "public"."use_hazard_map" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."use_hazard_map" IS 'Use → hazard class (Story 9.1). company_id null = platform default. Read: active users; write: platform admin.';
+
+
+
 ALTER TABLE ONLY "app"."rate_limits"
     ADD CONSTRAINT "rate_limits_pkey" PRIMARY KEY ("bucket", "key_hash");
 
@@ -810,6 +855,11 @@ ALTER TABLE ONLY "public"."profiles"
 
 
 
+ALTER TABLE ONLY "public"."rule_figures"
+    ADD CONSTRAINT "rule_figures_pkey" PRIMARY KEY ("ruleset_id", "version");
+
+
+
 ALTER TABLE ONLY "public"."signatures"
     ADD CONSTRAINT "signatures_pkey" PRIMARY KEY ("user_id");
 
@@ -822,6 +872,11 @@ ALTER TABLE ONLY "public"."tool_sets"
 
 ALTER TABLE ONLY "public"."tools"
     ADD CONSTRAINT "tools_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."use_hazard_map"
+    ADD CONSTRAINT "use_hazard_map_pkey" PRIMARY KEY ("id");
 
 
 
@@ -881,11 +936,23 @@ CREATE INDEX "tools_set_idx" ON "public"."tools" USING "btree" ("tool_set_id", "
 
 
 
+CREATE UNIQUE INDEX "use_hazard_map_default_idx" ON "public"."use_hazard_map" USING "btree" (COALESCE("company_id", '00000000-0000-0000-0000-000000000000'::"uuid")) WHERE "is_default";
+
+
+
+CREATE UNIQUE INDEX "use_hazard_map_use_idx" ON "public"."use_hazard_map" USING "btree" (COALESCE("company_id", '00000000-0000-0000-0000-000000000000'::"uuid"), "lower"("use"));
+
+
+
 CREATE OR REPLACE TRIGGER "activity_events_defaults" BEFORE INSERT ON "public"."activity_events" FOR EACH ROW EXECUTE FUNCTION "app"."fn_activity_event_defaults"();
 
 
 
 CREATE OR REPLACE TRIGGER "trg_profiles_updated_at" BEFORE UPDATE ON "public"."profiles" FOR EACH ROW EXECUTE FUNCTION "app"."fn_set_updated_at"();
+
+
+
+CREATE OR REPLACE TRIGGER "use_hazard_map_set_updated_at" BEFORE UPDATE ON "public"."use_hazard_map" FOR EACH ROW EXECUTE FUNCTION "app"."fn_set_updated_at"();
 
 
 
@@ -1090,6 +1157,17 @@ CREATE POLICY "profiles_update_self" ON "public"."profiles" FOR UPDATE TO "authe
 
 
 
+ALTER TABLE "public"."rule_figures" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "rule_figures_select_active" ON "public"."rule_figures" FOR SELECT TO "authenticated" USING (( SELECT "app"."fn_is_active_user"() AS "fn_is_active_user"));
+
+
+
+CREATE POLICY "rule_figures_write_admin" ON "public"."rule_figures" TO "authenticated" USING (( SELECT "app"."fn_is_platform_admin"() AS "fn_is_platform_admin")) WITH CHECK (( SELECT "app"."fn_is_platform_admin"() AS "fn_is_platform_admin"));
+
+
+
 ALTER TABLE "public"."signatures" ENABLE ROW LEVEL SECURITY;
 
 
@@ -1148,6 +1226,17 @@ CREATE POLICY "tools_select_own" ON "public"."tools" FOR SELECT TO "authenticate
 CREATE POLICY "tools_update_own" ON "public"."tools" FOR UPDATE TO "authenticated" USING ((("owner_id" = ( SELECT "auth"."uid"() AS "uid")) AND ( SELECT "app"."fn_is_active_user"() AS "fn_is_active_user"))) WITH CHECK ((("owner_id" = ( SELECT "auth"."uid"() AS "uid")) AND ( SELECT "app"."fn_is_active_user"() AS "fn_is_active_user") AND (EXISTS ( SELECT 1
    FROM "public"."tool_sets" "s"
   WHERE (("s"."id" = "tools"."tool_set_id") AND ("s"."owner_id" = ( SELECT "auth"."uid"() AS "uid")))))));
+
+
+
+ALTER TABLE "public"."use_hazard_map" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "use_hazard_map_select_active" ON "public"."use_hazard_map" FOR SELECT TO "authenticated" USING (( SELECT "app"."fn_is_active_user"() AS "fn_is_active_user"));
+
+
+
+CREATE POLICY "use_hazard_map_write_admin" ON "public"."use_hazard_map" TO "authenticated" USING (( SELECT "app"."fn_is_platform_admin"() AS "fn_is_platform_admin")) WITH CHECK (( SELECT "app"."fn_is_platform_admin"() AS "fn_is_platform_admin"));
 
 
 
@@ -1265,6 +1354,11 @@ GRANT UPDATE("theme") ON TABLE "public"."profiles" TO "authenticated";
 
 
 
+GRANT ALL ON TABLE "public"."rule_figures" TO "authenticated";
+GRANT ALL ON TABLE "public"."rule_figures" TO "service_role";
+
+
+
 GRANT ALL ON TABLE "public"."signatures" TO "authenticated";
 GRANT ALL ON TABLE "public"."signatures" TO "service_role";
 
@@ -1277,6 +1371,11 @@ GRANT ALL ON TABLE "public"."tool_sets" TO "service_role";
 
 GRANT ALL ON TABLE "public"."tools" TO "authenticated";
 GRANT ALL ON TABLE "public"."tools" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."use_hazard_map" TO "authenticated";
+GRANT ALL ON TABLE "public"."use_hazard_map" TO "service_role";
 
 
 
