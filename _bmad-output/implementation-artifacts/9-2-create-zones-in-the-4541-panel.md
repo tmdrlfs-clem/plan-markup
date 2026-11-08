@@ -1,6 +1,6 @@
 # Story 9.2: Create zones in the 4541 panel
 
-Status: review
+Status: done
 
 ## Story
 

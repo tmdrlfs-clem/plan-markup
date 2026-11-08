@@ -136,7 +136,7 @@ development_status:
   # Epic 9: 4541 Sprinkler Layout Engine
   epic-9: in-progress
   9-1-seed-rule-figures-and-use-hazard-mapping: done
-  9-2-create-zones-in-the-4541-panel: review
+  9-2-create-zones-in-the-4541-panel: done
   9-3-assign-a-use-and-hazard-class: backlog
   9-4-independent-coverage-oracle-fable: backlog  # gate: founder baseline times in docs/spikes/m2-baseline.md first (A16)
   9-5-placement-for-single-bay-zones-fable: backlog
