@@ -1,6 +1,6 @@
 # Story 9.7: Pattern, ceiling grid and preferences (Fable)
 
-Status: review
+Status: done
 
 ## Story
 
