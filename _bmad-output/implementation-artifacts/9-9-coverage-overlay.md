@@ -1,6 +1,6 @@
 # Story 9.9: Coverage overlay
 
-Status: review
+Status: done
 
 ## Story
 
@@ -44,7 +44,7 @@ so that any gap is obvious.
 ## Dev Notes
 
 - **D1, square = the inscribed square of the coverage circle**, turned to the zone's longest edge.
-  - Its side is Rc·√2, which is √(2·…) ≈ √Amax for near-square spacing.
+  - Its side is Rc·√2, so its area is 2·Rc². That is ≈ Amax when the spacing is near square (OH1: 12.5 m² against 12 m²).
   - A head's real rectangle (S × L within its row) is not drawn, because the overlay is per head and not per row.
 - **D2, gaps are hatched only in zones that have heads.** A zone with no heads yet is not hatched, so the page is not covered in red before placement.
 - **D3, coverage from heads in a neighbouring zone does not count across a zone edge.** Open edges between zones are still not modelled (see 9.8 D6), so each zone shows its own heads' coverage only.
