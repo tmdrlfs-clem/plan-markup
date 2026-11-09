@@ -6,7 +6,9 @@
 // Story 9.3 (FR71): each row's use dropdown sets the hazard class through the
 // use -> hazard mapping (the company's, else the platform's); the selected
 // zone shows its rule figures and ruleset version to check against the standard.
-import { Check, LandPlot, PaintBucket, Pentagon, Ruler, Square } from "lucide-react";
+// Story 9.8 (FR73): Place heads fills the selected zones (or all of the page's)
+// zone by zone, with progress, Cancel and an error card per infeasible zone.
+import { Check, CircleDot, LandPlot, PaintBucket, Pentagon, Ruler, Square, TriangleAlert, X } from "lucide-react";
 import { useEffect, useMemo } from "react";
 import { useStore } from "zustand";
 
@@ -24,7 +26,11 @@ import { editorStore, executeOp, markupsOf, armZoneDraw, setSelection, zoneDrawS
 import { FirstUseTip } from "@/features/tips";
 import { hasDocument, setTool, viewerCommands, viewerStore } from "@/features/viewer";
 
+import { isHead } from "@/core/sprinkler/heads";
+
 import { getUseHazardMap } from "./actions";
+import { cancelPlaceHeads, placeHeads, placeRunStore, setRunSinks, type ZoneErrorCard } from "./place-run";
+import { serverRunSinks } from "./run-sinks";
 import { loadUseMap, useMapStore } from "./use-map-store";
 
 export const CALIBRATE_FIRST = "Calibrate this page first";
@@ -35,6 +41,15 @@ export const CHANGE_HOLE_TAG = "Change hole tag";
 export const CHANGE_USE = "Change use";
 export const UNMAPPED_USE = "This use is not in the mapping. Choose a use to set the hazard class.";
 export const DRAFT_MAPPING = "draft, not yet verified";
+export const PLACE_HEADS_HINT = "Place heads in the selected zones, or in every zone on this page when none is selected";
+
+let sinksWired = false;
+/** A run from the panel is saved and reported through the server actions. */
+function wireSinks(): void {
+  if (sinksWired) return;
+  sinksWired = true;
+  setRunSinks(serverRunSinks);
+}
 
 function userUnitOf(pages: readonly { userUnit?: number }[], pageIndex: number): number {
   const u = pages[pageIndex]?.userUnit;
@@ -71,6 +86,7 @@ export function SprinklerPanel({ emptyText }: { emptyText: string }) {
   const tool = useStore(viewerStore, (s) => s.tool);
   const map = useStore(useMapStore, (s) => s.map);
   const mapSource = useStore(useMapStore, (s) => s.source);
+  const run = useStore(placeRunStore, (s) => s);
 
   // Story 9.3: the mapping is read once per session (the built-in one until then).
   useEffect(() => {
@@ -102,7 +118,10 @@ export function SprinklerPanel({ emptyText }: { emptyText: string }) {
     );
   }
 
-  const checklist = zoneChecklist(zones, map);
+  const zoneIds = new Set(zones.map((z) => z.id));
+  const checklist = zoneChecklist(zones, map, markups.some((m) => isHead(m) && zoneIds.has(m.head.zoneId)));
+  const selectedZones = zones.filter((z) => selected.includes(z.id)).length;
+  const running = run.status === "running";
   const fillOn = armed === "fill" && tool === "fill";
   const polygonOn = armed === "area" && tool === "area";
   const current = zones.find((z) => selected.includes(z.id)) ?? null;
@@ -138,7 +157,37 @@ export function SprinklerPanel({ emptyText }: { emptyText: string }) {
             Polygon zone
           </Button>
         </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            variant="primary"
+            disabled={zones.length === 0 || running}
+            onClick={() => {
+              wireSinks();
+              void placeHeads({ map });
+            }}
+            title={PLACE_HEADS_HINT}
+            data-testid="place-heads"
+          >
+            <CircleDot size={14} aria-hidden="true" />
+            {selectedZones > 0 ? `Place heads (${selectedZones} selected)` : "Place heads"}
+          </Button>
+          {running ? (
+            <Button size="sm" variant="secondary" onClick={cancelPlaceHeads}>
+              <X size={14} aria-hidden="true" />
+              Cancel
+            </Button>
+          ) : null}
+        </div>
+        <RunStatus />
       </div>
+      {run.errors.length > 0 ? (
+        <ul className="flex flex-col gap-2 border-b border-border p-3" aria-label="Zones not placed" data-testid="place-errors">
+          {run.errors.map((e) => (
+            <ErrorCard key={`${e.zoneId}:${e.code}`} card={e} onShow={() => showError(e, zones, pageIndex)} />
+          ))}
+        </ul>
+      ) : null}
       {zones.length === 0 ? (
         <p className="p-3 text-ws-sm text-muted" data-testid="zones-empty">
           {NO_ZONES}
@@ -177,6 +226,70 @@ export function SprinklerPanel({ emptyText }: { emptyText: string }) {
         </div>
       ) : null}
     </div>
+  );
+}
+
+/** Shows where a zone failed (the offending area when the engine gave one, else the zone) and selects the zone. */
+function showError(e: ZoneErrorCard, zones: readonly ZoneMarkup[], pageIndex: number): void {
+  const z = zones.find((x) => x.id === e.zoneId);
+  if (!z) return;
+  if (e.where.length === 0) {
+    revealZone(z, pageIndex);
+    return;
+  }
+  const xs = e.where.map((p) => p.x);
+  const ys = e.where.map((p) => p.y);
+  if (viewerStore.getState().tool !== "select") setTool("select");
+  viewerCommands.revealMarkup(pageIndex, { x: Math.min(...xs), y: Math.min(...ys), width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys) });
+  setSelection([z.id]);
+}
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+/** Progress while placing, then the outcome, in a polite live region. */
+function RunStatus() {
+  const run = useStore(placeRunStore, (s) => s);
+  let text = "";
+  if (run.status === "running") text = run.total > 0 ? `Placing zone ${Math.min(run.done + 1, run.total)} of ${run.total}…` : "Placing…";
+  else if (run.status === "done") text = `${plural(run.heads, "head")} placed in ${plural(run.total, "zone")}.`;
+  else if (run.status === "cancelled") text = `Stopped: ${plural(run.heads, "head")} placed in ${run.done} of ${plural(run.total, "zone")}.`;
+  else if (run.status === "failed") text = "Placement stopped: the engine failed.";
+  return (
+    <div className="flex flex-col gap-1">
+      {run.status === "running" ? (
+        <div
+          role="progressbar"
+          aria-label="Placing heads"
+          aria-valuemin={0}
+          aria-valuemax={run.total}
+          aria-valuenow={run.done}
+          className="h-1 w-full overflow-hidden rounded-sm bg-surface-3"
+        >
+          <div className="h-full bg-accent" style={{ width: `${run.total ? (100 * run.done) / run.total : 0}%` }} />
+        </div>
+      ) : null}
+      <p className="text-ws-sm text-muted" aria-live="polite" data-testid="place-status">
+        {text}
+      </p>
+    </div>
+  );
+}
+
+function ErrorCard({ card, onShow }: { card: ZoneErrorCard; onShow: () => void }) {
+  return (
+    <li className="flex flex-col gap-1 rounded-sm border border-danger p-2 text-ws-sm" data-testid="place-error">
+      <p className="flex items-center gap-1 font-semibold text-danger">
+        <TriangleAlert size={14} aria-hidden="true" />
+        {card.zoneName}: not placed
+      </p>
+      <p>{card.reason}</p>
+      <p className="text-muted">{card.suggestion}</p>
+      <div>
+        <Button size="sm" variant="secondary" onClick={onShow}>
+          Show in drawing
+        </Button>
+      </div>
+    </li>
   );
 }
 

@@ -59,6 +59,29 @@ function withActiveLayer(op: DocOp): DocOp {
   return { ...op, markups: op.markups.map((m) => (m.layerId ? m : { ...m, layerId: layer.id })) };
 }
 
+/**
+ * Story 9.8: records `op`, already applied piece by piece (a Place heads run streams its heads in
+ * zone by zone), as one undo step: undo applies its inverse, redo applies it again.
+ */
+export function recordAppliedOp(op: DocOp, label: string, tabId?: string): void {
+  let applied = true;
+  executeCommand(
+    {
+      label,
+      op,
+      do: () => {
+        if (applied) {
+          applied = false;
+          return;
+        }
+        applyOp(op);
+      },
+      undo: () => applyOp(invertOp(op)),
+    },
+    tabId,
+  );
+}
+
 let drawingUndo: (() => boolean) | null = null;
 
 /** The drawing tool's undo while drawing (removes the last point; false when nothing is drawn). */

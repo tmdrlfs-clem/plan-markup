@@ -16,11 +16,16 @@ import { registerViewerEngine } from "@/features/viewer/viewer-commands";
 import { setTool, viewerStore } from "@/features/viewer/viewer-store";
 import { resetViewer } from "@/features/viewer/viewer-tabs";
 
+import { EngineHost } from "@/workers/engine.worker";
+import type { EngineReply } from "@/core/sprinkler/engine/protocol";
+
+import { resetPlaceRun, setEngineChannelFactory } from "./place-run";
 import { CALIBRATE_FIRST, NO_ZONES, SprinklerPanel, UNMAPPED_USE, ZONES_TIP } from "./sprinkler-panel";
 import { resetUseMap, useMapStore } from "./use-map-store";
 
 const getUseHazardMap = vi.hoisted(() => vi.fn());
-vi.mock("./actions", () => ({ getUseHazardMap: () => getUseHazardMap() }));
+const saveZoneLayouts = vi.hoisted(() => vi.fn(async () => ({ ok: true, data: null })));
+vi.mock("./actions", () => ({ getUseHazardMap: () => getUseHazardMap(), saveZoneLayouts }));
 
 vi.mock("@/features/markup-set/actions", () => ({
   ensureMarkupSet: vi.fn(),
@@ -230,5 +235,62 @@ describe("SprinklerPanel (Story 9.2)", () => {
     await user.click(screen.getByRole("button", { name: /Zone 1/ }));
     expect(screen.getByTestId("zone-figures").textContent).toContain(UNMAPPED_USE);
     expect(screen.getByTestId("mapping-source").textContent).toContain("Built-in default mapping v1");
+  });
+});
+
+describe("SprinklerPanel Place heads (Story 9.8)", () => {
+  beforeEach(() => {
+    setEngineChannelFactory(() => {
+      const listeners = new Set<(r: EngineReply) => void>();
+      const host = new EngineHost((r) => listeners.forEach((fn) => fn(r)));
+      return {
+        post: (msg) => void host.handle(msg),
+        listen: (fn) => {
+          listeners.add(fn);
+          return () => listeners.delete(fn);
+        },
+      };
+    });
+  });
+  afterEach(() => {
+    act(() => resetPlaceRun());
+    setEngineChannelFactory(null);
+  });
+
+  it("is disabled without zones", () => {
+    setup([]);
+    expect((screen.getByTestId("place-heads") as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("places heads in every zone, reports the outcome and ticks the checklist", async () => {
+    const a = zone();
+    const user = setup([a]);
+    expect(screen.getByTestId("place-heads").textContent).toBe("Place heads");
+    await user.click(screen.getByTestId("place-heads"));
+    await screen.findByText(/head(s)? placed in 1 zone\./);
+    const heads = (editorStore.getState().doc.markups.doc ?? []).filter((m) => m.type === "ellipse");
+    expect(heads.length).toBeGreaterThan(0);
+    expect(
+      within(screen.getByTestId("sprinkler-checklist"))
+        .getAllByRole("listitem")
+        .map((li) => li.getAttribute("data-done")),
+    ).toEqual(["true", "true", "true"]);
+    expect(screen.queryByTestId("place-errors")).toBeNull();
+  });
+
+  it("names the selected zones and shows an error card that reveals the zone", async () => {
+    const a = zone();
+    const b = { ...zone(), zone: { ...zone().zone, name: "Store", use: "Hangar" } };
+    const user = setup([a, b]);
+    await user.click(screen.getByRole("button", { name: /Store/ }));
+    expect(screen.getByTestId("place-heads").textContent).toBe("Place heads (1 selected)");
+    await user.click(screen.getByTestId("place-heads"));
+    const card = await screen.findByTestId("place-error");
+    expect(card.textContent).toContain("Store: not placed");
+    expect(card.textContent).toContain("Choose a use");
+    reveal.mockReset();
+    await user.click(within(card).getByRole("button", { name: "Show in drawing" }));
+    expect(reveal).toHaveBeenCalledWith(0, { x: 100, y: 100, width: 200, height: 150 });
+    expect(editorStore.getState().selection.ids).toEqual([b.id]);
   });
 });

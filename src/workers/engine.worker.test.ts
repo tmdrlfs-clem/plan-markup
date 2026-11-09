@@ -19,18 +19,22 @@ function host(yieldTurn?: () => Promise<void>) {
 }
 
 describe("engine worker", () => {
-  it("places zones, streams a checked result per zone, then done", async () => {
+  it("streams each zone's heads as it is placed, then the oracle reports, then done", async () => {
     const { h, replies } = host();
     await h.handle({ type: "place", reqId: 1, docRev: 7, ruleSet: NZS4541_V1, zones: [zone("A"), zone("B", 20_000)] });
-    expect(replies.map((r) => r.type)).toEqual(["progress", "progress", "zoneResult", "zoneResult", "done"]);
+    expect(replies.map((r) => r.type)).toEqual(["progress", "zoneResult", "progress", "zoneResult", "zoneReport", "zoneReport", "done"]);
     const results = replies.filter((r) => r.type === "zoneResult");
     for (const r of results) {
       expect(r.docRev).toBe(7);
       expect(r.result.ok).toBe(true);
       expect(r.result.heads).toHaveLength(6);
-      expect(r.report?.errors).toBe(0);
     }
     expect(results.map((r) => r.zoneId)).toEqual(["A", "B"]);
+    const reports = replies.filter((r) => r.type === "zoneReport");
+    expect(reports.map((r) => [r.zoneId, r.docRev, r.report?.errors])).toEqual([
+      ["A", 7, 0],
+      ["B", 7, 0],
+    ]);
     expect(replies.at(-1)).toEqual({ type: "done", reqId: 1, cancelled: false });
   });
 
@@ -40,7 +44,8 @@ describe("engine worker", () => {
     await h.handle({ type: "place", reqId: 2, docRev: 1, ruleSet: NZS4541_V1, zones: [thin] });
     const r = replies.find((x) => x.type === "zoneResult");
     expect(r?.type === "zoneResult" && !r.result.ok && r.result.error.code).toBe("NO_ADMISSIBLE_REGION");
-    expect(r?.type === "zoneResult" && r.report).toBeNull();
+    const rep = replies.find((x) => x.type === "zoneReport");
+    expect(rep?.type === "zoneReport" && rep.report).toBeNull();
   });
 
   it("checks given heads with the oracle", async () => {
@@ -63,7 +68,8 @@ describe("engine worker", () => {
     await h.handle({ type: "cancel", reqId: 4 });
     release();
     await running;
-    expect(replies.filter((r) => r.type === "zoneResult")).toEqual([]);
+    expect(replies.filter((r) => r.type === "zoneResult").length).toBeLessThan(3);
+    expect(replies.filter((r) => r.type === "zoneReport")).toEqual([]);
     expect(replies.at(-1)).toEqual({ type: "done", reqId: 4, cancelled: true });
     expect(replies.filter((r) => r.type === "progress").length).toBeLessThan(3);
   });

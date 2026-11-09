@@ -170,6 +170,36 @@ $$;
 ALTER FUNCTION "app"."fn_set_updated_at"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "app"."fn_zone_layout_defaults"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+declare
+  v_uid uuid := (select auth.uid());
+  v_allowed boolean;
+begin
+  if v_uid is null then
+    raise exception 'not signed in' using errcode = '42501';
+  end if;
+  new.created_at := pg_catalog.now();
+  select r.allowed into v_allowed
+  from public.consume_rate_limit(
+    'zone_layouts',
+    pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(v_uid::text, 'UTF8')), 'hex'),
+    120,
+    60
+  ) r;
+  if not v_allowed then
+    raise exception 'rate limited' using errcode = 'PT429';
+  end if;
+  return new;
+end;
+$$;
+
+
+ALTER FUNCTION "app"."fn_zone_layout_defaults"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."apply_markup_ops"("p_drawing_id" "uuid", "p_ops" "jsonb") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO ''
@@ -538,9 +568,9 @@ CREATE TABLE IF NOT EXISTS "public"."activity_events" (
     "page_count" integer NOT NULL,
     "markup_count" integer DEFAULT 0 NOT NULL,
     "kind" "text" NOT NULL,
-    CONSTRAINT "activity_events_kind_check" CHECK (((("name" = 'markup.exported'::"text") AND ("kind" = ANY (ARRAY['editable'::"text", 'flattened'::"text"]))) OR (("name" = 'drawing.printed'::"text") AND ("kind" = ANY (ARRAY['with_markups'::"text", 'without_markups'::"text"]))))),
+    CONSTRAINT "activity_events_kind_check" CHECK (((("name" = 'markup.exported'::"text") AND ("kind" = ANY (ARRAY['editable'::"text", 'flattened'::"text"]))) OR (("name" = 'drawing.printed'::"text") AND ("kind" = ANY (ARRAY['with_markups'::"text", 'without_markups'::"text"]))) OR (("name" = 'sprinkler.placed'::"text") AND ("kind" = ANY (ARRAY['all_zones'::"text", 'selected_zones'::"text"]))))),
     CONSTRAINT "activity_events_markup_count_check" CHECK ((("markup_count" >= 0) AND ("markup_count" <= 10000000))),
-    CONSTRAINT "activity_events_name_check" CHECK (("name" = ANY (ARRAY['markup.exported'::"text", 'drawing.printed'::"text"]))),
+    CONSTRAINT "activity_events_name_check" CHECK (("name" = ANY (ARRAY['markup.exported'::"text", 'drawing.printed'::"text", 'sprinkler.placed'::"text"]))),
     CONSTRAINT "activity_events_page_count_check" CHECK ((("page_count" >= 1) AND ("page_count" <= 100000)))
 );
 
@@ -805,6 +835,35 @@ COMMENT ON TABLE "public"."use_hazard_map" IS 'Use → hazard class (Story 9.1).
 
 
 
+CREATE TABLE IF NOT EXISTS "public"."zone_layouts" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "drawing_id" "uuid" NOT NULL,
+    "zone_id" "uuid" NOT NULL,
+    "ruleset_id" "text" NOT NULL,
+    "rule_figure_version" "text" NOT NULL,
+    "status" "text" NOT NULL,
+    "head_count" integer DEFAULT 0 NOT NULL,
+    "inputs" "jsonb" NOT NULL,
+    "result" "jsonb" NOT NULL,
+    "report" "jsonb",
+    "created_by" "uuid" DEFAULT "auth"."uid"() NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "zone_layouts_head_count_check" CHECK ((("head_count" >= 0) AND ("head_count" <= 5000))),
+    CONSTRAINT "zone_layouts_inputs_check" CHECK ((("jsonb_typeof"("inputs") = 'object'::"text") AND ("pg_column_size"("inputs") <= 1048576))),
+    CONSTRAINT "zone_layouts_report_check" CHECK ((("report" IS NULL) OR (("jsonb_typeof"("report") = 'object'::"text") AND ("pg_column_size"("report") <= 1048576)))),
+    CONSTRAINT "zone_layouts_result_check" CHECK ((("jsonb_typeof"("result") = 'object'::"text") AND ("pg_column_size"("result") <= 1048576))),
+    CONSTRAINT "zone_layouts_ruleset_check" CHECK ((("ruleset_id" ~ '^[a-z0-9-]{1,40}$'::"text") AND ("rule_figure_version" ~ '^[0-9]{1,6}$'::"text"))),
+    CONSTRAINT "zone_layouts_status_check" CHECK (("status" = ANY (ARRAY['placed'::"text", 'infeasible'::"text", 'failed'::"text"])))
+);
+
+
+ALTER TABLE "public"."zone_layouts" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."zone_layouts" IS 'A 4541 placement run per zone (Story 9.8, A7): ruleset version, inputs, result, report. Append-only.';
+
+
+
 CREATE OR REPLACE VIEW "public"."zones" WITH ("security_invoker"='true', "security_barrier"='true') AS
  SELECT "id",
     "drawing_id",
@@ -904,6 +963,11 @@ ALTER TABLE ONLY "public"."use_hazard_map"
 
 
 
+ALTER TABLE ONLY "public"."zone_layouts"
+    ADD CONSTRAINT "zone_layouts_pkey" PRIMARY KEY ("id");
+
+
+
 CREATE INDEX "activity_events_drawing_idx" ON "public"."activity_events" USING "btree" ("drawing_id");
 
 
@@ -968,6 +1032,14 @@ CREATE UNIQUE INDEX "use_hazard_map_use_idx" ON "public"."use_hazard_map" USING 
 
 
 
+CREATE INDEX "zone_layouts_created_by_idx" ON "public"."zone_layouts" USING "btree" ("created_by");
+
+
+
+CREATE INDEX "zone_layouts_zone_idx" ON "public"."zone_layouts" USING "btree" ("drawing_id", "zone_id", "created_at" DESC);
+
+
+
 CREATE OR REPLACE TRIGGER "activity_events_defaults" BEFORE INSERT ON "public"."activity_events" FOR EACH ROW EXECUTE FUNCTION "app"."fn_activity_event_defaults"();
 
 
@@ -977,6 +1049,10 @@ CREATE OR REPLACE TRIGGER "trg_profiles_updated_at" BEFORE UPDATE ON "public"."p
 
 
 CREATE OR REPLACE TRIGGER "use_hazard_map_set_updated_at" BEFORE UPDATE ON "public"."use_hazard_map" FOR EACH ROW EXECUTE FUNCTION "app"."fn_set_updated_at"();
+
+
+
+CREATE OR REPLACE TRIGGER "zone_layouts_defaults" BEFORE INSERT ON "public"."zone_layouts" FOR EACH ROW EXECUTE FUNCTION "app"."fn_zone_layout_defaults"();
 
 
 
@@ -1057,6 +1133,16 @@ ALTER TABLE ONLY "public"."tools"
 
 ALTER TABLE ONLY "public"."tools"
     ADD CONSTRAINT "tools_tool_set_id_fkey" FOREIGN KEY ("tool_set_id") REFERENCES "public"."tool_sets"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."zone_layouts"
+    ADD CONSTRAINT "zone_layouts_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."zone_layouts"
+    ADD CONSTRAINT "zone_layouts_drawing_id_fkey" FOREIGN KEY ("drawing_id") REFERENCES "public"."drawings"("id") ON DELETE CASCADE;
 
 
 
@@ -1264,6 +1350,17 @@ CREATE POLICY "use_hazard_map_write_admin" ON "public"."use_hazard_map" TO "auth
 
 
 
+ALTER TABLE "public"."zone_layouts" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "zone_layouts_insert_access" ON "public"."zone_layouts" FOR INSERT TO "authenticated" WITH CHECK ((("created_by" = ( SELECT "auth"."uid"() AS "uid")) AND ( SELECT "app"."fn_is_active_user"() AS "fn_is_active_user") AND ("app"."fn_effective_access"("drawing_id") = ANY (ARRAY['owner'::"text", 'edit'::"text"]))));
+
+
+
+CREATE POLICY "zone_layouts_select_access" ON "public"."zone_layouts" FOR SELECT TO "authenticated" USING ((( SELECT "app"."fn_is_active_user"() AS "fn_is_active_user") AND ("app"."fn_effective_access"("drawing_id") IS NOT NULL)));
+
+
+
 GRANT USAGE ON SCHEMA "app" TO "authenticated";
 
 
@@ -1309,6 +1406,10 @@ GRANT ALL ON FUNCTION "app"."fn_owns_tool_asset_path"("p_name" "text") TO "authe
 
 
 REVOKE ALL ON FUNCTION "app"."fn_set_updated_at"() FROM PUBLIC;
+
+
+
+REVOKE ALL ON FUNCTION "app"."fn_zone_layout_defaults"() FROM PUBLIC;
 
 
 
@@ -1400,6 +1501,11 @@ GRANT ALL ON TABLE "public"."tools" TO "service_role";
 
 GRANT ALL ON TABLE "public"."use_hazard_map" TO "authenticated";
 GRANT ALL ON TABLE "public"."use_hazard_map" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."zone_layouts" TO "service_role";
+GRANT SELECT,INSERT ON TABLE "public"."zone_layouts" TO "authenticated";
 
 
 

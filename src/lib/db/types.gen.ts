@@ -264,6 +264,26 @@ isOneToOne: false
                   Relationships: [
 
                   ]
+                },"zone_layouts": {
+                  Row: {
+                    "created_at": string,"created_by": string,"drawing_id": string,"head_count": number,"id": string,"inputs": NonNullable<Json>,"report": Json | null,"result": NonNullable<Json>,"rule_figure_version": string,"ruleset_id": string,"status": string,"zone_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "created_at"?: string,"created_by"?: string,"drawing_id": string,"head_count"?: number,"id"?: string,"inputs": NonNullable<Json>,"report"?: Json | null,"result": NonNullable<Json>,"rule_figure_version": string,"ruleset_id": string,"status": string,"zone_id": string
+                  }
+                  Update: {
+                    "created_at"?: string,"created_by"?: string,"drawing_id"?: string,"head_count"?: number,"id"?: string,"inputs"?: NonNullable<Json>,"report"?: Json | null,"result"?: NonNullable<Json>,"rule_figure_version"?: string,"ruleset_id"?: string,"status"?: string,"zone_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "zone_layouts_drawing_id_fkey"
+      columns: ["drawing_id"]
+isOneToOne: false
+      referencedRelation: "drawings"
+      referencedColumns: ["id"]
+    }
+                  ]
                 }
           }
           Views: {

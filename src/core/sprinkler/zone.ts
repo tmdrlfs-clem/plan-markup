@@ -117,11 +117,11 @@ export function newZone(
 /** The 4541 panel's checklist (UX-DR24): zones drawn, every zone's use mapped, heads placed (Story 9.4). */
 export type ZoneChecklist = { zones: boolean; uses: boolean; heads: boolean };
 
-export function zoneChecklist(zones: readonly ZoneMarkup[], map: UseHazardMap = USE_HAZARD_V1): ZoneChecklist {
+export function zoneChecklist(zones: readonly ZoneMarkup[], map: UseHazardMap = USE_HAZARD_V1, headsPlaced = false): ZoneChecklist {
   return {
     zones: zones.length > 0,
     uses: zones.length > 0 && zones.every((z) => zoneHazard(z, map) !== null),
-    heads: false,
+    heads: zones.length > 0 && headsPlaced,
   };
 }
 

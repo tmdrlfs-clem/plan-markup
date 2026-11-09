@@ -1,7 +1,9 @@
 // Story 9.5 (design §7): engine.worker messages. Requests are validated with
 // Zod at the worker boundary; replies never carry stack traces.
 //
-//   place  → progress* , zoneResult (one per zone, in order) , done
+//   place  → (progress , zoneResult)* one per zone as it is placed (report null),
+//            then zoneReport* (the oracle, once every zone's heads are known: a
+//            zone is checked with all the others as neighbours) , done
 //   check  → checkResult , done
 //   cancel → the running place request stops between zones and replies done { cancelled: true }
 //
@@ -67,7 +69,8 @@ export type EngineRequest = z.infer<typeof engineRequestSchema>;
 
 export type EngineReply =
   | { type: "progress"; reqId: number; done: number; total: number }
-  | { type: "zoneResult"; reqId: number; docRev: number; zoneId: string; result: PlaceResult; report: OracleReport | null }
+  | { type: "zoneResult"; reqId: number; docRev: number; zoneId: string; result: PlaceResult }
+  | { type: "zoneReport"; reqId: number; docRev: number; zoneId: string; report: OracleReport | null }
   | { type: "checkResult"; reqId: number; docRev: number; report: OracleReport }
   | { type: "done"; reqId: number; cancelled: boolean }
   | { type: "error"; reqId: number | null; code: "BAD_INPUT" | "INTERNAL"; message: string };

@@ -45,6 +45,17 @@ export const markupDeviceSchema = z.object({
 });
 export type MarkupDevice = z.infer<typeof markupDeviceSchema>;
 
+/**
+ * Story 9.8: a head the 4541 engine placed for a zone (the zone markup's id), and how: on a row,
+ * a gap-fill exception, or kept fixed on a re-run. Story 9.10 adds heads moved by hand.
+ */
+export const HEAD_KINDS = ["row", "gapFill", "locked", "manual"] as const;
+export const headMetaSchema = z.object({
+  zoneId: z.string().regex(UUID_PATTERN),
+  kind: z.enum(HEAD_KINDS),
+});
+export type HeadMeta = z.infer<typeof headMetaSchema>;
+
 const base = {
   id: z.string().regex(UUID_PATTERN),
   /** The stable page id (sha256 + page index until page edits, AR8). */
@@ -62,6 +73,8 @@ const base = {
   subject: z.string().max(MAX_SUBJECT_LENGTH).optional(),
   /** Story 7.3: a placed device-typed tool counts once, by this markup (absent: not a device). */
   device: markupDeviceSchema.optional(),
+  /** Story 9.8: a sprinkler head placed for a 4541 zone (absent: not a placed head). */
+  head: headMetaSchema.optional(),
 };
 
 /**

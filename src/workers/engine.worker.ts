@@ -3,8 +3,9 @@
 //
 // Requests (validated with Zod, src/core/sprinkler/engine/protocol.ts):
 //   { type: "place", reqId, docRev, ruleSet, zones, idPrefix? }
-//     → progress after each zone is placed, then one zoneResult per zone (placement
-//       and oracle report, in order), then done.
+//     → progress and zoneResult (its heads) as each zone is placed (Story 9.8: heads
+//       appear zone by zone), then one zoneReport per zone (the oracle, with every
+//       other zone as a neighbour), then done.
 //   { type: "check", reqId, docRev, ruleSet, zone, heads, neighbours? } → checkResult, done.
 //   { type: "cancel", reqId } → the running place request stops at the next zone
 //       boundary and replies done { cancelled: true }.
@@ -66,15 +67,17 @@ export class EngineHost {
     for (let i = 0; i < zones.length; i++) {
       await this.yieldTurn();
       if (this.cancelled.has(msg.reqId)) return stop();
-      results.push(placeInSequence(zones[i], results, msg.ruleSet, msg.idPrefix));
+      const r = placeInSequence(zones[i], results, msg.ruleSet, msg.idPrefix);
+      results.push(r);
       this.post({ type: "progress", reqId: msg.reqId, done: i + 1, total: zones.length });
+      this.post({ type: "zoneResult", reqId: msg.reqId, docRev: msg.docRev, zoneId: zones[i].zoneId, result: r });
     }
     for (let i = 0; i < zones.length; i++) {
       await this.yieldTurn();
       if (this.cancelled.has(msg.reqId)) return stop();
       const r = results[i];
       const report = r.heads.length || r.ok ? checkPlacement(zones[i], r.heads, others(zones, results, i), msg.ruleSet) : null;
-      this.post({ type: "zoneResult", reqId: msg.reqId, docRev: msg.docRev, zoneId: zones[i].zoneId, result: r, report });
+      this.post({ type: "zoneReport", reqId: msg.reqId, docRev: msg.docRev, zoneId: zones[i].zoneId, report });
     }
     this.post({ type: "done", reqId: msg.reqId, cancelled: false });
   }
