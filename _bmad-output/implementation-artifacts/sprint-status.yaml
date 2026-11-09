@@ -140,7 +140,7 @@ development_status:
   9-3-assign-a-use-and-hazard-class: done
   9-4-independent-coverage-oracle-fable: done
   9-5-placement-for-single-bay-zones-fable: done  # gate: founder baseline times in docs/spikes/m2-baseline.md before running the engine on B1-B3 (A16)
-  9-6-placement-for-irregular-zones-with-holes-fable: review  # R1 count deferred to founder Q3 (pier vs pocket); L17/L21 zones after A16
+  9-6-placement-for-irregular-zones-with-holes-fable: done  # R1 count deferred to founder Q3 (pier vs pocket); L17/L21 zones after A16
   9-7-pattern-ceiling-grid-and-preferences-fable: backlog
   9-8-place-heads-from-the-panel: backlog
   9-9-coverage-overlay: backlog

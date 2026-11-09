@@ -1,6 +1,6 @@
 # Story 9.6: Placement for irregular zones with holes (Fable)
 
-Status: review
+Status: done
 
 ## Story
 
