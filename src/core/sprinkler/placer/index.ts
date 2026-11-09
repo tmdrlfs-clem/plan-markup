@@ -1,5 +1,5 @@
 // Story 9.5: the 4541 head placer (design §3). Never imports the oracle.
-export { placeZone, tileStopAt } from "./place-zone";
+export { DEFAULT_OP_BUDGET, placeZone, tileStopAt } from "./place-zone";
 export type {
   CeilingGrid,
   HeadKind,

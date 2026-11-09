@@ -80,6 +80,10 @@ export type PlacementNotes = {
   unresolved: number;
   h4Violations: number;
   variantsTried: number;
+  /** True when the op budget cut the search short (the layout is still checked by the oracle). */
+  searchTruncated: boolean;
+  /** Operations counted for this zone (deterministic; a perf signal, not a timing). */
+  ops: number;
   /** Figures in mm / mm², with Rc. */
   rule: Rule;
   tileAligned?: { onStop: number; total: number; extraHeadsVsUnaligned?: number };
@@ -89,7 +93,18 @@ export type PlaceResult =
   | { ok: true; heads: PlacedHead[]; notes: PlacementNotes }
   | { ok: false; heads: PlacedHead[]; notes: PlacementNotes | null; error: PlaceError };
 
-export type PlaceOptions = { idPrefix?: string };
+export type PlaceOptions = {
+  idPrefix?: string;
+  /**
+   * Deterministic search budget in counted operations (DP transitions, sight-line edge tests).
+   * Once spent, the remaining lower-priority variants are skipped and the best layout so far is
+   * returned with `searchTruncated` (design §6). Never a wall-clock limit.
+   */
+  opBudget?: number;
+};
+
+/** Default per-zone budget (design §6: 50 M simple operations). */
+export const DEFAULT_OP_BUDGET = 50_000_000;
 
 // --- Constants -------------------------------------------------------------------------------
 
@@ -113,7 +128,7 @@ type Prefs = { spacing: number | null; wallDist: number | null };
 type Pattern = "rectangular" | "staggered";
 
 /** t: 0 lattice, 1 boundary, 2 wall, 3 synthetic band corner. (vx, vy): the sight-line probe. */
-type Sample = { t: 0 | 1 | 2 | 3; x: number; y: number; vx: number; vy: number; ix?: number; iy?: number; nx?: number; ny?: number; c?: number };
+type Sample = { t: 0 | 1 | 2 | 3; x: number; y: number; vx: number; vy: number; ix?: number; iy?: number; nx?: number; ny?: number; c?: number; sh?: { y: number; iv: Interval[] }[] };
 type Owned = { s: Sample; bay?: number; inside: boolean };
 type FHead = { x: number; y: number; bay: number; row?: number | "g"; kind?: HeadKind; id?: string; wx?: number; wy?: number };
 type Cand = { x: number; y: number; run: number; stop: boolean; seg: number };
@@ -154,7 +169,14 @@ type Frame = {
   keepOuts: LocalKeepOut[];
   locked: FHead[];
   neighbours: FHead[];
+  /** Sight-line query half-width: every demand window lies within it (Rc + margin). */
+  reach: number;
+  /** The zone's deterministic operation counter (design §6), shared by every frame. */
+  ops: Ops;
 };
+
+/** `armed`: a complete layout exists, so the budget may stop the search (never before the first). */
+type Ops = { n: number; budget: number; truncated: boolean; armed: boolean };
 
 type Bay = { id: number; ring: Pt[]; holes: Pt[][]; bb: Box; area: number; convex: boolean; fast: boolean };
 type Decomposition = { name: "none" | "cutH" | "cutV"; bays: Bay[] };
@@ -196,13 +218,28 @@ function place(input: PlaceInput, hz: PlacerFigures, opts: PlaceOptions, noDelta
   }
 
   const frames = frameCandidates(prep, grid, input.frameDeg);
+  const ops: Ops = { n: 0, budget: opts.opBudget ?? DEFAULT_OP_BUDGET, truncated: false, armed: false };
   let best: (DecResult & { score: number[]; frame: Frame; decName: Decomposition["name"]; bayCount: number }) | null = null;
   let tried = 0;
-  for (let fi = 0; fi < frames.length; fi++) {
-    const F = buildFrame(prep, frames[fi], R, grid);
+  // Variants run in priority order (frame peaks, then none / cutH / cutV); the budget only ever
+  // skips the tail of that order, so the answer stays deterministic.
+  search: for (let fi = 0; fi < frames.length; fi++) {
+    if (best && ops.n > ops.budget) {
+      ops.truncated = true;
+      break;
+    }
+    const F = buildFrame(prep, frames[fi], R, grid, ops);
     const decs = decompositions(F);
     for (let di = 0; di < decs.length; di++) {
-      const res = layoutDecomposition(F, decs[di], R, prefs, pattern);
+      if (best && ops.n > ops.budget) {
+        ops.truncated = true;
+        break search;
+      }
+      // Exact bound: once a layout resolves everything with n heads, a decomposition that needs more
+      // than n heads can never win (heads rank right after unresolved), so its sweeps stop early.
+      ops.armed = best != null;
+      const cap = best && best.score[0] === 0 ? best.heads.length : null;
+      const res = layoutDecomposition(F, decs[di], R, prefs, pattern, cap);
       tried++;
       const score = [res.unresolved.length + res.h4.length, res.heads.length, res.gapFill, res.cost, fi, di];
       if (!best || lexLess(score, best.score)) best = { ...res, score, frame: F, decName: decs[di].name, bayCount: decs[di].bays.length };
@@ -239,6 +276,8 @@ function place(input: PlaceInput, hz: PlacerFigures, opts: PlaceOptions, noDelta
     unresolved: unresolvedWorld.length,
     h4Violations: best.h4.length,
     variantsTried: tried,
+    searchTruncated: ops.truncated,
+    ops: ops.n,
     rule: R,
   };
   if (grid) {
@@ -454,7 +493,16 @@ function frameCandidates(prep: Prep, grid: CeilingGrid | null, override: number 
     };
     const list = [peakAngle(p1)];
     if (p2 >= 0) list.push(peakAngle(p2));
-    if (!list.some((a) => Math.min(a, 90 - a) < 1)) list.push(0);
+    // 0° (the drawing's axes) is a fallback for outlines the peaks do not explain (curves, many
+    // angles). When the peaks carry >= 90 % of the edge length, rows on 0° run across every wall and
+    // cannot beat the peak frames, so it is not tried (Story 9.6, D2).
+    const total = edges.reduce((t, e) => t + e.L, 0);
+    const near = (e: { a: number }, pi: number) => {
+      const d = Math.abs(e.a - (pi * 0.25 + 0.125));
+      return Math.min(d, 90 - d) <= 1.75;
+    };
+    const explained = edges.reduce((t, e) => t + (near(e, p1) || (p2 >= 0 && near(e, p2)) ? e.L : 0), 0);
+    if (!list.some((a) => Math.min(a, 90 - a) < 1) && explained < 0.9 * total) list.push(0);
     base = list.map((a) => ((Math.min(a, 90 - a) < 1e-6 ? 0 : a) * Math.PI) / 180);
   }
   const out: number[] = [];
@@ -467,7 +515,7 @@ function frameCandidates(prep: Prep, grid: CeilingGrid | null, override: number 
 
 // --- Frame context: rotated geometry, barrier index, samples -----------------------------------
 
-function buildFrame(prep: Prep, theta: number, R: Rule, grid: CeilingGrid | null): Frame {
+function buildFrame(prep: Prep, theta: number, R: Rule, grid: CeilingGrid | null, ops: Ops): Frame {
   const rot = -theta;
   const outer = rotateRing(prep.outer, rot);
   const holes = prep.holes.map((h) => rotateRing(h, rot));
@@ -588,6 +636,8 @@ function buildFrame(prep: Prep, theta: number, R: Rule, grid: CeilingGrid | null
     keepOuts,
     locked: prep.locked.map((h) => ({ ...rotP(h), id: h.id, wx: h.wx, wy: h.wy, kind: "locked" as const, bay: -1 })),
     neighbours: prep.neighbours.map((h) => ({ ...rotP(h), bay: -2 })),
+    reach: R.Rc + 100,
+    ops,
   };
 }
 
@@ -726,7 +776,7 @@ function trapezoidBays(rings: Pt[][]): Pt[][] {
 
 // --- Layout for one decomposition: bays largest first, each bay picks its best row-set variant ---
 
-function layoutDecomposition(F: Frame, dec: Decomposition, R: Rule, prefs: Prefs, pattern: Pattern): DecResult {
+function layoutDecomposition(F: Frame, dec: Decomposition, R: Rule, prefs: Prefs, pattern: Pattern, cap: number | null): DecResult {
   const bays = dec.bays;
   const per: BaySamples[] = bays.map(() => ({ lat: [], bnd: [], wall: [] }));
   const assign = (s: Sample, key: keyof BaySamples) => {
@@ -770,7 +820,8 @@ function layoutDecomposition(F: Frame, dec: Decomposition, R: Rule, prefs: Prefs
   let rowCount = 0;
   const alignXs: number[] = [];
   for (const bi of order) {
-    const res = layoutBay(F, bays[bi], bi, per[bi], { R, prefs, pattern, placedCov, placedSp, alignXs });
+    const room = cap == null ? null : cap - heads.length; // both counts include locked heads
+    const res = layoutBay(F, bays[bi], bi, per[bi], { R, prefs, pattern, placedCov, placedSp, alignXs }, room);
     for (const h of res.heads) {
       heads.push(h);
       placedCov.push(h);
@@ -781,6 +832,9 @@ function layoutDecomposition(F: Frame, dec: Decomposition, R: Rule, prefs: Prefs
     gapFill += res.gapFill;
     cost += res.cost;
     rowCount += res.rows;
+    // A complete layout already exists (cap): one that leaves samples unresolved, or needs more
+    // heads, can never beat it, so the remaining bays are skipped (exact; the result still loses).
+    if (cap != null && (unresolved.length || heads.length > cap)) break;
   }
   // H4 self-check (max spacing to the nearest visible peer): an engine claim the oracle verifies.
   const h4: FHead[] = [];
@@ -802,16 +856,20 @@ function layoutDecomposition(F: Frame, dec: Decomposition, R: Rule, prefs: Prefs
   return { heads, unresolved, gapFill, cost, h4, rowCount };
 }
 
-function layoutBay(F: Frame, bay: Bay, bi: number, samples: BaySamples, ctx: BayCtx): RowsResult {
+function layoutBay(F: Frame, bay: Bay, bi: number, samples: BaySamples, ctx: BayCtx, room: number | null): RowsResult {
   const variants = rowVariants(F, bay, ctx);
   const modes = bay.fast ? [false] : [false, true];
   const all: RowsResult[] = [];
   // Exact pruning: once a variant resolves every sample with n heads, a variant that needs more than
   // n heads can never win (cmpBay ranks unresolved first, then heads), so its sweep stops early.
-  let bound: number | null = null;
+  let bound: number | null = room;
   let lastShadow = true;
-  for (const rows of variants)
+  sweep: for (const rows of variants)
     for (const defer of modes) {
+      if (F.ops.armed && all.length && F.ops.n > F.ops.budget) {
+        F.ops.truncated = true;
+        break sweep;
+      }
       if (defer && !lastShadow) continue; // identical to the run without deferral
       const res = layoutRows(F, bay, bi, samples, rows, ctx, defer, bound);
       lastShadow = res === null ? true : res.sawShadow;
@@ -821,9 +879,10 @@ function layoutBay(F: Frame, bay: Bay, bi: number, samples: BaySamples, ctx: Bay
     }
   if (!all.length) return { heads: [], rest: [], unresolved: samples.lat.map((o) => o.s), gapFill: 0, cost: 0, rows: 0, sawShadow: false };
   all.sort(cmpBay);
-  if (all[0].unresolved.length) {
-    // only the most promising layouts get gap-fill heads
-    const top = all.slice(0, 3).map((r) => applyGapFill(F, bay, bi, samples, r, ctx));
+  // only the most promising layouts get gap-fill heads, and only when a head still fits under the
+  // cap (a gap-fill head is one more head; with no room the layout cannot win either way)
+  if (all[0].unresolved.length && (room == null || all[0].heads.length < room)) {
+    const top = all.slice(0, 3).map((r) => (room == null || r.heads.length < room ? applyGapFill(F, bay, bi, samples, r, ctx) : r));
     all.splice(0, 3, ...top);
     all.sort(cmpBay);
   }
@@ -970,16 +1029,19 @@ function layoutRows(F: Frame, bay: Bay, bi: number, samples: BaySamples, rows: n
 
   // bucket samples by band; drop lattice samples dominated inside clean columns
   const bands: BandItem[][] = rows.map(() => []);
+  // the first and last lattice row of each band (only those survive inside clean columns)
+  const iyLo = rows.map((_, j) => Math.ceil((lo[j] - 50) / LAT - 1e-9));
+  const iyHi = rows.map((_, j) => (j === m - 1 ? Math.floor((hi[j] - 50) / LAT + 1e-9) : Math.ceil((hi[j] - 50) / LAT - 1e-9) - 1));
   for (const o of samples.lat) {
     const j = bandOf(o.s.y);
-    const I = info[j];
-    const iv = findIv(I.clean, o.s.x);
-    if (iv) {
-      const iyLo = Math.ceil((lo[j] - 50) / LAT - 1e-9);
-      const iyHi = j === m - 1 ? Math.floor((hi[j] - 50) / LAT + 1e-9) : Math.ceil((hi[j] - 50) / LAT - 1e-9) - 1;
-      if (o.s.iy !== iyLo && o.s.iy !== iyHi) continue;
+    const iy = o.s.iy;
+    if (iy !== iyLo[j] && iy !== iyHi[j]) {
+      const clean = info[j].clean;
+      if (clean.length && findIv(clean, o.s.x)) continue;
+      bands[j].push({ o, iv: null });
+      continue;
     }
-    bands[j].push({ o, iv });
+    bands[j].push({ o, iv: findIv(info[j].clean, o.s.x) });
   }
   for (const o of samples.bnd) {
     const j = bandOf(o.s.y);
@@ -1064,7 +1126,7 @@ function layoutRows(F: Frame, bay: Bay, bi: number, samples: BaySamples, rows: n
       demands.push(r);
       dItems.push(it);
     }
-    let sol = stabDP(cands, demands, I, R, prefs, targets, pattern, F.grid);
+    let sol = stabDP(cands, demands, I, R, prefs, targets, pattern, F.grid, F.ops);
     // Demands that cannot all be met on this row (two narrow windows closer than Smin): hand the
     // narrowest on to the next row (or report it) and solve again. Bounded.
     for (let tries = 0; !sol && demands.length && tries < 40; tries++) {
@@ -1074,7 +1136,7 @@ function layoutRows(F: Frame, bay: Bay, bi: number, samples: BaySamples, rows: n
       demands.splice(k, 1);
       dItems.splice(k, 1);
       if (!it.pulled) (j + 1 < m ? carry : unresolved).push(it.o);
-      sol = stabDP(cands, demands, I, R, prefs, targets, pattern, F.grid);
+      sol = stabDP(cands, demands, I, R, prefs, targets, pattern, F.grid, F.ops);
     }
     if (!sol) {
       for (const it of dItems) if (!it.pulled) (j + 1 < m ? carry : unresolved).push(it.o);
@@ -1113,8 +1175,7 @@ function applyGapFill(F: Frame, bay: Bay, bi: number, samples: BaySamples, res: 
     const g: FHead = { ...h, bay: bi, row: "g", kind: "gapFill" };
     heads.push(g);
     gapFill++;
-    const one = new HeadGrid([g], R.Rc);
-    rest = rest.filter((o) => !satisfied(F, bay, bi, o, one, R));
+    rest = rest.filter((o) => !servedBy(F, bay, bi, o, g, R));
   }
   return { ...res, heads, rest, unresolved: rest.map((o) => o.s), gapFill, cost: res.cost + gapFill * 50 };
 }
@@ -1270,26 +1331,23 @@ function finalCandidates(F: Frame, I: RowInfo, targets: number[], spHeads: FHead
 
 /** Is sample o already served by one of the heads in `grid`? */
 function satisfied(F: Frame, bay: Bay, bi: number, o: Owned, grid: HeadGrid, R: Rule): boolean {
+  return grid.near(o.s.x, o.s.y, (h) => servedBy(F, bay, bi, o, h, R));
+}
+
+/** Does head h serve sample o (reach, the wall-distance rule for wall samples, sight line)? */
+function servedBy(F: Frame, bay: Bay, bi: number, o: Owned, h: FHead, R: Rule): boolean {
   const s = o.s;
+  const dx = h.x - s.x;
+  const dy = h.y - s.y;
   if (s.t === 2) {
     const r = R.Rc - MU_WALL;
-    const r2 = r * r;
-    return grid.near(s.x, s.y, (h) => {
-      const dx = h.x - s.x;
-      const dy = h.y - s.y;
-      if (dx * dx + dy * dy > r2) return false;
-      if (Math.abs(s.nx! * h.x + s.ny! * h.y - s.c!) > R.Wmax + TOL) return false;
-      return visibleFrom(F, bay, bi, h, o);
-    });
+    if (dx * dx + dy * dy > r * r) return false;
+    if (Math.abs(s.nx! * h.x + s.ny! * h.y - s.c!) > R.Wmax + TOL) return false;
+    return visibleFrom(F, bay, bi, h, o);
   }
   const r = R.Rc - MU_COV;
-  const r2 = r * r;
-  return grid.near(s.x, s.y, (h) => {
-    const dx = h.x - s.x;
-    const dy = h.y - s.y;
-    if (dx * dx + dy * dy > r2) return false;
-    return visibleFrom(F, bay, bi, h, o);
-  });
+  if (dx * dx + dy * dy > r * r) return false;
+  return visibleFrom(F, bay, bi, h, o);
 }
 
 function visibleFrom(F: Frame, bay: Bay, bi: number, h: FHead, o: Owned): boolean {
@@ -1399,21 +1457,23 @@ function idxRange(C: Cand[], lo: number, hi: number): DemandRange | null {
   return first <= last ? [first, last] : null;
 }
 
-// Candidates in [a, b] that see the sample, as the contiguous run nearest to the sample's x.
-// Visibility along the row line is computed once per sample as the complement of the "shadows"
-// that wall edges cast from the sample onto the row line (closed shadows: grazing blocks).
-function visibleRun(F: Frame, bay: Bay, o: Owned, C: Cand[], [a, b]: DemandRange, probeOnly: boolean): DemandRange | null {
-  const s = o.s;
+// The shadows that wall edges cast from sample s onto the row line y (closed shadows: grazing
+// blocks), memoised per (sample, row) within a frame: row-set variants and both deferral modes
+// revisit the same pairs (R1: 1.7 M queries, 0.32 M distinct). The query box spans every candidate a
+// demand window can reach (|x − s.x| ≤ Rc), so the memo gives the same answer as a box fitted to one
+// window: an edge outside the box only shadows row points outside it.
+function rowShadows(F: Frame, s: Sample, r: number): Interval[] {
+  const memo = (s.sh ??= []);
+  for (const m of memo) if (m.y === r) return m.iv;
   const sv = { x: s.vx, y: s.vy };
-  if (bay.fast && o.inside) return [a, b];
-  const r = C[a].y;
   const dy = r - sv.y;
-  const xa = Math.min(C[a].x, sv.x) - 1;
-  const xb = Math.max(C[b].x, sv.x) + 1;
+  const xa = sv.x - F.reach;
+  const xb = sv.x + F.reach;
   const sh: Interval[] = [];
   const BIG = 1e12;
   if (Math.abs(dy) < 1e-6) {
     F.idx.forBox(xa, r - 1, xb, r + 1, (e) => {
+      F.ops.n++;
       if (e.a.y === e.b.y || (e.a.y - r) * (e.b.y - r) > 0) return;
       const x = e.a.x + ((r - e.a.y) * (e.b.x - e.a.x)) / (e.b.y - e.a.y);
       sh.push(x < sv.x ? [-BIG, x] : [x, BIG]);
@@ -1421,12 +1481,13 @@ function visibleRun(F: Frame, bay: Bay, o: Owned, C: Cand[], [a, b]: DemandRange
   } else {
     const ylo = Math.min(sv.y, r);
     const yhi = Math.max(sv.y, r);
-    const proj = (P: Pt) => {
-      const h = P.y - sv.y;
-      if (Math.abs(h) < 1e-9) return P.x >= sv.x ? BIG : -BIG;
-      return sv.x + ((P.x - sv.x) * dy) / h;
+    const proj = (px: number, py: number) => {
+      const h = py - sv.y;
+      if (Math.abs(h) < 1e-9) return px >= sv.x ? BIG : -BIG;
+      return sv.x + ((px - sv.x) * dy) / h;
     };
     F.idx.forBox(xa, ylo, xb, yhi, (e) => {
+      F.ops.n++;
       const p = e.a;
       const q = e.b;
       let t0 = 0;
@@ -1440,54 +1501,116 @@ function visibleRun(F: Frame, bay: Bay, o: Owned, C: Cand[], [a, b]: DemandRange
         t1 = Math.min(1, Math.max(u, v));
         if (t0 >= t1) return;
       }
-      const P1 = { x: p.x + t0 * (q.x - p.x), y: p.y + t0 * (q.y - p.y) };
-      const P2 = { x: p.x + t1 * (q.x - p.x), y: p.y + t1 * (q.y - p.y) };
-      const X1 = proj(P1);
-      const X2 = proj(P2);
+      const X1 = proj(p.x + t0 * (q.x - p.x), p.y + t0 * (q.y - p.y));
+      const X2 = proj(p.x + t1 * (q.x - p.x), p.y + t1 * (q.y - p.y));
       sh.push([Math.min(X1, X2), Math.max(X1, X2)]);
     });
   }
-  const shadows = mergeIntervals(sh);
-  const vis = (k: number) => {
-    const x = C[k].x;
-    for (const [u, v] of shadows) {
-      if (x < u) return true;
-      if (x <= v) return false;
-    }
-    return true;
-  };
-  let c0: number;
-  {
-    let l = a;
-    let h = b;
-    while (l < h) {
-      const m = (l + h) >> 1;
-      if (C[m].x < s.x) l = m + 1;
-      else h = m;
-    }
-    c0 = l;
-  }
+  const iv = mergeIntervals(sh);
+  memo.push({ y: r, iv });
+  return iv;
+}
+
+// Candidates in [a, b] that see the sample, as the contiguous run nearest to the sample's x.
+// Visibility along the row line is computed once per sample as the complement of the "shadows"
+// that wall edges cast from the sample onto the row line (closed shadows: grazing blocks).
+function visibleRun(F: Frame, bay: Bay, o: Owned, C: Cand[], [a, b]: DemandRange, probeOnly: boolean): DemandRange | null {
+  const s = o.s;
+  if (bay.fast && o.inside) return [a, b];
+  F.ops.n++;
+  const sh = rowShadows(F, s, C[a].y);
+  // the candidate nearest the sample's x
+  let c0 = lowerIdx(C, a, b + 1, s.x);
+  if (c0 > b) c0 = b;
   if (c0 > a && Math.abs(C[c0 - 1].x - s.x) < Math.abs(C[c0].x - s.x)) c0--;
-  let start = -1;
-  for (let d = 0; c0 - d >= a || c0 + d <= b; d++) {
-    if (c0 - d >= a && vis(c0 - d)) {
-      start = c0 - d;
-      break;
+  // the visible candidate nearest c0 by index (left first on a tie), found shadow by shadow
+  let start = c0;
+  const j = shadowAt(sh, C[c0].x);
+  if (j >= 0) {
+    let kL = -1;
+    for (let jj = j; ; ) {
+      const k = lowerIdx(C, a, b + 1, sh[jj][0]) - 1; // last candidate left of the shadow
+      if (k < a) break;
+      const in2 = shadowAt(sh, C[k].x);
+      if (in2 < 0) {
+        kL = k;
+        break;
+      }
+      jj = in2;
     }
-    if (d > 0 && c0 + d <= b && vis(c0 + d)) {
-      start = c0 + d;
+    let kR = -1;
+    for (let jj = j; ; ) {
+      const k = upperIdx(C, a, b + 1, sh[jj][1]); // first candidate right of the shadow
+      if (k > b) break;
+      const in2 = shadowAt(sh, C[k].x);
+      if (in2 < 0) {
+        kR = k;
+        break;
+      }
+      jj = in2;
+    }
+    if (kL < 0 && kR < 0) return null;
+    start = kL >= 0 && (kR < 0 || c0 - kL <= kR - c0) ? kL : kR;
+  }
+  if (probeOnly) return [start, start];
+  // grow the run index by index until a shadowed candidate (a shadow with no candidate in it
+  // does not break the run)
+  const x0 = C[start].x;
+  let l = a;
+  let rr = b;
+  for (let i = sh.length - 1; i >= 0; i--) {
+    const [u, v] = sh[i];
+    if (u >= x0) continue;
+    const k = upperIdx(C, a, start + 1, v) - 1; // last candidate at or left of the shadow's end
+    if (k >= a && C[k].x >= u) {
+      l = k + 1;
       break;
     }
   }
-  if (start < 0) return null;
-  if (probeOnly) return [start, start];
-  let l = start;
-  let rr = start;
-  while (l - 1 >= a && vis(l - 1)) l--;
-  while (rr + 1 <= b && vis(rr + 1)) rr++;
+  for (const [u, v] of sh) {
+    if (v <= x0) continue;
+    const k = lowerIdx(C, start, b + 1, u); // first candidate at or right of the shadow's start
+    if (k <= b && C[k].x <= v) {
+      rr = k - 1;
+      break;
+    }
+  }
   const out: DemandRange = [l, rr];
   if (l > a || rr < b) out.shadowed = true;
   return out;
+}
+
+/** Index of the closed shadow interval containing x, or -1. */
+function shadowAt(sh: Interval[], x: number): number {
+  let lo = 0;
+  let hi = sh.length;
+  while (lo < hi) {
+    const m = (lo + hi) >> 1;
+    if (sh[m][0] <= x) lo = m + 1;
+    else hi = m;
+  }
+  const k = lo - 1;
+  return k >= 0 && x <= sh[k][1] ? k : -1;
+}
+
+/** First index in [lo, hi) with C[i].x >= x (hi when none). */
+function lowerIdx(C: Cand[], lo: number, hi: number, x: number): number {
+  while (lo < hi) {
+    const m = (lo + hi) >> 1;
+    if (C[m].x < x) lo = m + 1;
+    else hi = m;
+  }
+  return lo;
+}
+
+/** First index in [lo, hi) with C[i].x > x (hi when none). */
+function upperIdx(C: Cand[], lo: number, hi: number, x: number): number {
+  while (lo < hi) {
+    const m = (lo + hi) >> 1;
+    if (C[m].x <= x) lo = m + 1;
+    else hi = m;
+  }
+  return lo;
 }
 
 // --- Exact 1-D stabbing DP (§3.4 step 5) --------------------------------------------------------
@@ -1504,6 +1627,7 @@ function stabDP(
   targets: number[],
   pattern: Pattern,
   grid: GridF | null,
+  ops: Ops,
 ): { idx: number[]; cost: number } | null {
   if (!demands.length) return { idx: [], cost: 0 };
   const n = C.length;
@@ -1550,11 +1674,13 @@ function stabDP(
   }
   const smin = R.Smin - TOL;
   const S = I.S + TOL;
+  let steps = n;
   for (let i = 0; i < n; i++) {
     if (cnt[i] >= INF) continue;
     const lim = suf[i + 1];
     if (lim >= INF) continue; // nothing left to the right: ending here is optimal
     for (let k = i + 1; k <= lim && k < n; k++) {
+      steps++;
       const g = C[k].x - C[i].x;
       const sameRun = C[k].run === C[i].run;
       if (sameRun && g < smin) continue;
@@ -1587,6 +1713,7 @@ function stabDP(
       bcost = c;
     }
   }
+  ops.n += steps;
   if (bi < 0) return null;
   const idx: number[] = [];
   for (let k = bi; k >= 0; k = prev[k]) idx.push(k);
@@ -1598,6 +1725,7 @@ function bestGapFill(F: Frame, bay: Bay, bi: number, samples: BaySamples, rest: 
   const U = rest.length > 120 ? rest.filter((_, i) => i % Math.ceil(rest.length / 120) === 0) : rest;
   const smin = R.Smin + TOL;
   const reach = R.Rc - MU_COV;
+  const reach2 = Math.max(R.Rc - MU_COV, R.Rc - MU_WALL) ** 2;
   let x0 = Infinity;
   let y0 = Infinity;
   let x1 = -Infinity;
@@ -1624,9 +1752,17 @@ function bestGapFill(F: Frame, bay: Bay, bi: number, samples: BaySamples, rest: 
       })
     )
       continue;
-    const one = new HeadGrid([{ x: p.x, y: p.y, bay: bi }], R.Rc);
+    // exact skip: the samples within reach bound the count, and only a strictly larger count wins
+    let inReach = 0;
+    for (const u of U) {
+      const dx = u.s.x - p.x;
+      const dy = u.s.y - p.y;
+      if (dx * dx + dy * dy <= reach2) inReach++;
+    }
+    if (inReach <= bestN) continue;
+    const one: FHead = { x: p.x, y: p.y, bay: bi };
     let n = 0;
-    for (const u of U) if (satisfied(F, bay, bi, u, one, R)) n++;
+    for (const u of U) if (servedBy(F, bay, bi, u, one, R)) n++;
     if (n > bestN) {
       bestN = n;
       best = { x: p.x, y: p.y };
