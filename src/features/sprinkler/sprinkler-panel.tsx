@@ -8,7 +8,8 @@
 // zone shows its rule figures and ruleset version to check against the standard.
 // Story 9.8 (FR73): Place heads fills the selected zones (or all of the page's)
 // zone by zone, with progress, Cancel and an error card per infeasible zone.
-import { Check, CircleDot, LandPlot, PaintBucket, Pentagon, Ruler, Square, TriangleAlert, X } from "lucide-react";
+// Story 9.9 (FR75): the coverage overlay toggle and its shape (circle or square).
+import { Check, Circle, CircleDot, Eye, EyeOff, LandPlot, PaintBucket, Pentagon, Ruler, Square, SquareDashed, TriangleAlert, X } from "lucide-react";
 import { useEffect, useMemo } from "react";
 import { useStore } from "zustand";
 
@@ -22,7 +23,7 @@ import type { UseHazardMap } from "@/core/sprinkler/rules/rules";
 import { MAPPING_SOURCE_LABELS, figureRows, figuresOf, useOptions, type MappingSource } from "@/core/sprinkler/use-map";
 import { HOLE_TAG_LABELS, ZONE_COLOR, formatZoneArea, holeTagOf, isZone, withHoleTag, zoneAreaM2, zoneChecklist, zoneHazard } from "@/core/sprinkler/zone";
 import { openCalibrate } from "@/features/calibration";
-import { editorStore, executeOp, markupsOf, armZoneDraw, setSelection, zoneDrawStore } from "@/features/editor";
+import { coverageStore, editorStore, executeOp, markupsOf, armZoneDraw, setCoverageOn, setCoverageShape, setSelection, zoneDrawStore } from "@/features/editor";
 import { FirstUseTip } from "@/features/tips";
 import { hasDocument, setTool, viewerCommands, viewerStore } from "@/features/viewer";
 
@@ -41,6 +42,7 @@ export const CHANGE_HOLE_TAG = "Change hole tag";
 export const CHANGE_USE = "Change use";
 export const UNMAPPED_USE = "This use is not in the mapping. Choose a use to set the hazard class.";
 export const DRAFT_MAPPING = "draft, not yet verified";
+export const COVERAGE_HINT = "Show each head's coverage; areas no head covers are hatched";
 export const PLACE_HEADS_HINT = "Place heads in the selected zones, or in every zone on this page when none is selected";
 
 let sinksWired = false;
@@ -87,6 +89,8 @@ export function SprinklerPanel({ emptyText }: { emptyText: string }) {
   const map = useStore(useMapStore, (s) => s.map);
   const mapSource = useStore(useMapStore, (s) => s.source);
   const run = useStore(placeRunStore, (s) => s);
+  const coverageOn = useStore(coverageStore, (s) => s.on);
+  const coverageShape = useStore(coverageStore, (s) => s.shape);
 
   // Story 9.3: the mapping is read once per session (the built-in one until then).
   useEffect(() => {
@@ -180,6 +184,34 @@ export function SprinklerPanel({ emptyText }: { emptyText: string }) {
           ) : null}
         </div>
         <RunStatus />
+        {checklist.heads ? (
+          <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Coverage overlay" data-testid="coverage-controls">
+            <Button size="sm" variant={coverageOn ? "primary" : "secondary"} aria-pressed={coverageOn} onClick={() => setCoverageOn(!coverageOn)} title={COVERAGE_HINT}>
+              {coverageOn ? <Eye size={14} aria-hidden="true" /> : <EyeOff size={14} aria-hidden="true" />}
+              Coverage
+            </Button>
+            <Button
+              size="sm"
+              variant={coverageShape === "circle" ? "secondary" : "ghost"}
+              aria-pressed={coverageShape === "circle"}
+              disabled={!coverageOn}
+              onClick={() => setCoverageShape("circle")}
+            >
+              <Circle size={14} aria-hidden="true" />
+              Circle
+            </Button>
+            <Button
+              size="sm"
+              variant={coverageShape === "square" ? "secondary" : "ghost"}
+              aria-pressed={coverageShape === "square"}
+              disabled={!coverageOn}
+              onClick={() => setCoverageShape("square")}
+            >
+              <SquareDashed size={14} aria-hidden="true" />
+              Square
+            </Button>
+          </div>
+        ) : null}
       </div>
       {run.errors.length > 0 ? (
         <ul className="flex flex-col gap-2 border-b border-border p-3" aria-label="Zones not placed" data-testid="place-errors">

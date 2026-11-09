@@ -23,7 +23,7 @@ import type { PlaceErrorCode, PlaceResult } from "@/core/sprinkler/placer";
 import { NZS4541_V1, type RuleSet, type UseHazardMap } from "@/core/sprinkler/rules/rules";
 import { isZone, zoneHazard } from "@/core/sprinkler/zone";
 import type { ZoneLayout } from "@/core/sprinkler/zone-layout";
-import { activeLayerOf, applyOp, editorStore, markupsOf, recordAppliedOp } from "@/features/editor";
+import { activeLayerOf, applyOp, editorStore, holdCoverage, markupsOf, recordAppliedOp, revealCoverage } from "@/features/editor";
 import { viewerStore } from "@/features/viewer";
 
 export const PLACE_HEADS = "Place heads";
@@ -173,6 +173,8 @@ export function placeHeads(ctx: PlaceHeadsContext): Promise<void> {
   const results = new Map<string, PlaceResult>();
   const reports: Record<string, OracleReport | null> = {};
   placeRunStore.setState({ status: "running", done: 0, total: zones.length, heads: 0, errors: [...errors], reports: {} }, true);
+  // Story 9.9: the coverage overlay waits for the run, then fades in.
+  if (zones.length > 0) holdCoverage();
 
   const finish = (status: PlaceRunState["status"]) => {
     stop();
@@ -182,6 +184,7 @@ export function placeHeads(ctx: PlaceHeadsContext): Promise<void> {
     if (added.length) parts.push({ kind: "markups.add", documentId, markups: added });
     if (parts.length) recordAppliedOp(parts.length === 1 ? parts[0] : { kind: "compound", documentId, ops: parts }, PLACE_HEADS, tabId);
     placeRunStore.setState({ status, reports: { ...reports } });
+    revealCoverage();
     if (status !== "failed" && results.size > 0) {
       sinks.save(documentId, layoutsOf(zones, results, reports, rules));
       sinks.record(documentId, { name: "sprinkler.placed", pageCount: 1, markupCount: added.length, kind: selected.length > 0 ? "selected_zones" : "all_zones" });

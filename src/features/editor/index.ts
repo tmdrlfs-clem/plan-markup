@@ -34,3 +34,4 @@ export {
   useMeasureTools,
 } from "./measure-tool";
 export type { UndoCommand } from "@/core/undo/stack";
+export { coverageStore, holdCoverage, revealCoverage, resetCoverage, setCoverageOn, setCoverageShape } from "./coverage-overlay";

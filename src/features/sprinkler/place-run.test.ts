@@ -8,6 +8,7 @@ import type { EngineReply } from "@/core/sprinkler/engine/protocol";
 import { NZS4541_V1, USE_HAZARD_V1 } from "@/core/sprinkler/rules/rules";
 import { newZone } from "@/core/sprinkler/zone";
 import { editorStore, resetEditor, setDocMarkups, setSelection } from "@/features/editor/editor-store";
+import { coverageStore } from "@/features/editor/coverage-overlay";
 import { redoActive, undoActive } from "@/features/editor/undo-store";
 import { viewerStore } from "@/features/viewer/viewer-store";
 import { resetViewer } from "@/features/viewer/viewer-tabs";
@@ -113,6 +114,9 @@ describe("placeHeads (Story 9.8)", () => {
     expect(layouts.map((l: { zoneId: string }) => l.zoneId).sort()).toEqual([a.id, b.id].sort());
     expect(layouts.every((l: { ruleVersion: string; status: string; report: unknown }) => l.ruleVersion === NZS4541_V1.version && l.status === "placed" && l.report)).toBe(true);
     expect(record).toHaveBeenCalledWith("doc", { name: "sprinkler.placed", pageCount: 1, markupCount: hs.length, kind: "all_zones" });
+
+    // Story 9.9: the coverage overlay was held for the run and is shown again.
+    expect(coverageStore.getState().fade).toBeNull();
 
     expect(undoActive()).toBe(true);
     expect(heads()).toEqual([]);

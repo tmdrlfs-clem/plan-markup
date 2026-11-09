@@ -140,6 +140,7 @@ import { fontFamilyOf } from "./fonts";
 import { revisionLabel, revisionText } from "@/core/markup/revision";
 import { ZONE_FILL_OPACITY, isZone } from "@/core/sprinkler/zone";
 import { ADD_ZONE, makesZone, zoneOf } from "./zone-draw";
+import { paintCoverage } from "./coverage-overlay";
 import { ADD_REVISION, placeRevision, revisionAt } from "./revision-tool";
 import { LEGEND_EMPTY, LEGEND_QTY, LEGEND_TEXT, LEGEND_TOTAL, fitSymbol, legendLabel, legendLayout, legendRows, legendScopeMarkups, legendTotal, type LegendRow, type MeasureText } from "@/core/markup/legend";
 import { ADD_LEGEND, legendAt, placeLegend } from "./legend-tool";
@@ -1094,6 +1095,8 @@ export const measurePainter: MarkupPainter = {
     const boxes: CaptionBox[] = [];
     const selected = new Set(editorStore.getState().selection.ids);
     const selectedShown: Markup[] = [];
+    // Story 9.9: the coverage overlay, under the markups (the heads are drawn over it).
+    paintCoverage(c, view, stored, calibration);
     paintList(c, markups, view, calibration, { selected, captions, boxes, selectedShown });
     // Story 5.2: the selection's handles, over everything.
     const handles = handlesOf(selectedShown.filter((m) => !isLocked(m)), view);

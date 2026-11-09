@@ -19,6 +19,8 @@ import { resetViewer } from "@/features/viewer/viewer-tabs";
 import { EngineHost } from "@/workers/engine.worker";
 import type { EngineReply } from "@/core/sprinkler/engine/protocol";
 
+import { coverageStore, resetCoverage } from "@/features/editor/coverage-overlay";
+
 import { resetPlaceRun, setEngineChannelFactory } from "./place-run";
 import { CALIBRATE_FIRST, NO_ZONES, SprinklerPanel, UNMAPPED_USE, ZONES_TIP } from "./sprinkler-panel";
 import { resetUseMap, useMapStore } from "./use-map-store";
@@ -253,13 +255,17 @@ describe("SprinklerPanel Place heads (Story 9.8)", () => {
     });
   });
   afterEach(() => {
-    act(() => resetPlaceRun());
+    act(() => {
+      resetPlaceRun();
+      resetCoverage();
+    });
     setEngineChannelFactory(null);
   });
 
-  it("is disabled without zones", () => {
+  it("is disabled without zones; no coverage controls before heads", () => {
     setup([]);
     expect((screen.getByTestId("place-heads") as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByTestId("coverage-controls")).toBeNull();
   });
 
   it("places heads in every zone, reports the outcome and ticks the checklist", async () => {
@@ -276,6 +282,16 @@ describe("SprinklerPanel Place heads (Story 9.8)", () => {
         .map((li) => li.getAttribute("data-done")),
     ).toEqual(["true", "true", "true"]);
     expect(screen.queryByTestId("place-errors")).toBeNull();
+    // Story 9.9: the coverage overlay is on after a run; it toggles, and its shape too.
+    const controls = screen.getByTestId("coverage-controls");
+    const toggle = within(controls).getByRole("button", { name: "Coverage" });
+    expect(toggle.getAttribute("aria-pressed")).toBe("true");
+    expect(coverageStore.getState().fade).not.toBe("hidden");
+    await user.click(within(controls).getByRole("button", { name: "Square" }));
+    expect(coverageStore.getState().shape).toBe("square");
+    await user.click(toggle);
+    expect(coverageStore.getState().on).toBe(false);
+    expect((within(controls).getByRole("button", { name: "Circle" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("names the selected zones and shows an error card that reveals the zone", async () => {
