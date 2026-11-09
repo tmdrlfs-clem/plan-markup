@@ -25,8 +25,8 @@ const keepOut = z.union([
 ]);
 const grid = z.strictObject({
   angleDeg: z.number().finite().min(-360).max(360).optional(),
-  pitchX: mm,
-  pitchY: mm,
+  pitchX: mm.min(100), // a finer pitch floods the row DP with tile stops
+  pitchY: mm.min(100),
   originX: coord.optional(),
   originY: coord.optional(),
   mode: z.enum(["off", "preferred", "required"]),

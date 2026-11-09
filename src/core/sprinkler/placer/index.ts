@@ -10,6 +10,8 @@ export type {
   PlaceResult,
   PlacedHead,
   PlacementNotes,
+  PreferenceFigure,
+  PreferenceReport,
   PlacerBarrier,
   PlacerFigures,
   PlacerKeepOut,

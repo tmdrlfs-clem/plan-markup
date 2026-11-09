@@ -87,6 +87,21 @@ export type PlacementNotes = {
   /** Figures in mm / mm², with Rc. */
   rule: Rule;
   tileAligned?: { onStop: number; total: number; extraHeadsVsUnaligned?: number };
+  /** What the zone's options asked for and what the layout achieved (FR74, Story 9.7). */
+  preferences: PreferenceReport;
+};
+
+/** A preferred figure, mm: as requested, as used (clamped to the rule limits), and as achieved. */
+export type PreferenceFigure = { requested: number; used: number; achieved: { min: number; max: number } | null; met: boolean };
+
+export type PreferenceReport = {
+  /** Along-row gaps between neighbouring heads of the same row run. */
+  spacing?: PreferenceFigure;
+  /** Along-row distance from each row run's end heads to the wall at the run's ends. */
+  wallDist?: PreferenceFigure;
+  pattern: { requested: "rectangular" | "staggered"; extraHeadsVsRectangular?: number };
+  /** One plain sentence per preference that could not be met (shown in the zone report). */
+  unmet: string[];
 };
 
 export type PlaceResult =
@@ -120,6 +135,10 @@ const MAX_GAPFILL = 3;
 const TRACE_TOL = 40;
 /** Distances tried between a moved row and a column band. */
 const COL_GAP = [300, 700];
+/** Smallest ceiling-grid pitch accepted (tile stops are DP candidates). */
+const MIN_TILE_PITCH = 100;
+/** A preferred figure counts as met within max(150 mm, 5 %) (the 50 mm candidate step plus fit). */
+const prefTol = (v: number) => Math.max(150, 0.05 * v);
 
 // --- Internal types --------------------------------------------------------------------------
 
@@ -219,7 +238,7 @@ function place(input: PlaceInput, hz: PlacerFigures, opts: PlaceOptions, noDelta
 
   const frames = frameCandidates(prep, grid, input.frameDeg);
   const ops: Ops = { n: 0, budget: opts.opBudget ?? DEFAULT_OP_BUDGET, truncated: false, armed: false };
-  let best: (DecResult & { score: number[]; frame: Frame; decName: Decomposition["name"]; bayCount: number }) | null = null;
+  let best: (DecResult & { score: number[]; frame: Frame; decName: Decomposition["name"]; bays: Bay[] }) | null = null;
   let tried = 0;
   // Variants run in priority order (frame peaks, then none / cutH / cutV); the budget only ever
   // skips the tail of that order, so the answer stays deterministic.
@@ -242,7 +261,7 @@ function place(input: PlaceInput, hz: PlacerFigures, opts: PlaceOptions, noDelta
       const res = layoutDecomposition(F, decs[di], R, prefs, pattern, cap);
       tried++;
       const score = [res.unresolved.length + res.h4.length, res.heads.length, res.gapFill, res.cost, fi, di];
-      if (!best || lexLess(score, best.score)) best = { ...res, score, frame: F, decName: decs[di].name, bayCount: decs[di].bays.length };
+      if (!best || lexLess(score, best.score)) best = { ...res, score, frame: F, decName: decs[di].name, bays: decs[di].bays };
     }
   }
   if (!best) throw new Error("placeZone: no frame candidates");
@@ -270,7 +289,7 @@ function place(input: PlaceInput, hz: PlacerFigures, opts: PlaceOptions, noDelta
   const notes: PlacementNotes = {
     frameDeg: round3((F.theta * 180) / Math.PI),
     decomposition: best.decName,
-    bays: best.bayCount,
+    bays: best.bays.length,
     rows: best.rowCount,
     exceptions: { gapFill: best.gapFill },
     unresolved: unresolvedWorld.length,
@@ -279,13 +298,38 @@ function place(input: PlaceInput, hz: PlacerFigures, opts: PlaceOptions, noDelta
     searchTruncated: ops.truncated,
     ops: ops.n,
     rule: R,
+    preferences: { pattern: { requested: pattern }, unmet: [] },
   };
+  const pr = notes.preferences;
+  if (input.prefs?.spacing || input.prefs?.wallDist) {
+    const m = rowMeasures(best.heads, F);
+    if (input.prefs.spacing && prefs.spacing) pr.spacing = prefFigure(input.prefs.spacing, prefs.spacing, m.gaps);
+    if (input.prefs.wallDist && prefs.wallDist) pr.wallDist = prefFigure(input.prefs.wallDist, prefs.wallDist, m.ends);
+    for (const [name, f] of [
+      ["spacing", pr.spacing],
+      ["wall distance", pr.wallDist],
+    ] as const) {
+      if (!f) continue;
+      if (f.used !== f.requested) pr.unmet.push(`Preferred ${name} ${f.requested} mm is outside the rule limits; ${f.used} mm was used.`);
+      if (!f.met && f.achieved) pr.unmet.push(`Preferred ${name} ${f.used} mm could not be kept everywhere (head count comes first): ${f.achieved.min}–${f.achieved.max} mm placed.`);
+    }
+  }
+  if (pattern === "staggered" && !noDelta) {
+    const rect = place({ ...input, pattern: "rectangular" }, hz, opts, true);
+    if (rect.ok) {
+      pr.pattern.extraHeadsVsRectangular = heads.length - rect.heads.length;
+      if (pr.pattern.extraHeadsVsRectangular > 0) pr.unmet.push(`Staggered layout uses ${pr.pattern.extraHeadsVsRectangular} more head(s) than rectangular.`);
+    }
+  }
   if (grid) {
     notes.tileAligned = { onStop: heads.filter((h) => onTileStop(h, grid)).length, total: heads.length };
     if (grid.mode === "required" && !noDelta) {
       const free = place({ ...input, grid: null }, hz, opts, true);
       if (free.ok) notes.tileAligned.extraHeadsVsUnaligned = heads.length - free.heads.length;
     }
+    const t = notes.tileAligned;
+    if (t.extraHeadsVsUnaligned) pr.unmet.push(`Tile alignment (required) uses ${t.extraHeadsVsUnaligned} more head(s) than an unaligned layout.`);
+    if (grid.mode === "preferred" && t.onStop < t.total) pr.unmet.push(`${t.total - t.onStop} of ${t.total} heads are off tile centres (head count comes first).`);
   }
   if (unresolvedWorld.length) {
     return {
@@ -363,6 +407,10 @@ function prepare(input: PlaceInput): Prep | { error: PlaceError } {
     const q = outer[(i + 1) % outer.length];
     return open.some((e) => distPointSeg(p, e.a, e.b) < 2 && distPointSeg(q, e.a, e.b) < 2);
   });
+  const g = input.grid;
+  if (g && g.mode !== "off" && !(g.pitchX >= MIN_TILE_PITCH && g.pitchY >= MIN_TILE_PITCH && g.pitchX <= 1e6 && g.pitchY <= 1e6)) {
+    return { error: { code: "INVALID_ZONE", where: raw, message: `Ceiling grid pitch must be between ${MIN_TILE_PITCH} mm and 1 km.` } };
+  }
   const keepOuts: LocalKeepOut[] = (input.keepOuts ?? []).map((k) =>
     "circle" in k
       ? { ring: null, circle: { ...loc(k.circle), r: k.circle.r }, clearance: k.clearance ?? 0 }
@@ -1769,6 +1817,51 @@ function bestGapFill(F: Frame, bay: Bay, bi: number, samples: BaySamples, rest: 
     }
   }
   return best;
+}
+
+// --- Preference report (Story 9.7) --------------------------------------------------------------
+
+/**
+ * Along-row gaps and run-end distances of the row heads (frame mm). Runs are cut by the zone's
+ * walls and shafts only: bay seams are not walls, and columns carry no wall-distance rule.
+ */
+function rowMeasures(heads: readonly FHead[], F: Frame): { gaps: number[]; ends: number[] } {
+  const walls = F.holes.filter((_, i) => !F.holeColumn[i]);
+  const groups = new Map<string, FHead[]>();
+  for (const h of heads) {
+    if (h.kind !== "row" || typeof h.row !== "number") continue;
+    const k = `${h.bay}:${h.row}`;
+    let g = groups.get(k);
+    if (!g) groups.set(k, (g = []));
+    g.push(h);
+  }
+  const gaps: number[] = [];
+  const ends: number[] = [];
+  for (const g of groups.values()) {
+    const y = g[0].y;
+    const runs = subtractIntervals(
+      ringRowIntervals(F.outer, y),
+      walls.flatMap((h) => ringRowIntervals(h, y)),
+    );
+    for (const [a, b] of runs) {
+      const xs = g
+        .filter((h) => h.x >= a - 1 && h.x <= b + 1)
+        .map((h) => h.x)
+        .sort((p, q) => p - q);
+      if (!xs.length) continue;
+      for (let i = 1; i < xs.length; i++) gaps.push(xs[i] - xs[i - 1]);
+      ends.push(xs[0] - a, b - xs[xs.length - 1]);
+    }
+  }
+  return { gaps, ends };
+}
+
+function prefFigure(requested: number, used: number, values: number[]): PreferenceFigure {
+  if (!values.length) return { requested, used, achieved: null, met: true };
+  const min = Math.round(Math.min(...values));
+  const max = Math.round(Math.max(...values));
+  const tol = prefTol(used);
+  return { requested, used, achieved: { min, max }, met: values.every((v) => Math.abs(v - used) <= tol) };
 }
 
 // --- Helpers -------------------------------------------------------------------------------------
