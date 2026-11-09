@@ -1,6 +1,6 @@
 # Story 9.8: Place heads from the panel
 
-Status: review
+Status: done
 
 ## Story
 
