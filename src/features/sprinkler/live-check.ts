@@ -8,8 +8,6 @@
 // it runs (a drag sends a change per pointer move), only the newest state is
 // sent once the reply is in, so a long drag never builds a queue.
 
-import { createStore } from "zustand/vanilla";
-
 import { pageIdOf, type Calibration } from "@/core/calibration/calibration";
 import type { Point } from "@/core/markup/geometry";
 import type { Markup, ZoneMarkup } from "@/core/schema/markup";
@@ -17,25 +15,17 @@ import { coverageRadiusMm } from "@/core/sprinkler/coverage";
 import type { EngineReply, EngineRequest } from "@/core/sprinkler/engine/protocol";
 import type { EngineZone } from "@/core/sprinkler/engine/site";
 import { engineZoneOf, headCentre, isHead, pageScaleOf, toMm, type HeadMarkup } from "@/core/sprinkler/heads";
-import type { OracleReport } from "@/core/sprinkler/oracle";
 import { NZS4541_V1, type RuleSet } from "@/core/sprinkler/rules/rules";
 import { isZone, zoneHazard } from "@/core/sprinkler/zone";
 import { editorStore, gestureMarkups, pageMarkups } from "@/features/editor";
 import { viewerStore } from "@/features/viewer";
 
+import { setChecks, zoneCheckStore } from "./check-store";
 import { engine, nextRequestId } from "./engine-channel";
 import { placeRunStore } from "./place-run";
 import { useMapStore } from "./use-map-store";
 
-export type ZoneCheckState = {
-  /** The page the reports are for. */
-  pageId: string | null;
-  /** The oracle's latest report per zone id (zones with heads only). */
-  reports: Readonly<Record<string, OracleReport>>;
-};
-
-const EMPTY: ZoneCheckState = { pageId: null, reports: {} };
-export const zoneCheckStore = createStore<ZoneCheckState>(() => EMPTY);
+export { zoneCheckStore, type ZoneCheckState } from "./check-store";
 
 type Head = { id: string; x: number; y: number };
 type Wanted = { key: string; zone: EngineZone; heads: Head[]; neighbours: { zone: EngineZone; heads: Head[] }[] };
@@ -81,7 +71,7 @@ export function stopLiveCheck(): void {
   wanted = new Map();
   inFlight = new Map();
   byReq = new Map();
-  zoneCheckStore.setState(EMPTY, true);
+  setChecks({}, true);
 }
 
 function schedule(): void {
@@ -110,7 +100,7 @@ export function evaluate(): void {
   if (zoneCheckStore.getState().pageId !== pageId) {
     shownKey = new Map();
     wanted = new Map();
-    zoneCheckStore.setState({ pageId, reports: {} }, true);
+    setChecks({ pageId }, true);
   }
   if (!documentId || !pageId || !calibration) return;
 
@@ -125,7 +115,8 @@ export function evaluate(): void {
       delete kept[id];
       shownKey.delete(id);
     }
-    zoneCheckStore.setState({ reports: kept });
+    const focus = zoneCheckStore.getState().focus;
+    setChecks({ reports: kept, ...(focus && gone.includes(focus.zoneId) ? { focus: null } : {}) });
   }
   wanted = next;
   for (const [zoneId, w] of next) if (shownKey.get(zoneId) !== w.key && !inFlight.has(zoneId)) send(zoneId, pageId, w);
@@ -160,7 +151,9 @@ function onReply(reply: EngineReply): void {
   const w = wanted.get(req.zoneId);
   if (reply.type === "checkResult" && w) {
     shownKey.set(req.zoneId, req.key);
-    zoneCheckStore.setState({ reports: { ...state.reports, [req.zoneId]: reply.report } });
+    // A new report renumbers the zone's breaks: a focused one there loses the focus.
+    const focus = state.focus?.zoneId === req.zoneId ? { focus: null } : {};
+    setChecks({ reports: { ...state.reports, [req.zoneId]: reply.report }, ...focus });
   }
   // The heads moved on while this one ran: check the newest state.
   if (w && w.key !== req.key) send(req.zoneId, req.pageId, w);

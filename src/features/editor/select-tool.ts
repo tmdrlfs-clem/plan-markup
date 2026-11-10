@@ -44,6 +44,7 @@ import { selfIntersects } from "@/core/measure/area";
 import type { Markup } from "@/core/schema/markup";
 import { LOCKED_CURSOR, notifyMarkups, type LayerView, type SelectContext, type SelectionKey } from "@/features/viewer";
 
+import { revealFlag, ruleMarkerAt } from "./rule-markers";
 import { editorStore, isLocked, isShown, markupsOf, setMarkupMenu, setMoveDrag, setPreview, setSelection } from "./editor-store";
 import { boxOf, handleAt, handlesOf } from "./handles";
 import { executeOp, undoActive } from "./undo-store";
@@ -171,6 +172,8 @@ export function lockedNote(): void {
 
 /** Story 5.1 / 5.2: the Select cursor at the pointer: a handle's, `move` over a markup (5.3: not-allowed when locked), else null. */
 export function selectCursorAt(point: Point, at: SelectContext, captionAt: CaptionAt): string | null {
+  // Story 9.11: a rule-break marker is a button.
+  if (ruleMarkerAt(at.device, at, at.view.dpr)) return "pointer";
   const handle = handleAt(handlesOf(editableOnPage(at), at.view), at.device, at.view.dpr);
   if (handle) return handle.cursor;
   const hit = hitAt(point, at, captionAt);
@@ -273,6 +276,12 @@ export function selectGesture(phase: "start" | "move" | "end" | "cancel", point:
   if (phase === "start") {
     // A nudge still held is kept before anything else.
     commitMove();
+    // Story 9.11: a rule-break marker (drawn over everything) shows its break.
+    const marker = ruleMarkerAt(at.device, at, at.view.dpr);
+    if (marker) {
+      revealFlag(marker);
+      return;
+    }
     // Story 5.2: a handle of the selection (5.3: of its markups that are not locked).
     const selected = editableOnPage(at);
     const handles = handlesOf(selected, at.view);

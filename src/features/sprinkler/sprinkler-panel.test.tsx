@@ -26,7 +26,7 @@ import { translateMarkup } from "@/core/markup/geometry";
 import { executeOp } from "@/features/editor/undo-store";
 import { setArmedStamp, stampStore } from "@/features/tool-chest/stamp-store";
 
-import { stopLiveCheck } from "./live-check";
+import { stopLiveCheck, zoneCheckStore } from "./live-check";
 import { resetPlaceRun, setEngineChannelFactory } from "./place-run";
 import { CALIBRATE_FIRST, NO_ZONES, SprinklerPanel, UNMAPPED_USE, ZONES_TIP } from "./sprinkler-panel";
 import { resetUseMap, useMapStore } from "./use-map-store";
@@ -363,5 +363,44 @@ describe("SprinklerPanel Place heads (Story 9.8)", () => {
     await user.click(screen.getByTestId("add-head"));
     act(() => setTool("select"));
     expect(stampStore.getState().heads).toBe(false);
+  });
+  it("Story 9.11: the selected zone's report lists its breaks; a row zooms to its break; changes are announced", async () => {
+    const a = zone();
+    const user = setup([a]);
+    await user.click(screen.getByTestId("place-heads"));
+    await screen.findByText(/placed in 1 zone\./);
+    await screen.findByTestId("zone-check");
+    // No report until the zone is selected; then a clean one.
+    expect(screen.queryByTestId("zone-report")).toBeNull();
+    await user.click(screen.getByRole("button", { name: /Zone 1/ }));
+    const report = await screen.findByTestId("zone-report");
+    expect(within(report).getByTestId("report-hazard").textContent).toContain(screen.getByTestId("hazard-chip").textContent);
+    expect(within(report).getByTestId("report-ruleset").textContent).toContain("nzs4541 v1");
+    expect(within(report).getByTestId("report-pass")).toBeTruthy();
+
+    // A head pushed onto the wall: the report lists the break; the change is announced once it holds.
+    const heads = () => (editorStore.getState().doc.markups.doc ?? []).filter(isHead);
+    const h = heads()[0];
+    act(() => executeOp({ kind: "markups.update", documentId: "doc", before: [h], after: [translateMarkup(h, { x: 100 - headCentre(h).x, y: 0 })] }, "Move markup"));
+    const list = await screen.findByTestId("rule-breaks");
+    const first = within(list).getAllByTestId("rule-break")[0];
+    expect(first.textContent).toMatch(/Rule break:/);
+    await vi.waitFor(() => expect(screen.getByTestId("zone-status-live").textContent).toMatch(/^Zone 1: \d+ rule breaks?/), { timeout: 2000 });
+
+    reveal.mockReset();
+    await user.click(first);
+    expect(reveal).toHaveBeenCalledTimes(1);
+    expect(within(screen.getByTestId("rule-breaks")).getAllByTestId("rule-break")[0].getAttribute("aria-current")).toBe("true");
+    expect(zoneCheckStore.getState().focus?.zoneId).toBe(a.id);
+  });
+
+  it("Story 9.11: a zone the engine cannot place shows Infeasible", async () => {
+    const thin = newZone({ id: "00000000-0000-7000-8000-0000000009f1", pageId: "doc:0", createdAt: "2026-11-12T00:00:00.000Z", outer: ring(100, 100, 200, 1), holes: [] }, [], CAL);
+    const user = setup([thin]);
+    await user.click(screen.getByTestId("place-heads"));
+    await screen.findByTestId("place-error");
+    const badge = screen.getByTestId("zone-check");
+    expect(badge.getAttribute("data-tone")).toBe("infeasible");
+    expect(badge.textContent).toBe("Infeasible");
   });
 });

@@ -142,6 +142,7 @@ import { ZONE_FILL_OPACITY, isZone } from "@/core/sprinkler/zone";
 import { ADD_ZONE, makesZone, zoneOf } from "./zone-draw";
 import { paintCoverage } from "./coverage-overlay";
 import { headAt, placeHeadAt, placingHeads } from "./head-place";
+import { paintRuleMarkers } from "./rule-markers";
 import { ADD_REVISION, placeRevision, revisionAt } from "./revision-tool";
 import { LEGEND_EMPTY, LEGEND_QTY, LEGEND_TEXT, LEGEND_TOTAL, fitSymbol, legendLabel, legendLayout, legendRows, legendScopeMarkups, legendTotal, type LegendRow, type MeasureText } from "@/core/markup/legend";
 import { ADD_LEGEND, legendAt, placeLegend } from "./legend-tool";
@@ -1103,6 +1104,8 @@ export const measurePainter: MarkupPainter = {
     // Story 5.2: the selection's handles, over everything.
     const handles = handlesOf(selectedShown.filter((m) => !isLocked(m)), view);
     if (handles) paintHandles(c, handles, view);
+    // Story 9.11: rule breaks pinned over everything.
+    paintRuleMarkers(c, view, calibration);
     captionBoxes = { pageId, boxes };
     return captions;
   },

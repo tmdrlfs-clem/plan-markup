@@ -11,8 +11,8 @@
 // Story 9.9 (FR75): the coverage overlay toggle and its shape (circle or square).
 // Story 9.10 (FR76): Add head; a re-run on zones that hold heads confirms its
 // scope first; each zone row shows the live check of its heads.
-import { Check, Circle, CircleDot, CirclePlus, Eye, EyeOff, LandPlot, PaintBucket, Pentagon, Ruler, Square, SquareDashed, TriangleAlert, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { Ban, Check, Circle, CircleDot, CirclePlus, Eye, EyeOff, LandPlot, PaintBucket, Pentagon, Ruler, Square, SquareDashed, TriangleAlert, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "zustand";
 
 import { AlertDialog } from "@/components/ui/alert-dialog";
@@ -23,17 +23,19 @@ import { pageIdOf, type Calibration } from "@/core/calibration/calibration";
 import { markupBounds } from "@/core/markup/geometry";
 import { HOLE_TAGS, type HoleTag, type ZoneMarkup } from "@/core/schema/markup";
 import type { OracleReport } from "@/core/sprinkler/oracle";
+import { reportRows, ruleBreaks, zoneStatus, type ZoneStatus } from "@/core/sprinkler/report";
 import type { UseHazardMap } from "@/core/sprinkler/rules/rules";
 import { MAPPING_SOURCE_LABELS, figureRows, figuresOf, useOptions, type MappingSource } from "@/core/sprinkler/use-map";
 import { HOLE_TAG_LABELS, ZONE_COLOR, formatZoneArea, holeTagOf, isZone, withHoleTag, zoneAreaM2, zoneChecklist, zoneHazard } from "@/core/sprinkler/zone";
 import { openCalibrate } from "@/features/calibration";
-import { armHeadPlace, coverageStore, editorStore, executeOp, headPlaceStore, markupsOf, armZoneDraw, setCoverageOn, setCoverageShape, setSelection, zoneDrawStore } from "@/features/editor";
+import { revealFlag, armHeadPlace, coverageStore, editorStore, executeOp, headPlaceStore, markupsOf, armZoneDraw, setCoverageOn, setCoverageShape, setSelection, zoneDrawStore } from "@/features/editor";
 import { FirstUseTip } from "@/features/tips";
 import { hasDocument, setTool, viewerCommands, viewerStore } from "@/features/viewer";
 
 import { isHead } from "@/core/sprinkler/heads";
 
 import { getUseHazardMap } from "./actions";
+import type { FlagRef } from "./check-store";
 import { startLiveCheck, zoneCheckStore } from "./live-check";
 import { cancelPlaceHeads, placeHeads, placeRunStore, placeScope, setRunSinks, type PlaceScope, type ZoneErrorCard } from "./place-run";
 import { serverRunSinks } from "./run-sinks";
@@ -49,6 +51,8 @@ export const UNMAPPED_USE = "This use is not in the mapping. Choose a use to set
 export const DRAFT_MAPPING = "draft, not yet verified";
 export const COVERAGE_HINT = "Show each head's coverage; areas no head covers are hatched";
 export const PLACE_HEADS_HINT = "Place heads in the selected zones, or in every zone on this page when none is selected";
+/** Story 9.11: status changes are announced once they have held this long (ms). */
+export const ANNOUNCE_DELAY_MS = 600;
 export const ADD_HEAD_HINT = "Add head: click inside a zone to add a head there (Esc to stop). Drag a head to move it; Delete removes it.";
 
 /** Story 9.10 (UX-DR24): the re-run confirmation's title, e.g. "Re-place 2 zones, keep 3 edited heads". */
@@ -66,6 +70,8 @@ export function replaceDescription(s: PlaceScope): string {
     .filter(Boolean)
     .join(" ");
 }
+
+const INFEASIBLE_CODES: ReadonlySet<ZoneErrorCard["code"]> = new Set(["NO_ADMISSIBLE_REGION", "UNCOVERABLE_PIECE", "INVALID_ZONE"]);
 
 let sinksWired = false;
 /** A run from the panel is saved and reported through the server actions. */
@@ -112,6 +118,7 @@ export function SprinklerPanel({ emptyText }: { emptyText: string }) {
   const mapSource = useStore(useMapStore, (s) => s.source);
   const run = useStore(placeRunStore, (s) => s);
   const checks = useStore(zoneCheckStore, (s) => s.reports);
+  const focus = useStore(zoneCheckStore, (s) => s.focus);
   const coverageOn = useStore(coverageStore, (s) => s.on);
   const coverageShape = useStore(coverageStore, (s) => s.shape);
   const addingHeads = useStore(headPlaceStore, (s) => s.heads) && tool === "stamp";
@@ -156,6 +163,9 @@ export function SprinklerPanel({ emptyText }: { emptyText: string }) {
   const fillOn = armed === "fill" && tool === "fill";
   const polygonOn = armed === "area" && tool === "area";
   const current = zones.find((z) => selected.includes(z.id)) ?? null;
+  // Story 9.11: a zone the engine could not place is infeasible (until a check of its heads says otherwise).
+  const infeasible = new Set(run.errors.filter((e) => INFEASIBLE_CODES.has(e.code)).map((e) => e.zoneId));
+  const statusOf = (id: string) => zoneStatus(checks[id] ?? null, infeasible.has(id) && !checks[id]);
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="sprinkler-panel">
@@ -291,13 +301,16 @@ export function SprinklerPanel({ emptyText }: { emptyText: string }) {
               selected={selected.includes(z.id)}
               areaText={formatZoneArea(zoneAreaM2(z, calibration, userUnit))}
               map={map}
-              check={checks[z.id] ?? null}
+              status={statusOf(z.id)}
+              detail={(checks[z.id]?.flags ?? []).slice(0, 4).map((f) => f.message).join(" · ")}
               onSelect={() => revealZone(z, pageIndex)}
               onUse={(use) => setUse(documentId, z, use)}
             />
           ))}
         </ul>
       )}
+      <StatusAnnouncer statuses={zones.map((z) => ({ id: z.id, name: z.zone.name, status: statusOf(z.id) }))} />
+      {current && checks[current.id] ? <ZoneReport zone={current} report={checks[current.id]} hazard={zoneHazard(current, map) ?? "?"} focus={focus} /> : null}
       {current ? <ZoneFiguresPanel zone={current} map={map} source={mapSource} /> : null}
       {current && (current.holes?.length ?? 0) > 0 ? (
         <div className="flex flex-col gap-2 border-t border-border p-3" data-testid="zone-holes">
@@ -399,7 +412,8 @@ function ZoneRow({
   selected,
   areaText,
   map,
-  check,
+  status,
+  detail,
   onSelect,
   onUse,
 }: {
@@ -407,7 +421,9 @@ function ZoneRow({
   selected: boolean;
   areaText: string;
   map: UseHazardMap;
-  check: OracleReport | null;
+  status: ZoneStatus | null;
+  /** The first rule breaks, for the badge's tooltip. */
+  detail: string;
   onSelect: () => void;
   onUse: (use: string) => void;
 }) {
@@ -422,7 +438,7 @@ function ZoneRow({
       >
         <LandPlot size={14} aria-hidden="true" className="shrink-0" style={{ color: ZONE_COLOR }} />
         <span className="min-w-0 flex-1 truncate">{zone.zone.name}</span>
-        {check ? <CheckBadge report={check} /> : null}
+        {status ? <StatusBadge status={status} detail={detail} /> : null}
         <span className="shrink-0 text-right tabular-nums text-ws-sm">{areaText}</span>
       </button>
       <div className="flex items-center gap-2 pl-6">
@@ -447,28 +463,117 @@ function ZoneRow({
   );
 }
 
-/** Story 9.10: the live check of a zone's heads: ✓, or its errors (✕) and warnings (⚠), with the first few messages as the tooltip. */
-export function checkSummary(r: OracleReport): { tone: "pass" | "error" | "warning"; text: string; label: string; detail: string } {
-  const detail = r.flags.slice(0, 4).map((f) => f.message).join(" · ");
-  if (r.errors > 0) return { tone: "error", text: String(r.errors), label: `${plural(r.errors, "rule break")}${r.warnings ? `, ${plural(r.warnings, "warning")}` : ""}`, detail };
-  if (r.warnings > 0) return { tone: "warning", text: String(r.warnings), label: plural(r.warnings, "warning"), detail };
-  return { tone: "pass", text: "", label: "Checks pass", detail: "" };
-}
-
-function CheckBadge({ report }: { report: OracleReport }) {
-  const c = checkSummary(report);
-  const Icon = c.tone === "error" ? X : c.tone === "warning" ? TriangleAlert : Check;
+/**
+ * Story 9.10 / 9.11 (UX-DR24): a zone's status in the list, with an icon and text: ✓, ⚠ n
+ * (warnings), ✕ n (rule breaks) or Infeasible; the first breaks are its tooltip.
+ */
+function StatusBadge({ status, detail }: { status: ZoneStatus; detail: string }) {
+  const Icon = status.kind === "error" ? X : status.kind === "warning" ? TriangleAlert : status.kind === "infeasible" ? Ban : Check;
+  const tone = status.kind === "error" || status.kind === "infeasible" ? "text-danger" : status.kind === "warning" ? "text-warning" : "text-success";
   return (
     <span
-      className={cx("flex shrink-0 items-center gap-0.5 text-ws-sm font-semibold tabular-nums", c.tone === "error" ? "text-danger" : c.tone === "warning" ? "text-warning" : "text-success")}
-      title={c.detail ? `${c.label}: ${c.detail}` : c.label}
+      className={cx("flex shrink-0 items-center gap-0.5 text-ws-sm font-semibold tabular-nums", tone)}
+      title={detail ? `${status.text}: ${detail}` : status.text}
       data-testid="zone-check"
-      data-tone={c.tone}
+      data-tone={status.kind}
     >
       <Icon size={12} aria-hidden="true" />
-      {c.text}
-      <span className="sr-only">{c.label}</span>
+      {status.kind === "infeasible" ? status.text : status.count > 0 ? status.count : null}
+      {status.kind === "infeasible" ? null : <span className="sr-only">{status.text}</span>}
     </span>
+  );
+}
+
+/** Story 9.11 (FR77): the selected zone's report: its figures against the limits and its rule breaks; nothing here blocks anything. */
+function ZoneReport({ zone, report, hazard, focus }: { zone: ZoneMarkup; report: OracleReport; hazard: string; focus: FlagRef | null }) {
+  const rows = reportRows(report, hazard);
+  const breaks = ruleBreaks(report);
+  const focusedRef = useRef<HTMLButtonElement | null>(null);
+  const focusedIndex = focus?.zoneId === zone.id ? focus.index : null;
+  useEffect(() => {
+    // A marker clicked on the canvas brings its row into view.
+    focusedRef.current?.scrollIntoView?.({ block: "nearest" });
+  }, [focusedIndex]);
+  return (
+    <section className="flex max-h-[45%] min-h-0 flex-col gap-1 overflow-y-auto border-t border-border p-3 text-ws-sm" aria-label={`Report for ${zone.zone.name}`} data-testid="zone-report">
+      <p className="font-semibold">Report · {zone.zone.name}</p>
+      <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-0.5">
+        {rows.map((r) => (
+          <div key={r.key} className="contents" data-testid={`report-${r.key}`}>
+            <dt className="text-muted">{r.label}</dt>
+            <dd className={cx("text-right tabular-nums", r.ok ? "" : "font-semibold text-danger")}>{r.value}</dd>
+          </div>
+        ))}
+      </dl>
+      {breaks.length === 0 ? (
+        <p className="flex items-center gap-1 text-success" data-testid="report-pass">
+          <Check size={14} aria-hidden="true" />
+          No rule breaks.
+        </p>
+      ) : (
+        <ul className="flex flex-col gap-0.5" aria-label="Rule breaks" data-testid="rule-breaks">
+          {breaks.map((b) => {
+            const current = focusedIndex === b.index;
+            const Icon = b.flag.severity === "error" ? X : TriangleAlert;
+            return (
+              <li key={b.index}>
+                <button
+                  type="button"
+                  ref={current ? focusedRef : undefined}
+                  aria-current={current ? "true" : undefined}
+                  onClick={() => revealFlag({ zoneId: zone.id, index: b.index })}
+                  className={cx(
+                    "flex w-full flex-col items-start rounded-sm px-1 py-0.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                    current ? "bg-accent-soft" : "hover:bg-surface-3",
+                  )}
+                  data-testid="rule-break"
+                >
+                  <span className={cx("flex items-center gap-1 font-semibold", b.flag.severity === "error" ? "text-danger" : "text-warning")}>
+                    <Icon size={12} aria-hidden="true" />
+                    <span className="sr-only">{b.flag.severity === "error" ? "Rule break:" : "Warning:"}</span>
+                    {b.label}
+                  </span>
+                  <span className="text-muted">{b.flag.message}</span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+const statusKey = (s: ZoneStatus | null) => (s ? `${s.kind}${s.count}` : "");
+
+/** Story 9.11: zone status changes, said once they settle (a drag would otherwise say every step). */
+function StatusAnnouncer({ statuses }: { statuses: readonly { id: string; name: string; status: ZoneStatus | null }[] }) {
+  const [text, setText] = useState("");
+  const last = useRef<Map<string, string> | null>(null);
+  const latest = useRef(statuses);
+  useEffect(() => {
+    latest.current = statuses;
+  });
+  const key = statuses.map((z) => `${z.id}=${statusKey(z.status)}`).join("|");
+  useEffect(() => {
+    // What the panel showed when it opened is not news.
+    last.current = new Map(latest.current.map((z) => [z.id, statusKey(z.status)]));
+  }, []);
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const list = latest.current;
+      const now = new Map(list.map((z) => [z.id, statusKey(z.status)]));
+      const before = last.current ?? new Map<string, string>();
+      last.current = now;
+      const changed = list.filter((z) => z.status && before.get(z.id) !== now.get(z.id));
+      if (changed.length) setText(changed.map((z) => `${z.name}: ${z.status!.text}.`).join(" "));
+    }, ANNOUNCE_DELAY_MS);
+    return () => clearTimeout(t);
+  }, [key]);
+  return (
+    <p className="sr-only" aria-live="polite" data-testid="zone-status-live">
+      {text}
+    </p>
   );
 }
 
