@@ -11,7 +11,7 @@
 // Story 9.9 (FR75): the coverage overlay toggle and its shape (circle or square).
 // Story 9.10 (FR76): Add head; a re-run on zones that hold heads confirms its
 // scope first; each zone row shows the live check of its heads.
-import { Ban, Check, Circle, CircleDot, CirclePlus, Eye, EyeOff, LandPlot, PaintBucket, Pentagon, Ruler, Square, SquareDashed, TriangleAlert, X } from "lucide-react";
+import { Ban, Check, Circle, CircleDot, CirclePlus, Eye, EyeOff, Info, LandPlot, PaintBucket, Pentagon, Ruler, Square, SquareDashed, TriangleAlert, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "zustand";
 
@@ -23,7 +23,7 @@ import { pageIdOf, type Calibration } from "@/core/calibration/calibration";
 import { markupBounds } from "@/core/markup/geometry";
 import { HOLE_TAGS, type HoleTag, type ZoneMarkup } from "@/core/schema/markup";
 import type { OracleReport } from "@/core/sprinkler/oracle";
-import { reportRows, ruleBreaks, zoneStatus, type ZoneStatus } from "@/core/sprinkler/report";
+import { ADVISORY_NOTICE, reportRows, ruleBreaks, zoneStatus, type ZoneStatus } from "@/core/sprinkler/report";
 import type { UseHazardMap } from "@/core/sprinkler/rules/rules";
 import { MAPPING_SOURCE_LABELS, figureRows, figuresOf, useOptions, type MappingSource } from "@/core/sprinkler/use-map";
 import { HOLE_TAG_LABELS, ZONE_COLOR, formatZoneArea, holeTagOf, isZone, withHoleTag, zoneAreaM2, zoneChecklist, zoneHazard } from "@/core/sprinkler/zone";
@@ -329,6 +329,11 @@ export function SprinklerPanel({ emptyText }: { emptyText: string }) {
           ))}
         </div>
       ) : null}
+      {/* Story 9.12 (FR78): always shown at the foot of the panel. */}
+      <p className="mt-auto flex items-start gap-1.5 border-t border-border p-3 text-ws-xs text-muted" data-testid="advisory-notice">
+        <Info size={12} className="mt-0.5 shrink-0" aria-hidden="true" />
+        {ADVISORY_NOTICE}
+      </p>
     </div>
   );
 }

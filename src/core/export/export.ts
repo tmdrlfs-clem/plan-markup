@@ -9,6 +9,7 @@ import { addLayers, writeAnnotations } from "./annotations";
 import type { ExportJob } from "./from-app";
 import { flattenPage, type FlattenResult } from "./flatten";
 import type { ExportDocument } from "./model";
+import { addNotice } from "./notice";
 
 export type ExportKind = "native" | "appearance-only" | "flattened";
 
@@ -46,7 +47,7 @@ export type ExportJobResult = { bytes: Uint8Array; annotations: number; flattene
  * written is drawn into its page instead (on its layer), none left as an annotation. The base's
  * own annotations are left as they are either way.
  */
-export async function exportJobPdf(base: Uint8Array, job: ExportJob, date: Date, options: { flatten?: boolean } = {}): Promise<ExportJobResult> {
+export async function exportJobPdf(base: Uint8Array, job: ExportJob, date: Date, options: { flatten?: boolean; notice?: boolean } = {}): Promise<ExportJobResult> {
   const doc = await PDFDocument.load(base, { updateMetadata: false });
   const ocgs = addLayers(doc, job.layers);
   let annotations = 0;
@@ -65,6 +66,8 @@ export async function exportJobPdf(base: Uint8Array, job: ExportJob, date: Date,
       flattened += refs.size;
     }
   }
+  // Story 9.12 (FR78): the advisory notice on every exported page, drawn in.
+  if (options.notice) await addNotice(doc, job.pages.map((p) => p.pageIndex));
   const bytes = await doc.save({ useObjectStreams: false, updateFieldAppearances: false });
   return { bytes, annotations, flattened, pages };
 }

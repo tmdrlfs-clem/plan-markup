@@ -5,6 +5,9 @@
  */
 import type { Flag, OracleReport } from "./oracle";
 
+/** Story 9.12 (FR78): the advisory notice (the 4541 panel's footer; optionally drawn onto exported pages). */
+export const ADVISORY_NOTICE = "Sprinkler layout is advisory. The designer remains responsible for compliance with NZS 4541.";
+
 /** Metres with at most two decimals, trailing zeros dropped ("4.8 m", "4.65 m"). */
 export function metres(mm: number): string {
   return Number.isFinite(mm) ? `${Number((mm / 1000).toFixed(2))} m` : "∞";

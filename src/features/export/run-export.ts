@@ -44,13 +44,14 @@ export function setExportAuthor(name: string): void {
 
 /** Story 8.2: editable annotations, or markups drawn into the pages. */
 export type ExportKind = "editable" | "flattened";
-export type ExportChoice = { kind?: ExportKind; pages: readonly number[]; includeHidden: boolean };
+/** Story 9.12: `notice` draws the advisory notice onto each exported page. */
+export type ExportChoice = { kind?: ExportKind; pages: readonly number[]; includeHidden: boolean; notice?: boolean };
 export type WriteResult = { bytes: Uint8Array; annotations: number; flattened: number; pages: number };
 export type ExportOutcome = ({ ok: true; name: string } & Omit<WriteResult, "bytes">) | { ok: false; reason: string };
 
 export type ExportDeps = {
   decode: (src: string) => Promise<DecodedImage | null>;
-  write: (bytes: Uint8Array, job: ExportJob, date: Date, flatten: boolean) => Promise<WriteResult | null>;
+  write: (bytes: Uint8Array, job: ExportJob, date: Date, flatten: boolean, notice?: boolean) => Promise<WriteResult | null>;
   save: (name: string, bytes: Uint8Array) => void;
   /** Story 8.4: records the completed action (never awaited; never fails the export). */
   record?: (event: ReportedEvent) => void;
@@ -116,7 +117,7 @@ export async function runExport(choice: ExportChoice, deps: ExportDeps = browser
   if (!ready.ok) return ready;
   const { file, bytes, job } = ready;
   const flatten = choice.kind === "flattened";
-  const out = await deps.write(bytes, job, new Date(), flatten).catch(() => null);
+  const out = await deps.write(bytes, job, new Date(), flatten, choice.notice === true).catch(() => null);
   if (!out) return { ok: false, reason: EXPORT_FAILED };
   const name = exportName(file.name, choice.kind);
   deps.save(name, out.bytes);
@@ -253,8 +254,8 @@ function printInFrame(bytes: Uint8Array): Promise<boolean> {
 const printDeps: PrintDeps = { decode: decodeImage, build: buildInWorker, print: printInFrame, record: reportActivity };
 
 /** Writes the job in a fresh export worker (ended after the reply, or after EXPORT_TIMEOUT_MS). */
-function writeInWorker(bytes: Uint8Array, job: ExportJob, date: Date, flatten: boolean): Promise<WriteResult | null> {
-  return inWorker({ type: "export", job, date: date.toISOString(), flatten }, bytes).then((reply) =>
+function writeInWorker(bytes: Uint8Array, job: ExportJob, date: Date, flatten: boolean, notice = false): Promise<WriteResult | null> {
+  return inWorker({ type: "export", job, date: date.toISOString(), flatten, notice }, bytes).then((reply) =>
     reply?.type === "exported" ? { bytes: reply.bytes, annotations: reply.annotations, flattened: reply.flattened, pages: reply.pages } : null,
   );
 }

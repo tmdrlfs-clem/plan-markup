@@ -78,6 +78,10 @@ describe("Export editable PDF (Story 8.1)", () => {
     const record = vi.fn<NonNullable<ExportDeps["record"]>>();
     const out = await runExport({ pages: [1], includeHidden: false }, { decode: async () => null, write, save, record });
     expect(record).toHaveBeenCalledWith({ name: "markup.exported", kind: "editable", pageCount: 1, markupCount: 1 });
+    // Story 9.12: the advisory notice is off unless chosen, and passed to the writer when it is.
+    expect(write.mock.calls[0][4]).toBe(false);
+    await runExport({ pages: [1], includeHidden: false, notice: true }, { decode: async () => null, write, save });
+    expect(write.mock.calls[1][4]).toBe(true);
     expect(out).toEqual({ ok: true, name: "A1721 Rev C.pdf", annotations: 1, flattened: 0, pages: 1 });
     expect(write.mock.calls[0][3]).toBe(false);
     const [bytes, job] = write.mock.calls[0];

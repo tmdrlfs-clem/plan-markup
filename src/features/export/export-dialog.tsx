@@ -6,6 +6,8 @@
 // write; Export writes and downloads it, then a toast says so.
 // Story 8.2 (FR58, FR61): the same dialog for Flatten (Ctrl+Shift+M) and
 // File → Export → Flattened PDF: the markups drawn into the pages, a new file.
+// Story 9.12 (FR78): "Include advisory notice" draws the 4541 advisory notice onto
+// each exported page; it starts on when the drawing has zones or heads.
 
 import { useEffect, useState } from "react";
 import { createStore } from "zustand/vanilla";
@@ -18,7 +20,8 @@ import { Select } from "@/components/ui/select";
 import { TextField } from "@/components/ui/text-field";
 import { toast } from "@/components/ui/toast-store";
 import { parsePageRange } from "@/core/export/page-range";
-import { editorStore, layersOf } from "@/features/editor";
+import { isHead } from "@/core/sprinkler/heads";
+import { editorStore, layersOf, markupsOf } from "@/features/editor";
 import { viewerStore } from "@/features/viewer";
 
 import { exportBlocked, exportCount, runExport, type ExportKind } from "./run-export";
@@ -82,6 +85,7 @@ function ExportForm({ kind }: { kind: ExportKind }) {
   const [which, setWhich] = useState<PageChoice>("all");
   const [range, setRange] = useState("");
   const [includeHidden, setIncludeHidden] = useState(false);
+  const [notice, setNotice] = useState(() => (documentId ? markupsOf(editorStore.getState(), documentId).some((m) => m.type === "zone" || isHead(m)) : false));
   const [busy, setBusy] = useState(false);
 
   const parsed = which === "range" ? parsePageRange(range, pageCount) : null;
@@ -92,7 +96,7 @@ function ExportForm({ kind }: { kind: ExportKind }) {
   async function submit() {
     if (busy || pages.length === 0) return;
     setBusy(true);
-    const outcome = await runExport({ kind, pages, includeHidden });
+    const outcome = await runExport({ kind, pages, includeHidden, notice });
     setBusy(false);
     if (!outcome.ok) return void toast({ title: kind === "flattened" ? "Flatten failed" : "Export failed", description: outcome.reason, variant: "danger" });
     const n = (k: number) => `${k} ${k === 1 ? "markup" : "markups"}`;
@@ -136,6 +140,7 @@ function ExportForm({ kind }: { kind: ExportKind }) {
         />
         {which === "range" ? <TextField label="Page range" placeholder="1-3, 5" value={range} onChange={(e) => setRange(e.target.value)} error={rangeError} /> : null}
         {hasHidden ? <Checkbox label="Include markups on hidden layers" checked={includeHidden} onCheckedChange={(v) => setIncludeHidden(v === true)} /> : null}
+        <Checkbox label="Include advisory notice" checked={notice} onCheckedChange={(v) => setNotice(v === true)} />
         <p className="text-ws-sm text-muted" data-testid="export-count">
           {count === 1 ? "1 markup" : `${count} markups`} will be written.
         </p>

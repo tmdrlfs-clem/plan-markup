@@ -1,5 +1,5 @@
 // Story 8.1 (FR60, AR25): the export worker. Request:
-// { type: "export", reqId, bytes, job, date, flatten? } (the base PDF's bytes are
+// { type: "export", reqId, bytes, job, date, flatten?, notice? } (the base PDF's bytes are
 // transferred; `job` comes from core/export/from-app.ts). Reply:
 // { type: "exported", reqId, bytes, annotations, flattened, pages } with the new PDF's
 // buffer transferred, or { type: "error", reqId, error }. Every message gets
@@ -15,7 +15,7 @@ import { PAPER_NAMES, printJobPdf, type PrintOptions } from "@/core/export/print
 import { serializeWorkerError, type SerializedWorkerError } from "@/core/worker/error";
 
 export type ExportWorkerRequest =
-  | { type: "export"; reqId: number; bytes: Uint8Array | ArrayBuffer; job: ExportJob; date: string; flatten?: boolean }
+  | { type: "export"; reqId: number; bytes: Uint8Array | ArrayBuffer; job: ExportJob; date: string; flatten?: boolean; notice?: boolean }
   | { type: "print"; reqId: number; bytes: Uint8Array | ArrayBuffer; job: ExportJob | null; date: string; print: PrintOptions };
 
 export type ExportWorkerReply =
@@ -32,7 +32,7 @@ function printOptions(value: unknown): PrintOptions {
 
 /** Handles one message; exported so tests can call it without a real Worker. Always replies. */
 export async function handleExportMessage(data: unknown): Promise<ExportWorkerReply> {
-  const msg = (typeof data === "object" && data !== null ? data : {}) as Partial<Record<"type" | "reqId" | "bytes" | "job" | "date" | "flatten" | "print", unknown>>;
+  const msg = (typeof data === "object" && data !== null ? data : {}) as Partial<Record<"type" | "reqId" | "bytes" | "job" | "date" | "flatten" | "notice" | "print", unknown>>;
   const reqId = typeof msg.reqId === "number" && Number.isFinite(msg.reqId) ? msg.reqId : null;
   const fail = (e: unknown): ExportWorkerReply => ({ type: "error", reqId, error: serializeWorkerError(e) });
   if (reqId === null) return fail(new TypeError("reqId must be a finite number"));
@@ -52,7 +52,7 @@ export async function handleExportMessage(data: unknown): Promise<ExportWorkerRe
       return { type: "printed", reqId, ...(await printJobPdf(bytes, job, date, printOptions(msg.print))) };
     }
     if (!isJob(job)) throw new TypeError("job must be an export job");
-    const out = await exportJobPdf(bytes, job, date, { flatten: msg.flatten === true });
+    const out = await exportJobPdf(bytes, job, date, { flatten: msg.flatten === true, notice: msg.notice === true });
     return { type: "exported", reqId, ...out };
   } catch (e) {
     return fail(e);

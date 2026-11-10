@@ -142,6 +142,8 @@ describe("SprinklerPanel (Story 9.2)", () => {
     const user = setup([]);
     expect(screen.getByText(ZONES_TIP)).toBeTruthy();
     expect(screen.getByText(NO_ZONES)).toBeTruthy();
+    // Story 9.12 (FR78): the footer always says layouts are advisory.
+    expect(screen.getByTestId("advisory-notice").textContent).toMatch(/advisory\. The designer remains responsible for compliance with NZS 4541/);
     const items = within(screen.getByTestId("sprinkler-checklist")).getAllByRole("listitem");
     expect(items.map((li) => li.getAttribute("data-done"))).toEqual(["false", "false", "false"]);
     await user.click(screen.getByRole("button", { name: /Fill zone/ }));
