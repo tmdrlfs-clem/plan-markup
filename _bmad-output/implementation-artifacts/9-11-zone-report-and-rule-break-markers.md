@@ -1,6 +1,6 @@
 # Story 9.11: Zone report and rule-break markers
 
-Status: review
+Status: done
 
 ## Story
 
