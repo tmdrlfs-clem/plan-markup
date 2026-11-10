@@ -149,7 +149,7 @@ function useDisabledReason(tool: Tool): string | null {
 function ToolTile({ tool }: { tool: Tool }) {
   const reason = useDisabledReason(tool);
   const stamping = useStore(viewerStore, (s) => s.tool === "stamp");
-  const mine = useStore(stampStore, (s) => s.armed?.id === tool.id);
+  const mine = useStore(stampStore, (s) => s.armed?.id === tool.id && !s.heads);
   const armed = stamping && mine;
   const name = tool.device ? `${tool.name} (${tool.device.group}: ${tool.device.label})` : tool.name;
   return (

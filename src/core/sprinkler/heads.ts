@@ -8,13 +8,15 @@
  * and its heads come back to the page through the inverse.
  */
 import type { Calibration } from "@/core/calibration/calibration";
+import type { DocOp, SimpleDocOp } from "@/core/commands/ops";
 import type { Point } from "@/core/markup/geometry";
 import type { HeadMeta, Markup, MarkupDevice, MarkupStyle, ZoneMarkup } from "@/core/schema/markup";
 
 import type { EngineZone } from "./engine/site";
 import type { PlacedHead } from "./placer";
+import { pointInRegion } from "./placer/geometry";
 import type { Hazard } from "./rules/rules";
-import { holeTagOf } from "./zone";
+import { holeTagOf, isZone } from "./zone";
 
 /** What a placed head counts as in the legend and the Markups List. */
 export const HEAD_DEVICE: MarkupDevice = { group: "Sprinkler", label: "Sprinkler head" };
@@ -118,4 +120,67 @@ export function headMarkup(
       { x: c.x - rx, y: c.y + ry },
     ],
   };
+}
+
+/** Story 9.10: the zone whose area (holes excluded) holds `p` (page points), the topmost when they overlap. */
+export function zoneAt(p: Point, zones: readonly ZoneMarkup[]): ZoneMarkup | null {
+  for (let i = zones.length - 1; i >= 0; i--) if (pointInRegion(p, zones[i].points, zones[i].holes ?? [])) return zones[i];
+  return null;
+}
+
+/**
+ * Story 9.10 (FR76, D2): a head the designer edits stops being the engine's. A head moved, resized
+ * or rotated (its points changed), or a head copied or pasted (a new head that is not a restore),
+ * becomes `manual` (a `locked` head stays locked), and it joins the zone its centre now sits in
+ * (it keeps its zone when it sits in none). Re-running placement keeps manual heads where they are.
+ * Everything else in `op` is returned as it is. `markups`: the document's markups (for the zones).
+ */
+export function refineHeadEdits(op: DocOp, markups: readonly Markup[]): DocOp {
+  if (op.kind === "compound") {
+    const ops = op.ops.map((o) => refineSimple(o, markups));
+    return ops.every((o, i) => o === op.ops[i]) ? op : { ...op, ops };
+  }
+  return refineSimple(op, markups);
+}
+
+function refineSimple(op: SimpleDocOp, markups: readonly Markup[]): SimpleDocOp {
+  if (op.kind === "markups.update") {
+    if (!op.after.some(isHead)) return op;
+    const before = new Map(op.before.map((m) => [m.id, m]));
+    const zones = zonesByPage(markups);
+    const after = op.after.map((m) => {
+      const was = before.get(m.id);
+      return isHead(m) && (!was || !samePoints(was.points, m.points)) ? edited(m, zones) : m;
+    });
+    return after.every((m, i) => m === op.after[i]) ? op : { ...op, after };
+  }
+  // A restore (an undo of a delete) carries its positions: those heads are put back as they were.
+  if (op.kind === "markups.add" && !op.at) {
+    if (!op.markups.some(isHead)) return op;
+    const zones = zonesByPage(markups);
+    const added = op.markups.map((m) => (isHead(m) ? edited(m, zones) : m));
+    return added.every((m, i) => m === op.markups[i]) ? op : { ...op, markups: added };
+  }
+  return op;
+}
+
+function zonesByPage(markups: readonly Markup[]): Map<string, ZoneMarkup[]> {
+  const out = new Map<string, ZoneMarkup[]>();
+  for (const m of markups) {
+    if (!isZone(m)) continue;
+    const list = out.get(m.pageId);
+    if (list) list.push(m);
+    else out.set(m.pageId, [m]);
+  }
+  return out;
+}
+
+function edited(h: HeadMarkup, zones: ReadonlyMap<string, readonly ZoneMarkup[]>): HeadMarkup {
+  const kind = h.head.kind === "locked" ? "locked" : "manual";
+  const zoneId = zoneAt(headCentre(h), zones.get(h.pageId) ?? [])?.id ?? h.head.zoneId;
+  return kind === h.head.kind && zoneId === h.head.zoneId ? h : { ...h, head: { zoneId, kind } };
+}
+
+function samePoints(a: readonly Point[], b: readonly Point[]): boolean {
+  return a.length === b.length && a.every((p, i) => p.x === b[i].x && p.y === b[i].y);
 }

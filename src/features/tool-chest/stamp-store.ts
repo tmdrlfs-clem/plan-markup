@@ -9,13 +9,14 @@ import type { PlacedTool } from "@/core/tools/place";
 
 export type StampTool = PlacedTool & { id: string; name: string };
 
-export const stampStore = createStore<{ armed: StampTool | null; dragging: StampTool | null }>(() => ({ armed: null, dragging: null }));
+/** Story 9.10: `heads`: the Stamp tool adds sprinkler heads (the 4541 panel's Add head), not the armed tool. */
+export const stampStore = createStore<{ armed: StampTool | null; dragging: StampTool | null; heads: boolean }>(() => ({ armed: null, dragging: null, heads: false }));
 
 /** The type a tile's drag carries (the drop reads the tool from `dragging`). */
 export const TOOL_DRAG_TYPE = "application/x-plan-markup-tool";
 
 export function setArmedStamp(tool: StampTool | null): void {
-  stampStore.setState({ armed: tool });
+  stampStore.setState({ armed: tool, heads: false });
 }
 
 export function setDraggedStamp(tool: StampTool | null): void {
@@ -24,5 +25,10 @@ export function setDraggedStamp(tool: StampTool | null): void {
 
 /** Another user's workspace: nothing armed. */
 export function resetStamps(): void {
-  stampStore.setState({ armed: null, dragging: null });
+  stampStore.setState({ armed: null, dragging: null, heads: false });
+}
+
+/** Story 9.10: the Stamp tool adds heads (on) or places the armed tool (off). */
+export function setStampHeads(heads: boolean): void {
+  if (stampStore.getState().heads !== heads) stampStore.setState({ heads });
 }

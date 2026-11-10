@@ -110,7 +110,7 @@ import {
   type MarkupPainter,
 } from "@/features/viewer";
 
-import { editorStore, isLocked, markupsOf, pageMarkups, setCaptionDrag, type EditorState, setDrawing, setMarkupMenu, setMoveDrag, setPreview, setSelection, type Drawing, type MoveDrag } from "./editor-store";
+import { editorStore, gestureMarkups, isLocked, markupsOf, pageMarkups, setCaptionDrag, type EditorState, setDrawing, setMarkupMenu, setMoveDrag, setPreview, setSelection, type Drawing, type MoveDrag } from "./editor-store";
 import { discardFill, fillAreaUser, fillPress, paintFill, takeFillRings, undoFillStroke } from "./fill-tool";
 import { handlesOf, paintHandles } from "./handles";
 import { ADD_IMAGE, ADD_SIGNATURE, clearPickedImage, forgetDecodedImages, imageMarkupAt, paintImage, pickedImage } from "./image-tool";
@@ -141,6 +141,7 @@ import { revisionLabel, revisionText } from "@/core/markup/revision";
 import { ZONE_FILL_OPACITY, isZone } from "@/core/sprinkler/zone";
 import { ADD_ZONE, makesZone, zoneOf } from "./zone-draw";
 import { paintCoverage } from "./coverage-overlay";
+import { headAt, placeHeadAt, placingHeads } from "./head-place";
 import { ADD_REVISION, placeRevision, revisionAt } from "./revision-tool";
 import { LEGEND_EMPTY, LEGEND_QTY, LEGEND_TEXT, LEGEND_TOTAL, fitSymbol, legendLabel, legendLayout, legendRows, legendScopeMarkups, legendTotal, type LegendRow, type MeasureText } from "@/core/markup/legend";
 import { ADD_LEGEND, legendAt, placeLegend } from "./legend-tool";
@@ -1096,7 +1097,8 @@ export const measurePainter: MarkupPainter = {
     const selected = new Set(editorStore.getState().selection.ids);
     const selectedShown: Markup[] = [];
     // Story 9.9: the coverage overlay, under the markups (the heads are drawn over it).
-    paintCoverage(c, view, stored, calibration);
+    // Story 9.10: heads being dragged carry their coverage with them.
+    paintCoverage(c, view, gestureMarkups(editorStore.getState(), view.documentId, stored), calibration);
     paintList(c, markups, view, calibration, { selected, captions, boxes, selectedShown });
     // Story 5.2: the selection's handles, over everything.
     const handles = handlesOf(selectedShown.filter((m) => !isLocked(m)), view);
@@ -1137,6 +1139,17 @@ export const measurePainter: MarkupPainter = {
     }
     // Story 7.3: the armed tool under the pointer, where a click places it.
     if (viewerStore.getState().tool === "stamp") {
+      // Story 9.10: the head a click would add, at half strength.
+      if (placingHeads()) {
+        const ghost = pointer ? headAt(pointer, view.documentId, view.pageIndex) : null;
+        if (ghost) {
+          c.save();
+          c.globalAlpha = 0.5;
+          paintMarkupsPreview(c, [ghost], view, calibrationOf(view.documentId, view.pageIndex));
+          c.restore();
+        }
+        return null;
+      }
       const armed = stampStore.getState().armed;
       if (armed && pointer) paintStampGhost(c, armed, pointer, view);
       return null;
@@ -1249,6 +1262,8 @@ export const measurePainter: MarkupPainter = {
     // Story 5.8: the picked image, centred on the click; then Select has it (to resize).
     if (tool === "image") return placeImage(point, at.documentId, pageId);
     // Story 7.3: the armed tool, centred on the click; it stays armed (Esc returns to Select).
+    // Story 9.10: in head mode (the 4541 panel's Add head) a click adds a manual head.
+    if (tool === "stamp" && placingHeads()) return placeHeadAt(point, at.documentId, at.pageIndex) ? "done" : "ignored";
     if (tool === "stamp") return placeStamp(stampStore.getState().armed, point, at.documentId, at.pageIndex) ? "done" : "ignored";
     // Story 7.7: a revision stamp centred on the click.
     if (tool === "revision") return placeRevision(point, at.documentId, pageId);

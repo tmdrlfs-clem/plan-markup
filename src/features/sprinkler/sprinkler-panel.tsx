@@ -9,28 +9,33 @@
 // Story 9.8 (FR73): Place heads fills the selected zones (or all of the page's)
 // zone by zone, with progress, Cancel and an error card per infeasible zone.
 // Story 9.9 (FR75): the coverage overlay toggle and its shape (circle or square).
-import { Check, Circle, CircleDot, Eye, EyeOff, LandPlot, PaintBucket, Pentagon, Ruler, Square, SquareDashed, TriangleAlert, X } from "lucide-react";
-import { useEffect, useMemo } from "react";
+// Story 9.10 (FR76): Add head; a re-run on zones that hold heads confirms its
+// scope first; each zone row shows the live check of its heads.
+import { Check, Circle, CircleDot, CirclePlus, Eye, EyeOff, LandPlot, PaintBucket, Pentagon, Ruler, Square, SquareDashed, TriangleAlert, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { useStore } from "zustand";
 
+import { AlertDialog } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { cx } from "@/components/ui/cx";
 import { pageIdOf, type Calibration } from "@/core/calibration/calibration";
 import { markupBounds } from "@/core/markup/geometry";
 import { HOLE_TAGS, type HoleTag, type ZoneMarkup } from "@/core/schema/markup";
+import type { OracleReport } from "@/core/sprinkler/oracle";
 import type { UseHazardMap } from "@/core/sprinkler/rules/rules";
 import { MAPPING_SOURCE_LABELS, figureRows, figuresOf, useOptions, type MappingSource } from "@/core/sprinkler/use-map";
 import { HOLE_TAG_LABELS, ZONE_COLOR, formatZoneArea, holeTagOf, isZone, withHoleTag, zoneAreaM2, zoneChecklist, zoneHazard } from "@/core/sprinkler/zone";
 import { openCalibrate } from "@/features/calibration";
-import { coverageStore, editorStore, executeOp, markupsOf, armZoneDraw, setCoverageOn, setCoverageShape, setSelection, zoneDrawStore } from "@/features/editor";
+import { armHeadPlace, coverageStore, editorStore, executeOp, headPlaceStore, markupsOf, armZoneDraw, setCoverageOn, setCoverageShape, setSelection, zoneDrawStore } from "@/features/editor";
 import { FirstUseTip } from "@/features/tips";
 import { hasDocument, setTool, viewerCommands, viewerStore } from "@/features/viewer";
 
 import { isHead } from "@/core/sprinkler/heads";
 
 import { getUseHazardMap } from "./actions";
-import { cancelPlaceHeads, placeHeads, placeRunStore, setRunSinks, type ZoneErrorCard } from "./place-run";
+import { startLiveCheck, zoneCheckStore } from "./live-check";
+import { cancelPlaceHeads, placeHeads, placeRunStore, placeScope, setRunSinks, type PlaceScope, type ZoneErrorCard } from "./place-run";
 import { serverRunSinks } from "./run-sinks";
 import { loadUseMap, useMapStore } from "./use-map-store";
 
@@ -44,6 +49,23 @@ export const UNMAPPED_USE = "This use is not in the mapping. Choose a use to set
 export const DRAFT_MAPPING = "draft, not yet verified";
 export const COVERAGE_HINT = "Show each head's coverage; areas no head covers are hatched";
 export const PLACE_HEADS_HINT = "Place heads in the selected zones, or in every zone on this page when none is selected";
+export const ADD_HEAD_HINT = "Add head: click inside a zone to add a head there (Esc to stop). Drag a head to move it; Delete removes it.";
+
+/** Story 9.10 (UX-DR24): the re-run confirmation's title, e.g. "Re-place 2 zones, keep 3 edited heads". */
+export function replaceTitle(s: PlaceScope): string {
+  return `Re-place ${plural(s.replaced, "zone")}${s.kept > 0 ? `, keep ${plural(s.kept, "edited head")}` : ""}`;
+}
+
+export function replaceDescription(s: PlaceScope): string {
+  const fresh = s.zones - s.replaced;
+  return [
+    `Heads the engine placed in ${s.replaced === 1 ? "this zone are" : "these zones are"} removed and placed again.`,
+    s.kept > 0 ? `Heads you moved or added stay where they are, and the engine places around them.` : "",
+    fresh > 0 ? `${plural(fresh, "zone")} without heads ${fresh === 1 ? "is" : "are"} placed too.` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
 
 let sinksWired = false;
 /** A run from the panel is saved and reported through the server actions. */
@@ -89,12 +111,17 @@ export function SprinklerPanel({ emptyText }: { emptyText: string }) {
   const map = useStore(useMapStore, (s) => s.map);
   const mapSource = useStore(useMapStore, (s) => s.source);
   const run = useStore(placeRunStore, (s) => s);
+  const checks = useStore(zoneCheckStore, (s) => s.reports);
   const coverageOn = useStore(coverageStore, (s) => s.on);
   const coverageShape = useStore(coverageStore, (s) => s.shape);
+  const addingHeads = useStore(headPlaceStore, (s) => s.heads) && tool === "stamp";
+  const [confirm, setConfirm] = useState<PlaceScope | null>(null);
 
   // Story 9.3: the mapping is read once per session (the built-in one until then).
   useEffect(() => {
     void loadUseMap(getUseHazardMap);
+    // Story 9.10: zones are checked again whenever their heads change.
+    startLiveCheck();
   }, []);
 
   const pageId = documentId ? pageIdOf(documentId, pageIndex) : null;
@@ -167,6 +194,9 @@ export function SprinklerPanel({ emptyText }: { emptyText: string }) {
             variant="primary"
             disabled={zones.length === 0 || running}
             onClick={() => {
+              // Story 9.10: a re-run on zones that hold heads says what it replaces and keeps first.
+              const scope = placeScope();
+              if (scope && scope.replaced > 0) return setConfirm(scope);
               wireSinks();
               void placeHeads({ map });
             }}
@@ -176,6 +206,18 @@ export function SprinklerPanel({ emptyText }: { emptyText: string }) {
             <CircleDot size={14} aria-hidden="true" />
             {selectedZones > 0 ? `Place heads (${selectedZones} selected)` : "Place heads"}
           </Button>
+          <Button
+            size="sm"
+            variant={addingHeads ? "primary" : "secondary"}
+            aria-pressed={addingHeads}
+            disabled={zones.length === 0}
+            onClick={armHeadPlace}
+            title={ADD_HEAD_HINT}
+            data-testid="add-head"
+          >
+            <CirclePlus size={14} aria-hidden="true" />
+            Add head
+          </Button>
           {running ? (
             <Button size="sm" variant="secondary" onClick={cancelPlaceHeads}>
               <X size={14} aria-hidden="true" />
@@ -184,6 +226,22 @@ export function SprinklerPanel({ emptyText }: { emptyText: string }) {
           ) : null}
         </div>
         <RunStatus />
+        {confirm ? (
+          <AlertDialog
+            open
+            onOpenChange={(open) => {
+              if (!open) setConfirm(null);
+            }}
+            title={replaceTitle(confirm)}
+            description={replaceDescription(confirm)}
+            actionLabel={replaceTitle(confirm).split(",")[0]}
+            onAction={() => {
+              setConfirm(null);
+              wireSinks();
+              void placeHeads({ map });
+            }}
+          />
+        ) : null}
         {checklist.heads ? (
           <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Coverage overlay" data-testid="coverage-controls">
             <Button size="sm" variant={coverageOn ? "primary" : "secondary"} aria-pressed={coverageOn} onClick={() => setCoverageOn(!coverageOn)} title={COVERAGE_HINT}>
@@ -233,6 +291,7 @@ export function SprinklerPanel({ emptyText }: { emptyText: string }) {
               selected={selected.includes(z.id)}
               areaText={formatZoneArea(zoneAreaM2(z, calibration, userUnit))}
               map={map}
+              check={checks[z.id] ?? null}
               onSelect={() => revealZone(z, pageIndex)}
               onUse={(use) => setUse(documentId, z, use)}
             />
@@ -340,6 +399,7 @@ function ZoneRow({
   selected,
   areaText,
   map,
+  check,
   onSelect,
   onUse,
 }: {
@@ -347,6 +407,7 @@ function ZoneRow({
   selected: boolean;
   areaText: string;
   map: UseHazardMap;
+  check: OracleReport | null;
   onSelect: () => void;
   onUse: (use: string) => void;
 }) {
@@ -361,6 +422,7 @@ function ZoneRow({
       >
         <LandPlot size={14} aria-hidden="true" className="shrink-0" style={{ color: ZONE_COLOR }} />
         <span className="min-w-0 flex-1 truncate">{zone.zone.name}</span>
+        {check ? <CheckBadge report={check} /> : null}
         <span className="shrink-0 text-right tabular-nums text-ws-sm">{areaText}</span>
       </button>
       <div className="flex items-center gap-2 pl-6">
@@ -382,6 +444,31 @@ function ZoneRow({
         </span>
       </div>
     </li>
+  );
+}
+
+/** Story 9.10: the live check of a zone's heads: ✓, or its errors (✕) and warnings (⚠), with the first few messages as the tooltip. */
+export function checkSummary(r: OracleReport): { tone: "pass" | "error" | "warning"; text: string; label: string; detail: string } {
+  const detail = r.flags.slice(0, 4).map((f) => f.message).join(" · ");
+  if (r.errors > 0) return { tone: "error", text: String(r.errors), label: `${plural(r.errors, "rule break")}${r.warnings ? `, ${plural(r.warnings, "warning")}` : ""}`, detail };
+  if (r.warnings > 0) return { tone: "warning", text: String(r.warnings), label: plural(r.warnings, "warning"), detail };
+  return { tone: "pass", text: "", label: "Checks pass", detail: "" };
+}
+
+function CheckBadge({ report }: { report: OracleReport }) {
+  const c = checkSummary(report);
+  const Icon = c.tone === "error" ? X : c.tone === "warning" ? TriangleAlert : Check;
+  return (
+    <span
+      className={cx("flex shrink-0 items-center gap-0.5 text-ws-sm font-semibold tabular-nums", c.tone === "error" ? "text-danger" : c.tone === "warning" ? "text-warning" : "text-success")}
+      title={c.detail ? `${c.label}: ${c.detail}` : c.label}
+      data-testid="zone-check"
+      data-tone={c.tone}
+    >
+      <Icon size={12} aria-hidden="true" />
+      {c.text}
+      <span className="sr-only">{c.label}</span>
+    </span>
   );
 }
 

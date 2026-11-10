@@ -1,5 +1,5 @@
 // Public surface of the editor feature (Story 4.3: undo; Story 4.5: the editor store, op commands, the session).
-export { activeLayerOf, editorStore, layersOf, markupsOf, pageMarkups, resetEditor, setDocLayers, setDocMarkups, type CaptionDrag, type Drawing, type EditorState, type MoveDrag } from "./editor-store";
+export { activeLayerOf, editorStore, gestureMarkups, layersOf, markupsOf, pageMarkups, resetEditor, setDocLayers, setDocMarkups, type CaptionDrag, type Drawing, type EditorState, type MoveDrag } from "./editor-store";
 export { activeUndoLabels, clearUndo, executeCommand, executeOp, recordAppliedOp, redoActive, undoActive } from "./undo-store";
 export { applyOp } from "./commands";
 export { subscribeAppliedOps } from "./commands";
@@ -35,3 +35,5 @@ export {
 } from "./measure-tool";
 export type { UndoCommand } from "@/core/undo/stack";
 export { coverageStore, holdCoverage, revealCoverage, resetCoverage, setCoverageOn, setCoverageShape } from "./coverage-overlay";
+// Story 9.10: the 4541 panel's Add head.
+export { ADD_HEAD, OUTSIDE_ZONES, armHeadPlace, endHeadPlace, headPlaceStore, placeHeadAt } from "./head-place";

@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import { factorForRatio } from "@/core/calibration/calibration";
 import { markupSchema, type ZoneMarkup } from "@/core/schema/markup";
 
-import { HEAD_DEVICE, HEAD_DIAMETER_MM, engineZoneOf, headCentre, headMarkup, headsOfZone, isHead, pageScaleOf, toMm, toPage, zoneOptions } from "./heads";
+import { translateMarkup } from "@/core/markup/geometry";
+
+import { HEAD_DEVICE, HEAD_DIAMETER_MM, engineZoneOf, headCentre, headMarkup, headsOfZone, isHead, pageScaleOf, refineHeadEdits, toMm, toPage, zoneAt, zoneOptions, type HeadMarkup } from "./heads";
 import { newZone } from "./zone";
 
 const k100 = factorForRatio(100);
@@ -61,5 +63,57 @@ describe("heads (Story 9.8)", () => {
     expect(c.y).toBeCloseTo(4000);
     expect(headsOfZone([z, h], z.id)).toEqual([h]);
     expect(headsOfZone([z, h], "other")).toEqual([]);
+  });
+});
+
+describe("hand edits (Story 9.10)", () => {
+  const a = zone([ring(150, 150, 20, 20)]);
+  const b = { ...newZone({ id: "00000000-0000-7000-8000-00000000000b", pageId: "doc:0", createdAt: "2026-11-12T00:00:00.000Z", outer: ring(300, 100, 150, 150), holes: [] }, [], CAL) };
+  const s = pageScaleOf(CAL);
+  const at = (x: number, y: number, kind: HeadMarkup["head"]["kind"] = "row", id = "00000000-0000-7000-9000-000000000001") =>
+    headMarkup({ ...toMm({ x, y }, s), kind }, a, s, id, "2026-11-12T00:00:00.000Z");
+  const doc = [a, b];
+
+  it("finds the zone under a point, holes excluded", () => {
+    expect(zoneAt({ x: 120, y: 120 }, [a, b])?.id).toBe(a.id);
+    expect(zoneAt({ x: 160, y: 160 }, [a, b])).toBeNull(); // in a's hole
+    expect(zoneAt({ x: 400, y: 200 }, [a, b])?.id).toBe(b.id);
+    expect(zoneAt({ x: 50, y: 50 }, [a, b])).toBeNull();
+  });
+
+  it("a moved head becomes manual and joins the zone it is dropped in", () => {
+    const h = at(200, 200);
+    const inA = translateMarkup(h, { x: 10, y: 0 });
+    const toB = translateMarkup(h, { x: 200, y: 0 });
+    const out = translateMarkup(h, { x: 0, y: 500 });
+    const op = refineHeadEdits({ kind: "markups.update", documentId: "doc", before: [h, h, h], after: [inA, toB, out] }, doc);
+    expect(op.kind === "markups.update" && op.after.map((m) => (m as HeadMarkup).head)).toEqual([
+      { zoneId: a.id, kind: "manual" },
+      { zoneId: b.id, kind: "manual" },
+      { zoneId: a.id, kind: "manual" }, // outside every zone: keeps its zone (the check flags it)
+    ]);
+    // undo restores the engine's head as it was
+    expect(op.kind === "markups.update" && op.before).toEqual([h, h, h]);
+  });
+
+  it("leaves a style change, a locked head's kind and other markups alone", () => {
+    const h = at(200, 200);
+    const recolour = { kind: "markups.update" as const, documentId: "doc", before: [h], after: [{ ...h, style: { ...h.style, color: "#000000" } }] };
+    expect(refineHeadEdits(recolour, doc)).toBe(recolour);
+    const locked = at(200, 200, "locked");
+    const op = refineHeadEdits({ kind: "markups.update", documentId: "doc", before: [locked], after: [translateMarkup(locked, { x: 5, y: 0 })] }, doc);
+    expect(op.kind === "markups.update" && (op.after[0] as HeadMarkup).head.kind).toBe("locked");
+    const zoneMove = { kind: "markups.update" as const, documentId: "doc", before: [a], after: [translateMarkup(a, { x: 5, y: 0 })] };
+    expect(refineHeadEdits(zoneMove, doc)).toBe(zoneMove);
+  });
+
+  it("a pasted or copied head is manual; a restore (undo of a delete) is put back as it was", () => {
+    const h = at(200, 200);
+    const paste = refineHeadEdits({ kind: "markups.add", documentId: "doc", markups: [translateMarkup(h, { x: 200, y: 0 })] }, doc);
+    expect(paste.kind === "markups.add" && (paste.markups[0] as HeadMarkup).head).toEqual({ zoneId: b.id, kind: "manual" });
+    const restore = { kind: "markups.add" as const, documentId: "doc", markups: [h], at: [2] };
+    expect(refineHeadEdits(restore, doc)).toBe(restore);
+    const compound = refineHeadEdits({ kind: "compound", documentId: "doc", ops: [{ kind: "markups.add", documentId: "doc", markups: [h] }] }, doc);
+    expect(compound.kind === "compound" && compound.ops[0].kind === "markups.add" && (compound.ops[0].markups[0] as HeadMarkup).head.kind).toBe("manual");
   });
 });

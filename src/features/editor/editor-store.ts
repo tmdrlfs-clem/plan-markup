@@ -13,6 +13,7 @@
 
 import { createStore } from "zustand/vanilla";
 
+import { translateMarkup } from "@/core/markup/geometry";
 import { layerLocked, layerShown, type Layer } from "@/core/schema/layer";
 import type { Markup, TextMarkup } from "@/core/schema/markup";
 import type { UndoHistory } from "@/core/undo/stack";
@@ -82,6 +83,26 @@ const NO_MARKUPS: readonly Markup[] = [];
 /** A document's markups (empty when it has none). */
 export function markupsOf(state: EditorState, documentId: string | null): readonly Markup[] {
   return (documentId && state.doc.markups[documentId]) || NO_MARKUPS;
+}
+
+/**
+ * Story 9.10: the page's markups as they look mid-gesture: a move (a drag or an arrow key held) or
+ * a resize, rotation or vertex drag applied, and copies being dragged added. `stored` when no
+ * gesture touches the page.
+ */
+export function gestureMarkups(state: EditorState, documentId: string, stored: readonly Markup[]): readonly Markup[] {
+  const { moveDrag, preview } = state.tools;
+  const move = moveDrag && moveDrag.documentId === documentId && (moveDrag.delta.x !== 0 || moveDrag.delta.y !== 0) ? moveDrag : null;
+  const edit = preview && preview.documentId === documentId ? preview : null;
+  if (!move && !edit) return stored;
+  const moving = move ? new Set(move.ids) : null;
+  const pageId = stored[0]?.pageId;
+  const out = stored.map((m) => {
+    const changed = edit?.changed[m.id] ?? m;
+    return moving?.has(m.id) ? translateMarkup(changed, move!.delta) : changed;
+  });
+  const added = edit && pageId ? edit.added.filter((m) => m.pageId === pageId) : [];
+  return added.length ? [...out, ...added] : out;
 }
 
 /** The markups of one page (by stable page id), in drawing order. */

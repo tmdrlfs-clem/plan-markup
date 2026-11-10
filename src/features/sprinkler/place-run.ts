@@ -15,7 +15,7 @@ import type { SimpleDocOp } from "@/core/commands/ops";
 import { uuidv7 } from "@/core/ids/uuid";
 import type { Point } from "@/core/markup/geometry";
 import type { Markup, ZoneMarkup } from "@/core/schema/markup";
-import type { EngineReply, EngineRequest } from "@/core/sprinkler/engine/protocol";
+import type { EngineRequest } from "@/core/sprinkler/engine/protocol";
 import type { EngineZone } from "@/core/sprinkler/engine/site";
 import { engineZoneOf, headMarkup, headsOfZone, pageScaleOf, toPage, type HeadMarkup } from "@/core/sprinkler/heads";
 import type { OracleReport } from "@/core/sprinkler/oracle";
@@ -25,6 +25,10 @@ import { isZone, zoneHazard } from "@/core/sprinkler/zone";
 import type { ZoneLayout } from "@/core/sprinkler/zone-layout";
 import { activeLayerOf, applyOp, editorStore, holdCoverage, markupsOf, recordAppliedOp, revealCoverage } from "@/features/editor";
 import { viewerStore } from "@/features/viewer";
+
+import { engine, nextRequestId } from "./engine-channel";
+
+export { setEngineChannelFactory, type EngineChannel } from "./engine-channel";
 
 export const PLACE_HEADS = "Place heads";
 
@@ -60,51 +64,19 @@ export const SUGGESTIONS: Record<ZoneErrorCard["code"], string> = {
   ENGINE: "Try again. If it keeps failing, reload the page.",
 };
 
-/** The engine as the run sees it: a worker in the app, a fake in tests. */
-export type EngineChannel = {
-  post(msg: EngineRequest): void;
-  listen(fn: (reply: EngineReply) => void): () => void;
-};
-
 /** Side effects outside the editor (saving the run, the activity event); injectable for tests. */
 export type RunSinks = {
   save(documentId: string, layouts: ZoneLayout[]): void;
   record(documentId: string, event: Omit<ActivityEvent, "drawingId">): void;
 };
 
-let channel: EngineChannel | null = null;
-let channelFactory: () => EngineChannel = workerChannel;
 let sinks: RunSinks = { save: () => undefined, record: () => undefined };
-
-/** Tests: a fake engine (null: back to the real worker). */
-export function setEngineChannelFactory(factory: (() => EngineChannel) | null): void {
-  channel = null;
-  channelFactory = factory ?? workerChannel;
-}
 
 /** The app wires saving and activity reporting here (server actions); tests pass spies. */
 export function setRunSinks(next: RunSinks): void {
   sinks = next;
 }
 
-function workerChannel(): EngineChannel {
-  const worker = new Worker(new URL("../../workers/engine.worker.ts", import.meta.url), { type: "module" });
-  return {
-    post: (msg) => worker.postMessage(msg),
-    listen: (fn) => {
-      const on = (e: MessageEvent) => fn(e.data as EngineReply);
-      worker.addEventListener("message", on);
-      return () => worker.removeEventListener("message", on);
-    },
-  };
-}
-
-function engine(): EngineChannel {
-  channel ??= channelFactory();
-  return channel;
-}
-
-let nextReq = 1;
 let current: { reqId: number; stop: () => void } | null = null;
 
 /** Stops a running Place heads at the next zone; the heads placed so far stay (one undo step). */
@@ -140,9 +112,7 @@ export function placeHeads(ctx: PlaceHeadsContext): Promise<void> {
 
   const editor = editorStore.getState();
   const markups = markupsOf(editor, documentId);
-  const pageZones = markups.filter((m): m is ZoneMarkup => isZone(m) && m.pageId === pageId);
-  const selected = pageZones.filter((z) => editor.selection.ids.includes(z.id));
-  const scope = selected.length > 0 ? selected : pageZones;
+  const { scope, selected } = scopeOf(markups, pageId, editor.selection.ids);
   if (scope.length === 0) return Promise.resolve();
 
   const errors: ZoneErrorCard[] = [];
@@ -167,7 +137,7 @@ export function placeHeads(ctx: PlaceHeadsContext): Promise<void> {
   const removeOp = old.length ? removeOpOf(documentId, markups, old) : null;
   if (removeOp) applyOp(removeOp);
 
-  const reqId = nextReq++;
+  const reqId = nextRequestId();
   const tabId = viewer.tabId ?? undefined;
   const added: Markup[] = [];
   const results = new Map<string, PlaceResult>();
@@ -187,7 +157,7 @@ export function placeHeads(ctx: PlaceHeadsContext): Promise<void> {
     revealCoverage();
     if (status !== "failed" && results.size > 0) {
       sinks.save(documentId, layoutsOf(zones, results, reports, rules));
-      sinks.record(documentId, { name: "sprinkler.placed", pageCount: 1, markupCount: added.length, kind: selected.length > 0 ? "selected_zones" : "all_zones" });
+      sinks.record(documentId, { name: "sprinkler.placed", pageCount: 1, markupCount: added.length, kind: selected ? "selected_zones" : "all_zones" });
     }
   };
 
@@ -239,6 +209,35 @@ export function placeHeads(ctx: PlaceHeadsContext): Promise<void> {
   // the engine reads the zones; the protocol types them as mutable arrays
   engine().post({ type: "place", reqId, docRev: 0, ruleSet: rules, zones: zones as Extract<EngineRequest, { type: "place" }>["zones"] });
   return over;
+}
+
+/** The zones a run places: the page's selected zones, or all of them when none is selected. */
+function scopeOf(markups: readonly Markup[], pageId: string, selection: readonly string[]): { scope: ZoneMarkup[]; selected: boolean } {
+  const pageZones = markups.filter((m): m is ZoneMarkup => isZone(m) && m.pageId === pageId);
+  const chosen = pageZones.filter((z) => selection.includes(z.id));
+  return chosen.length > 0 ? { scope: chosen, selected: true } : { scope: pageZones, selected: false };
+}
+
+/** Story 9.10: what a run would do: zones in scope, those already holding heads (re-placed), and the edited heads it keeps. */
+export type PlaceScope = { zones: number; replaced: number; kept: number };
+
+/** The shown page's next run, for the re-run confirmation (UX-DR24); null when there is nothing to place. */
+export function placeScope(): PlaceScope | null {
+  const viewer = viewerStore.getState();
+  const { documentId, pageIndex } = viewer;
+  if (!documentId) return null;
+  const editor = editorStore.getState();
+  const markups = markupsOf(editor, documentId);
+  const { scope } = scopeOf(markups, pageIdOf(documentId, pageIndex), editor.selection.ids);
+  if (scope.length === 0) return null;
+  let replaced = 0;
+  let kept = 0;
+  for (const z of scope) {
+    const heads = headsOfZone(markups, z.id);
+    if (heads.length > 0) replaced++;
+    kept += heads.filter((h) => h.head.kind === "manual" || h.head.kind === "locked").length;
+  }
+  return { zones: scope.length, replaced, kept };
 }
 
 function card(z: ZoneMarkup, code: ZoneErrorCard["code"], reason: string, where: Point[]): ZoneErrorCard {

@@ -10,10 +10,11 @@
 // (UX-DR35): the drawing tool registers that step (registerDrawingUndo).
 
 import { invertOp, type DocOp } from "@/core/commands/ops";
+import { refineHeadEdits } from "@/core/sprinkler/heads";
 import { EMPTY_HISTORY, execute, nextLabels, redo, undo, type UndoCommand, type UndoHistory } from "@/core/undo/stack";
 import { tabsStore, viewerStore, type DrawTool } from "@/features/viewer";
 
-import { activeLayerOf, editorStore, type EditorState } from "./editor-store";
+import { activeLayerOf, editorStore, markupsOf, type EditorState } from "./editor-store";
 import { applyOp } from "./commands";
 
 const activeKey = () => viewerStore.getState().tabId ?? "";
@@ -43,9 +44,11 @@ export function commandOf(op: DocOp, label: string): UndoCommand {
  * Applies `op` as one undo step named `label` (AR13: every document mutation)
  * in the active tab's history, or `tabId`'s (Story 4.8: a count finished by a
  * tab switch belongs to the tab it was drawn in).
+ * Story 9.10: a sprinkler head moved, copied or pasted by hand becomes manual (refineHeadEdits).
  */
 export function executeOp(op: DocOp, label: string, tabId?: string): void {
-  executeCommand(commandOf(withActiveLayer(op), label), tabId);
+  const refined = refineHeadEdits(withActiveLayer(op), markupsOf(editorStore.getState(), op.documentId));
+  executeCommand(commandOf(refined, label), tabId);
 }
 
 /**

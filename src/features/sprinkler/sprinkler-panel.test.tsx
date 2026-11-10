@@ -21,6 +21,12 @@ import type { EngineReply } from "@/core/sprinkler/engine/protocol";
 
 import { coverageStore, resetCoverage } from "@/features/editor/coverage-overlay";
 
+import { headCentre, isHead, type HeadMarkup } from "@/core/sprinkler/heads";
+import { translateMarkup } from "@/core/markup/geometry";
+import { executeOp } from "@/features/editor/undo-store";
+import { setArmedStamp, stampStore } from "@/features/tool-chest/stamp-store";
+
+import { stopLiveCheck } from "./live-check";
 import { resetPlaceRun, setEngineChannelFactory } from "./place-run";
 import { CALIBRATE_FIRST, NO_ZONES, SprinklerPanel, UNMAPPED_USE, ZONES_TIP } from "./sprinkler-panel";
 import { resetUseMap, useMapStore } from "./use-map-store";
@@ -115,6 +121,7 @@ afterEach(() => {
   unregister();
   reveal.mockReset();
   act(() => {
+    stopLiveCheck();
     zoneDrawStore.setState({ tool: null });
     resetEditor();
     resetUseMap();
@@ -308,5 +315,53 @@ describe("SprinklerPanel Place heads (Story 9.8)", () => {
     await user.click(within(card).getByRole("button", { name: "Show in drawing" }));
     expect(reveal).toHaveBeenCalledWith(0, { x: 100, y: 100, width: 200, height: 150 });
     expect(editorStore.getState().selection.ids).toEqual([b.id]);
+  });
+
+  it("Story 9.10: shows each zone's live check, confirms a re-run's scope and keeps an edited head", async () => {
+    const a = zone();
+    const user = setup([a]);
+    await user.click(screen.getByTestId("place-heads"));
+    await screen.findByText(/placed in 1 zone\./);
+    expect((await screen.findByTestId("zone-check")).getAttribute("data-tone")).toBe("pass");
+    const heads = () => (editorStore.getState().doc.markups.doc ?? []).filter(isHead);
+
+    // A head dragged onto the wall: the row says so (the move is one undo step and makes it manual).
+    const h = heads()[0];
+    act(() => executeOp({ kind: "markups.update", documentId: "doc", before: [h], after: [translateMarkup(h, { x: 100 - headCentre(h).x, y: 0 })] }, "Move markup"));
+    await vi.waitFor(() => expect(screen.getByTestId("zone-check").getAttribute("data-tone")).toBe("error"));
+    expect(screen.getByTestId("zone-check").textContent).toMatch(/rule break/);
+    const moved = heads().find((x) => x.id === h.id) as HeadMarkup;
+    expect(moved.head.kind).toBe("manual");
+
+    // Re-running confirms what it replaces and keeps; Cancel does nothing.
+    await user.click(screen.getByTestId("place-heads"));
+    const dialog = await screen.findByRole("alertdialog");
+    expect(within(dialog).getByText("Re-place 1 zone, keep 1 edited head")).toBeTruthy();
+    expect(dialog.textContent).toContain("Heads you moved or added stay where they are");
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(heads().map((x) => x.id)).toContain(h.id);
+
+    await user.click(screen.getByTestId("place-heads"));
+    await user.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Re-place 1 zone" }));
+    await screen.findByText(/placed in 1 zone\./);
+    const kept = heads().find((x) => x.id === h.id);
+    expect(kept?.head.kind).toBe("manual");
+    expect(kept?.points).toEqual(moved.points);
+  });
+
+  it("Story 9.10: Add head arms the Stamp tool in head mode; arming a Tool Chest tool ends it", async () => {
+    const user = setup([zone()]);
+    const add = screen.getByTestId("add-head");
+    await user.click(add);
+    expect(viewerStore.getState().tool).toBe("stamp");
+    expect(stampStore.getState().heads).toBe(true);
+    expect(screen.getByTestId("add-head").getAttribute("aria-pressed")).toBe("true");
+    act(() => setArmedStamp({ id: "t", name: "Bell", content: null as never, imageSrc: null, device: null }));
+    expect(stampStore.getState().heads).toBe(false);
+    expect(screen.getByTestId("add-head").getAttribute("aria-pressed")).toBe("false");
+    await user.click(screen.getByTestId("add-head"));
+    act(() => setTool("select"));
+    expect(stampStore.getState().heads).toBe(false);
   });
 });
