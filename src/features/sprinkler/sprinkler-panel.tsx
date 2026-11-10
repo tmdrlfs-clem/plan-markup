@@ -12,7 +12,7 @@
 // Story 9.10 (FR76): Add head; a re-run on zones that hold heads confirms its
 // scope first; each zone row shows the live check of its heads.
 import { Ban, Check, Circle, CircleDot, CirclePlus, Eye, EyeOff, Info, LandPlot, PaintBucket, Pentagon, Ruler, Square, SquareDashed, TriangleAlert, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "zustand";
 
 import { AlertDialog } from "@/components/ui/alert-dialog";
@@ -303,8 +303,8 @@ export function SprinklerPanel({ emptyText }: { emptyText: string }) {
               map={map}
               status={statusOf(z.id)}
               detail={(checks[z.id]?.flags ?? []).slice(0, 4).map((f) => f.message).join(" · ")}
-              onSelect={() => revealZone(z, pageIndex)}
-              onUse={(use) => setUse(documentId, z, use)}
+              documentId={documentId}
+              pageIndex={pageIndex}
             />
           ))}
         </ul>
@@ -412,16 +412,7 @@ function ChecklistItem({ label, done }: { label: string; done: boolean }) {
   );
 }
 
-function ZoneRow({
-  zone,
-  selected,
-  areaText,
-  map,
-  status,
-  detail,
-  onSelect,
-  onUse,
-}: {
+type ZoneRowProps = {
   zone: ZoneMarkup;
   selected: boolean;
   areaText: string;
@@ -429,9 +420,28 @@ function ZoneRow({
   status: ZoneStatus | null;
   /** The first rule breaks, for the badge's tooltip. */
   detail: string;
-  onSelect: () => void;
-  onUse: (use: string) => void;
-}) {
+  documentId: string;
+  pageIndex: number;
+};
+
+/**
+ * A zone in the list. Memoised (Story 9.13): during a Place heads run the panel's state
+ * changes with every zone placed and every report, and re-rendering every row's use list each
+ * time cost more than the engine on a large floor (45 zones: 1.7 s to the status line, 0.7 s
+ * with this). A row renders again only when something it shows changed.
+ */
+const ZoneRow = memo(function ZoneRow({
+  zone,
+  selected,
+  areaText,
+  map,
+  status,
+  detail,
+  documentId,
+  pageIndex,
+}: ZoneRowProps) {
+  const onSelect = () => revealZone(zone, pageIndex);
+  const onUse = (use: string) => setUse(documentId, zone, use);
   const hazard = zoneHazard(zone, map);
   return (
     <li data-testid="zone-row" data-selected={selected} className={cx("flex flex-col gap-1 px-3 py-1.5", selected ? "bg-accent-soft text-text" : "hover:bg-surface-3")}>
@@ -465,6 +475,22 @@ function ZoneRow({
         </span>
       </div>
     </li>
+  );
+}, sameRow);
+
+/** The same row to show: the status is compared by what it says (it is built anew on each render). */
+function sameRow(a: ZoneRowProps, b: ZoneRowProps): boolean {
+  return (
+    a.zone === b.zone &&
+    a.selected === b.selected &&
+    a.areaText === b.areaText &&
+    a.map === b.map &&
+    a.detail === b.detail &&
+    a.documentId === b.documentId &&
+    a.pageIndex === b.pageIndex &&
+    a.status?.kind === b.status?.kind &&
+    a.status?.count === b.status?.count &&
+    a.status?.text === b.status?.text
   );
 }
 
@@ -500,7 +526,13 @@ function ZoneReport({ zone, report, hazard, focus }: { zone: ZoneMarkup; report:
     focusedRef.current?.scrollIntoView?.({ block: "nearest" });
   }, [focusedIndex]);
   return (
-    <section className="flex max-h-[45%] min-h-0 flex-col gap-1 overflow-y-auto border-t border-border p-3 text-ws-sm" aria-label={`Report for ${zone.zone.name}`} data-testid="zone-report">
+    // Story 9.13: the report scrolls when the panel is short, so it takes focus (a keyboard user scrolls it with the arrows).
+    <section
+      className="flex max-h-[45%] min-h-0 flex-col gap-1 overflow-y-auto border-t border-border p-3 text-ws-sm"
+      aria-label={`Report for ${zone.zone.name}`}
+      tabIndex={0}
+      data-testid="zone-report"
+    >
       <p className="font-semibold">Report · {zone.zone.name}</p>
       <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-0.5">
         {rows.map((r) => (

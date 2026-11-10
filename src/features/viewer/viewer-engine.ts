@@ -2160,12 +2160,14 @@ export class ViewerEngine {
     const userUnit = page.userUnit && page.userUnit > 0 ? page.userUnit : 1;
     const linear = this.userToScreenLinear();
     const palette = this.colors();
+    // Once per view, not per point: a painter converts thousands of points (Story 9.13).
+    const toPage = userToPageMatrix(page);
     return {
       documentId,
       pageIndex: this.pageIndex,
       userUnit,
       toDevice: (p) => {
-        const s = pageToScreen(this.view, this.viewport, applyMatrix(userToPageMatrix(page), p));
+        const s = pageToScreen(this.view, this.viewport, applyMatrix(toPage, p));
         return { x: s.x * k, y: s.y * k };
       },
       // CSS px per user unit, over UserUnit: per page point.

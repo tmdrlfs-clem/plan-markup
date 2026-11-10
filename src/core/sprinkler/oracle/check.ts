@@ -273,11 +273,13 @@ export function checkZone(zone: OracleZone, heads: readonly OracleHead[], figure
     if (list) list.push(i);
     else grid.set(key, [i]);
   });
+  // Every head within Rc + the tolerance of (x, y) is visited: the cells are taken from that
+  // reach, not from the sample's own cell ± 1, which misses a head up to 1 mm past Rc when the
+  // sample lies at the far side of its cell (the verdict then depended on where the zone sat).
+  const span = fig.Rc + TOL_MM;
   const near = (x: number, y: number, fn: (h: OracleHead, k: number) => boolean): boolean => {
-    const cx = Math.floor(x / cell);
-    const cy = Math.floor(y / cell);
-    for (let i = cx - 1; i <= cx + 1; i++)
-      for (let j = cy - 1; j <= cy + 1; j++) {
+    for (let i = Math.floor((x - span) / cell); i <= Math.floor((x + span) / cell); i++)
+      for (let j = Math.floor((y - span) / cell); j <= Math.floor((y + span) / cell); j++) {
         const list = grid.get(`${i},${j}`);
         if (list) for (const k of list) if (fn(H[k], k)) return true;
       }
