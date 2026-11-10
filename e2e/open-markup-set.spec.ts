@@ -78,7 +78,8 @@ test("opening a markup set: the recent list and the set list ask for the PDF; bl
   // Other bytes keep the blank pages.
   await hintBar(blank).getByRole("button", { name: "Open the PDF…" }).click();
   await choosePdf(blank, CHANGED);
-  await expect(blank.getByText(/is not the file these markups were made on/)).toBeVisible();
+  // Radix announces a toast through a hidden live-region copy for a moment: two matches.
+  await expect(blank.getByText(/is not the file these markups were made on/).first()).toBeVisible();
   await expect(hintBar(blank)).toHaveText(/Markups on blank pages/);
   await expect(tabs(blank)).toHaveCount(1);
 
