@@ -1,6 +1,6 @@
 # Story 9.12: Advisory notice
 
-Status: review
+Status: done
 
 ## Story
 
