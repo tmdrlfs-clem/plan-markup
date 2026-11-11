@@ -21,6 +21,8 @@ type Case = {
   columns?: P[][];
   grid?: EngineZone["grid"];
   prefs?: EngineZone["prefs"];
+  /** Head lines the designer would draw, mm: [[x, y], [x, y]] each. */
+  guides?: [P, P][];
   /** The designer's heads, mm. */
   human: P[];
   /** Optional drawing features to show (lights and so on), mm. */
@@ -66,6 +68,7 @@ function svg(c: Case, engine: P[]): string {
     poly(c.ring, "#f6f6f2"),
     ...(c.columns ?? []).map((r) => poly(r, "#444")),
     ...(c.marks ?? []).map(([x, y]) => `<rect x="${x - 70}" y="${y - 70}" width="140" height="140" fill="#999"/>`),
+    ...(c.guides ?? []).map(([a, b]) => `<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke="#1a8f3c" stroke-width="40" stroke-dasharray="200 120"/>`),
     ...c.human.map(([x, y]) => `<circle cx="${x}" cy="${y}" r="150" fill="none" stroke="#1556d6" stroke-width="60"/>`),
     ...engine.map(([x, y]) => `<circle cx="${x}" cy="${y}" r="80" fill="#e02020"/>`),
     `<text x="${x0 + 300}" y="${y0 + h - 500}" font-size="260" font-family="Arial">${c.name} (${c.hazard}): person ${c.human.length} (blue ring), engine ${engine.length} (red dot)</text>`,
@@ -83,6 +86,7 @@ describe.skipIf(!file || !existsSync(file))("sample drawings: engine layout agai
         barriers: [{ kind: "wall", ring: pts(c.ring) }, ...(c.columns ?? []).map((r) => ({ kind: "column" as const, ring: pts(r) }))],
         grid: c.grid ?? null,
         prefs: c.prefs,
+        guides: c.guides?.map(([a, b]) => ({ a: { x: a[0], y: a[1] }, b: { x: b[0], y: b[1] } })),
       };
       const t0 = performance.now();
       const [o] = placeSite([zone], NZS4541_V1);
@@ -98,6 +102,7 @@ describe.skipIf(!file || !existsSync(file))("sample drawings: engine layout agai
         engine: engine.length,
         rows: o.result.notes?.rows,
         frameDeg: o.result.notes?.frameDeg,
+        guides: o.result.notes?.guides,
         oraclePass: o.report?.pass,
         flags: o.report?.flags.map((f) => f.code),
         humanNearestGap: nearestGaps(c.human).map(Math.round),

@@ -44,6 +44,7 @@ export type PlacerFigures = { Amax: number; Smax: number; Smin: number; Wmax: nu
 /** `wall`: the outline (exactly one); `column`: blocks spray, needs Wmin, no Wmax; `shaft`: a real wall. */
 export type PlacerBarrier = { kind: "wall" | "column" | "shaft"; ring: readonly Pt[] };
 export type PlacerOpenEdge = { a: Pt; b: Pt };
+export type PlacerGuide = { a: Pt; b: Pt };
 export type PlacerKeepOut = { ring: readonly Pt[]; clearance?: number } | { circle: { x: number; y: number; r: number }; clearance?: number };
 /** A declared ceiling grid (design §3.7): tile-centre stops, `preferred` by default. */
 export type CeilingGrid = { angleDeg?: number; pitchX: number; pitchY: number; originX?: number; originY?: number; mode: "off" | "preferred" | "required" };
@@ -63,6 +64,13 @@ export type PlaceInput = {
   neighbourHeads?: readonly Pt[];
   /** Frame override in degrees (rows run along this angle, and also tried turned 90°). */
   frameDeg?: number;
+  /**
+   * Head lines the designer drew (founder feedback 2026-11-12: heads follow the lights, not an even
+   * split). The longest line sets the row direction. A line along the rows fixes a row there; a
+   * line across the rows is where heads are preferred along each row it reaches. Rows are added
+   * between the lines and the walls as the rules need. Head count still comes first along a row.
+   */
+  guides?: readonly PlacerGuide[];
 };
 
 export type HeadKind = "row" | "gapFill" | "locked";
@@ -87,6 +95,8 @@ export type PlacementNotes = {
   /** Figures in mm / mm², with Rc. */
   rule: Rule;
   tileAligned?: { onStop: number; total: number; extraHeadsVsUnaligned?: number };
+  /** Head lines (guides): how many set a row, how many set positions along rows, how many were not used. */
+  guides?: { rows: number; cross: number; ignored: number };
   /** What the zone's options asked for and what the layout achieved (FR74, Story 9.7). */
   preferences: PreferenceReport;
 };
@@ -138,6 +148,16 @@ const COL_GAP = [300, 700];
 /** Smallest ceiling-grid pitch accepted (tile stops are DP candidates). */
 const MIN_TILE_PITCH = 100;
 /** A preferred figure counts as met within max(150 mm, 5 %) (the 50 mm candidate step plus fit). */
+/** A guide counts as along (or across) the rows within this angle. */
+const GUIDE_ANGLE = (10 * Math.PI) / 180;
+/** Guides shorter than this are ignored (a stray click). */
+const MIN_GUIDE = 100;
+/** How far past a rule limit a guide may be drawn and still be moved back onto it. */
+const GUIDE_SNAP = 50;
+/** A cross guide reaches rows this far beyond its ends. */
+const CROSS_REACH = 600;
+/** DP cost of a head off every cross guide of its row (far above any spacing cost; below a head). */
+const OFF_CROSS = 50;
 const prefTol = (v: number) => Math.max(150, 0.05 * v);
 
 // --- Internal types --------------------------------------------------------------------------
@@ -166,6 +186,7 @@ type Prep = {
   neighbours: Pt[];
   keepOuts: LocalKeepOut[];
   gridLocal: (CeilingGrid & { originX: number; originY: number }) | null;
+  guides: { a: Pt; b: Pt }[];
 };
 
 type GridF = { ox: number; oy: number; px: number; py: number; mode: CeilingGrid["mode"] };
@@ -188,6 +209,9 @@ type Frame = {
   keepOuts: LocalKeepOut[];
   locked: FHead[];
   neighbours: FHead[];
+  /** Guides along the rows (a fixed row at y over [x0, x1]) and across them (preferred x over [y0, y1]). */
+  rowGuides: { y: number; x0: number; x1: number }[];
+  crossGuides: { x: number; y0: number; y1: number }[];
   /** Sight-line query half-width: every demand window lies within it (Rc + margin). */
   reach: number;
   /** The zone's deterministic operation counter (design §6), shared by every frame. */
@@ -331,6 +355,11 @@ function place(input: PlaceInput, hz: PlacerFigures, opts: PlaceOptions, noDelta
     if (t.extraHeadsVsUnaligned) pr.unmet.push(`Tile alignment (required) uses ${t.extraHeadsVsUnaligned} more head(s) than an unaligned layout.`);
     if (grid.mode === "preferred" && t.onStop < t.total) pr.unmet.push(`${t.total - t.onStop} of ${t.total} heads are off tile centres (head count comes first).`);
   }
+  if (input.guides?.length) {
+    const ignored = input.guides.length - F.rowGuides.length - F.crossGuides.length;
+    notes.guides = { rows: F.rowGuides.length, cross: F.crossGuides.length, ignored };
+    if (ignored > 0) pr.unmet.push(`${ignored} head line(s) were not used (too short, or neither along nor across the rows).`);
+  }
   if (unresolvedWorld.length) {
     return {
       ok: false,
@@ -428,6 +457,9 @@ function prepare(input: PlaceInput): Prep | { error: PlaceError } {
     neighbours: (input.neighbourHeads ?? []).map(loc),
     keepOuts,
     gridLocal: input.grid ? { ...input.grid, originX: (input.grid.originX ?? 0) - ox, originY: (input.grid.originY ?? 0) - oy } : null,
+    guides: (input.guides ?? [])
+      .filter((g) => [g.a.x, g.a.y, g.b.x, g.b.y].every((v) => Number.isFinite(+v)) && Math.hypot(g.b.x - g.a.x, g.b.y - g.a.y) >= MIN_GUIDE)
+      .map((g) => ({ a: loc(g.a), b: loc(g.b) })),
   };
 }
 
@@ -558,7 +590,25 @@ function frameCandidates(prep: Prep, grid: CeilingGrid | null, override: number 
     for (const t of [a, a + Math.PI / 2]) {
       if (!out.some((b) => Math.abs(b - t) < 1e-9)) out.push(t);
     }
-  return out;
+  if (!prep.guides.length) return out;
+  // Head lines: rows run along the longest line. A frame the zone already offers is used when it
+  // is within 1° (clean numbers). With a ceiling grid or a frame override the frame must stay on
+  // their axes: the nearest axis is used when the line is within GUIDE_ANGLE of it, and the lines
+  // are ignored otherwise.
+  const longest = prep.guides.reduce((m, g) => (lenOf(g) > lenOf(m) ? g : m));
+  const ga = Math.atan2(longest.b.y - longest.a.y, longest.b.x - longest.a.x);
+  let near = out[0];
+  for (const t of out) if (angleApart(t, ga) < angleApart(near, ga)) near = t;
+  const fixed = override != null || grid != null;
+  if (angleApart(near, ga) <= (fixed ? GUIDE_ANGLE : Math.PI / 180)) return [near];
+  return fixed ? out : [((ga % Math.PI) + Math.PI) % Math.PI];
+}
+
+const lenOf = (g: { a: Pt; b: Pt }) => Math.hypot(g.b.x - g.a.x, g.b.y - g.a.y);
+/** The angle between two undirected lines, 0 … π/2. */
+function angleApart(a: number, b: number): number {
+  const d = Math.abs((((a - b) % Math.PI) + Math.PI) % Math.PI);
+  return Math.min(d, Math.PI - d);
 }
 
 // --- Frame context: rotated geometry, barrier index, samples -----------------------------------
@@ -666,11 +716,22 @@ function buildFrame(prep: Prep, theta: number, R: Rule, grid: CeilingGrid | null
     circle: k.circle ? { ...rotP(k.circle), r: k.circle.r } : null,
     clearance: k.clearance,
   }));
+  const rowGuides: Frame["rowGuides"] = [];
+  const crossGuides: Frame["crossGuides"] = [];
+  for (const g of prep.guides) {
+    const a = rotP(g.a);
+    const b = rotP(g.b);
+    const ang = Math.atan2(b.y - a.y, b.x - a.x);
+    if (angleApart(ang, 0) <= GUIDE_ANGLE) rowGuides.push({ y: (a.y + b.y) / 2, x0: Math.min(a.x, b.x), x1: Math.max(a.x, b.x) });
+    else if (angleApart(ang, Math.PI / 2) <= GUIDE_ANGLE) crossGuides.push({ x: (a.x + b.x) / 2, y0: Math.min(a.y, b.y), y1: Math.max(a.y, b.y) });
+  }
   return {
     theta,
     outer,
     holes,
     holeColumn: prep.holeColumn,
+    rowGuides,
+    crossGuides,
     segs,
     idx,
     bb,
@@ -972,6 +1033,48 @@ function rowVariants(F: Frame, bay: Bay, ctx: BayCtx): number[][] {
     }
     return snapped.length === rows.length ? snapped : null;
   };
+  // Head lines along the rows that cross this bay: those rows are fixed, and rows are added between
+  // them and the walls (evenly, the fewest the rules allow, and one more). When no such set is
+  // valid (lines closer than Smin, say), the bay is laid out as if it had no lines.
+  const fixed: number[] = [];
+  for (const g of F.rowGuides.slice().sort((a, b) => a.y - b.y)) {
+    if (g.x1 <= bay.bb.x0 || g.x0 >= bay.bb.x1 || g.y <= y0 + R.Wmin || g.y >= y1 - R.Wmin) continue;
+    if (fixed.length && g.y - fixed[fixed.length - 1] < R.Smin) continue;
+    fixed.push(g.y);
+  }
+  if (fixed.length) {
+    // A hand-drawn line is not exact: a line up to GUIDE_SNAP past a limit (Wmax from a wall, Smax
+    // from the line before it) is moved back onto the limit, so it does not cost a whole extra row.
+    const over = (v: number, lim: number) => (v > lim && v <= lim + GUIDE_SNAP ? v - lim : 0);
+    fixed[0] -= over(fixed[0] - y0, R.Wmax);
+    for (let i = 1; i < fixed.length; i++) fixed[i] -= over(fixed[i] - fixed[i - 1], R.Smax);
+    const last = fixed.length - 1;
+    const up = over(y1 - fixed[last], R.Wmax);
+    if (up && (last === 0 || fixed[last] + up - fixed[last - 1] <= R.Smax)) fixed[last] += up;
+    for (let k = 0; k < 2; k++) {
+      const rows: number[] = [];
+      const edge = (L: number, from: number, dir: 1 | -1) => {
+        const n = Math.max(0, Math.ceil((L - R.Wmax) / R.Smax - 1e-9)) + k;
+        if (!n) return;
+        let D = L / (n + 0.5);
+        if (D / 2 > R.Wmax) D = (L - (R.Wmax - 1)) / n;
+        for (let i = 1; i <= n; i++) rows.push(from + dir * i * D);
+      };
+      edge(fixed[0] - y0, fixed[0], -1);
+      fixed.forEach((y, i) => {
+        rows.push(y);
+        if (i + 1 === fixed.length) return;
+        const L = fixed[i + 1] - y;
+        const n = Math.max(0, Math.ceil(L / R.Smax - 1e-9) - 1) + k;
+        for (let q = 1; q <= n; q++) rows.push(y + (q * L) / (n + 1));
+      });
+      edge(y1 - fixed[fixed.length - 1], fixed[fixed.length - 1], 1);
+      rows.sort((a, b) => a - b);
+      const mmr = rows.length;
+      if (rows[0] - y0 <= R.Wmax + TOL && y1 - rows[mmr - 1] <= R.Wmax + TOL && rows[0] > y0 + R.Wmin && rows[mmr - 1] < y1 - R.Wmin && okD(rows)) push(rows);
+    }
+    if (out.length) return out;
+  }
   for (let k = 0; k < 3; k++) {
     const mm = m + k;
     if (mm > 1 && H / mm < R.Smin - TOL) break;
@@ -1131,11 +1234,12 @@ function layoutRows(F: Frame, bay: Bay, bi: number, samples: BaySamples, rows: n
       restrict = true;
     } else if (prevRowXs && prevRowXs.length) targets = prevRowXs.slice();
     else if (pattern !== "staggered") targets = ctx.alignXs.filter((x) => x >= bay.bb.x0 && x <= bay.bb.x1);
-    let cands = finalCandidates(F, I, targets, spHeads, R);
+    const cross = F.crossGuides.filter((c) => I.y >= c.y0 - CROSS_REACH && I.y <= c.y1 + CROSS_REACH).map((c) => c.x);
+    let cands = finalCandidates(F, I, cross.length ? targets.concat(cross) : targets, spHeads, R);
     if (restrict && targets.length) {
       const tmin = targets[0];
       const tmax = targets[targets.length - 1];
-      const keep = cands.filter((c) => c.x < tmin - 1 || c.x > tmax + 1 || targets.some((t) => Math.abs(t - c.x) < 1));
+      const keep = cands.filter((c) => c.x < tmin - 1 || c.x > tmax + 1 || targets.some((t) => Math.abs(t - c.x) < 1) || cross.some((t) => Math.abs(t - c.x) < 1));
       if (keep.length) cands = keep;
     }
 
@@ -1174,7 +1278,7 @@ function layoutRows(F: Frame, bay: Bay, bi: number, samples: BaySamples, rows: n
       demands.push(r);
       dItems.push(it);
     }
-    let sol = stabDP(cands, demands, I, R, prefs, targets, pattern, F.grid, F.ops);
+    let sol = stabDP(cands, demands, I, R, prefs, targets, pattern, F.grid, F.ops, cross);
     // Demands that cannot all be met on this row (two narrow windows closer than Smin): hand the
     // narrowest on to the next row (or report it) and solve again. Bounded.
     for (let tries = 0; !sol && demands.length && tries < 40; tries++) {
@@ -1184,7 +1288,7 @@ function layoutRows(F: Frame, bay: Bay, bi: number, samples: BaySamples, rows: n
       demands.splice(k, 1);
       dItems.splice(k, 1);
       if (!it.pulled) (j + 1 < m ? carry : unresolved).push(it.o);
-      sol = stabDP(cands, demands, I, R, prefs, targets, pattern, F.grid, F.ops);
+      sol = stabDP(cands, demands, I, R, prefs, targets, pattern, F.grid, F.ops, cross);
     }
     if (!sol) {
       for (const it of dItems) if (!it.pulled) (j + 1 < m ? carry : unresolved).push(it.o);
@@ -1676,6 +1780,7 @@ function stabDP(
   pattern: Pattern,
   grid: GridF | null,
   ops: Ops,
+  cross: number[] = [],
 ): { idx: number[]; cost: number } | null {
   if (!demands.length) return { idx: [], cost: 0 };
   const n = C.length;
@@ -1709,6 +1814,7 @@ function stabDP(
       c += (w * Math.min(dmin, 600) ** 2) / 1e6;
     }
     if (grid && !C[i].stop) c += 4;
+    if (cross.length && !cross.some((x) => Math.abs(x - C[i].x) < 1)) c += OFF_CROSS;
     node[i] = c;
   }
   const cnt = new Int32Array(n).fill(INF);
