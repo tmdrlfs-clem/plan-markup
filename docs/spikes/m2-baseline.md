@@ -4,7 +4,7 @@ The M2 gate (PRD success criteria) says the 4541 engine must be faster than manu
 
 To make that a fair test, the founder times their **manual** head placement on the same three drawings **before** the engine (Stories 9.4–9.7) is run on them. Times recorded after anyone has seen an engine layout don't count.
 
-Status: **waiting for the founder.** The engine must not be run on these drawings until the table below is filled in.
+Status: **waived by the founder, 2026-11-12.** The founder judged that manual placement is clearly slower and chose not to time it. The tables below stay empty: the M2 gate's "faster on 3/3 drawings" was not measured, and no rule disagreements were recorded. Differences found in real use go in the last table.
 
 ## How to time
 

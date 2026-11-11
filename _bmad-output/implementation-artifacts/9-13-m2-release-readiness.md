@@ -1,8 +1,8 @@
 # Story 9.13: M2 release readiness
 
-Status: in-progress
+Status: done
 
-The in-repo part is done. The story stays open until the founder's baseline comparison (AC 3) is recorded.
+The in-repo part is done. AC 3 was waived by the founder on 2026-11-12: manual placement is clearly slower, so the timed comparison on three drawings will not be done. No manual times, engine times or rule disagreements were recorded.
 
 ## Story
 
@@ -29,7 +29,7 @@ so that pilots can use it on real projects.
   - one 196 m² zone: 223–324 ms (limit 1 s);
   - a 600 m² floor of 15 zones: 413–492 ms (limit 5 s);
   - no main-thread task over 50 ms, up to a second after the run.
-- [ ] AC 3: the founder fills in `docs/spikes/m2-baseline.md` (manual times first, then the engine runs, time saved and rule disagreements).
+- [ ] AC 3 (waived by the founder, 2026-11-12; not done): the founder fills in `docs/spikes/m2-baseline.md` (manual times first, then the engine runs, time saved and rule disagreements).
 - [x] AC 4: `docs/security-review-m2.md`: no High; two Low notes (L4, L5).
 - [x] Engine review, `docs/spikes/m2-engine-review.md`:
   - F2 fixed: the oracle's head index missed a head up to 1 mm past the coverage radius, depending on where the room sat on the page;
