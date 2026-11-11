@@ -228,7 +228,9 @@ double_confirm_changes = true
 # Story 10.1: sign-up must verify the email first.
 enable_confirmations = true
 # If enabled, users will need to reauthenticate or have logged in recently to change their password.
-secure_password_change = false
+# Security review 2026-11-12: a session older than 24 h cannot change the password without
+# re-authenticating. A reset link's session is new, so /reset-password is unaffected.
+secure_password_change = true
 # Controls the minimum amount of time that must pass before sending another signup confirmation or password reset email.
 max_frequency = "1s"
 # Number of characters used in the email OTP.

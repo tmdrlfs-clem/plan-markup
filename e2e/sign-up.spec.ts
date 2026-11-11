@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { clearLimits, deleteUser, emailLink, sql } from "./auth-mail";
+import { clearLimits, deleteUser, emailLink, sql, openEmailLink } from "./auth-mail";
 import { formAlert, signIn } from "./helpers";
 
 // Story 10.1: sign up, confirm the email, wait for activation.
@@ -52,8 +52,12 @@ test("sign up, confirm the email, then wait for approval", async ({ page }) => {
     await signIn(page, email, password);
     await expect(formAlert(page)).toContainText("Confirm your email first");
 
+    // A mail scanner opening the link (GET) uses nothing: the link still works afterwards.
+    expect((await page.request.get(link)).status()).toBe(200);
+    expect((await sql<{ confirmed: boolean }>("select email_confirmed_at is not null as confirmed from auth.users where email = $1", [email]))[0].confirmed).toBe(false);
+
     // The emailed link (supabase/templates/confirmation.html) confirms and signs in.
-    await page.goto(link);
+    await openEmailLink(page, link);
     await expect(page).toHaveURL("/pending-activation");
     await expect(page.getByRole("heading", { name: "Your account is waiting for approval" })).toBeVisible();
     await page.goto("/workspace");
@@ -61,7 +65,7 @@ test("sign up, confirm the email, then wait for approval", async ({ page }) => {
 
     // The link works once.
     await page.context().clearCookies();
-    await page.goto(link);
+    await openEmailLink(page, link);
     await expect(page).toHaveURL("/sign-in?link=invalid");
     await expect(formAlert(page)).toContainText("expired or was already used");
 

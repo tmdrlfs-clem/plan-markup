@@ -59,6 +59,11 @@ describe("supabase/config.toml auth settings", () => {
     expect(sections.get("auth.email")?.get("enable_confirmations")).toBe("true");
   });
 
+  it("needs a recent sign-in to change a password, and both addresses to change an email", () => {
+    expect(sections.get("auth.email")?.get("secure_password_change")).toBe("true");
+    expect(sections.get("auth.email")?.get("double_confirm_changes")).toBe("true");
+  });
+
   it.each([
     ["auth.email.template.confirmation", "./supabase/templates/confirmation.html"],
     ["auth.email.template.recovery", "./supabase/templates/recovery.html"],

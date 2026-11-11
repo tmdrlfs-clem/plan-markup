@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { clearLimits, deleteUser, emailLink, makeActiveUser, sql } from "./auth-mail";
+import { clearLimits, deleteUser, emailLink, makeActiveUser, sql, openEmailLink } from "./auth-mail";
 import { signIn } from "./helpers";
 
 // Story 10.3: Settings → Account: name saved at once, email changed after both addresses confirm.
@@ -45,12 +45,12 @@ test("profile: change the name, then the email through both confirmation links",
 
     const toOld = await emailLink(oldEmail, SUBJECT);
     const toNew = await emailLink(newEmail, SUBJECT);
-    await page.goto(toOld);
+    await openEmailLink(page, toOld);
     await expect(page).toHaveURL("/email-change?step=other");
     await expect(page.getByRole("heading", { name: "One more link to open" })).toBeVisible();
     expect((await sql("select 1 from public.profiles where email = $1", [oldEmail])).length).toBe(1);
 
-    await page.goto(toNew);
+    await openEmailLink(page, toNew);
     await expect(page).toHaveURL("/email-change?step=done");
     await expect(page.getByRole("heading", { name: "Your email has changed" })).toBeVisible();
     expect((await sql("select 1 from public.profiles where email = $1", [newEmail])).length).toBe(1);

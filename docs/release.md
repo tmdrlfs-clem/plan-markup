@@ -18,6 +18,7 @@ Each job skips itself with a notice until its secrets exist. Run it by hand from
    - Emails → Templates → **Confirm signup**: subject and body from `supabase/templates/confirmation.html` (its link goes to `/auth/confirm`);
    - Emails → Templates → **Reset password**: from `supabase/templates/recovery.html` (Story 10.2);
    - Emails → Templates → **Change email address**: from `supabase/templates/email_change.html` (Story 10.3); keep **Secure email change** on (both addresses confirm);
+   - Authentication → Email provider: **Secure password change** on (a session older than 24 h must re-authenticate to change the password);
    - Emails → **SMTP settings**: a transactional provider (for example Resend or Postmark) with a verified sending domain. Supabase's built-in mailer is for testing only;
    - Authentication → Rate limits: emails per hour to suit the SMTP plan.
    - Storage buckets and policies come from the migrations.

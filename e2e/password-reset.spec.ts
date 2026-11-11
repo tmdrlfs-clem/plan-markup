@@ -1,5 +1,7 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { clearLimits, deleteUser, emailLink, makeActiveUser } from "./auth-mail";
+import { clearLimits, deleteUser, emailLink, makeActiveUser, openEmailLink, sql } from "./auth-mail";
 import { formAlert, signIn } from "./helpers";
 
 // Story 10.2: reset a forgotten password by email.
@@ -47,7 +49,7 @@ test("reset by email: single-use link, new password, other sessions signed out",
     // The link signs in and asks for a new password.
     const link = await resetLink(email);
     expect(link).toMatch(/^\/auth\/confirm\?token_hash=[\w-]+&type=recovery$/);
-    await page.goto(link);
+    await openEmailLink(page, link);
     await expect(page).toHaveURL("/reset-password");
     await expect(page.getByText(email)).toBeVisible();
     await page.getByLabel("New password").fill("too-short");
@@ -59,7 +61,7 @@ test("reset by email: single-use link, new password, other sessions signed out",
 
     // The link works once.
     await ctx.clearCookies();
-    await page.goto(link);
+    await openEmailLink(page, link);
     await expect(page).toHaveURL("/sign-in?link=invalid");
 
     // The other device is signed out; the old password no longer works, the new one does.
@@ -75,5 +77,57 @@ test("reset by email: single-use link, new password, other sessions signed out",
     await ctx.close();
     await deleteUser(email);
     await clearResetLimits();
+  }
+});
+
+// Security review 2026-11-12: Auth itself (not only our pages) refuses a password
+// change from a session that is not recent, so a session left open for days
+// cannot take the account over by calling the Auth API directly.
+test("Auth refuses a password change from a session older than a day", async () => {
+  // CI exports the local keys as environment variables; a local run has them in .env.local.
+  const fromFile = (): Record<string, string> => {
+    try {
+      return Object.fromEntries(
+        readFileSync(path.join(__dirname, "..", ".env.local"), "utf8")
+          .split(/?
+/)
+          .filter((l) => l.includes("=") && !l.startsWith("#"))
+          .map((l) => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1)]),
+      );
+    } catch {
+      return {};
+    }
+  };
+  const env = { ...fromFile(), ...process.env };
+  expect(env.NEXT_PUBLIC_SUPABASE_URL && env.NEXT_PUBLIC_SUPABASE_ANON_KEY).toBeTruthy();
+  const auth = `${env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1`;
+  const headers = { apikey: env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "", "Content-Type": "application/json" };
+  const email = `stale-${Date.now()}-${test.info().retry}@plan-markup.test`;
+  await makeActiveUser(email, OLD);
+  try {
+    const signIn = (password: string) =>
+      fetch(`${auth}/token?grant_type=password`, { method: "POST", headers, body: JSON.stringify({ email, password }) });
+    const session = (await (await signIn(OLD)).json()) as { access_token: string };
+    expect(session.access_token).toBeTruthy();
+    // The session and sign-in are now two days old.
+    await sql(
+      `update auth.users set last_sign_in_at = now() - interval '2 days' where email = $1`,
+      [email],
+    );
+    await sql(
+      `update auth.sessions set created_at = now() - interval '2 days'
+        where user_id = (select id from auth.users where email = $1)`,
+      [email],
+    );
+    const res = await fetch(`${auth}/user`, {
+      method: "PUT",
+      headers: { ...headers, Authorization: `Bearer ${session.access_token}` },
+      body: JSON.stringify({ password: "someone else chose this one" }),
+    });
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect((await signIn("someone else chose this one")).status).toBe(400);
+    expect((await signIn(OLD)).status).toBe(200);
+  } finally {
+    await deleteUser(email);
   }
 });

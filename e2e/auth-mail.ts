@@ -1,6 +1,6 @@
 // Epic 10 e2e helpers: SQL against the local stack, accounts of a test's own,
 // and links from the emails Auth sent (Mailpit, the local mail catcher).
-import { expect } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
 import pg from "pg";
 import { DB_URL } from "./global-setup";
 
@@ -61,4 +61,15 @@ export async function emailLink(to: string, subject: string): Promise<string> {
     await new Promise((r) => setTimeout(r, 250));
   }
   throw new Error(`no "${subject}" email to ${to}`);
+}
+
+/**
+ * Opens an emailed link and presses its button. Opening alone uses nothing
+ * (mail scanners open links); the token is used on the button's POST.
+ */
+export async function openEmailLink(page: Page, link: string): Promise<void> {
+  await page.goto(link);
+  const button = page.getByRole("button", { name: /^(Confirm my email|Continue|Confirm the change)$/ });
+  await expect(button).toBeVisible();
+  await button.click();
 }
