@@ -148,6 +148,7 @@ development_status:
   9-11-zone-report-and-rule-break-markers: done
   9-12-advisory-notice: done
   9-13-m2-release-readiness: done
+  9-14-humanlike-head-placement: review  # founder feedback 2026-11-12; app check pending
   epic-9-retrospective: optional
   # Epic 10: Accounts, Companies and Platform Administration
   epic-10: backlog
