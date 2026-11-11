@@ -142,6 +142,7 @@ import { ZONE_FILL_OPACITY, isZone } from "@/core/sprinkler/zone";
 import { ADD_HEAD_LINE, guideOf, makesGuide } from "./guide-draw";
 import { ADD_ZONE, makesZone, zoneOf } from "./zone-draw";
 import { paintCoverage } from "./coverage-overlay";
+import { headDimensionsOf } from "./head-dimensions";
 import { headAt, placeHeadAt, placingHeads } from "./head-place";
 import { paintRuleMarkers } from "./rule-markers";
 import { ADD_REVISION, placeRevision, revisionAt } from "./revision-tool";
@@ -1102,6 +1103,9 @@ export const measurePainter: MarkupPainter = {
     // Story 9.10: heads being dragged carry their coverage with them.
     paintCoverage(c, view, gestureMarkups(editorStore.getState(), view.documentId, stored), calibration);
     paintList(c, markups, view, calibration, { selected, captions, boxes, selectedShown });
+    // Head dimensions (the 4541 panel's toggle), over the markups; they are not picked or listed.
+    const dims = headDimensionsOf(gestureMarkups(editorStore.getState(), view.documentId, stored), () => ({ calibration, userUnit: view.userUnit }));
+    if (dims.length > 0) paintList(c, dims, view, calibration, { selected: new Set(), captions: [], boxes: [], selectedShown: [] });
     // Story 5.2: the selection's handles, over everything.
     const handles = handlesOf(selectedShown.filter((m) => !isLocked(m)), view);
     if (handles) paintHandles(c, handles, view);

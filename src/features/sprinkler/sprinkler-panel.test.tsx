@@ -8,10 +8,11 @@ import { factorForRatio, type Calibration } from "@/core/calibration/calibration
 import type { ZoneMarkup } from "@/core/schema/markup";
 import { newZone } from "@/core/sprinkler/zone";
 import { calibrateStore } from "@/features/calibration";
-import { editorStore, resetEditor, setDocMarkups } from "@/features/editor/editor-store";
+import { editorStore, markupsOf, resetEditor, setDocMarkups } from "@/features/editor/editor-store";
 import { undoActive } from "@/features/editor/undo-store";
 import { zoneDrawStore } from "@/features/editor/zone-draw";
 import { guideDrawStore } from "@/features/editor/guide-draw";
+import { headDimensionsOf, headDimensionsStore, resetHeadDimensions } from "@/features/editor/head-dimensions";
 import { tipsStore } from "@/features/tips";
 import { registerViewerEngine } from "@/features/viewer/viewer-commands";
 import { setTool, viewerStore } from "@/features/viewer/viewer-store";
@@ -268,6 +269,7 @@ describe("SprinklerPanel Place heads (Story 9.8)", () => {
     act(() => {
       resetPlaceRun();
       resetCoverage();
+      resetHeadDimensions();
     });
     setEngineChannelFactory(null);
   });
@@ -366,6 +368,22 @@ describe("SprinklerPanel Place heads (Story 9.8)", () => {
     await user.click(screen.getByTestId("add-head"));
     act(() => setTool("select"));
     expect(stampStore.getState().heads).toBe(false);
+  });
+  it("Dimensions toggles the head dimensions once heads are placed (off by default)", async () => {
+    const user = setup([zone()]);
+    expect(screen.queryByTestId("head-dimensions")).toBeNull();
+    await user.click(screen.getByTestId("place-heads"));
+    await screen.findByText(/placed in 1 zone\./);
+    const toggle = await screen.findByTestId("head-dimensions");
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+    await user.click(toggle);
+    expect(headDimensionsStore.getState().on).toBe(true);
+    expect(screen.getByTestId("head-dimensions").getAttribute("aria-pressed")).toBe("true");
+    const SHA = viewerStore.getState().documentId!;
+    const dims = headDimensionsOf(markupsOf(editorStore.getState(), SHA), () => ({ calibration: Object.values(viewerStore.getState().calibrations)[0], userUnit: 1 }));
+    expect(dims.length).toBeGreaterThan(0);
+    await user.click(screen.getByTestId("head-dimensions"));
+    expect(headDimensionsStore.getState().on).toBe(false);
   });
   it("Add head line arms the Line tool in head-line mode; another tool ends it", async () => {
     const user = setup([zone()]);

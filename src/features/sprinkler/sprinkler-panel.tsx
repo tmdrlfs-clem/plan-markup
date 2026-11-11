@@ -28,7 +28,7 @@ import type { UseHazardMap } from "@/core/sprinkler/rules/rules";
 import { MAPPING_SOURCE_LABELS, figureRows, figuresOf, useOptions, type MappingSource } from "@/core/sprinkler/use-map";
 import { HOLE_TAG_LABELS, ZONE_COLOR, formatZoneArea, holeTagOf, isZone, withHoleTag, zoneAreaM2, zoneChecklist, zoneHazard } from "@/core/sprinkler/zone";
 import { openCalibrate } from "@/features/calibration";
-import { revealFlag, armGuideDraw, guideDrawStore, armHeadPlace, coverageStore, editorStore, executeOp, headPlaceStore, markupsOf, armZoneDraw, setCoverageOn, setCoverageShape, setSelection, zoneDrawStore } from "@/features/editor";
+import { revealFlag, armGuideDraw, guideDrawStore, headDimensionsStore, setHeadDimensionsOn, armHeadPlace, coverageStore, editorStore, executeOp, headPlaceStore, markupsOf, armZoneDraw, setCoverageOn, setCoverageShape, setSelection, zoneDrawStore } from "@/features/editor";
 import { FirstUseTip } from "@/features/tips";
 import { hasDocument, setTool, viewerCommands, viewerStore } from "@/features/viewer";
 
@@ -53,6 +53,7 @@ export const COVERAGE_HINT = "Show each head's coverage; areas no head covers ar
 export const PLACE_HEADS_HINT = "Place heads in the selected zones, or in every zone on this page when none is selected";
 /** Story 9.11: status changes are announced once they have held this long (ms). */
 export const ANNOUNCE_DELAY_MS = 600;
+export const DIMENSIONS_HINT = "Show head-to-head and head-to-wall distances for setting out on site; they are exported and printed while this is on";
 export const ADD_HEAD_LINE_HINT =
   "Add head line: draw a line in a zone where a row of heads should run (along the lights, say). A line across it marks where heads go along the row. Place heads then follows the lines. Esc to stop.";
 export const ADD_HEAD_HINT = "Add head: click inside a zone to add a head there (Esc to stop). Drag a head to move it; Delete removes it.";
@@ -123,6 +124,7 @@ export function SprinklerPanel({ emptyText }: { emptyText: string }) {
   const focus = useStore(zoneCheckStore, (s) => s.focus);
   const coverageOn = useStore(coverageStore, (s) => s.on);
   const coverageShape = useStore(coverageStore, (s) => s.shape);
+  const dimensionsOn = useStore(headDimensionsStore, (s) => s.on);
   const addingHeads = useStore(headPlaceStore, (s) => s.heads) && tool === "stamp";
   const addingGuides = useStore(guideDrawStore, (s) => s.on) && tool === "line";
   const [confirm, setConfirm] = useState<PlaceScope | null>(null);
@@ -292,6 +294,17 @@ export function SprinklerPanel({ emptyText }: { emptyText: string }) {
             >
               <SquareDashed size={14} aria-hidden="true" />
               Square
+            </Button>
+            <Button
+              size="sm"
+              variant={dimensionsOn ? "primary" : "secondary"}
+              aria-pressed={dimensionsOn}
+              onClick={() => setHeadDimensionsOn(!dimensionsOn)}
+              title={DIMENSIONS_HINT}
+              data-testid="head-dimensions"
+            >
+              <Ruler size={14} aria-hidden="true" />
+              Dimensions
             </Button>
           </div>
         ) : null}

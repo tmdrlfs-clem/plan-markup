@@ -24,7 +24,7 @@ import { exportJob, type DecodedImage, type ExportJob } from "@/core/export/from
 import type { Paper, PrintOptions, PrintScale } from "@/core/export/print";
 import type { Markup } from "@/core/schema/markup";
 import { recordActivity } from "@/features/activity/actions";
-import { editorStore, layersOf, markupsOf } from "@/features/editor";
+import { editorStore, headDimensionsOf, layersOf, markupsOf } from "@/features/editor";
 import { markupSetIdOf } from "@/features/markup-set/sync";
 import { viewerStore } from "@/features/viewer";
 import type { ExportWorkerReply } from "@/workers/export.worker";
@@ -86,7 +86,14 @@ async function prepare(choice: Pick<ExportChoice, "pages" | "includeHidden">, de
   const documentId = v.documentId!;
   const state = editorStore.getState();
   // Story 9.2: zones are design data, never exported or printed.
-  const markups = markupsOf(state, documentId).filter((m) => m.type !== "zone" && !m.guide);
+  const stored = markupsOf(state, documentId);
+  // Head dimensions are exported and printed while the 4541 panel's toggle is on.
+  const dims = headDimensionsOf(stored, (pageId) => {
+    const i = v.pages.findIndex((_, k) => pageIdOf(documentId, k) === pageId);
+    const u = v.pages[i]?.userUnit;
+    return i < 0 ? null : { calibration: v.calibrations[pageId] ?? null, userUnit: u && u > 0 ? u : 1 };
+  });
+  const markups = [...stored.filter((m) => m.type !== "zone" && !m.guide), ...dims];
   const pages = choice.pages
     .filter((i) => i >= 0 && i < v.pageCount)
     .map((i) => {
