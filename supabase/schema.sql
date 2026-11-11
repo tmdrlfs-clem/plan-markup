@@ -170,6 +170,24 @@ $$;
 ALTER FUNCTION "app"."fn_set_updated_at"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "app"."fn_sync_profile_email"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+begin
+  update public.profiles
+     set email = new.email,
+         updated_at = pg_catalog.now()
+   where id = new.id
+     and email is distinct from new.email;
+  return new;
+end;
+$$;
+
+
+ALTER FUNCTION "app"."fn_sync_profile_email"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "app"."fn_zone_layout_defaults"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO ''
@@ -1406,6 +1424,10 @@ GRANT ALL ON FUNCTION "app"."fn_owns_tool_asset_path"("p_name" "text") TO "authe
 
 
 REVOKE ALL ON FUNCTION "app"."fn_set_updated_at"() FROM PUBLIC;
+
+
+
+REVOKE ALL ON FUNCTION "app"."fn_sync_profile_email"() FROM PUBLIC;
 
 
 
