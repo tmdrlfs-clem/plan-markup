@@ -69,8 +69,13 @@ jobs:
       # Local keys are generated per run; no repository secrets are involved.
       - name: Export local Supabase env
         run: node scripts/supabase-env.mjs --github-env
+      # The browser first; its system packages next, with a time limit: when the Ubuntu archives
+      # cannot be reached (2026-11-11/12: DNS failures for hours) apt retries until the job times
+      # out, and the runner image already carries the libraries Chromium needs.
       - name: Install Chromium
-        run: npx playwright install --with-deps chromium
+        run: |
+          npx playwright install chromium
+          timeout 180 npx playwright install-deps chromium || echo "::warning::Chromium system packages were not installed (package archive unreachable); using the runner image's libraries."
       # e2e runs against the production build (real CSP, static pdf.js assets).
       - name: Build
         run: npm run build
