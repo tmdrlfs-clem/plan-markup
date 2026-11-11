@@ -95,6 +95,8 @@ export type PlacementNotes = {
   /** Figures in mm / mm², with Rc. */
   rule: Rule;
   tileAligned?: { onStop: number; total: number; extraHeadsVsUnaligned?: number };
+  /** Set when a layout with aligned rows was taken over the fewest-heads layout: the heads it costs. */
+  aligned?: { extraHeads: number };
   /** Head lines (guides): how many set a row, how many set positions along rows, how many were not used. */
   guides?: { rows: number; cross: number; ignored: number };
   /** What the zone's options asked for and what the layout achieved (FR74, Story 9.7). */
@@ -126,6 +128,12 @@ export type PlaceOptions = {
    * returned with `searchTruncated` (design §6). Never a wall-clock limit.
    */
   opBudget?: number;
+  /**
+   * Prefer a layout whose rows line up across the zone over the fewest-heads layout, when it costs
+   * one head (or about 10 %) and clearly tidies the layout. Default true; false gives the
+   * fewest-heads layout (the Story 2.2 spike's behaviour).
+   */
+  alignRows?: boolean;
 };
 
 /** Default per-zone budget (design §6: 50 M simple operations). */
@@ -148,6 +156,12 @@ const COL_GAP = [300, 700];
 /** Smallest ceiling-grid pitch accepted (tile stops are DP candidates). */
 const MIN_TILE_PITCH = 100;
 /** A preferred figure counts as met within max(150 mm, 5 %) (the 50 mm candidate step plus fit). */
+/** How many heads over the fewest a layout with aligned rows may use (one, or about 10 %). */
+const alignAllowance = (n: number) => Math.max(1, Math.round(0.1 * n));
+/** Row and column lines an aligned layout must save for each extra head. */
+const ALIGN_GAIN = 3;
+/** Heads within this of one line (mm) are on the same row or column line. */
+const LINE_TOL = 100;
 /** A guide counts as along (or across) the rows within this angle. */
 const GUIDE_ANGLE = (10 * Math.PI) / 180;
 /** Guides shorter than this are ignored (a stray click). */
@@ -260,9 +274,13 @@ function place(input: PlaceInput, hz: PlacerFigures, opts: PlaceOptions, noDelta
     );
   }
 
+  const alignRows = opts.alignRows !== false;
   const frames = frameCandidates(prep, grid, input.frameDeg);
   const ops: Ops = { n: 0, budget: opts.opBudget ?? DEFAULT_OP_BUDGET, truncated: false, armed: false };
-  let best: (DecResult & { score: number[]; frame: Frame; decName: Decomposition["name"]; bays: Bay[] }) | null = null;
+  type Candidate = DecResult & { score: number[]; frame: Frame; decName: Decomposition["name"]; bays: Bay[] };
+  let best: Candidate | null = null;
+  // Complete layouts, kept for the aligned-rows choice below.
+  const complete: Candidate[] = [];
   let tried = 0;
   // Variants run in priority order (frame peaks, then none / cutH / cutV); the budget only ever
   // skips the tail of that order, so the answer stays deterministic.
@@ -281,14 +299,45 @@ function place(input: PlaceInput, hz: PlacerFigures, opts: PlaceOptions, noDelta
       // Exact bound: once a layout resolves everything with n heads, a decomposition that needs more
       // than n heads can never win (heads rank right after unresolved), so its sweeps stop early.
       ops.armed = best != null;
-      const cap = best && best.score[0] === 0 ? best.heads.length : null;
+      // (the aligned-rows choice may take a layout with a few more heads, so the bound leaves room for it)
+      // Only a decomposition with fewer bays than the best so far can be the tidier one, so only it
+      // gets the room (the others keep the exact bound, and the search stays as fast as before).
+      const room = alignRows && best && decs[di].bays.length < best.bays.length ? alignAllowance(best.heads.length) : 0;
+      const cap = best && best.score[0] === 0 ? best.heads.length + room : null;
       const res = layoutDecomposition(F, decs[di], R, prefs, pattern, cap);
       tried++;
       const score = [res.unresolved.length + res.h4.length, res.heads.length, res.gapFill, res.cost, fi, di];
-      if (!best || lexLess(score, best.score)) best = { ...res, score, frame: F, decName: decs[di].name, bays: decs[di].bays };
+      const cand: Candidate = { ...res, score, frame: F, decName: decs[di].name, bays: decs[di].bays };
+      if (score[0] === 0) complete.push(cand);
+      if (!best || lexLess(score, best.score)) best = cand;
     }
   }
   if (!best) throw new Error("placeZone: no frame candidates");
+
+  // Aligned rows (founder feedback 2026-11-12: a layout should look like a person placed it). The
+  // fewest-heads layout can leave the heads of neighbouring bays out of step. A complete layout with
+  // a few more heads (alignAllowance) replaces it when its heads sit on clearly fewer row and column
+  // lines: at least ALIGN_GAIN fewer lines for each extra head.
+  let alignedExtra = 0;
+  if (alignRows && best.score[0] === 0) {
+    const fewest: Candidate = best;
+    const n = fewest.heads.length;
+    const base = lineCount(fewest.heads);
+    let pick = fewest;
+    let pickLines = base;
+    for (const c of complete) {
+      const extra = c.heads.length - n;
+      if (extra <= 0 || extra > alignAllowance(n)) continue;
+      const l = lineCount(c.heads);
+      if (base - l < ALIGN_GAIN * extra) continue;
+      if (l < pickLines || (l === pickLines && c.heads.length < pick.heads.length)) {
+        pick = c;
+        pickLines = l;
+      }
+    }
+    alignedExtra = pick.heads.length - n;
+    best = pick;
+  }
 
   // Back to world coordinates.
   const F = best.frame;
@@ -323,6 +372,7 @@ function place(input: PlaceInput, hz: PlacerFigures, opts: PlaceOptions, noDelta
     ops: ops.n,
     rule: R,
     preferences: { pattern: { requested: pattern }, unmet: [] },
+    ...(alignedExtra > 0 ? { aligned: { extraHeads: alignedExtra } } : {}),
   };
   const pr = notes.preferences;
   if (input.prefs?.spacing || input.prefs?.wallDist) {
@@ -602,6 +652,22 @@ function frameCandidates(prep: Prep, grid: CeilingGrid | null, override: number 
   const fixed = override != null || grid != null;
   if (angleApart(near, ga) <= (fixed ? GUIDE_ANGLE : Math.PI / 180)) return [near];
   return fixed ? out : [((ga % Math.PI) + Math.PI) % Math.PI];
+}
+
+/** How many row lines plus column lines the placed heads sit on (frame coordinates; fewer is tidier). */
+function lineCount(heads: readonly FHead[]): number {
+  const count = (vs: number[]) => {
+    vs.sort((a, b) => a - b);
+    let n = 0;
+    let last = -Infinity;
+    for (const v of vs) {
+      if (v - last > LINE_TOL) n++;
+      last = v;
+    }
+    return n;
+  };
+  const own = heads.filter((h) => h.kind !== "locked");
+  return count(own.map((h) => h.y)) + count(own.map((h) => h.x));
 }
 
 const lenOf = (g: { a: Pt; b: Pt }) => Math.hypot(g.b.x - g.a.x, g.b.y - g.a.y);

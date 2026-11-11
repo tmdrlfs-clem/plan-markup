@@ -103,6 +103,7 @@ describe.skipIf(!file || !existsSync(file))("sample drawings: engine layout agai
         rows: o.result.notes?.rows,
         frameDeg: o.result.notes?.frameDeg,
         guides: o.result.notes?.guides,
+        aligned: o.result.notes?.aligned,
         oraclePass: o.report?.pass,
         flags: o.report?.flags.map((f) => f.code),
         humanNearestGap: nearestGaps(c.human).map(Math.round),

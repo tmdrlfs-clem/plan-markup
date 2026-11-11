@@ -15,11 +15,11 @@ const rect = (w: number, h: number, x0 = 0, y0 = 0): Pt[] => [
 const zone = (ring: Pt[], extra: Partial<PlaceInput> = {}): PlaceInput => ({ zoneId: "T", barriers: [{ kind: "wall", ring }], ...extra });
 
 /** Places a sample's zones in order; earlier zones' heads are neighbours (as the engine does). */
-function placeSample(zones: PlaceInput[], hazard: Hazard): PlaceResult[] {
+function placeSample(zones: PlaceInput[], hazard: Hazard, alignRows = true): PlaceResult[] {
   const out: PlaceResult[] = [];
   for (const z of zones) {
     const neighbourHeads = out.flatMap((r) => r.heads);
-    out.push(placeZone({ ...z, neighbourHeads }, fig(hazard)));
+    out.push(placeZone({ ...z, neighbourHeads }, fig(hazard), { alignRows }));
   }
   return out;
 }
@@ -39,6 +39,7 @@ describe("placer: the spike's reference layouts (Story 9.5, faithful port)", () 
     const results = placeSample(
       s.zones.map((f) => ({ ...inputOf(f.zone), keepOuts: [] })),
       hazard,
+      false, // the spike placed the fewest heads; aligned rows are tested apart
     );
     const ref = layouts.find((l) => l.sample === s.id && l.hazard === hazard)!;
     results.forEach((r, i) => {

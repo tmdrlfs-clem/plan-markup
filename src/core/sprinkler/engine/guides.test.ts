@@ -2,6 +2,7 @@
 // the rows; the placer keeps those rows and prefers the crossings (founder feedback 2026-11-12).
 import { describe, expect, it } from "vitest";
 import { NZS4541_V1 } from "../rules/rules";
+import { placeZone } from "../placer";
 import { placeSite, type EngineZone } from "./site";
 
 const rect = (w: number, h: number) => [
@@ -86,5 +87,44 @@ describe("head lines (guides)", () => {
     const b = run(zone(9678, 6711, []));
     expect(b.result.heads).toEqual(a.result.heads);
     expect(a.result.notes?.guides).toBeUndefined();
+  });
+});
+
+describe("aligned rows (the default)", () => {
+  // A long room with a short partition stub on one wall: the fewest-heads layout cuts the room in
+  // two bays and leaves their heads out of step; a person keeps two straight columns.
+  const ring = [
+    { x: 0, y: 0 },
+    { x: 7159, y: 0 },
+    { x: 7159, y: 14633 },
+    { x: 2739, y: 14633 },
+    { x: 2739, y: 14733 },
+    { x: 7159, y: 14733 },
+    { x: 7159, y: 22534 },
+    { x: 0, y: 22534 },
+  ];
+  const z: EngineZone = { zoneId: "z", hazard: "ELH", barriers: [{ kind: "wall", ring }] };
+  const distinct = (vs: number[]) => new Set(vs.map((v) => Math.round(v / 100))).size;
+
+  it("takes one more head to keep the rows in line across the room, and says so", () => {
+    const o = run(z);
+    expect(o.report?.pass).toBe(true);
+    expect(o.result.notes?.aligned).toEqual({ extraHeads: 1 });
+    expect(o.result.heads.length).toBe(12);
+    expect(distinct(o.result.heads.map((h) => h.x))).toBe(2);
+    expect(distinct(o.result.heads.map((h) => h.y))).toBe(6);
+  });
+
+  it("alignRows: false gives the fewest heads", () => {
+    const r = placeZone(z, NZS4541_V1.hazards.ELH, { alignRows: false });
+    expect(r.ok).toBe(true);
+    expect(r.heads.length).toBe(11);
+    expect(r.notes?.aligned).toBeUndefined();
+  });
+
+  it("a plain room is not changed (nothing to align)", () => {
+    const o = run(zone(9678, 6711, undefined));
+    expect(o.result.notes?.aligned).toBeUndefined();
+    expect(o.result.heads.length).toBe(6);
   });
 });
