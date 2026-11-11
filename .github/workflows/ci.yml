@@ -65,7 +65,7 @@ jobs:
       - name: Pin the Postgres image
         run: node scripts/pin-postgres-image.mjs
       - name: Start Supabase (applies migrations and seed)
-        run: supabase start -x studio,imgproxy,mailpit,edge-runtime,logflare,vector,supavisor
+        run: supabase start -x studio,imgproxy,edge-runtime,logflare,vector,supavisor
       # Local keys are generated per run; no repository secrets are involved.
       - name: Export local Supabase env
         run: node scripts/supabase-env.mjs --github-env

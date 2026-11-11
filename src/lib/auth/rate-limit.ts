@@ -8,7 +8,13 @@ export const SIGN_IN_LIMITS = {
   sign_in_email: { maxHits: 10, windowSeconds: 900 },
 } as const;
 
-export type RateLimitBucket = keyof typeof SIGN_IN_LIMITS;
+/** Sign-up limits (Story 10.1, NFR15): per IP and per email, one hour. */
+export const SIGN_UP_LIMITS = {
+  sign_up_ip: { maxHits: 10, windowSeconds: 3600 },
+  sign_up_email: { maxHits: 5, windowSeconds: 3600 },
+} as const;
+
+export type RateLimitBucket = keyof typeof SIGN_IN_LIMITS | keyof typeof SIGN_UP_LIMITS;
 
 export type ConsumeArgs = {
   bucket: RateLimitBucket;
@@ -50,17 +56,32 @@ export async function checkSignInRateLimit(
   { ip, email }: { ip: string; email: string },
   consume: Consume = rpcConsume,
 ): Promise<RateLimitDecision> {
+  return checkPair(SIGN_IN_LIMITS, "sign_in_ip", "sign_in_email", ip, email, consume);
+}
+
+/** Sign-up attempts, per IP and per email (Story 10.1). Same rules as sign-in. */
+export async function checkSignUpRateLimit(
+  { ip, email }: { ip: string; email: string },
+  consume: Consume = rpcConsume,
+): Promise<RateLimitDecision> {
+  return checkPair(SIGN_UP_LIMITS, "sign_up_ip", "sign_up_email", ip, email, consume);
+}
+
+async function checkPair<I extends RateLimitBucket, E extends RateLimitBucket>(
+  limits: Record<I | E, { maxHits: number; windowSeconds: number }>,
+  ipBucket: I,
+  emailBucket: E,
+  ip: string,
+  email: string,
+  consume: Consume,
+): Promise<RateLimitDecision> {
   const normalisedEmail = email.trim().toLowerCase();
   const results = await Promise.all([
+    consume({ bucket: ipBucket, keyHash: rateLimitKeyHash(ipBucket, ip), ...limits[ipBucket] }),
     consume({
-      bucket: "sign_in_ip",
-      keyHash: rateLimitKeyHash("sign_in_ip", ip),
-      ...SIGN_IN_LIMITS.sign_in_ip,
-    }),
-    consume({
-      bucket: "sign_in_email",
-      keyHash: rateLimitKeyHash("sign_in_email", normalisedEmail),
-      ...SIGN_IN_LIMITS.sign_in_email,
+      bucket: emailBucket,
+      keyHash: rateLimitKeyHash(emailBucket, normalisedEmail),
+      ...limits[emailBucket],
     }),
   ]);
   const blocked = results.filter((r) => !r.allowed);

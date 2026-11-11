@@ -11,6 +11,8 @@ const publicSchema = z.object({
     .url({ error: "NEXT_PUBLIC_SENTRY_DSN must be a valid URL" })
     .optional(),
   NEXT_PUBLIC_SENTRY_ENVIRONMENT: z.string().min(1).max(64).optional(),
+  // Story 10.1: Cloudflare Turnstile site key. Unset outside production: no widget.
+  NEXT_PUBLIC_TURNSTILE_SITE_KEY: z.string().min(1).optional(),
   NEXT_PUBLIC_LOG_LEVEL: z
     .enum(["debug", "info", "warn", "error"], {
       error: "NEXT_PUBLIC_LOG_LEVEL must be one of debug, info, warn, error",
@@ -20,6 +22,8 @@ const publicSchema = z.object({
 
 const serverSchema = publicSchema.extend({
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1).optional(),
+  // Story 10.1: Turnstile secret (server only). Required in production for sign-up.
+  TURNSTILE_SECRET_KEY: z.string().min(1).optional(),
   // Build only (withSentryConfig source-map upload). Unused without SENTRY_AUTH_TOKEN.
   SENTRY_AUTH_TOKEN: z.string().min(1).optional(),
   SENTRY_ORG: z.string().min(1).optional(),
@@ -73,6 +77,7 @@ export function getPublicEnv(): PublicEnv {
     NEXT_PUBLIC_SENTRY_DSN: process.env.NEXT_PUBLIC_SENTRY_DSN,
     NEXT_PUBLIC_SENTRY_ENVIRONMENT: process.env.NEXT_PUBLIC_SENTRY_ENVIRONMENT,
     NEXT_PUBLIC_LOG_LEVEL: process.env.NEXT_PUBLIC_LOG_LEVEL,
+    NEXT_PUBLIC_TURNSTILE_SITE_KEY: process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY,
   });
   return publicCache;
 }

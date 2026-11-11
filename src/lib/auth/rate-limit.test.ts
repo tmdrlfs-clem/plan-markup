@@ -36,8 +36,9 @@ describe("checkSignInRateLimit", () => {
       expect(call.keyHash).toMatch(/^[0-9a-f]{64}$/);
       expect(call.keyHash).not.toContain(IP);
       expect(call.keyHash.toLowerCase()).not.toContain("user@plan-markup.test");
-      expect(call.maxHits).toBe(SIGN_IN_LIMITS[call.bucket].maxHits);
-      expect(call.windowSeconds).toBe(SIGN_IN_LIMITS[call.bucket].windowSeconds);
+      const limit = SIGN_IN_LIMITS[call.bucket as keyof typeof SIGN_IN_LIMITS];
+      expect(call.maxHits).toBe(limit.maxHits);
+      expect(call.windowSeconds).toBe(limit.windowSeconds);
     }
     const emailCall = calls.find((c) => c.bucket === "sign_in_email");
     expect(emailCall?.keyHash).toBe(rateLimitKeyHash("sign_in_email", "user@plan-markup.test"));

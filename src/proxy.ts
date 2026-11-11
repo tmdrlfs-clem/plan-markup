@@ -11,7 +11,8 @@ import { cspModeFor } from "@/lib/security/route-policy";
  * paths here or excludes them in the matcher.
  */
 // Story 8.5: /api/health is the uptime monitor's check (no session, nothing secret).
-const PUBLIC_PATHS: ReadonlySet<string> = new Set(["/", "/sign-in", "/api/health"]);
+// Story 10.1: /sign-up and the email confirmation link.
+const PUBLIC_PATHS: ReadonlySet<string> = new Set(["/", "/sign-in", "/sign-up", "/auth/confirm", "/api/health"]);
 
 function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATHS.has(pathname);

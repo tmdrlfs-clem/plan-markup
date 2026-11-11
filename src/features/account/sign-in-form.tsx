@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useRef, useState, type FormEvent } from "react";
+import Link from "next/link";
 import { CircleX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TextField } from "@/components/ui/text-field";
@@ -21,7 +22,10 @@ function validatePassword(value: string): string | undefined {
   return value === "" ? "Enter your password." : undefined;
 }
 
-export function SignInForm({ next }: { next: string }) {
+export const LINK_INVALID_NOTICE =
+  "That confirmation link has expired or was already used. Sign in if you have confirmed your email, or sign up again for a new link.";
+
+export function SignInForm({ next, linkInvalid = false }: { next: string; linkInvalid?: boolean }) {
   const [state, formAction, pending] = useActionState(signIn, initialState);
   const [clientErrors, setClientErrors] = useState<SignInFieldErrors>({});
   // Controlled, so React's post-action form reset keeps the email (the password is cleared).
@@ -35,7 +39,11 @@ export function SignInForm({ next }: { next: string }) {
     password: clientErrors.password ?? serverErrors.password,
   };
   const formMessage =
-    state.status === "error" && state.code !== "INVALID_INPUT" ? state.message : null;
+    state.status === "error" && state.code !== "INVALID_INPUT"
+      ? state.message
+      : state.status === "idle" && linkInvalid
+        ? LINK_INVALID_NOTICE
+        : null;
 
   // After a failed server submit, focus the first invalid field.
   useEffect(() => {
@@ -86,8 +94,10 @@ export function SignInForm({ next }: { next: string }) {
           onChange={(e) => setEmail(e.currentTarget.value)}
           error={errors.email}
           onBlur={(e) => {
-            const error = validateEmail(e.currentTarget.value);
-            setClientErrors((prev) => ({ ...prev, email: error }));
+            // Leaving an empty field says nothing (submit does): an error appearing on blur would
+            // shift the links below while they are being clicked.
+            const value = e.currentTarget.value;
+            setClientErrors((prev) => ({ ...prev, email: value.trim() === "" ? undefined : validateEmail(value) }));
           }}
         />
         <TextField
@@ -98,8 +108,9 @@ export function SignInForm({ next }: { next: string }) {
           autoComplete="current-password"
           error={errors.password}
           onBlur={(e) => {
-            const error = validatePassword(e.currentTarget.value);
-            setClientErrors((prev) => ({ ...prev, password: error }));
+            // Clears a submit error once filled; an empty field is reported on submit.
+            const value = e.currentTarget.value;
+            setClientErrors((prev) => ({ ...prev, password: value === "" ? undefined : validatePassword(value) }));
           }}
         />
         <Button
@@ -114,7 +125,10 @@ export function SignInForm({ next }: { next: string }) {
       </form>
 
       <p className="text-ad-sm text-muted">
-        Accounts are created by the Plan Markup administrator during the pilot.
+        New to Plan Markup?{" "}
+        <Link href="/sign-up" className="font-medium text-text underline underline-offset-2 focus-ring">
+          Create an account
+        </Link>
       </p>
     </div>
   );

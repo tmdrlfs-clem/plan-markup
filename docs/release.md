@@ -13,12 +13,16 @@ Each job skips itself with a notice until its secrets exist. Run it by hand from
 
 1. **Supabase project**: create "plan-markup" in region **ap-southeast-2 (Sydney)**, Postgres 17. Keep the database password.
 2. **Supabase Auth settings** (Authentication → Providers / URL configuration):
-   - disable sign-ups (accounts are made with `npm run admin:create-user`);
-   - set Site URL to the production URL.
+   - keep email sign-ups on, with **Confirm email** on (Story 10.1). New accounts start `pending` until the platform admin activates them;
+   - set Site URL to the production URL;
+   - Emails → Templates → **Confirm signup**: subject and body from `supabase/templates/confirmation.html` (its link goes to `/auth/confirm`);
+   - Emails → **SMTP settings**: a transactional provider (for example Resend or Postmark) with a verified sending domain. Supabase's built-in mailer is for testing only;
+   - Authentication → Rate limits: emails per hour to suit the SMTP plan.
    - Storage buckets and policies come from the migrations.
 3. **Vercel project**: import the GitHub repo, framework Next.js, region `syd1` (from `vercel.json`). Environment variables (Production):
    - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` (Supabase → Settings → API)
    - `SUPABASE_SERVICE_ROLE_KEY` (server only)
+   - `NEXT_PUBLIC_TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY` (Cloudflare → Turnstile, a widget for the production hostname). Required: without the secret, sign-up refuses everyone in production.
    - `NEXT_PUBLIC_SENTRY_DSN`, `NEXT_PUBLIC_SENTRY_ENVIRONMENT=production`
    - `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT` (source maps; optional)
 4. **GitHub**:

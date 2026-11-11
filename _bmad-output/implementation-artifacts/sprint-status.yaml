@@ -151,8 +151,8 @@ development_status:
   9-14-humanlike-head-placement: review  # founder feedback 2026-11-12; app check pending
   epic-9-retrospective: optional
   # Epic 10: Accounts, Companies and Platform Administration
-  epic-10: backlog
-  10-1-sign-up-and-wait-for-activation: backlog
+  epic-10: in-progress
+  10-1-sign-up-and-wait-for-activation: review
   10-2-reset-my-password: backlog
   10-3-view-and-edit-my-profile: backlog
   10-4-platform-admin-manages-user-accounts: backlog

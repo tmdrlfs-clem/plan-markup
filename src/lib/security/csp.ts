@@ -99,7 +99,8 @@ export function buildNonceCsp({ nonce, supabaseUrl, sentryDsn, isDev, devHost }:
     ["font-src", ["'self'"]],
     ["connect-src", connectSrc],
     // Story 8.3: the print PDF is shown in a hidden blob: frame (Chrome's PDF viewer prints it).
-    ["frame-src", ["'self'", "blob:"]],
+    // Story 10.1: the Turnstile challenge on /sign-up runs in Cloudflare's frame.
+    ["frame-src", ["'self'", "blob:", "https://challenges.cloudflare.com"]],
     ...commonTail(isDev),
   ]);
 }

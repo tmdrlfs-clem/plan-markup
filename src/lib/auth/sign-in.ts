@@ -2,7 +2,7 @@ import "server-only";
 import { logger } from "@/lib/logger";
 import { createServerSupabase } from "@/lib/supabase/server";
 
-export type SignInFailure = "invalid" | "rate_limited" | "unavailable";
+export type SignInFailure = "invalid" | "unconfirmed" | "rate_limited" | "unavailable";
 
 export type SignInOutcome = { ok: true } | { ok: false; reason: SignInFailure };
 
@@ -11,6 +11,8 @@ type AuthErrorLike = { status?: number; code?: string };
 /** Maps a Supabase Auth error to a reason. No detail goes upward (NFR16). */
 export function classifyAuthError(error: AuthErrorLike): SignInFailure {
   if (error.status === 429 || error.code === "over_request_rate_limit") return "rate_limited";
+  // Story 10.1: only reached with the right password, so it reveals nothing about the email.
+  if (error.code === "email_not_confirmed") return "unconfirmed";
   if (typeof error.status === "number" && error.status >= 400 && error.status < 500) {
     return "invalid";
   }

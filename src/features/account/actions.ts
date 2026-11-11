@@ -21,6 +21,7 @@ export type SignInState =
 const MESSAGES = {
   invalidInput: "Check the highlighted fields.",
   invalidCredentials: "Email or password is incorrect.",
+  unconfirmed: "Confirm your email first: open the link we sent you, then sign in.",
   unavailable: "Sign-in is unavailable right now. Try again shortly.",
 } as const;
 
@@ -78,6 +79,9 @@ export async function signIn(_prev: SignInState, formData: FormData): Promise<Si
   if (!outcome.ok) {
     if (outcome.reason === "invalid") {
       return { status: "error", code: "UNAUTHENTICATED", message: MESSAGES.invalidCredentials };
+    }
+    if (outcome.reason === "unconfirmed") {
+      return { status: "error", code: "UNAUTHENTICATED", message: MESSAGES.unconfirmed };
     }
     if (outcome.reason === "rate_limited") {
       return { status: "error", code: "RATE_LIMITED", message: rateLimitedMessage(900) };
