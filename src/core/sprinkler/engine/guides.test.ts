@@ -122,6 +122,17 @@ describe("aligned rows (the default)", () => {
     expect(r.notes?.aligned).toBeUndefined();
   });
 
+  it("rows of unequal count (5-4-4-5) become a regular grid", () => {
+    const room: EngineZone = { zoneId: "z", hazard: "OH1", barriers: [{ kind: "wall", ring: rect(14000, 14000) }] };
+    const o = run(room);
+    expect(o.report?.pass).toBe(true);
+    expect(o.result.heads.length).toBe(20);
+    expect(distinct(o.result.heads.map((h) => h.x)) + distinct(o.result.heads.map((h) => h.y))).toBe(9);
+    expect(o.result.notes?.aligned).toEqual({ extraHeads: 2 });
+    const fewest = placeZone(room, NZS4541_V1.hazards.OH1, { alignRows: false });
+    expect(fewest.heads.length).toBe(18);
+  });
+
   it("a plain room is not changed (nothing to align)", () => {
     const o = run(zone(9678, 6711, undefined));
     expect(o.result.notes?.aligned).toBeUndefined();

@@ -159,7 +159,7 @@ const MIN_TILE_PITCH = 100;
 /** How many heads over the fewest a layout with aligned rows may use (one, or about 10 %). */
 const alignAllowance = (n: number) => Math.max(1, Math.round(0.1 * n));
 /** Row and column lines an aligned layout must save for each extra head. */
-const ALIGN_GAIN = 3;
+const ALIGN_GAIN = 2;
 /** Heads within this of one line (mm) are on the same row or column line. */
 const LINE_TOL = 100;
 /** A guide counts as along (or across) the rows within this angle. */
@@ -239,9 +239,9 @@ type Bay = { id: number; ring: Pt[]; holes: Pt[][]; bb: Box; area: number; conve
 type Decomposition = { name: "none" | "cutH" | "cutV"; bays: Bay[] };
 type BaySamples = { lat: Owned[]; bnd: Owned[]; wall: Owned[] };
 type RowInfo = { y: number; d: number; Srect: number; S: number; runs: Interval[]; clean: Interval[]; base: Cand[] };
-type BayCtx = { R: Rule; prefs: Prefs; pattern: Pattern; placedCov: FHead[]; placedSp: FHead[]; alignXs: number[] };
-type RowsResult = { heads: FHead[]; rest: Owned[]; unresolved: Sample[]; gapFill: number; cost: number; rows: number; sawShadow: boolean };
-type DecResult = { heads: FHead[]; unresolved: Sample[]; gapFill: number; cost: number; h4: FHead[]; rowCount: number };
+type BayCtx = { R: Rule; prefs: Prefs; pattern: Pattern; placedCov: FHead[]; placedSp: FHead[]; alignXs: number[]; alignRows: boolean };
+type RowsResult = { heads: FHead[]; rest: Owned[]; unresolved: Sample[]; gapFill: number; cost: number; rows: number; sawShadow: boolean; alignedExtra?: number };
+type DecResult = { heads: FHead[]; unresolved: Sample[]; gapFill: number; cost: number; h4: FHead[]; rowCount: number; alignedExtra: number };
 
 // --- Public entry point ----------------------------------------------------------------------
 
@@ -304,7 +304,7 @@ function place(input: PlaceInput, hz: PlacerFigures, opts: PlaceOptions, noDelta
       // gets the room (the others keep the exact bound, and the search stays as fast as before).
       const room = alignRows && best && decs[di].bays.length < best.bays.length ? alignAllowance(best.heads.length) : 0;
       const cap = best && best.score[0] === 0 ? best.heads.length + room : null;
-      const res = layoutDecomposition(F, decs[di], R, prefs, pattern, cap);
+      const res = layoutDecomposition(F, decs[di], R, prefs, pattern, cap, alignRows);
       tried++;
       const score = [res.unresolved.length + res.h4.length, res.heads.length, res.gapFill, res.cost, fi, di];
       const cand: Candidate = { ...res, score, frame: F, decName: decs[di].name, bays: decs[di].bays };
@@ -323,6 +323,8 @@ function place(input: PlaceInput, hz: PlacerFigures, opts: PlaceOptions, noDelta
     const fewest: Candidate = best;
     const n = fewest.heads.length;
     const base = lineCount(fewest.heads);
+    // the fewest heads any complete layout needed (a bay may already have taken an aligned layout)
+    const least = Math.min(...complete.map((c) => c.heads.length - c.alignedExtra));
     let pick = fewest;
     let pickLines = base;
     for (const c of complete) {
@@ -335,8 +337,12 @@ function place(input: PlaceInput, hz: PlacerFigures, opts: PlaceOptions, noDelta
         pickLines = l;
       }
     }
-    alignedExtra = pick.heads.length - n;
+    alignedExtra = pick.heads.length - least;
     best = pick;
+    // An aligned layout must not open the rows up: when a row's next row straight across is more
+    // than Smax away (the oracle's nearest-peer check cannot see that), the fewest-heads search is
+    // used as it stands.
+    if (rowsTooFarApart(best.frame, best.heads, R)) return place(input, hz, { ...opts, alignRows: false }, noDelta);
   }
 
   // Back to world coordinates.
@@ -654,6 +660,39 @@ function frameCandidates(prep: Prep, grid: CeilingGrid | null, override: number 
   return fixed ? out : [((ga % Math.PI) + Math.PI) % Math.PI];
 }
 
+/**
+ * Is some row head's next row, straight across the rows and before any wall, more than Smax away?
+ * Rows are the placer's own (bay and row index); gap-fill and locked heads are not rows.
+ */
+function rowsTooFarApart(F: Frame, heads: readonly FHead[], R: Rule): boolean {
+  const rows = new Map<string, { y: number; x0: number; x1: number }>();
+  for (const h of heads) {
+    if (h.kind === "locked" || typeof h.row !== "number") continue;
+    const key = `${h.bay}:${h.row}`;
+    const r = rows.get(key);
+    if (!r) rows.set(key, { y: h.y, x0: h.x, x1: h.x });
+    else {
+      r.x0 = Math.min(r.x0, h.x);
+      r.x1 = Math.max(r.x1, h.x);
+    }
+  }
+  for (const h of heads) {
+    if (h.kind === "locked" || typeof h.row !== "number") continue;
+    const own = `${h.bay}:${h.row}`;
+    for (const side of [1, -1]) {
+      let best = Infinity;
+      for (const [key, r] of rows) {
+        if (key === own) continue;
+        const d = (r.y - h.y) * side;
+        if (d <= 1 || d >= best || h.x < r.x0 - R.Smax / 2 || h.x > r.x1 + R.Smax / 2) continue;
+        best = d;
+      }
+      if (Number.isFinite(best) && best > R.Smax + 3 && F.idx.visible(h, { x: h.x, y: h.y + side * best })) return true;
+    }
+  }
+  return false;
+}
+
 /** How many row lines plus column lines the placed heads sit on (frame coordinates; fewer is tidier). */
 function lineCount(heads: readonly FHead[]): number {
   const count = (vs: number[]) => {
@@ -951,7 +990,7 @@ function trapezoidBays(rings: Pt[][]): Pt[][] {
 
 // --- Layout for one decomposition: bays largest first, each bay picks its best row-set variant ---
 
-function layoutDecomposition(F: Frame, dec: Decomposition, R: Rule, prefs: Prefs, pattern: Pattern, cap: number | null): DecResult {
+function layoutDecomposition(F: Frame, dec: Decomposition, R: Rule, prefs: Prefs, pattern: Pattern, cap: number | null, alignRows: boolean): DecResult {
   const bays = dec.bays;
   const per: BaySamples[] = bays.map(() => ({ lat: [], bnd: [], wall: [] }));
   const assign = (s: Sample, key: keyof BaySamples) => {
@@ -993,10 +1032,11 @@ function layoutDecomposition(F: Frame, dec: Decomposition, R: Rule, prefs: Prefs
   let gapFill = 0;
   let cost = 0;
   let rowCount = 0;
+  let alignedExtra = 0;
   const alignXs: number[] = [];
   for (const bi of order) {
     const room = cap == null ? null : cap - heads.length; // both counts include locked heads
-    const res = layoutBay(F, bays[bi], bi, per[bi], { R, prefs, pattern, placedCov, placedSp, alignXs }, room);
+    const res = layoutBay(F, bays[bi], bi, per[bi], { R, prefs, pattern, placedCov, placedSp, alignXs, alignRows }, room);
     for (const h of res.heads) {
       heads.push(h);
       placedCov.push(h);
@@ -1005,6 +1045,7 @@ function layoutDecomposition(F: Frame, dec: Decomposition, R: Rule, prefs: Prefs
     }
     unresolved = unresolved.concat(res.unresolved);
     gapFill += res.gapFill;
+    alignedExtra += res.alignedExtra ?? 0;
     cost += res.cost;
     rowCount += res.rows;
     // A complete layout already exists (cap): one that leaves samples unresolved, or needs more
@@ -1028,7 +1069,7 @@ function layoutDecomposition(F: Frame, dec: Decomposition, R: Rule, prefs: Prefs
     }
     if (any && nn > R.Smax + TOL) h4.push(h);
   }
-  return { heads, unresolved, gapFill, cost, h4, rowCount };
+  return { heads, unresolved, gapFill, cost, h4, rowCount, alignedExtra };
 }
 
 function layoutBay(F: Frame, bay: Bay, bi: number, samples: BaySamples, ctx: BayCtx, room: number | null): RowsResult {
@@ -1049,7 +1090,11 @@ function layoutBay(F: Frame, bay: Bay, bi: number, samples: BaySamples, ctx: Bay
       const res = layoutRows(F, bay, bi, samples, rows, ctx, defer, bound);
       lastShadow = res === null ? true : res.sawShadow;
       if (res === null) continue;
-      if (!res.unresolved.length && (bound == null || res.heads.length < bound)) bound = res.heads.length;
+      // (with aligned rows, a variant may use a few more heads than the fewest and still be taken)
+      if (!res.unresolved.length) {
+        const lim = res.heads.length + (ctx.alignRows ? alignAllowance(res.heads.length) : 0);
+        if (bound == null || lim < bound) bound = lim;
+      }
       all.push(res);
     }
   if (!all.length) return { heads: [], rest: [], unresolved: samples.lat.map((o) => o.s), gapFill: 0, cost: 0, rows: 0, sawShadow: false };
@@ -1061,7 +1106,28 @@ function layoutBay(F: Frame, bay: Bay, bi: number, samples: BaySamples, ctx: Bay
     all.splice(0, 3, ...top);
     all.sort(cmpBay);
   }
-  return all[0];
+  // Aligned rows inside the bay: rows that hold different numbers of heads (5-4-4-5) give way to a
+  // row set whose heads line up, when it costs no more than alignAllowance and saves ALIGN_GAIN
+  // lines for each extra head.
+  const fewest = all[0];
+  if (ctx.alignRows && !fewest.unresolved.length && !fewest.gapFill) {
+    const n = fewest.heads.length;
+    const base = lineCount(fewest.heads);
+    let pick = fewest;
+    let pickLines = base;
+    for (const c of all) {
+      const extra = c.heads.length - n;
+      if (c.unresolved.length || c.gapFill || extra <= 0 || extra > alignAllowance(n)) continue;
+      const l = lineCount(c.heads);
+      if (base - l < ALIGN_GAIN * extra) continue;
+      if (l < pickLines || (l === pickLines && c.heads.length < pick.heads.length)) {
+        pick = c;
+        pickLines = l;
+      }
+    }
+    if (pick !== fewest) return { ...pick, alignedExtra: pick.heads.length - n };
+  }
+  return fewest;
 }
 
 function cmpBay(a: RowsResult, b: RowsResult): number {

@@ -14,7 +14,7 @@ This is a second look at the engine before pilots use it. It asks two things:
 | F1 | The oracle does not see two rows that are too far apart. | Rule reading, founder decision | Option 3 chosen by the founder (2026-11-12): the report row is now "Nearest head". A row-aware warning for hand edits is left for after M2. Placer layouts are not affected (measured). Heads moved by hand are. |
 | F2 | The verdict could depend on where the room sat on the page (a head up to 1 mm past the coverage radius was sometimes missed). | Bug, low | Fixed, with a regression test. |
 | F3 | The zone report could not be scrolled with the keyboard. | Accessibility, serious (axe) | Fixed. Found by the new keyboard-only test. |
-| O1 | The placer uses fewer heads than an aligned grid when rows may hold different numbers of heads. | Observation | For the founder's A16 comparison. |
+| O1 | The placer uses fewer heads than an aligned grid when rows may hold different numbers of heads. | Observation | Changed 2026-11-12 after the founder's sample drawings: rows are aligned by default (`alignRows`), at up to one head or about 10 % more, when it saves 2 row or column lines per extra head. 14×14 m OH1 is now 20 heads in a 4 × 5 grid. A layout that would open the rows past the maximum spacing falls back to the fewest-heads layout. |
 
 No finding changes a pass into a fail for a layout the placer makes.
 
