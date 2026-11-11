@@ -83,7 +83,9 @@ export function reportRows(report: OracleReport, hazard: string): ReportRow[] {
     },
     {
       key: "maxSpacing",
-      label: "Max spacing",
+      // "Nearest head", not "Max spacing": the figure is the widest nearest-visible-peer distance (oracle C4),
+      // which does not see rows that are too far apart (M2 review F1).
+      label: "Nearest head",
       value: report.maxNNSpacingM === null ? "—" : `${metres(report.maxNNSpacingM * 1000)} (max ${metres(f.Smax)})`,
       ok: report.maxNNSpacingM === null || report.maxNNSpacingM * 1000 <= f.Smax + 1e-6,
     },

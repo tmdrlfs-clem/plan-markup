@@ -11,7 +11,7 @@ This is a second look at the engine before pilots use it. It asks two things:
 
 | # | Finding | Severity | Status |
 |---|---|---|---|
-| F1 | The oracle does not see two rows that are too far apart. | Rule reading, founder decision | Open. Placer layouts are not affected (measured). Heads moved by hand are. |
+| F1 | The oracle does not see two rows that are too far apart. | Rule reading, founder decision | Option 3 chosen by the founder (2026-11-12): the report row is now "Nearest head". A row-aware warning for hand edits is left for after M2. Placer layouts are not affected (measured). Heads moved by hand are. |
 | F2 | The verdict could depend on where the room sat on the page (a head up to 1 mm past the coverage radius was sometimes missed). | Bug, low | Fixed, with a regression test. |
 | F3 | The zone report could not be scrolled with the keyboard. | Accessibility, serious (axe) | Fixed. Found by the new keyboard-only test. |
 | O1 | The placer uses fewer heads than an aligned grid when rows may hold different numbers of heads. | Observation | For the founder's A16 comparison. |

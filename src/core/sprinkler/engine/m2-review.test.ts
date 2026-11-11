@@ -76,7 +76,7 @@ describe("M2 review, finding F1: the oracle does not see rows that are too far a
     // Measured strictly, the layout breaks max spacing across the rows ...
     expect(auditRows([outer], heads, 0, f.Smax * 1000).across).toBe(gap);
     expect(neighbourGaps({ outer }, heads)[0].distance).toBe(gap);
-    // ... and the oracle passes it without a warning, reporting the 1.8 m along the rows as its max spacing.
+    // ... and the oracle passes it without a warning, reporting the 1.8 m along the rows (the report row is "Nearest head" for this reason).
     const report = checkZone({ barriers: [{ kind: "wall", ring: outer }] }, heads, f);
     expect(report.pass).toBe(true);
     expect(report.flags).toEqual([]);

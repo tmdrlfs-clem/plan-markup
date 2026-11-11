@@ -49,6 +49,7 @@ describe("zone report (Story 9.11)", () => {
     expect(rows.ruleset.value).toBe(`nzs4541 v${NZS4541_V1.version}`);
     expect(rows.heads.value).toBe("2");
     expect(rows.areaPerHead.value).toBe(`12 m² (max ${OH1.Amax} m²)`);
+    expect(rows.maxSpacing.label).toBe("Nearest head"); // M2 review F1: not the full spacing rule
     expect(rows.maxSpacing.value).toBe(`3 m (max ${OH1.Smax} m)`);
     expect(rows.minWall.value).toBe(`1.5 m (min ${OH1.Wmin} m)`);
     expect(rows.maxWall.ok).toBe(true);
