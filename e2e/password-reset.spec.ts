@@ -89,8 +89,7 @@ test("Auth refuses a password change from a session older than a day", async () 
     try {
       return Object.fromEntries(
         readFileSync(path.join(__dirname, "..", ".env.local"), "utf8")
-          .split(/?
-/)
+          .split(/\r?\n/)
           .filter((l) => l.includes("=") && !l.startsWith("#"))
           .map((l) => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1)]),
       );
