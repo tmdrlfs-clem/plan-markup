@@ -224,4 +224,15 @@ describe("placeHeads (Story 9.8)", () => {
     await run();
     expect(posted).toEqual([]);
   });
+  it("says how many heads aligned rows cost over the fewest possible", async () => {
+    // A 7.2 × 22.5 m office with a partition stub on one wall: 12 heads in line, where 11 would do.
+    const pt = (x: number, y: number) => ({ x: 100 + x / k100, y: 100 + y / k100 });
+    const outer = [pt(0, 0), pt(7159, 0), pt(7159, 14633), pt(2739, 14633), pt(2739, 14733), pt(7159, 14733), pt(7159, 22534), pt(0, 22534)];
+    setup([zone(outer)]);
+    await placeHeads({ map: USE_HAZARD_V1, newId });
+    const run = placeRunStore.getState();
+    expect(run.status).toBe("done");
+    expect(run.heads).toBe(12);
+    expect(run.alignedExtra).toBe(1);
+  });
 });

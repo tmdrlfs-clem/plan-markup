@@ -48,12 +48,14 @@ export type PlaceRunState = {
   done: number;
   total: number;
   heads: number;
+  /** Heads the run used over the fewest possible, to keep rows in line (the placer's aligned rows). */
+  alignedExtra: number;
   errors: ZoneErrorCard[];
   /** The oracle's report per zone id, for the zone report (Story 9.11). */
   reports: Record<string, OracleReport | null>;
 };
 
-const IDLE: PlaceRunState = { status: "idle", done: 0, total: 0, heads: 0, errors: [], reports: {} };
+const IDLE: PlaceRunState = { status: "idle", done: 0, total: 0, heads: 0, alignedExtra: 0, errors: [], reports: {} };
 export const placeRunStore = createStore<PlaceRunState>(() => IDLE);
 
 export const SUGGESTIONS: Record<ZoneErrorCard["code"], string> = {
@@ -142,7 +144,7 @@ export function placeHeads(ctx: PlaceHeadsContext): Promise<void> {
   const added: Markup[] = [];
   const results = new Map<string, PlaceResult>();
   const reports: Record<string, OracleReport | null> = {};
-  placeRunStore.setState({ status: "running", done: 0, total: zones.length, heads: 0, errors: [...errors], reports: {} }, true);
+  placeRunStore.setState({ status: "running", done: 0, total: zones.length, heads: 0, alignedExtra: 0, errors: [...errors], reports: {} }, true);
   // Story 9.9: the coverage overlay waits for the run, then fades in.
   if (zones.length > 0) holdCoverage();
 
@@ -187,7 +189,8 @@ export function placeHeads(ctx: PlaceHeadsContext): Promise<void> {
           added.push(...heads);
         }
         const errs = reply.result.ok ? [] : [card(z, reply.result.error.code, reply.result.error.message, reply.result.error.where.map((p) => toPage(p, scale)))];
-        placeRunStore.setState((s) => ({ heads: s.heads + heads.length, errors: [...s.errors, ...errs] }));
+        const extra = reply.result.notes?.aligned?.extraHeads ?? 0;
+        placeRunStore.setState((s) => ({ heads: s.heads + heads.length, alignedExtra: s.alignedExtra + extra, errors: [...s.errors, ...errs] }));
         return;
       }
       case "zoneReport":

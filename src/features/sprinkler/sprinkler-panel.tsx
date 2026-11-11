@@ -408,6 +408,11 @@ function RunStatus() {
       <p className="text-ws-sm text-muted" aria-live="polite" data-testid="place-status">
         {text}
       </p>
+      {run.status === "done" && run.alignedExtra > 0 ? (
+        <p className="text-ws-sm text-muted" data-testid="place-aligned">
+          {plural(run.alignedExtra, "head")} more than the fewest possible, to keep rows in line.
+        </p>
+      ) : null}
     </div>
   );
 }
