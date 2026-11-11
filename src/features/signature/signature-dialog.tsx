@@ -14,6 +14,7 @@ import { createStore } from "zustand/vanilla";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogFooter } from "@/components/ui/dialog";
 import { pickImage } from "@/features/editor";
+import { ProfileSection } from "@/features/account/profile-section";
 import { hasDocument, viewerStore } from "@/features/viewer";
 
 import { deleteSignature, getSignature, saveSignature } from "./actions";
@@ -126,6 +127,8 @@ export function SignatureDialog({ name, email }: { name: string; email: string }
       }
     >
       <div className="flex flex-col gap-3 text-ws-md">
+        {/* Story 10.3: name and email. */}
+        <ProfileSection name={name} email={email} />
         <section aria-label="Saved signature" className="flex flex-col gap-2">
           <h3 className="text-ws-sm text-muted">Saved signature</h3>
           {loading ? (

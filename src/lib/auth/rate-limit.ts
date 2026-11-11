@@ -20,10 +20,16 @@ export const RESET_LIMITS = {
   reset_email: { maxHits: 3, windowSeconds: 3600 },
 } as const;
 
+/** Email changes per signed-in user (Story 10.3): each sends two emails. */
+export const EMAIL_CHANGE_LIMITS = {
+  email_change_user: { maxHits: 5, windowSeconds: 3600 },
+} as const;
+
 export type RateLimitBucket =
   | keyof typeof SIGN_IN_LIMITS
   | keyof typeof SIGN_UP_LIMITS
-  | keyof typeof RESET_LIMITS;
+  | keyof typeof RESET_LIMITS
+  | keyof typeof EMAIL_CHANGE_LIMITS;
 
 export type ConsumeArgs = {
   bucket: RateLimitBucket;
@@ -82,6 +88,16 @@ export async function checkResetRateLimit(
   consume: Consume = rpcConsume,
 ): Promise<RateLimitDecision> {
   return checkPair(RESET_LIMITS, "reset_ip", "reset_email", ip, email, consume);
+}
+
+/** Email changes of one user (Story 10.3). Fails closed: throws when the limiter cannot be reached. */
+export async function checkEmailChangeRateLimit(userId: string, consume: Consume = rpcConsume): Promise<RateLimitDecision> {
+  const r = await consume({
+    bucket: "email_change_user",
+    keyHash: rateLimitKeyHash("email_change_user", userId),
+    ...EMAIL_CHANGE_LIMITS.email_change_user,
+  });
+  return r.allowed ? { allowed: true } : { allowed: false, retryAfterSeconds: r.retryAfterSeconds };
 }
 
 async function checkPair<I extends RateLimitBucket, E extends RateLimitBucket>(

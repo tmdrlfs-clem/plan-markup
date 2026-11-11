@@ -154,7 +154,7 @@ development_status:
   epic-10: in-progress
   10-1-sign-up-and-wait-for-activation: review
   10-2-reset-my-password: review
-  10-3-view-and-edit-my-profile: backlog
+  10-3-view-and-edit-my-profile: review
   10-4-platform-admin-manages-user-accounts: backlog
   10-5-create-companies-and-their-first-admin: backlog
   10-6-company-admin-invites-users: backlog

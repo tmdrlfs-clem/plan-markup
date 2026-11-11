@@ -1,39 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
-import pg from "pg";
-import { DB_URL } from "./global-setup";
+import { clearLimits, deleteUser, emailLink, sql } from "./auth-mail";
 import { formAlert, signIn } from "./helpers";
 
 // Story 10.1: sign up, confirm the email, wait for activation.
 
-async function sql<T extends pg.QueryResultRow>(text: string, values: unknown[] = []): Promise<T[]> {
-  const client = new pg.Client({ connectionString: DB_URL });
-  await client.connect();
-  try {
-    return (await client.query<T>(text, values)).rows;
-  } finally {
-    await client.end();
-  }
-}
-
-const MAILPIT = process.env.MAILPIT_URL ?? "http://127.0.0.1:56324";
-
-/** The confirmation link from the email Auth sent (Mailpit, the local mail catcher). */
-async function confirmationLink(email: string): Promise<string> {
-  for (let i = 0; i < 40; i++) {
-    const res = await fetch(`${MAILPIT}/api/v1/search?query=${encodeURIComponent(`to:"${email}"`)}`);
-    const { messages } = (await res.json()) as { messages: { ID: string }[] };
-    if (messages.length > 0) {
-      const msg = (await (await fetch(`${MAILPIT}/api/v1/message/${messages[0].ID}`)).json()) as { HTML: string; Subject: string };
-      expect(msg.Subject).toBe("Confirm your Plan Markup account");
-      const href = /href="([^"]*\/auth\/confirm[^"]*)"/.exec(msg.HTML)?.[1];
-      if (!href) throw new Error("no confirmation link in the email");
-      const url = new URL(href.replaceAll("&amp;", "&"));
-      return url.pathname + url.search;
-    }
-    await new Promise((r) => setTimeout(r, 250));
-  }
-  throw new Error(`no email for ${email}`);
-}
+const confirmationLink = (email: string) => emailLink(email, "Confirm your Plan Markup account");
 
 /** With Turnstile keys set (a manual run), waits for the check's token; CI runs without them. */
 async function waitForCheck(page: Page) {
@@ -41,10 +12,8 @@ async function waitForCheck(page: Page) {
   await expect(page.locator('input[name="cf-turnstile-response"]')).not.toHaveValue("", { timeout: 15_000 });
 }
 
-/** Sign-up counters per email; a rerun of this spec would otherwise hit them. */
-async function clearSignUpLimits() {
-  await sql("delete from app.rate_limits where bucket in ('sign_up_ip', 'sign_up_email')");
-}
+/** Sign-up counters; a rerun of this spec would otherwise hit them. */
+const clearSignUpLimits = () => clearLimits("sign_up_ip", "sign_up_email");
 
 test("sign up, confirm the email, then wait for approval", async ({ page }) => {
   const email = `signup-${Date.now()}-${test.info().retry}@plan-markup.test`;
@@ -104,7 +73,7 @@ test("sign up, confirm the email, then wait for approval", async ({ page }) => {
     await page.getByRole("button", { name: "Create account" }).click();
     await expect(page.getByRole("heading", { name: "Check your email" })).toBeVisible();
   } finally {
-    await sql("delete from auth.users where email = $1", [email]);
+    await deleteUser(email);
     await clearSignUpLimits();
   }
 });

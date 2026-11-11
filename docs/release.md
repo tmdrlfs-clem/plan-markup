@@ -17,6 +17,7 @@ Each job skips itself with a notice until its secrets exist. Run it by hand from
    - set Site URL to the production URL;
    - Emails → Templates → **Confirm signup**: subject and body from `supabase/templates/confirmation.html` (its link goes to `/auth/confirm`);
    - Emails → Templates → **Reset password**: from `supabase/templates/recovery.html` (Story 10.2);
+   - Emails → Templates → **Change email address**: from `supabase/templates/email_change.html` (Story 10.3); keep **Secure email change** on (both addresses confirm);
    - Emails → **SMTP settings**: a transactional provider (for example Resend or Postmark) with a verified sending domain. Supabase's built-in mailer is for testing only;
    - Authentication → Rate limits: emails per hour to suit the SMTP plan.
    - Storage buckets and policies come from the migrations.
