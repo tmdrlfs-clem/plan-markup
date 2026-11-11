@@ -95,3 +95,23 @@ describe("Auth error classes", () => {
     expect(classifyAuthError({ code: "invalid_credentials", status: 400 })).toBe("invalid");
   });
 });
+
+describe("password reset helpers (Story 10.2)", async () => {
+  const { hasFreshRecovery, classifyUpdateError } = await import("./password-reset");
+  const now = 1_800_000_000;
+
+  it("accepts an emailed-link sign-in within the hour only", () => {
+    expect(hasFreshRecovery([{ method: "otp", timestamp: now - 60 }], now)).toBe(true);
+    expect(hasFreshRecovery([{ method: "recovery", timestamp: now - 3600 }], now)).toBe(true);
+    expect(hasFreshRecovery([{ method: "otp", timestamp: now - 3601 }], now)).toBe(false);
+    expect(hasFreshRecovery([{ method: "password", timestamp: now }], now)).toBe(false);
+    expect(hasFreshRecovery([{ method: "otp", timestamp: now + 3600 }], now)).toBe(false);
+    expect(hasFreshRecovery(undefined, now)).toBe(false);
+  });
+
+  it("maps password update errors", () => {
+    expect(classifyUpdateError({ code: "same_password" })).toBe("same_password");
+    expect(classifyUpdateError({ code: "weak_password" })).toBe("weak_password");
+    expect(classifyUpdateError({ status: 500 })).toBe("unavailable");
+  });
+});

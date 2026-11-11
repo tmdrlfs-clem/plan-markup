@@ -14,7 +14,16 @@ export const SIGN_UP_LIMITS = {
   sign_up_email: { maxHits: 5, windowSeconds: 3600 },
 } as const;
 
-export type RateLimitBucket = keyof typeof SIGN_IN_LIMITS | keyof typeof SIGN_UP_LIMITS;
+/** Password-reset requests (Story 10.2, NFR15): per IP and per email, one hour. */
+export const RESET_LIMITS = {
+  reset_ip: { maxHits: 10, windowSeconds: 3600 },
+  reset_email: { maxHits: 3, windowSeconds: 3600 },
+} as const;
+
+export type RateLimitBucket =
+  | keyof typeof SIGN_IN_LIMITS
+  | keyof typeof SIGN_UP_LIMITS
+  | keyof typeof RESET_LIMITS;
 
 export type ConsumeArgs = {
   bucket: RateLimitBucket;
@@ -65,6 +74,14 @@ export async function checkSignUpRateLimit(
   consume: Consume = rpcConsume,
 ): Promise<RateLimitDecision> {
   return checkPair(SIGN_UP_LIMITS, "sign_up_ip", "sign_up_email", ip, email, consume);
+}
+
+/** Password-reset requests, per IP and per email (Story 10.2). */
+export async function checkResetRateLimit(
+  { ip, email }: { ip: string; email: string },
+  consume: Consume = rpcConsume,
+): Promise<RateLimitDecision> {
+  return checkPair(RESET_LIMITS, "reset_ip", "reset_email", ip, email, consume);
 }
 
 async function checkPair<I extends RateLimitBucket, E extends RateLimitBucket>(

@@ -55,8 +55,17 @@ describe("supabase/config.toml auth settings", () => {
     expect(authSessions?.get("inactivity_timeout")).toBe('"168h"');
   });
 
-  it("keeps email confirmations off (NFR18 is Epic 10)", () => {
-    expect(sections.get("auth.email")?.get("enable_confirmations")).toBe("false");
+  it("requires email confirmation before sign-in (Story 10.1)", () => {
+    expect(sections.get("auth.email")?.get("enable_confirmations")).toBe("true");
+  });
+
+  it.each([
+    ["auth.email.template.confirmation", "./supabase/templates/confirmation.html"],
+    ["auth.email.template.recovery", "./supabase/templates/recovery.html"],
+  ])("[%s] uses %s (links to /auth/confirm with a token hash)", (section, path) => {
+    expect(sections.get(section)?.get("content_path")).toBe(`"${path}"`);
+    const html = readFileSync(fileURLToPath(new URL(`../../${path.slice(2)}`, import.meta.url)), "utf8");
+    expect(html).toContain("{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}");
   });
 
   it("does not enable a custom access token hook", () => {

@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { TextField } from "@/components/ui/text-field";
 import { signUp, type SignUpFieldErrors, type SignUpState } from "./sign-up-actions";
 import { PASSWORD_MIN, passwordProblem } from "./sign-up-schema";
-import { TurnstileWidget } from "./turnstile-widget";
+import { CHECK_PENDING, useTurnstileGate } from "./turnstile-widget";
 
 const initialState: SignUpState = { status: "idle" };
 
@@ -21,17 +21,13 @@ function validateEmail(value: string): string | undefined {
 }
 
 export const SENT_HEADING = "Check your email";
-export const CHECK_PENDING = "Wait for the check below to finish, then create your account.";
 
 /** Sign-up (Story 10.1): email, password, Turnstile; then "check your email". */
 export function SignUpForm({ turnstileSiteKey }: { turnstileSiteKey?: string }) {
   const [state, formAction, pending] = useActionState(signUp, initialState);
   const [clientErrors, setClientErrors] = useState<SignUpFieldErrors>({});
   const [email, setEmail] = useState("");
-  const [attempt, setAttempt] = useState(0);
-  // Turnstile: the token arrives a moment after the page loads.
-  const [checkReady, setCheckReady] = useState(false);
-  const [checkPrompt, setCheckPrompt] = useState(false);
+  const check = useTurnstileGate(turnstileSiteKey);
   const emailRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
 
@@ -40,7 +36,7 @@ export function SignUpForm({ turnstileSiteKey }: { turnstileSiteKey?: string }) 
     email: clientErrors.email ?? serverErrors.email,
     password: clientErrors.password ?? serverErrors.password,
   };
-  const formMessage = checkPrompt
+  const formMessage = check.prompt
     ? CHECK_PENDING
     : state.status === "error" && state.code !== "INVALID_INPUT"
       ? state.message
@@ -88,16 +84,7 @@ export function SignUpForm({ turnstileSiteKey }: { turnstileSiteKey?: string }) 
       (emailError ? emailRef : passwordRef).current?.focus();
       return;
     }
-    if (turnstileSiteKey && !checkReady) {
-      event.preventDefault();
-      setCheckPrompt(true);
-      return;
-    }
-    setCheckPrompt(false);
-    setCheckReady(false);
-    // The form data (with this widget's token) is taken during this event; a Turnstile token is
-    // single-use, so the next try gets a fresh widget.
-    setAttempt((n) => n + 1);
+    check.pass(event);
   }
 
   return (
@@ -127,8 +114,8 @@ export function SignUpForm({ turnstileSiteKey }: { turnstileSiteKey?: string }) 
           onChange={(e) => setEmail(e.currentTarget.value)}
           error={errors.email}
           onBlur={(e) => {
-            // Leaving an empty field says nothing (submit does): an error appearing on blur would
-            // shift the links below while they are being clicked.
+            // Leaving an empty field says nothing (submit does): an error appearing as focus leaves
+            // would shift the links below while they are being clicked.
             const value = e.currentTarget.value;
             setClientErrors((prev) => ({ ...prev, email: value.trim() === "" ? undefined : validateEmail(value) }));
           }}
@@ -146,14 +133,7 @@ export function SignUpForm({ turnstileSiteKey }: { turnstileSiteKey?: string }) 
             setClientErrors((prev) => ({ ...prev, password: value === "" ? undefined : passwordProblem(value) }));
           }}
         />
-        {turnstileSiteKey ? <TurnstileWidget
-            key={attempt}
-            siteKey={turnstileSiteKey}
-            onReady={(ready) => {
-              setCheckReady(ready);
-              if (ready) setCheckPrompt(false);
-            }}
-          /> : null}
+        {check.widget}
         <Button
           type="submit"
           variant="primary"

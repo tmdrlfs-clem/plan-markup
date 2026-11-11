@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 const SCRIPT_SRC = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
 
@@ -77,4 +77,46 @@ export function TurnstileWidget({ siteKey, onReady }: { siteKey: string; onReady
     };
   }, [siteKey]);
   return <div ref={ref} data-testid="turnstile" className="min-h-[65px]" />;
+}
+
+export const CHECK_PENDING = "Wait for the check below to finish, then try again.";
+
+/**
+ * Turnstile for a form: the widget to render, whether to show CHECK_PENDING,
+ * and `pass(event)` for onSubmit (after the field checks). `pass` stops a submit
+ * made before the token arrived; otherwise it lets it through and remounts the
+ * widget, since a token is single-use. Without a site key it always passes.
+ */
+export function useTurnstileGate(siteKey: string | undefined): {
+  widget: ReactNode;
+  prompt: boolean;
+  pass: (event: FormEvent<HTMLFormElement>) => boolean;
+} {
+  const [attempt, setAttempt] = useState(0);
+  const [ready, setReady] = useState(false);
+  const [prompt, setPrompt] = useState(false);
+  function pass(event: FormEvent<HTMLFormElement>): boolean {
+    if (!siteKey) return true;
+    if (!ready) {
+      event.preventDefault();
+      setPrompt(true);
+      return false;
+    }
+    // The form data (with this widget's token) is taken during this event.
+    setPrompt(false);
+    setReady(false);
+    setAttempt((n) => n + 1);
+    return true;
+  }
+  const widget = siteKey ? (
+    <TurnstileWidget
+      key={attempt}
+      siteKey={siteKey}
+      onReady={(r) => {
+        setReady(r);
+        if (r) setPrompt(false);
+      }}
+    />
+  ) : null;
+  return { widget, prompt, pass };
 }

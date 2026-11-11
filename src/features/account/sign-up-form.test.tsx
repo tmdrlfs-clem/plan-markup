@@ -19,8 +19,10 @@ vi.mock("react", async (importOriginal) => {
 import { LINK_INVALID_NOTICE, SignInForm } from "./sign-in-form";
 import { PASSWORD_MESSAGES } from "./sign-up-schema";
 import { SENT_HEADING, SignUpForm } from "./sign-up-form";
+import { ForgotPasswordForm, ResetLinkNeeded, ResetPasswordForm, RESET_SENT_HEADING } from "./password-reset-forms";
 
 vi.mock("./actions", () => ({ signIn: vi.fn() }));
+vi.mock("./password-reset-actions", () => ({ requestReset: vi.fn(), resetPassword: vi.fn() }));
 
 describe("SignUpForm", () => {
   it("has email, a new password with show/hide, and a link to sign in", () => {
@@ -62,5 +64,36 @@ describe("SignInForm (Story 10.1 additions)", () => {
     render(<SignInForm next="/workspace" linkInvalid />);
     expect(screen.getByRole("link", { name: "Create an account" })).toHaveAttribute("href", "/sign-up");
     expect(screen.getByRole("alert")).toHaveTextContent(LINK_INVALID_NOTICE);
+  });
+});
+
+describe("Password reset forms (Story 10.2)", () => {
+  it("asks for the email, then says to check it without saying whether it exists", () => {
+    action.state = { status: "idle" };
+    const { unmount } = render(<ForgotPasswordForm />);
+    expect(screen.getByRole("button", { name: "Send reset link" })).toBeInTheDocument();
+    unmount();
+    action.state = { status: "sent", email: "who@plan-markup.test" };
+    render(<ForgotPasswordForm />);
+    expect(screen.getByRole("heading", { name: RESET_SENT_HEADING })).toBeInTheDocument();
+    expect(screen.getByTestId("reset-sent")).toHaveTextContent("If who@plan-markup.test belongs to a Plan Markup account");
+  });
+
+  it("asks for a new password with the account's email for password managers", () => {
+    action.state = { status: "idle" };
+    render(<ResetPasswordForm email="who@plan-markup.test" />);
+    expect(screen.getByLabelText("New password")).toHaveAttribute("autocomplete", "new-password");
+    expect(screen.getByText("who@plan-markup.test")).toBeInTheDocument();
+  });
+
+  it("without the link, points to a new one", () => {
+    render(<ResetLinkNeeded />);
+    expect(screen.getByRole("link", { name: "Send me a new link" })).toHaveAttribute("href", "/forgot-password");
+  });
+
+  it("sign-in links to Forgot password", () => {
+    action.state = { status: "idle" };
+    render(<SignInForm next="/workspace" />);
+    expect(screen.getByRole("link", { name: "Forgot password?" })).toHaveAttribute("href", "/forgot-password");
   });
 });

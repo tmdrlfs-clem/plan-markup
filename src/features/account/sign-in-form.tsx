@@ -94,8 +94,8 @@ export function SignInForm({ next, linkInvalid = false }: { next: string; linkIn
           onChange={(e) => setEmail(e.currentTarget.value)}
           error={errors.email}
           onBlur={(e) => {
-            // Leaving an empty field says nothing (submit does): an error appearing on blur would
-            // shift the links below while they are being clicked.
+            // Leaving an empty field says nothing (submit does): an error appearing as focus leaves
+            // would shift the links below while they are being clicked.
             const value = e.currentTarget.value;
             setClientErrors((prev) => ({ ...prev, email: value.trim() === "" ? undefined : validateEmail(value) }));
           }}
@@ -124,6 +124,11 @@ export function SignInForm({ next, linkInvalid = false }: { next: string; linkIn
         </Button>
       </form>
 
+      <p className="text-ad-sm">
+        <Link href="/forgot-password" className="font-medium text-text underline underline-offset-2 focus-ring">
+          Forgot password?
+        </Link>
+      </p>
       <p className="text-ad-sm text-muted">
         New to Plan Markup?{" "}
         <Link href="/sign-up" className="font-medium text-text underline underline-offset-2 focus-ring">
