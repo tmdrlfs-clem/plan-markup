@@ -86,7 +86,7 @@ async function prepare(choice: Pick<ExportChoice, "pages" | "includeHidden">, de
   const documentId = v.documentId!;
   const state = editorStore.getState();
   // Story 9.2: zones are design data, never exported or printed.
-  const markups = markupsOf(state, documentId).filter((m) => m.type !== "zone");
+  const markups = markupsOf(state, documentId).filter((m) => m.type !== "zone" && !m.guide);
   const pages = choice.pages
     .filter((i) => i >= 0 && i < v.pageCount)
     .map((i) => {
@@ -164,7 +164,7 @@ export function exportCount(choice: ExportChoice): number {
   const state = editorStore.getState();
   const hidden = new Set(layersOf(state, v.documentId).filter((l) => l.hidden).map((l) => l.id));
   const pages = new Set(choice.pages.map((i) => pageIdOf(v.documentId!, i)));
-  return markupsOf(state, v.documentId).filter((m: Markup) => m.type !== "zone" && pages.has(m.pageId) && (choice.includeHidden || !m.layerId || !hidden.has(m.layerId))).length;
+  return markupsOf(state, v.documentId).filter((m: Markup) => m.type !== "zone" && !m.guide && pages.has(m.pageId) && (choice.includeHidden || !m.layerId || !hidden.has(m.layerId))).length;
 }
 
 /** An image markup's pixels: 8-bit RGB, and alpha when any pixel is not opaque. */

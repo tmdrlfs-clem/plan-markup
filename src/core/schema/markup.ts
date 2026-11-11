@@ -75,6 +75,8 @@ const base = {
   device: markupDeviceSchema.optional(),
   /** Story 9.8: a sprinkler head placed for a 4541 zone (absent: not a placed head). */
   head: headMetaSchema.optional(),
+  /** A 4541 head line: a line the designer drew for the engine to put a row of heads on (absent: not one). Never exported. */
+  guide: z.literal(true).optional(),
 };
 
 /**

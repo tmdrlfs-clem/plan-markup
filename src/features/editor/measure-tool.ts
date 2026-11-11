@@ -139,6 +139,7 @@ import { executeOp, registerDrawingUndo } from "./undo-store";
 import { fontFamilyOf } from "./fonts";
 import { revisionLabel, revisionText } from "@/core/markup/revision";
 import { ZONE_FILL_OPACITY, isZone } from "@/core/sprinkler/zone";
+import { ADD_HEAD_LINE, guideOf, makesGuide } from "./guide-draw";
 import { ADD_ZONE, makesZone, zoneOf } from "./zone-draw";
 import { paintCoverage } from "./coverage-overlay";
 import { headAt, placeHeadAt, placingHeads } from "./head-place";
@@ -1671,6 +1672,11 @@ function commit(documentId: string, tabId?: string): "done" | "continue" {
   }
   const markup = markupOf(d);
   setDrawing(null);
+  // The 4541 panel's Add head line: the Line tool's line is a head line for the engine.
+  if (markup.type === "line" && makesGuide()) {
+    executeOp({ kind: "markups.add", documentId, markups: [guideOf(markup)] }, ADD_HEAD_LINE, tabId);
+    return "done";
+  }
   executeOp({ kind: "markups.add", documentId, markups: [markup] }, ADD_LABEL[d.tool], tabId);
   return "done";
 }

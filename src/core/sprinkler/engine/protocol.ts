@@ -45,6 +45,7 @@ export const engineZoneSchema = z.strictObject({
   grid: grid.nullable().optional(),
   locked: z.array(z.strictObject({ id: z.string().min(1).max(200), x: coord, y: coord })).max(5_000).optional(),
   frameDeg: z.number().finite().min(-360).max(360).optional(),
+  guides: z.array(z.strictObject({ a: pt, b: pt })).max(200).optional(),
 });
 
 const reqId = z.number().int().nonnegative();

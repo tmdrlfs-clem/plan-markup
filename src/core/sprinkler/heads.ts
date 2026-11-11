@@ -53,6 +53,26 @@ export function headCentre(h: HeadMarkup): Point {
   return { x: (p0.x + p2.x) / 2, y: (p0.y + p2.y) / 2 };
 }
 
+export type GuideMarkup = Extract<Markup, { type: "line" }> & { guide: true };
+
+/** A head line: a line markup the designer drew for the engine (the 4541 panel's Add head line). */
+export function isGuide(m: Markup): m is GuideMarkup {
+  return m.type === "line" && m.guide === true;
+}
+
+/** A head line's look: a thin dashed green line, so it never reads as part of the drawing. */
+export const GUIDE_STYLE: MarkupStyle = { color: "#1a8f3c", width: 0.75, fontSize: 10, dash: [6, 4] };
+export const GUIDE_SUBJECT = "Head line";
+
+/** The head lines of `zone`: those on its page whose middle lies in it. */
+export function guidesOfZone(markups: readonly Markup[], zone: ZoneMarkup): GuideMarkup[] {
+  return markups.filter((m): m is GuideMarkup => {
+    if (!isGuide(m) || m.pageId !== zone.pageId) return false;
+    const [a, b] = m.points;
+    return pointInRegion({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, zone.points, zone.holes ?? []);
+  });
+}
+
 /** Placement options stored on the zone (zone.options), as the engine takes them. */
 export function zoneOptions(z: ZoneMarkup): Pick<EngineZone, "pattern" | "prefs"> {
   const o = z.zone.options ?? {};
@@ -75,6 +95,7 @@ export function engineZoneOf(
   calibration: Pick<Calibration, "xFactor" | "yFactor">,
   userUnit = 1,
   locked: readonly HeadMarkup[] = [],
+  guides: readonly GuideMarkup[] = [],
 ): EngineZone {
   const s = pageScaleOf(calibration, userUnit);
   const ring = (r: readonly Point[]) => r.map((p) => toMm(p, s));
@@ -87,6 +108,7 @@ export function engineZoneOf(
     ],
     ...zoneOptions(z),
     ...(locked.length ? { locked: locked.map((h) => ({ id: h.id, ...toMm(headCentre(h), s) })) } : {}),
+    ...(guides.length ? { guides: guides.map((g) => ({ a: toMm(g.points[0], s), b: toMm(g.points[1], s) })) } : {}),
   };
 }
 

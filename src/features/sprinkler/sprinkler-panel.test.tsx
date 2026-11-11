@@ -11,6 +11,7 @@ import { calibrateStore } from "@/features/calibration";
 import { editorStore, resetEditor, setDocMarkups } from "@/features/editor/editor-store";
 import { undoActive } from "@/features/editor/undo-store";
 import { zoneDrawStore } from "@/features/editor/zone-draw";
+import { guideDrawStore } from "@/features/editor/guide-draw";
 import { tipsStore } from "@/features/tips";
 import { registerViewerEngine } from "@/features/viewer/viewer-commands";
 import { setTool, viewerStore } from "@/features/viewer/viewer-store";
@@ -365,6 +366,16 @@ describe("SprinklerPanel Place heads (Story 9.8)", () => {
     await user.click(screen.getByTestId("add-head"));
     act(() => setTool("select"));
     expect(stampStore.getState().heads).toBe(false);
+  });
+  it("Add head line arms the Line tool in head-line mode; another tool ends it", async () => {
+    const user = setup([zone()]);
+    await user.click(screen.getByTestId("add-head-line"));
+    expect(viewerStore.getState().tool).toBe("line");
+    expect(guideDrawStore.getState().on).toBe(true);
+    expect(screen.getByTestId("add-head-line").getAttribute("aria-pressed")).toBe("true");
+    act(() => setTool("select"));
+    expect(guideDrawStore.getState().on).toBe(false);
+    expect(screen.getByTestId("add-head-line").getAttribute("aria-pressed")).toBe("false");
   });
   it("Story 9.11: the selected zone's report lists its breaks; a row zooms to its break; changes are announced", async () => {
     const a = zone();

@@ -17,7 +17,7 @@ import type { Point } from "@/core/markup/geometry";
 import type { Markup, ZoneMarkup } from "@/core/schema/markup";
 import type { EngineRequest } from "@/core/sprinkler/engine/protocol";
 import type { EngineZone } from "@/core/sprinkler/engine/site";
-import { engineZoneOf, headMarkup, headsOfZone, pageScaleOf, toPage, type HeadMarkup } from "@/core/sprinkler/heads";
+import { engineZoneOf, guidesOfZone, headMarkup, headsOfZone, pageScaleOf, toPage, type HeadMarkup } from "@/core/sprinkler/heads";
 import type { OracleReport } from "@/core/sprinkler/oracle";
 import type { PlaceErrorCode, PlaceResult } from "@/core/sprinkler/placer";
 import { NZS4541_V1, type RuleSet, type UseHazardMap } from "@/core/sprinkler/rules/rules";
@@ -127,7 +127,7 @@ export function placeHeads(ctx: PlaceHeadsContext): Promise<void> {
     }
     const fixed = headsOfZone(markups, z.id).filter((h) => h.head.kind === "manual" || h.head.kind === "locked");
     for (const h of fixed) keep.add(h.id);
-    zones.push(engineZoneOf(z, hazard, calibration, userUnit, fixed));
+    zones.push(engineZoneOf(z, hazard, calibration, userUnit, fixed, guidesOfZone(markups, z)));
     byId.set(z.id, z);
   }
 

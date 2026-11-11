@@ -5,7 +5,7 @@ import { markupSchema, type ZoneMarkup } from "@/core/schema/markup";
 
 import { translateMarkup } from "@/core/markup/geometry";
 
-import { HEAD_DEVICE, HEAD_DIAMETER_MM, engineZoneOf, headCentre, headMarkup, headsOfZone, isHead, pageScaleOf, refineHeadEdits, toMm, toPage, zoneAt, zoneOptions, type HeadMarkup } from "./heads";
+import { GUIDE_STYLE, GUIDE_SUBJECT, HEAD_DEVICE, HEAD_DIAMETER_MM, engineZoneOf, guidesOfZone, isGuide, headCentre, headMarkup, headsOfZone, isHead, pageScaleOf, refineHeadEdits, toMm, toPage, zoneAt, zoneOptions, type HeadMarkup } from "./heads";
 import { newZone } from "./zone";
 
 const k100 = factorForRatio(100);
@@ -20,6 +20,38 @@ const ring = (x: number, y: number, w: number, h: number) => [
 function zone(holes: { x: number; y: number }[][] = []): ZoneMarkup {
   return newZone({ id: "00000000-0000-7000-8000-00000000000a", pageId: "doc:0", createdAt: "2026-11-12T00:00:00.000Z", outer: ring(100, 100, 200, 150), holes }, [], CAL);
 }
+
+describe("head lines (guides)", () => {
+  const line = (id: string, a: { x: number; y: number }, b: { x: number; y: number }, guide = true, pageId = "doc:0") =>
+    markupSchema.parse({
+      id: `00000000-0000-7000-8000-0000000000${id}`,
+      pageId,
+      createdAt: "t",
+      style: GUIDE_STYLE,
+      type: "line",
+      points: [a, b],
+      subject: GUIDE_SUBJECT,
+      ...(guide ? { guide: true } : {}),
+    });
+
+  it("a zone's head lines are the flagged lines on its page whose middle lies in it, given to the engine in mm", () => {
+    const z = zone(); // 100..300 × 100..250 pt
+    const inside = line("b1", { x: 120, y: 150 }, { x: 280, y: 150 });
+    const reaching = line("b2", { x: 90, y: 200 }, { x: 290, y: 200 }); // starts outside, middle inside
+    const outside = line("b3", { x: 400, y: 150 }, { x: 500, y: 150 });
+    const plain = line("b4", { x: 120, y: 180 }, { x: 280, y: 180 }, false);
+    const otherPage = line("b5", { x: 120, y: 160 }, { x: 280, y: 160 }, true, "doc:1");
+    expect(isGuide(inside)).toBe(true);
+    expect(isGuide(plain)).toBe(false);
+    const guides = guidesOfZone([inside, reaching, outside, plain, otherPage, z], z);
+    expect(guides.map((g) => g.id)).toEqual([inside.id, reaching.id]);
+    const ez = engineZoneOf(z, "ELH", CAL, 1, [], guides);
+    expect(ez.guides?.length).toBe(2);
+    expect(ez.guides?.[0].a.x).toBeCloseTo(120 * k100);
+    expect(ez.guides?.[0].b.y).toBeCloseTo(150 * k100);
+    expect(engineZoneOf(z, "ELH", CAL).guides).toBeUndefined();
+  });
+});
 
 describe("heads (Story 9.8)", () => {
   it("converts page points to mm and back, UserUnit applied", () => {

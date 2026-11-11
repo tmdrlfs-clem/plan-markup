@@ -11,7 +11,7 @@
 // Story 9.9 (FR75): the coverage overlay toggle and its shape (circle or square).
 // Story 9.10 (FR76): Add head; a re-run on zones that hold heads confirms its
 // scope first; each zone row shows the live check of its heads.
-import { Ban, Check, Circle, CircleDot, CirclePlus, Eye, EyeOff, Info, LandPlot, PaintBucket, Pentagon, Ruler, Square, SquareDashed, TriangleAlert, X } from "lucide-react";
+import { Ban, Check, Circle, CircleDot, CirclePlus, Eye, EyeOff, Info, LandPlot, Minus, PaintBucket, Pentagon, Ruler, Square, SquareDashed, TriangleAlert, X } from "lucide-react";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "zustand";
 
@@ -28,7 +28,7 @@ import type { UseHazardMap } from "@/core/sprinkler/rules/rules";
 import { MAPPING_SOURCE_LABELS, figureRows, figuresOf, useOptions, type MappingSource } from "@/core/sprinkler/use-map";
 import { HOLE_TAG_LABELS, ZONE_COLOR, formatZoneArea, holeTagOf, isZone, withHoleTag, zoneAreaM2, zoneChecklist, zoneHazard } from "@/core/sprinkler/zone";
 import { openCalibrate } from "@/features/calibration";
-import { revealFlag, armHeadPlace, coverageStore, editorStore, executeOp, headPlaceStore, markupsOf, armZoneDraw, setCoverageOn, setCoverageShape, setSelection, zoneDrawStore } from "@/features/editor";
+import { revealFlag, armGuideDraw, guideDrawStore, armHeadPlace, coverageStore, editorStore, executeOp, headPlaceStore, markupsOf, armZoneDraw, setCoverageOn, setCoverageShape, setSelection, zoneDrawStore } from "@/features/editor";
 import { FirstUseTip } from "@/features/tips";
 import { hasDocument, setTool, viewerCommands, viewerStore } from "@/features/viewer";
 
@@ -53,6 +53,8 @@ export const COVERAGE_HINT = "Show each head's coverage; areas no head covers ar
 export const PLACE_HEADS_HINT = "Place heads in the selected zones, or in every zone on this page when none is selected";
 /** Story 9.11: status changes are announced once they have held this long (ms). */
 export const ANNOUNCE_DELAY_MS = 600;
+export const ADD_HEAD_LINE_HINT =
+  "Add head line: draw a line in a zone where a row of heads should run (along the lights, say). A line across it marks where heads go along the row. Place heads then follows the lines. Esc to stop.";
 export const ADD_HEAD_HINT = "Add head: click inside a zone to add a head there (Esc to stop). Drag a head to move it; Delete removes it.";
 
 /** Story 9.10 (UX-DR24): the re-run confirmation's title, e.g. "Re-place 2 zones, keep 3 edited heads". */
@@ -122,6 +124,7 @@ export function SprinklerPanel({ emptyText }: { emptyText: string }) {
   const coverageOn = useStore(coverageStore, (s) => s.on);
   const coverageShape = useStore(coverageStore, (s) => s.shape);
   const addingHeads = useStore(headPlaceStore, (s) => s.heads) && tool === "stamp";
+  const addingGuides = useStore(guideDrawStore, (s) => s.on) && tool === "line";
   const [confirm, setConfirm] = useState<PlaceScope | null>(null);
 
   // Story 9.3: the mapping is read once per session (the built-in one until then).
@@ -227,6 +230,18 @@ export function SprinklerPanel({ emptyText }: { emptyText: string }) {
           >
             <CirclePlus size={14} aria-hidden="true" />
             Add head
+          </Button>
+          <Button
+            size="sm"
+            variant={addingGuides ? "primary" : "secondary"}
+            aria-pressed={addingGuides}
+            disabled={zones.length === 0}
+            onClick={armGuideDraw}
+            title={ADD_HEAD_LINE_HINT}
+            data-testid="add-head-line"
+          >
+            <Minus size={14} aria-hidden="true" />
+            Add head line
           </Button>
           {running ? (
             <Button size="sm" variant="secondary" onClick={cancelPlaceHeads}>
