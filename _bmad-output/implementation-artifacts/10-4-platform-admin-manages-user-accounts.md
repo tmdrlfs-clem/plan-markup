@@ -29,7 +29,7 @@ so that I control who uses the product during the pilot.
   - Activate at once; Deactivate behind a confirmation; no action on the admin's own row.
   - The list is read with the admin's own client, through RLS.
 - [x] `setUserStatus` action: strict schema, platform-admin check, the audited function through the service client, then the email.
-- [x] Mail the app sends itself: `src/lib/email` (nodemailer 8.0.2 over SMTP) and the "You're in" message with a link to `/sign-in`.
+- [x] Mail the app sends itself: `src/lib/email` (nodemailer 10.5.0 over SMTP) and the "You're in" message with a link to `/sign-in`.
   - Settings: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `EMAIL_FROM`, `APP_URL`.
   - Locally and in CI mail goes to Mailpit (`smtp_port = 56325`); `npm run env:local` and the CI env step write the settings.
 - [x] Workspace account menu: "Admin: accounts" for platform admins.
