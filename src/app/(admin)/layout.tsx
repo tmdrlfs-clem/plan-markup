@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { Toaster } from "@/components/ui/toast";
+import { AdminNav } from "@/features/admin/admin-nav";
 import { AdminTheme } from "@/features/admin/admin-theme";
 import { requirePlatformAdmin } from "@/lib/auth";
 
@@ -17,15 +18,7 @@ export default async function AdminLayout({ children }: LayoutProps<"/">) {
           <p className="text-ad-md font-semibold">
             Plan Markup <span className="font-normal text-muted">Admin</span>
           </p>
-          <nav aria-label="Admin" className="flex items-center gap-1">
-            <Link
-              href="/admin/users"
-              aria-current="page"
-              className="rounded border border-transparent px-3 py-1.5 text-ad-sm font-medium text-text focus-ring hover:bg-surface-3 aria-[current=page]:border-border aria-[current=page]:bg-surface-2"
-            >
-              Accounts
-            </Link>
-          </nav>
+          <AdminNav />
           <div className="ml-auto flex min-w-0 items-center gap-4">
             <span className="min-w-0 truncate text-ad-sm text-muted">{admin.email}</span>
             <Link href="/workspace" className="shrink-0 rounded text-ad-sm font-medium text-text underline underline-offset-2 focus-ring">

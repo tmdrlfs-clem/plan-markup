@@ -1,3 +1,4 @@
+-- Rows are counted by this test's own actor: a local database may hold audit rows from e2e runs.
 -- Story 10.4: audit_log, the platform admin's view of profiles, and
 -- public.admin_set_user_status().
 begin;
@@ -39,7 +40,7 @@ select throws_ok(
 select throws_ok(
   $$ select * from public.admin_set_user_status('81111111-1111-4111-8111-111111111111', '89999999-9999-4999-8999-999999999999', 'active') $$,
   'PT404', null, 'an unknown user is refused');
-select is((select count(*)::int from public.audit_log), 0, 'refused calls write nothing');
+select is((select count(*)::int from public.audit_log where actor_id = '81111111-1111-4111-8111-111111111111'), 0, 'refused calls write nothing');
 
 -- Activate.
 select results_eq(
@@ -48,7 +49,7 @@ select results_eq(
   'activation returns the previous status and the email');
 select is((select status from public.profiles where id = '82222222-2222-4222-8222-222222222222'), 'active', 'the account is active');
 select results_eq(
-  $$ select actor_id, action, target_type, target_id, detail from public.audit_log $$,
+  $$ select actor_id, action, target_type, target_id, detail from public.audit_log where actor_id = '81111111-1111-4111-8111-111111111111' $$,
   $$ values ('81111111-1111-4111-8111-111111111111'::uuid, 'user.activated', 'user',
              '82222222-2222-4222-8222-222222222222'::uuid, '{"from":"pending","to":"active"}'::jsonb) $$,
   'the activation is recorded');
@@ -58,7 +59,7 @@ select results_eq(
   $$ select previous_status from public.admin_set_user_status('81111111-1111-4111-8111-111111111111', '82222222-2222-4222-8222-222222222222', 'active') $$,
   $$ values ('active') $$,
   'setting the same status reports it');
-select is((select count(*)::int from public.audit_log), 1, 'and writes no second record');
+select is((select count(*)::int from public.audit_log where actor_id = '81111111-1111-4111-8111-111111111111'), 1, 'and writes no second record');
 
 -- Deactivate: sessions end.
 select lives_ok(
@@ -66,7 +67,7 @@ select lives_ok(
   'deactivation succeeds');
 select is((select status from public.profiles where id = '83333333-3333-4333-8333-333333333333'), 'deactivated', 'the account is deactivated');
 select is((select count(*)::int from auth.sessions where user_id = '83333333-3333-4333-8333-333333333333'), 0, 'its sessions are gone');
-select is((select count(*)::int from public.audit_log where action = 'user.deactivated'), 1, 'the deactivation is recorded');
+select is((select count(*)::int from public.audit_log where action = 'user.deactivated' and actor_id = '81111111-1111-4111-8111-111111111111'), 1, 'the deactivation is recorded');
 
 -- Append-only, for every role.
 select throws_ok($$ update public.audit_log set action = 'user.activated' $$, '42501', null, 'audit_log rows cannot be updated');
@@ -77,7 +78,7 @@ set local role authenticated;
 set local request.jwt.claims = '{"sub":"81111111-1111-4111-8111-111111111111","role":"authenticated"}';
 select ok(
   (select count(*) from public.profiles where id in ('82222222-2222-4222-8222-222222222222', '83333333-3333-4333-8333-333333333333')) = 2
-  and (select count(*) from public.audit_log) = 2,
+  and (select count(*) from public.audit_log where actor_id = '81111111-1111-4111-8111-111111111111') = 2,
   'the platform admin reads other profiles and the audit log');
 set local request.jwt.claims = '{"sub":"82222222-2222-4222-8222-222222222222","role":"authenticated"}';
 select is((select count(*)::int from public.profiles), 1, 'an ordinary user still reads only their own profile');

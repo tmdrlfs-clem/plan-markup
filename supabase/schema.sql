@@ -119,6 +119,43 @@ $$;
 ALTER FUNCTION "app"."fn_is_active_user"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "app"."fn_is_company_admin"("p_company_id" "uuid") RETURNS boolean
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+  select exists (
+    select 1
+    from public.company_members m
+    join public.profiles p on p.id = m.user_id
+    where m.user_id = (select auth.uid())
+      and m.company_id = p_company_id
+      and m.role = 'admin'
+      and p.status = 'active'
+  );
+$$;
+
+
+ALTER FUNCTION "app"."fn_is_company_admin"("p_company_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "app"."fn_is_company_member"("p_company_id" "uuid") RETURNS boolean
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+  select exists (
+    select 1
+    from public.company_members m
+    join public.profiles p on p.id = m.user_id
+    where m.user_id = (select auth.uid())
+      and m.company_id = p_company_id
+      and p.status = 'active'
+  );
+$$;
+
+
+ALTER FUNCTION "app"."fn_is_company_member"("p_company_id" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "app"."fn_is_platform_admin"() RETURNS boolean
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO ''
@@ -229,6 +266,68 @@ $$;
 
 
 ALTER FUNCTION "app"."fn_zone_layout_defaults"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."admin_create_company"("p_actor_id" "uuid", "p_name" "text", "p_admin_email" "text") RETURNS TABLE("company_id" "uuid", "admin_user_id" "uuid")
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+declare
+  v_name text := btrim(coalesce(p_name, ''));
+  v_email text := lower(btrim(coalesce(p_admin_email, '')));
+  v_user_id uuid;
+  v_status text;
+  v_company_id uuid;
+begin
+  if p_actor_id is null then
+    raise exception 'actor is required' using errcode = '22023';
+  end if;
+  if char_length(v_name) not between 1 and 100 then
+    raise exception 'name must have 1 to 100 characters' using errcode = '22023';
+  end if;
+  if v_email = '' or char_length(v_email) > 254 then
+    raise exception 'admin email is required' using errcode = '22023';
+  end if;
+  if not exists (
+    select 1 from public.profiles a
+    where a.id = p_actor_id and a.status = 'active' and a.is_platform_admin
+  ) then
+    raise exception 'not a platform admin' using errcode = 'PT403';
+  end if;
+
+  select p.id, p.status into v_user_id, v_status
+  from public.profiles p
+  where lower(p.email) = v_email
+  for update;
+  if not found then
+    raise exception 'no account with that email' using errcode = 'PT404';
+  end if;
+  if v_status <> 'active' then
+    raise exception 'the account is not active' using errcode = 'PT422';
+  end if;
+  if exists (select 1 from public.company_members m where m.user_id = v_user_id) then
+    raise exception 'the account already belongs to a company' using errcode = 'PT409';
+  end if;
+
+  insert into public.companies (name) values (v_name) returning id into v_company_id;
+  insert into public.company_members (user_id, company_id, role) values (v_user_id, v_company_id, 'admin');
+  insert into public.audit_log (actor_id, action, target_type, target_id, detail)
+  values (
+    p_actor_id,
+    'company.created',
+    'company',
+    v_company_id,
+    pg_catalog.jsonb_build_object('name', v_name, 'admin_user_id', v_user_id)
+  );
+
+  company_id := v_company_id;
+  admin_user_id := v_user_id;
+  return next;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."admin_create_company"("p_actor_id" "uuid", "p_name" "text", "p_admin_email" "text") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."admin_set_user_status"("p_actor_id" "uuid", "p_user_id" "uuid", "p_status" "text") RETURNS TABLE("previous_status" "text", "email" "text", "name" "text")
@@ -680,9 +779,9 @@ CREATE TABLE IF NOT EXISTS "public"."audit_log" (
     "target_type" "text" NOT NULL,
     "target_id" "uuid" NOT NULL,
     "detail" "jsonb" DEFAULT '{}'::"jsonb" NOT NULL,
-    CONSTRAINT "audit_log_action_check" CHECK (("action" = ANY (ARRAY['user.activated'::"text", 'user.deactivated'::"text"]))),
+    CONSTRAINT "audit_log_action_check" CHECK (("action" = ANY (ARRAY['user.activated'::"text", 'user.deactivated'::"text", 'company.created'::"text"]))),
     CONSTRAINT "audit_log_detail_check" CHECK (("jsonb_typeof"("detail") = 'object'::"text")),
-    CONSTRAINT "audit_log_target_type_check" CHECK (("target_type" = 'user'::"text"))
+    CONSTRAINT "audit_log_target_type_check" CHECK (("target_type" = ANY (ARRAY['user'::"text", 'company'::"text"])))
 );
 
 
@@ -705,6 +804,38 @@ ALTER TABLE "public"."calibrations" OWNER TO "postgres";
 
 
 COMMENT ON TABLE "public"."calibrations" IS 'A page''s calibration (Epic 4), by page id.';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."companies" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "name" "text" NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "companies_name_check" CHECK ((("name" = "btrim"("name")) AND (("char_length"("name") >= 1) AND ("char_length"("name") <= 100))))
+);
+
+
+ALTER TABLE "public"."companies" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."companies" IS 'Customer companies (Story 10.5). Created by the platform admin; read by their members.';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."company_members" (
+    "user_id" "uuid" NOT NULL,
+    "company_id" "uuid" NOT NULL,
+    "role" "text" NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "company_members_role_check" CHECK (("role" = ANY (ARRAY['admin'::"text", 'member'::"text", 'viewer'::"text"])))
+);
+
+
+ALTER TABLE "public"."company_members" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."company_members" IS 'Company membership and role (Story 10.5). One row per user: at most one company each (FR9).';
 
 
 
@@ -1019,6 +1150,16 @@ ALTER TABLE ONLY "public"."calibrations"
 
 
 
+ALTER TABLE ONLY "public"."companies"
+    ADD CONSTRAINT "companies_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."company_members"
+    ADD CONSTRAINT "company_members_pkey" PRIMARY KEY ("user_id");
+
+
+
 ALTER TABLE ONLY "public"."drawing_files"
     ADD CONSTRAINT "drawing_files_pkey" PRIMARY KEY ("id");
 
@@ -1112,6 +1253,14 @@ CREATE INDEX "audit_log_target_idx" ON "public"."audit_log" USING "btree" ("targ
 
 
 
+CREATE UNIQUE INDEX "companies_name_lower_key" ON "public"."companies" USING "btree" ("lower"("name"));
+
+
+
+CREATE INDEX "company_members_company_idx" ON "public"."company_members" USING "btree" ("company_id", "role");
+
+
+
 CREATE INDEX "drawing_files_filename_idx" ON "public"."drawing_files" USING "btree" ("filename");
 
 
@@ -1180,6 +1329,10 @@ CREATE OR REPLACE TRIGGER "audit_log_append_only" BEFORE DELETE OR UPDATE ON "pu
 
 
 
+CREATE OR REPLACE TRIGGER "trg_companies_updated_at" BEFORE UPDATE ON "public"."companies" FOR EACH ROW EXECUTE FUNCTION "app"."fn_set_updated_at"();
+
+
+
 CREATE OR REPLACE TRIGGER "trg_profiles_updated_at" BEFORE UPDATE ON "public"."profiles" FOR EACH ROW EXECUTE FUNCTION "app"."fn_set_updated_at"();
 
 
@@ -1219,6 +1372,16 @@ ALTER TABLE ONLY "public"."drawing_files"
 
 ALTER TABLE ONLY "public"."drawings"
     ADD CONSTRAINT "drawings_owner_id_fkey" FOREIGN KEY ("owner_id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."company_members"
+    ADD CONSTRAINT "fk_company_members_company" FOREIGN KEY ("company_id") REFERENCES "public"."companies"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."company_members"
+    ADD CONSTRAINT "fk_company_members_profile" FOREIGN KEY ("user_id") REFERENCES "public"."profiles"("id") ON DELETE CASCADE;
 
 
 
@@ -1340,6 +1503,20 @@ CREATE POLICY "calibrations_update_own" ON "public"."calibrations" FOR UPDATE TO
    FROM ("public"."pages" "p"
      JOIN "public"."drawing_files" "f" ON (("f"."id" = "p"."drawing_file_id")))
   WHERE (("p"."id" = "calibrations"."page_id") AND "app"."fn_owns_drawing"("f"."drawing_id")))));
+
+
+
+ALTER TABLE "public"."companies" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "companies_select_member_or_platform_admin" ON "public"."companies" FOR SELECT TO "authenticated" USING ((( SELECT "app"."fn_is_company_member"("companies"."id") AS "fn_is_company_member") OR ( SELECT "app"."fn_is_platform_admin"() AS "fn_is_platform_admin")));
+
+
+
+ALTER TABLE "public"."company_members" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "company_members_select_member_or_platform_admin" ON "public"."company_members" FOR SELECT TO "authenticated" USING ((( SELECT "app"."fn_is_company_member"("company_members"."company_id") AS "fn_is_company_member") OR ( SELECT "app"."fn_is_platform_admin"() AS "fn_is_platform_admin")));
 
 
 
@@ -1541,6 +1718,16 @@ GRANT ALL ON FUNCTION "app"."fn_is_active_user"() TO "authenticated";
 
 
 
+REVOKE ALL ON FUNCTION "app"."fn_is_company_admin"("p_company_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "app"."fn_is_company_admin"("p_company_id" "uuid") TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "app"."fn_is_company_member"("p_company_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "app"."fn_is_company_member"("p_company_id" "uuid") TO "authenticated";
+
+
+
 REVOKE ALL ON FUNCTION "app"."fn_is_platform_admin"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "app"."fn_is_platform_admin"() TO "authenticated";
 
@@ -1565,6 +1752,11 @@ REVOKE ALL ON FUNCTION "app"."fn_sync_profile_email"() FROM PUBLIC;
 
 
 REVOKE ALL ON FUNCTION "app"."fn_zone_layout_defaults"() FROM PUBLIC;
+
+
+
+REVOKE ALL ON FUNCTION "public"."admin_create_company"("p_actor_id" "uuid", "p_name" "text", "p_admin_email" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."admin_create_company"("p_actor_id" "uuid", "p_name" "text", "p_admin_email" "text") TO "service_role";
 
 
 
@@ -1608,6 +1800,16 @@ GRANT SELECT ON TABLE "public"."audit_log" TO "authenticated";
 
 GRANT ALL ON TABLE "public"."calibrations" TO "service_role";
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE "public"."calibrations" TO "authenticated";
+
+
+
+GRANT ALL ON TABLE "public"."companies" TO "service_role";
+GRANT SELECT ON TABLE "public"."companies" TO "authenticated";
+
+
+
+GRANT ALL ON TABLE "public"."company_members" TO "service_role";
+GRANT SELECT ON TABLE "public"."company_members" TO "authenticated";
 
 
 

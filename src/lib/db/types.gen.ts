@@ -30,6 +30,12 @@ export type Database = {
 "fn_is_active_user":
 { Args: Record<PropertyKey, never>; Returns: boolean
                            },
+"fn_is_company_admin":
+{ Args: { "p_company_id": string }; Returns: boolean
+                           },
+"fn_is_company_member":
+{ Args: { "p_company_id": string }; Returns: boolean
+                           },
 "fn_is_platform_admin":
 { Args: Record<PropertyKey, never>; Returns: boolean
                            },
@@ -99,6 +105,46 @@ isOneToOne: false
       columns: ["page_id"]
 isOneToOne: true
       referencedRelation: "pages"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"companies": {
+                  Row: {
+                    "created_at": string,"id": string,"name": string,"updated_at": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "created_at"?: string,"id"?: string,"name": string,"updated_at"?: string
+                  }
+                  Update: {
+                    "created_at"?: string,"id"?: string,"name"?: string,"updated_at"?: string
+                  }
+                  Relationships: [
+
+                  ]
+                },"company_members": {
+                  Row: {
+                    "company_id": string,"created_at": string,"role": string,"user_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "company_id": string,"created_at"?: string,"role": string,"user_id": string
+                  }
+                  Update: {
+                    "company_id"?: string,"created_at"?: string,"role"?: string,"user_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "fk_company_members_company"
+      columns: ["company_id"]
+isOneToOne: false
+      referencedRelation: "companies"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "fk_company_members_profile"
+      columns: ["user_id"]
+isOneToOne: true
+      referencedRelation: "profiles"
       referencedColumns: ["id"]
     }
                   ]
@@ -330,7 +376,12 @@ isOneToOne: false
                 }
           }
           Functions: {
-            "admin_set_user_status":
+            "admin_create_company":
+{ Args: { "p_actor_id": string,"p_admin_email": string,"p_name": string }; Returns: {
+              "admin_user_id": string,"company_id": string
+            }[]
+                           },
+"admin_set_user_status":
 { Args: { "p_actor_id": string,"p_status": string,"p_user_id": string }; Returns: {
               "email": string,"name": string,"previous_status": string
             }[]

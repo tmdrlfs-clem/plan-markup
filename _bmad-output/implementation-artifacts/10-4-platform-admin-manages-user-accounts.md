@@ -1,6 +1,6 @@
 # Story 10.4: Platform admin manages user accounts
 
-Status: review
+Status: done
 
 ## Story
 
