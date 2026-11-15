@@ -1,5 +1,5 @@
 import "server-only";
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { cache } from "react";
 import { getOwnProfile } from "@/lib/db/profiles";
 import { createServerSupabase } from "@/lib/supabase/server";
@@ -83,4 +83,22 @@ export async function requireActiveUser(nextPath?: string): Promise<AuthUser> {
   }
   if (state.kind === "inactive") redirect("/pending-activation");
   return state.user;
+}
+
+/**
+ * Story 10.4. Page guard for the admin area: the active platform admin, or a
+ * redirect for anonymous and inactive users, or a 404 for everyone else (the
+ * admin area does not announce itself). The flag is read from public.profiles
+ * on every request, never from the JWT. Every admin page calls it itself.
+ */
+export async function requirePlatformAdmin(nextPath?: string): Promise<AuthUser> {
+  const user = await requireActiveUser(nextPath);
+  if (!user.isPlatformAdmin) notFound();
+  return user;
+}
+
+/** Action guard for admin writes: the active platform admin, or null. */
+export async function getPlatformAdmin(): Promise<AuthUser | null> {
+  const user = await getAuthUser();
+  return user?.isPlatformAdmin ? user : null;
 }

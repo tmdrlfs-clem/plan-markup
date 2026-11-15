@@ -24,6 +24,14 @@ const serverSchema = publicSchema.extend({
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1).optional(),
   // Story 10.1: Turnstile secret (server only). Required in production for sign-up.
   TURNSTILE_SECRET_KEY: z.string().min(1).optional(),
+  // Story 10.4: outgoing mail the app sends itself ("You're in"). All optional:
+  // without SMTP_HOST, EMAIL_FROM and APP_URL no mail is sent (src/lib/email/mailer.ts).
+  SMTP_HOST: z.string().min(1).optional(),
+  SMTP_PORT: z.coerce.number().int().min(1).max(65535).optional(),
+  SMTP_USER: z.string().min(1).optional(),
+  SMTP_PASS: z.string().min(1).optional(),
+  EMAIL_FROM: z.string().min(3).max(320).optional(),
+  APP_URL: z.url({ error: "APP_URL must be a valid URL" }).optional(),
   // Build only (withSentryConfig source-map upload). Unused without SENTRY_AUTH_TOKEN.
   SENTRY_AUTH_TOKEN: z.string().min(1).optional(),
   SENTRY_ORG: z.string().min(1).optional(),

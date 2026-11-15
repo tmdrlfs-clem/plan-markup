@@ -2,8 +2,11 @@
 
 export const DEFAULT_AFTER_SIGN_IN = "/workspace";
 
-/** Paths a `next` parameter may point at. Later stories extend this list. */
-export const ALLOWED_NEXT_PREFIXES: readonly string[] = ["/workspace"];
+/**
+ * Paths a `next` parameter may point at. Later stories extend this list.
+ * Story 10.4: /admin (its pages are a 404 for anyone but the platform admin).
+ */
+export const ALLOWED_NEXT_PREFIXES: readonly string[] = ["/workspace", "/admin"];
 
 const MAX_LENGTH = 512;
 const MAX_DECODES = 3;

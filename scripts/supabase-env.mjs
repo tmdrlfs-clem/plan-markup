@@ -1,6 +1,6 @@
 // Maps `supabase status -o json` (local stack) to the app's env variables.
 //   node scripts/supabase-env.mjs --github-env    append KEY=value lines to $GITHUB_ENV (CI)
-//   node scripts/supabase-env.mjs --write .env.local  update the three keys, keep every other line
+//   node scripts/supabase-env.mjs --write .env.local  update the three keys and the local mail settings, keep every other line
 // Needs the local stack: npm run db:start. Never prints key values.
 import { execSync } from "node:child_process";
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
@@ -11,6 +11,17 @@ export const ENV_KEYS = [
   "NEXT_PUBLIC_SUPABASE_ANON_KEY",
   "SUPABASE_SERVICE_ROLE_KEY",
 ];
+
+/**
+ * Story 10.4: the app's own outgoing mail goes to the local stack's Mailpit
+ * (supabase/config.toml [local_smtp] smtp_port) and links to the dev server.
+ */
+export const LOCAL_MAIL_ENV = Object.freeze({
+  SMTP_HOST: "127.0.0.1",
+  SMTP_PORT: "56325",
+  EMAIL_FROM: "Plan Markup <no-reply@plan-markup.test>",
+  APP_URL: "http://localhost:3020",
+});
 
 /**
  * Maps the CLI 2.121.0 status JSON to env vars. Prefers the publishable and
@@ -80,7 +91,7 @@ function main() {
   const args = process.argv.slice(2);
   let vars;
   try {
-    vars = mapStatusToEnv(readStatus());
+    vars = { ...mapStatusToEnv(readStatus()), ...LOCAL_MAIL_ENV };
   } catch (err) {
     process.stderr.write(
       `Could not read the local Supabase status. Is the stack running (npm run db:start)?\n${err.message}\n`,

@@ -1,6 +1,6 @@
 # Story 10.2: Reset my password
 
-Status: review
+Status: done
 
 ## Story
 

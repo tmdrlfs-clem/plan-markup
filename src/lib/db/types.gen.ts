@@ -68,6 +68,20 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"audit_log": {
+                  Row: {
+                    "action": string,"actor_id": string,"detail": NonNullable<Json>,"id": string,"occurred_at": string,"target_id": string,"target_type": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "action": string,"actor_id": string,"detail"?: NonNullable<Json>,"id"?: string,"occurred_at"?: string,"target_id": string,"target_type": string
+                  }
+                  Update: {
+                    "action"?: string,"actor_id"?: string,"detail"?: NonNullable<Json>,"id"?: string,"occurred_at"?: string,"target_id"?: string,"target_type"?: string
+                  }
+                  Relationships: [
+
+                  ]
                 },"calibrations": {
                   Row: {
                     "calibration": NonNullable<Json>,"page_id": string,"updated_at": string
@@ -316,7 +330,12 @@ isOneToOne: false
                 }
           }
           Functions: {
-            "apply_markup_ops":
+            "admin_set_user_status":
+{ Args: { "p_actor_id": string,"p_status": string,"p_user_id": string }; Returns: {
+              "email": string,"name": string,"previous_status": string
+            }[]
+                           },
+"apply_markup_ops":
 { Args: { "p_drawing_id": string,"p_ops": Json }; Returns: Json
                            },
 "consume_rate_limit":

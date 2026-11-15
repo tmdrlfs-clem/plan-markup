@@ -9,5 +9,5 @@ export default async function WorkspacePage() {
   const user = await requireActiveUser("/workspace");
   // Only what the shell shows goes to the client.
   // The profile's theme is rendered on the workspace root: no flash of another theme (Story 3.8).
-  return <WorkspaceShell user={{ id: user.id, name: user.name, email: user.email }} theme={user.theme} />;
+  return <WorkspaceShell user={{ id: user.id, name: user.name, email: user.email, isPlatformAdmin: user.isPlatformAdmin }} theme={user.theme} />;
 }

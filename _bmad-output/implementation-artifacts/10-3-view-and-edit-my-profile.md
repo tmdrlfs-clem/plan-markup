@@ -1,6 +1,6 @@
 # Story 10.3: View and edit my profile
 
-Status: review
+Status: done
 
 ## Story
 

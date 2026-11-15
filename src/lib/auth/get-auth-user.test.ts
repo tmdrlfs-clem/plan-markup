@@ -14,7 +14,12 @@ const fake = vi.hoisted(() => ({
   }),
 }));
 
-vi.mock("next/navigation", () => ({ redirect: fake.redirect }));
+vi.mock("next/navigation", () => ({
+  redirect: fake.redirect,
+  notFound: () => {
+    throw new Error("NOT_FOUND");
+  },
+}));
 
 vi.mock("@/lib/supabase/server", () => ({
   createServerSupabase: async () => ({
@@ -37,7 +42,7 @@ vi.mock("@/lib/supabase/server", () => ({
   }),
 }));
 
-import { getAuthUser, readAuthState, requireActiveUser } from "./get-auth-user";
+import { getAuthUser, getPlatformAdmin, readAuthState, requireActiveUser, requirePlatformAdmin } from "./get-auth-user";
 
 const ID = "00000000-0000-4000-8000-00000000000b";
 const EVIL_USER: FakeUser = {
@@ -161,5 +166,29 @@ describe("requireActiveUser", () => {
     fake.profile = profile("active", { is_platform_admin: true });
     await expect(requireActiveUser("/workspace")).resolves.toMatchObject({ isPlatformAdmin: true });
     expect(fake.redirect).not.toHaveBeenCalled();
+  });
+});
+
+describe("requirePlatformAdmin / getPlatformAdmin (Story 10.4)", () => {
+  it("returns the active platform admin", async () => {
+    fake.user = EVIL_USER;
+    fake.profile = profile("active", { is_platform_admin: true });
+    await expect(requirePlatformAdmin("/admin/users")).resolves.toMatchObject({ id: ID, isPlatformAdmin: true });
+    await expect(getPlatformAdmin()).resolves.toMatchObject({ id: ID });
+  });
+
+  it("is a 404 for an active user without the flag, whatever their metadata claims", async () => {
+    fake.user = EVIL_USER;
+    fake.profile = profile("active");
+    await expect(requirePlatformAdmin("/admin/users")).rejects.toThrow("NOT_FOUND");
+    await expect(getPlatformAdmin()).resolves.toBeNull();
+  });
+
+  it("sends anonymous visitors to sign-in and a deactivated admin to PendingActivation", async () => {
+    await expect(requirePlatformAdmin("/admin/users")).rejects.toThrow("REDIRECT:/sign-in?next=%2Fadmin%2Fusers");
+    fake.user = EVIL_USER;
+    fake.profile = profile("deactivated", { is_platform_admin: true });
+    await expect(requirePlatformAdmin("/admin/users")).rejects.toThrow("REDIRECT:/pending-activation");
+    await expect(getPlatformAdmin()).resolves.toBeNull();
   });
 });

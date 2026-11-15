@@ -1,6 +1,6 @@
 # Story 10.1: Sign up and wait for activation
 
-Status: review
+Status: done
 
 ## Story
 

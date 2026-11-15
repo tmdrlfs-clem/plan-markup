@@ -2,8 +2,10 @@
 export {
   getAuthState,
   getAuthUser,
+  getPlatformAdmin,
   readAuthState,
   requireActiveUser,
+  requirePlatformAdmin,
   type AuthState,
   type AuthUser,
 } from "./get-auth-user";

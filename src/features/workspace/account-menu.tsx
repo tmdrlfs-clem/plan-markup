@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, LogOut } from "lucide-react";
+import { ChevronDown, LogOut, ShieldCheck } from "lucide-react";
 
 import { Menu, MenuContent, MenuItem, MenuLabel, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
 import { cx } from "@/components/ui/cx";
@@ -10,6 +10,8 @@ export interface WorkspaceUser {
   id: string;
   name: string;
   email: string;
+  /** Story 10.4: shows the Admin item. Display only: the admin area checks for itself. */
+  isPlatformAdmin?: boolean;
 }
 
 export function displayName(user: WorkspaceUser): string {
@@ -31,6 +33,16 @@ export function AccountMenu({ user, onSignOut }: { user: WorkspaceUser; onSignOu
       <MenuContent align="end">
         <MenuLabel>{user.email}</MenuLabel>
         <MenuSeparator />
+        {user.isPlatformAdmin ? (
+          <MenuItem
+            icon={ShieldCheck}
+            // A full page load on purpose: it leaves the workspace (open files, the worker, the theme on <html>) behind.
+            // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+            onSelect={() => window.location.assign("/admin/users")}
+          >
+            Admin: accounts
+          </MenuItem>
+        ) : null}
         <MenuItem icon={LogOut} onSelect={onSignOut}>
           Sign out
         </MenuItem>

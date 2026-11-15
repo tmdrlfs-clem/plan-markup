@@ -138,10 +138,11 @@ select is(app.fn_is_platform_admin(), false, 'fn_is_platform_admin() is false fo
 -- ---------------------------------------------------------------------------
 set local request.jwt.claims = '{"sub":"33333333-3333-4333-8333-333333333333","role":"authenticated"}';
 select is(app.fn_is_platform_admin(), true, 'fn_is_platform_admin() is true for an active admin');
-select is(
-  (select count(*) from public.profiles),
-  1::bigint,
-  'a platform admin still sees only their own profile through RLS'
+-- Story 10.4: profiles_select_platform_admin (the admin's account list).
+select ok(
+  (select count(*) from public.profiles
+    where id in ('11111111-1111-4111-8111-111111111111', '33333333-3333-4333-8333-333333333333')) = 2,
+  'a platform admin reads other profiles as well as their own'
 );
 
 -- ---------------------------------------------------------------------------

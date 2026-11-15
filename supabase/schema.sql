@@ -60,6 +60,19 @@ $$;
 ALTER FUNCTION "app"."fn_activity_event_defaults"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "app"."fn_audit_log_append_only"() RETURNS "trigger"
+    LANGUAGE "plpgsql"
+    SET "search_path" TO ''
+    AS $$
+begin
+  raise exception 'audit_log is append-only' using errcode = '42501';
+end;
+$$;
+
+
+ALTER FUNCTION "app"."fn_audit_log_append_only"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "app"."fn_effective_access"("p_drawing_id" "uuid") RETURNS "text"
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO ''
@@ -216,6 +229,65 @@ $$;
 
 
 ALTER FUNCTION "app"."fn_zone_layout_defaults"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."admin_set_user_status"("p_actor_id" "uuid", "p_user_id" "uuid", "p_status" "text") RETURNS TABLE("previous_status" "text", "email" "text", "name" "text")
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+declare
+  v_previous text;
+  v_email text;
+  v_name text;
+begin
+  if p_actor_id is null or p_user_id is null then
+    raise exception 'actor and user are required' using errcode = '22023';
+  end if;
+  if p_status is null or p_status not in ('active', 'deactivated') then
+    raise exception 'status must be active or deactivated' using errcode = '22023';
+  end if;
+  if not exists (
+    select 1 from public.profiles a
+    where a.id = p_actor_id and a.status = 'active' and a.is_platform_admin
+  ) then
+    raise exception 'not a platform admin' using errcode = 'PT403';
+  end if;
+  if p_actor_id = p_user_id and p_status = 'deactivated' then
+    raise exception 'an admin cannot deactivate their own account' using errcode = 'PT409';
+  end if;
+
+  select p.status, p.email, p.name into v_previous, v_email, v_name
+  from public.profiles p
+  where p.id = p_user_id
+  for update;
+  if not found then
+    raise exception 'no such user' using errcode = 'PT404';
+  end if;
+
+  if v_previous <> p_status then
+    update public.profiles set status = p_status where id = p_user_id;
+    if p_status = 'deactivated' then
+      delete from auth.sessions s where s.user_id = p_user_id;
+    end if;
+    insert into public.audit_log (actor_id, action, target_type, target_id, detail)
+    values (
+      p_actor_id,
+      case p_status when 'active' then 'user.activated' else 'user.deactivated' end,
+      'user',
+      p_user_id,
+      pg_catalog.jsonb_build_object('from', v_previous, 'to', p_status)
+    );
+  end if;
+
+  previous_status := v_previous;
+  email := v_email;
+  name := v_name;
+  return next;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."admin_set_user_status"("p_actor_id" "uuid", "p_user_id" "uuid", "p_status" "text") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."apply_markup_ops"("p_drawing_id" "uuid", "p_ops" "jsonb") RETURNS "jsonb"
@@ -600,6 +672,27 @@ COMMENT ON TABLE "public"."activity_events" IS 'Product activity events (Story 8
 
 
 
+CREATE TABLE IF NOT EXISTS "public"."audit_log" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "occurred_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "actor_id" "uuid" NOT NULL,
+    "action" "text" NOT NULL,
+    "target_type" "text" NOT NULL,
+    "target_id" "uuid" NOT NULL,
+    "detail" "jsonb" DEFAULT '{}'::"jsonb" NOT NULL,
+    CONSTRAINT "audit_log_action_check" CHECK (("action" = ANY (ARRAY['user.activated'::"text", 'user.deactivated'::"text"]))),
+    CONSTRAINT "audit_log_detail_check" CHECK (("jsonb_typeof"("detail") = 'object'::"text")),
+    CONSTRAINT "audit_log_target_type_check" CHECK (("target_type" = 'user'::"text"))
+);
+
+
+ALTER TABLE "public"."audit_log" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."audit_log" IS 'Platform admin writes (Story 10.4, NFR34). Append-only; written only by admin functions; read by the platform admin.';
+
+
+
 CREATE TABLE IF NOT EXISTS "public"."calibrations" (
     "page_id" "uuid" NOT NULL,
     "calibration" "jsonb" NOT NULL,
@@ -916,6 +1009,11 @@ ALTER TABLE ONLY "public"."activity_events"
 
 
 
+ALTER TABLE ONLY "public"."audit_log"
+    ADD CONSTRAINT "audit_log_pkey" PRIMARY KEY ("id");
+
+
+
 ALTER TABLE ONLY "public"."calibrations"
     ADD CONSTRAINT "calibrations_pkey" PRIMARY KEY ("page_id");
 
@@ -1002,6 +1100,18 @@ CREATE INDEX "activity_events_user_idx" ON "public"."activity_events" USING "btr
 
 
 
+CREATE INDEX "audit_log_actor_idx" ON "public"."audit_log" USING "btree" ("actor_id", "occurred_at" DESC);
+
+
+
+CREATE INDEX "audit_log_occurred_idx" ON "public"."audit_log" USING "btree" ("occurred_at" DESC);
+
+
+
+CREATE INDEX "audit_log_target_idx" ON "public"."audit_log" USING "btree" ("target_type", "target_id", "occurred_at" DESC);
+
+
+
 CREATE INDEX "drawing_files_filename_idx" ON "public"."drawing_files" USING "btree" ("filename");
 
 
@@ -1027,6 +1137,10 @@ CREATE INDEX "markups_drawing_updated_idx" ON "public"."markups" USING "btree" (
 
 
 CREATE INDEX "markups_page_idx" ON "public"."markups" USING "btree" ("page_id");
+
+
+
+CREATE INDEX "profiles_status_created_idx" ON "public"."profiles" USING "btree" ("status", "created_at" DESC);
 
 
 
@@ -1059,6 +1173,10 @@ CREATE INDEX "zone_layouts_zone_idx" ON "public"."zone_layouts" USING "btree" ("
 
 
 CREATE OR REPLACE TRIGGER "activity_events_defaults" BEFORE INSERT ON "public"."activity_events" FOR EACH ROW EXECUTE FUNCTION "app"."fn_activity_event_defaults"();
+
+
+
+CREATE OR REPLACE TRIGGER "audit_log_append_only" BEFORE DELETE OR UPDATE ON "public"."audit_log" FOR EACH ROW EXECUTE FUNCTION "app"."fn_audit_log_append_only"();
 
 
 
@@ -1184,6 +1302,13 @@ CREATE POLICY "activity_events_select_admin" ON "public"."activity_events" FOR S
 
 
 
+ALTER TABLE "public"."audit_log" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "audit_log_select_platform_admin" ON "public"."audit_log" FOR SELECT TO "authenticated" USING (( SELECT "app"."fn_is_platform_admin"() AS "fn_is_platform_admin"));
+
+
+
 ALTER TABLE "public"."calibrations" ENABLE ROW LEVEL SECURITY;
 
 
@@ -1275,6 +1400,10 @@ CREATE POLICY "pages_select_own" ON "public"."pages" FOR SELECT TO "authenticate
 
 
 ALTER TABLE "public"."profiles" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "profiles_select_platform_admin" ON "public"."profiles" FOR SELECT TO "authenticated" USING (( SELECT "app"."fn_is_platform_admin"() AS "fn_is_platform_admin"));
+
 
 
 CREATE POLICY "profiles_select_self" ON "public"."profiles" FOR SELECT TO "authenticated" USING (("id" = ( SELECT "auth"."uid"() AS "uid")));
@@ -1394,6 +1523,10 @@ REVOKE ALL ON FUNCTION "app"."fn_activity_event_defaults"() FROM PUBLIC;
 
 
 
+REVOKE ALL ON FUNCTION "app"."fn_audit_log_append_only"() FROM PUBLIC;
+
+
+
 REVOKE ALL ON FUNCTION "app"."fn_effective_access"("p_drawing_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "app"."fn_effective_access"("p_drawing_id" "uuid") TO "authenticated";
 
@@ -1435,6 +1568,11 @@ REVOKE ALL ON FUNCTION "app"."fn_zone_layout_defaults"() FROM PUBLIC;
 
 
 
+REVOKE ALL ON FUNCTION "public"."admin_set_user_status"("p_actor_id" "uuid", "p_user_id" "uuid", "p_status" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."admin_set_user_status"("p_actor_id" "uuid", "p_user_id" "uuid", "p_status" "text") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."apply_markup_ops"("p_drawing_id" "uuid", "p_ops" "jsonb") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."apply_markup_ops"("p_drawing_id" "uuid", "p_ops" "jsonb") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."apply_markup_ops"("p_drawing_id" "uuid", "p_ops" "jsonb") TO "service_role";
@@ -1460,6 +1598,11 @@ GRANT ALL ON FUNCTION "public"."list_markup_sets"() TO "service_role";
 
 GRANT ALL ON TABLE "public"."activity_events" TO "service_role";
 GRANT SELECT,INSERT ON TABLE "public"."activity_events" TO "authenticated";
+
+
+
+GRANT ALL ON TABLE "public"."audit_log" TO "service_role";
+GRANT SELECT ON TABLE "public"."audit_log" TO "authenticated";
 
 
 

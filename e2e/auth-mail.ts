@@ -63,6 +63,19 @@ export async function emailLink(to: string, subject: string): Promise<string> {
   throw new Error(`no "${subject}" email to ${to}`);
 }
 
+/** Story 10.4: the newest email to `to` with this subject (mail the app sends itself, no /auth/confirm link). */
+export async function emailMessage(to: string, subject: string): Promise<{ HTML: string; Text: string; Subject: string }> {
+  for (let i = 0; i < 40; i++) {
+    const res = await fetch(`${MAILPIT}/api/v1/search?query=${encodeURIComponent(`to:"${to}" subject:"${subject}"`)}`);
+    const { messages } = (await res.json()) as { messages: { ID: string }[] };
+    if (messages.length > 0) {
+      return (await (await fetch(`${MAILPIT}/api/v1/message/${messages[0].ID}`)).json()) as { HTML: string; Text: string; Subject: string };
+    }
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  throw new Error(`no "${subject}" email to ${to}`);
+}
+
 /**
  * Opens an emailed link and presses its button. Opening alone uses nothing
  * (mail scanners open links); the token is used on the button's POST.

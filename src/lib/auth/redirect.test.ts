@@ -4,9 +4,12 @@ import { ALLOWED_NEXT_PREFIXES, DEFAULT_AFTER_SIGN_IN, sanitizeNextPath } from "
 const D = "/workspace";
 
 describe("sanitizeNextPath (NFR19)", () => {
-  it("defaults to /workspace and allowlists /workspace only", () => {
+  it("defaults to /workspace and allowlists /workspace and /admin only", () => {
     expect(DEFAULT_AFTER_SIGN_IN).toBe("/workspace");
-    expect(ALLOWED_NEXT_PREFIXES).toEqual(["/workspace"]);
+    expect(ALLOWED_NEXT_PREFIXES).toEqual(["/workspace", "/admin"]);
+    // Story 10.4: the admin area (a 404 there for anyone but the platform admin).
+    expect(sanitizeNextPath("/admin/users?status=all")).toBe("/admin/users?status=all");
+    expect(sanitizeNextPath("/administrator")).toBe("/workspace");
   });
 
   it.each<[unknown, string]>([

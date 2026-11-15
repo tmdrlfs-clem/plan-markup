@@ -26,6 +26,7 @@ Each job skips itself with a notice until its secrets exist. Run it by hand from
    - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` (Supabase → Settings → API)
    - `SUPABASE_SERVICE_ROLE_KEY` (server only)
    - `NEXT_PUBLIC_TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY` (Cloudflare → Turnstile, a widget for the production hostname). Required: without the secret, sign-up refuses everyone in production.
+   - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `EMAIL_FROM`, `APP_URL` (Story 10.4): the SMTP account from step 2 again, a sender on the verified domain (for example `Plan Markup <no-reply@your-domain>`) and the production URL. The app sends the "You're in" email itself when you activate an account. Without them accounts are still activated, and the admin screen says the email was not sent.
    - `NEXT_PUBLIC_SENTRY_DSN`, `NEXT_PUBLIC_SENTRY_ENVIRONMENT=production`
    - `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT` (source maps; optional)
 4. **GitHub**:
@@ -39,7 +40,7 @@ Each job skips itself with a notice until its secrets exist. Run it by hand from
    - Add the repository variable `PRODUCTION_URL` (for example `https://plan-markup.vercel.app`).
 5. **Sentry**: create a Next.js project. Its DSN goes in step 3. Check that errors arrive by opening `/workspace` and running `throw new Error("sentry check")` from the browser console, then confirm the event in Sentry.
 6. **Uptime monitoring (NFR38)**: in an uptime service (for example UptimeRobot or Better Stack), add an HTTP monitor on `$PRODUCTION_URL/api/health`. Use a 1–5 minute interval, alert on non-200 (it answers 503 when Supabase is down), and send alerts to your e-mail.
-7. **First admin**: `npm run admin:create-user` against production (with the production URL and service-role key in a temporary env, never committed).
+7. **First admin**: `npm run admin:create-user` against production (with the production URL and service-role key in a temporary env, never committed). After that, new sign-ups are activated at `/admin/users` (Story 10.4; also in the workspace's account menu → Admin: accounts).
 
 ## Every release
 
