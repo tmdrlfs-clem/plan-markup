@@ -9,6 +9,8 @@ import type { Database, Json } from "./types.gen";
 // through RLS (owner only, active users only); a tool's image in the private
 // `tool-assets` bucket at `<owner_id>/<tool_set_id>/<tool_id>.<ext>`, served by
 // signed URLs of 10 minutes. Errors carry the SQLSTATE only.
+// Story 10.11 (FR44): RLS also shows the sets published to the caller's
+// company, read-only; every write here names the caller's own sets.
 
 type Client = SupabaseClient<Database>;
 
@@ -35,14 +37,20 @@ function toolOf(t: ToolRow, urls: ReadonlyMap<string, string>): Tool {
   };
 }
 
-/** The caller's sets in their order, each with its tools in order (images by signed URL). */
-export async function listToolSets(client: Client): Promise<ToolSet[]> {
+/** At most this many sets published to one company (the database refuses more). */
+export const MAX_COMPANY_TOOL_SETS = 100;
+
+/**
+ * The sets of the caller's company that others published (by name), then the
+ * caller's own in their order; each with its tools in order (images by signed URL).
+ */
+export async function listToolSets(client: Client, userId: string): Promise<ToolSet[]> {
   const { data, error } = await client
     .from("tool_sets")
-    .select("id, name, position, tools(id, name, position, markup, device, asset_path)")
+    .select("id, name, position, owner_id, company_id, tools(id, name, position, markup, device, asset_path)")
     .order("position")
     .order("created_at")
-    .limit(MAX_TOOL_SETS);
+    .limit(MAX_TOOL_SETS + MAX_COMPANY_TOOL_SETS);
   if (error) throw failed("tool_sets select", error);
   const rows = data ?? [];
   const paths: string[] = [];
@@ -53,19 +61,28 @@ export async function listToolSets(client: Client): Promise<ToolSet[]> {
     if (signError) throw failed("tool-assets sign", null);
     for (const s of signed ?? []) if (s.path && s.signedUrl) urls.set(s.path, s.signedUrl);
   }
-  return rows.map((s) => ({
-    id: s.id,
-    name: s.name,
-    position: s.position,
-    tools: [...(s.tools ?? [])].sort((a, b) => a.position - b.position).map((t) => toolOf(t, urls)),
-  }));
+  const own: ToolSet[] = [];
+  const shared: ToolSet[] = [];
+  for (const s of rows) {
+    const set: ToolSet = {
+      id: s.id,
+      name: s.name,
+      position: s.position,
+      tools: [...(s.tools ?? [])].sort((a, b) => a.position - b.position).map((t) => toolOf(t, urls)),
+    };
+    if (s.owner_id !== userId) shared.push({ ...set, company: "shared" });
+    else own.push(s.company_id ? { ...set, company: "published" } : set);
+  }
+  shared.sort((a, b) => a.name.localeCompare(b.name, "en") || a.id.localeCompare(b.id));
+  return [...shared, ...own];
 }
 
 /** A new set after the caller's last one; null when they have MAX_TOOL_SETS already. */
-export async function createToolSet(client: Client, name: string): Promise<ToolSet | null> {
+export async function createToolSet(client: Client, userId: string, name: string): Promise<ToolSet | null> {
   const { data: last, error: readError, count } = await client
     .from("tool_sets")
     .select("position", { count: "exact" })
+    .eq("owner_id", userId)
     .order("position", { ascending: false })
     .limit(1);
   if (readError) throw failed("tool_sets select", readError);
@@ -84,8 +101,14 @@ export async function renameToolSet(client: Client, id: string, name: string): P
 }
 
 /** Swaps set `id` with its neighbour before (-1) or after (1); false when there is none. */
-export async function moveToolSet(client: Client, id: string, direction: -1 | 1): Promise<boolean> {
-  const { data, error } = await client.from("tool_sets").select("id, position").order("position").order("created_at").limit(MAX_TOOL_SETS);
+export async function moveToolSet(client: Client, userId: string, id: string, direction: -1 | 1): Promise<boolean> {
+  const { data, error } = await client
+    .from("tool_sets")
+    .select("id, position")
+    .eq("owner_id", userId)
+    .order("position")
+    .order("created_at")
+    .limit(MAX_TOOL_SETS);
   if (error) throw failed("tool_sets select", error);
   const sets = data ?? [];
   const at = sets.findIndex((s) => s.id === id);
@@ -137,12 +160,12 @@ export async function addTool(client: Client, userId: string, input: AddToolInpu
   let created: ToolSet | null = null;
   let setId: string;
   if ("id" in input.set) {
-    const { data, error } = await client.from("tool_sets").select("id").eq("id", input.set.id).maybeSingle();
+    const { data, error } = await client.from("tool_sets").select("id").eq("id", input.set.id).eq("owner_id", userId).maybeSingle();
     if (error) throw failed("tool_sets select", error);
     if (!data) return null;
     setId = data.id;
   } else {
-    created = await createToolSet(client, input.set.name);
+    created = await createToolSet(client, userId, input.set.name);
     if (!created) return "full";
     setId = created.id;
   }

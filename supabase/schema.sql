@@ -258,6 +258,23 @@ $$;
 ALTER FUNCTION "app"."fn_owns_tool_asset_path"("p_name" "text") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "app"."fn_reads_company_tool_asset_path"("p_name" "text") RETURNS boolean
+    LANGUAGE "sql" STABLE
+    SET "search_path" TO ''
+    AS $$
+  select exists (
+    select 1 from public.tool_sets s
+    where s.id::text = (storage.foldername(p_name))[2]
+      and s.owner_id::text = (storage.foldername(p_name))[1]
+      and s.company_id is not null
+      and app.fn_is_company_member(s.company_id)
+  );
+$$;
+
+
+ALTER FUNCTION "app"."fn_reads_company_tool_asset_path"("p_name" "text") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "app"."fn_set_updated_at"() RETURNS "trigger"
     LANGUAGE "plpgsql"
     SET "search_path" TO ''
@@ -288,6 +305,24 @@ $$;
 
 
 ALTER FUNCTION "app"."fn_sync_profile_email"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "app"."fn_withdraw_company_tool_sets"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+begin
+  if tg_op = 'DELETE' or new.role <> 'admin' or new.company_id <> old.company_id or new.user_id <> old.user_id then
+    update public.tool_sets s
+    set company_id = null, updated_at = pg_catalog.now()
+    where s.owner_id = old.user_id and s.company_id = old.company_id;
+  end if;
+  return null;
+end;
+$$;
+
+
+ALTER FUNCTION "app"."fn_withdraw_company_tool_sets"() OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "app"."fn_zone_layout_defaults"() RETURNS "trigger"
@@ -1279,6 +1314,65 @@ $$;
 
 ALTER FUNCTION "public"."set_company_member_role"("p_actor_id" "uuid", "p_user_id" "uuid", "p_role" "text") OWNER TO "postgres";
 
+
+CREATE OR REPLACE FUNCTION "public"."set_tool_set_published"("p_actor_id" "uuid", "p_tool_set_id" "uuid", "p_published" boolean) RETURNS TABLE("changed" boolean, "company_name" "text")
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+declare
+  v_company_id uuid;
+  v_company_name text;
+  v_current uuid;
+  v_name text;
+begin
+  if p_actor_id is null or p_tool_set_id is null or p_published is null then
+    raise exception 'actor, tool set and published are required' using errcode = '22023';
+  end if;
+
+  -- The company row is locked: two publications to one company run one after the other.
+  select c.id, c.name into v_company_id, v_company_name
+  from public.company_members m
+  join public.profiles p on p.id = m.user_id
+  join public.companies c on c.id = m.company_id
+  where m.user_id = p_actor_id and m.role = 'admin' and p.status = 'active'
+  for update of c;
+  if not found then
+    raise exception 'not a company admin' using errcode = 'PT403';
+  end if;
+
+  select s.company_id, s.name into v_current, v_name
+  from public.tool_sets s
+  where s.id = p_tool_set_id and s.owner_id = p_actor_id
+  for update;
+  if not found then
+    raise exception 'no such tool set' using errcode = 'PT404';
+  end if;
+
+  changed := false;
+  company_name := v_company_name;
+  if p_published and v_current is distinct from v_company_id then
+    if (select count(*) from public.tool_sets s where s.company_id = v_company_id) >= 100 then
+      raise exception 'the company has 100 published tool sets' using errcode = 'PT409';
+    end if;
+    update public.tool_sets s set company_id = v_company_id, updated_at = pg_catalog.now() where s.id = p_tool_set_id;
+    insert into public.audit_log (actor_id, action, target_type, target_id, detail)
+    values (p_actor_id, 'company.tool_set_published', 'company', v_company_id,
+            pg_catalog.jsonb_build_object('tool_set_id', p_tool_set_id, 'name', v_name));
+    changed := true;
+  elsif not p_published and v_current is not null then
+    update public.tool_sets s set company_id = null, updated_at = pg_catalog.now() where s.id = p_tool_set_id;
+    insert into public.audit_log (actor_id, action, target_type, target_id, detail)
+    values (p_actor_id, 'company.tool_set_withdrawn', 'company', v_current,
+            pg_catalog.jsonb_build_object('tool_set_id', p_tool_set_id, 'name', v_name));
+    changed := true;
+  end if;
+  return next;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."set_tool_set_published"("p_actor_id" "uuid", "p_tool_set_id" "uuid", "p_published" boolean) OWNER TO "postgres";
+
 SET default_tablespace = '';
 
 SET default_table_access_method = "heap";
@@ -1334,7 +1428,7 @@ CREATE TABLE IF NOT EXISTS "public"."audit_log" (
     "target_type" "text" NOT NULL,
     "target_id" "uuid" NOT NULL,
     "detail" "jsonb" DEFAULT '{}'::"jsonb" NOT NULL,
-    CONSTRAINT "audit_log_action_check" CHECK (("action" = ANY (ARRAY['user.activated'::"text", 'user.deactivated'::"text", 'user.plan_changed'::"text", 'company.created'::"text", 'company.plan_changed'::"text", 'company.member_invited'::"text", 'company.invitation_revoked'::"text", 'company.member_joined'::"text", 'company.member_role_changed'::"text", 'company.member_removed'::"text", 'support.markup_sets_viewed'::"text"]))),
+    CONSTRAINT "audit_log_action_check" CHECK (("action" = ANY (ARRAY['user.activated'::"text", 'user.deactivated'::"text", 'user.plan_changed'::"text", 'company.created'::"text", 'company.plan_changed'::"text", 'company.member_invited'::"text", 'company.invitation_revoked'::"text", 'company.member_joined'::"text", 'company.member_role_changed'::"text", 'company.member_removed'::"text", 'company.tool_set_published'::"text", 'company.tool_set_withdrawn'::"text", 'support.markup_sets_viewed'::"text"]))),
     CONSTRAINT "audit_log_detail_check" CHECK (("jsonb_typeof"("detail") = 'object'::"text")),
     CONSTRAINT "audit_log_target_type_check" CHECK (("target_type" = ANY (ARRAY['user'::"text", 'company'::"text"])))
 );
@@ -1611,6 +1705,7 @@ CREATE TABLE IF NOT EXISTS "public"."tool_sets" (
     "position" double precision DEFAULT 0 NOT NULL,
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "company_id" "uuid",
     CONSTRAINT "tool_sets_name_check" CHECK (((("length"("btrim"("name")) >= 1) AND ("length"("btrim"("name")) <= 100)) AND ("name" = "btrim"("name")))),
     CONSTRAINT "tool_sets_position_check" CHECK ((("position" = "position") AND (("position" >= ('-1000000000000000'::numeric)::double precision) AND ("position" <= ('1000000000000000'::numeric)::double precision))))
 );
@@ -1619,7 +1714,11 @@ CREATE TABLE IF NOT EXISTS "public"."tool_sets" (
 ALTER TABLE "public"."tool_sets" OWNER TO "postgres";
 
 
-COMMENT ON TABLE "public"."tool_sets" IS 'A user''s tool set (Story 7.1). Owner only.';
+COMMENT ON TABLE "public"."tool_sets" IS 'A user''s tool set (Story 7.1). Written by its owner; a published set is read by its company''s members (Story 10.11).';
+
+
+
+COMMENT ON COLUMN "public"."tool_sets"."company_id" IS 'The company this set is published to (Story 10.11); null for a personal set. Written only by set_tool_set_published().';
 
 
 
@@ -1914,6 +2013,10 @@ CREATE INDEX "profiles_status_created_idx" ON "public"."profiles" USING "btree" 
 
 
 
+CREATE INDEX "tool_sets_company_idx" ON "public"."tool_sets" USING "btree" ("company_id") WHERE ("company_id" IS NOT NULL);
+
+
+
 CREATE INDEX "tool_sets_owner_idx" ON "public"."tool_sets" USING "btree" ("owner_id", "position");
 
 
@@ -1951,6 +2054,10 @@ CREATE OR REPLACE TRIGGER "audit_log_append_only" BEFORE DELETE OR UPDATE ON "pu
 
 
 CREATE OR REPLACE TRIGGER "trg_companies_updated_at" BEFORE UPDATE ON "public"."companies" FOR EACH ROW EXECUTE FUNCTION "app"."fn_set_updated_at"();
+
+
+
+CREATE OR REPLACE TRIGGER "trg_company_members_withdraw_tool_sets" AFTER DELETE OR UPDATE ON "public"."company_members" FOR EACH ROW EXECUTE FUNCTION "app"."fn_withdraw_company_tool_sets"();
 
 
 
@@ -2013,6 +2120,11 @@ ALTER TABLE ONLY "public"."company_members"
 
 ALTER TABLE ONLY "public"."profiles"
     ADD CONSTRAINT "fk_profiles_user" FOREIGN KEY ("id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."tool_sets"
+    ADD CONSTRAINT "fk_tool_sets_company" FOREIGN KEY ("company_id") REFERENCES "public"."companies"("id") ON DELETE SET NULL;
 
 
 
@@ -2265,7 +2377,7 @@ CREATE POLICY "tool_sets_insert_own" ON "public"."tool_sets" FOR INSERT TO "auth
 
 
 
-CREATE POLICY "tool_sets_select_own" ON "public"."tool_sets" FOR SELECT TO "authenticated" USING ((("owner_id" = ( SELECT "auth"."uid"() AS "uid")) AND ( SELECT "app"."fn_is_active_user"() AS "fn_is_active_user")));
+CREATE POLICY "tool_sets_select_own_or_company" ON "public"."tool_sets" FOR SELECT TO "authenticated" USING (((("owner_id" = ( SELECT "auth"."uid"() AS "uid")) AND ( SELECT "app"."fn_is_active_user"() AS "fn_is_active_user")) OR (("company_id" IS NOT NULL) AND "app"."fn_is_company_member"("company_id"))));
 
 
 
@@ -2286,7 +2398,9 @@ CREATE POLICY "tools_insert_own" ON "public"."tools" FOR INSERT TO "authenticate
 
 
 
-CREATE POLICY "tools_select_own" ON "public"."tools" FOR SELECT TO "authenticated" USING ((("owner_id" = ( SELECT "auth"."uid"() AS "uid")) AND ( SELECT "app"."fn_is_active_user"() AS "fn_is_active_user")));
+CREATE POLICY "tools_select_own_or_company" ON "public"."tools" FOR SELECT TO "authenticated" USING (((("owner_id" = ( SELECT "auth"."uid"() AS "uid")) AND ( SELECT "app"."fn_is_active_user"() AS "fn_is_active_user")) OR (EXISTS ( SELECT 1
+   FROM "public"."tool_sets" "s"
+  WHERE (("s"."id" = "tools"."tool_set_id") AND ("s"."company_id" IS NOT NULL) AND "app"."fn_is_company_member"("s"."company_id"))))));
 
 
 
@@ -2384,11 +2498,20 @@ GRANT ALL ON FUNCTION "app"."fn_owns_tool_asset_path"("p_name" "text") TO "authe
 
 
 
+REVOKE ALL ON FUNCTION "app"."fn_reads_company_tool_asset_path"("p_name" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "app"."fn_reads_company_tool_asset_path"("p_name" "text") TO "authenticated";
+
+
+
 REVOKE ALL ON FUNCTION "app"."fn_set_updated_at"() FROM PUBLIC;
 
 
 
 REVOKE ALL ON FUNCTION "app"."fn_sync_profile_email"() FROM PUBLIC;
+
+
+
+REVOKE ALL ON FUNCTION "app"."fn_withdraw_company_tool_sets"() FROM PUBLIC;
 
 
 
@@ -2478,6 +2601,11 @@ GRANT ALL ON FUNCTION "public"."revoke_company_invitation"("p_actor_id" "uuid", 
 
 REVOKE ALL ON FUNCTION "public"."set_company_member_role"("p_actor_id" "uuid", "p_user_id" "uuid", "p_role" "text") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."set_company_member_role"("p_actor_id" "uuid", "p_user_id" "uuid", "p_role" "text") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."set_tool_set_published"("p_actor_id" "uuid", "p_tool_set_id" "uuid", "p_published" boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."set_tool_set_published"("p_actor_id" "uuid", "p_tool_set_id" "uuid", "p_published" boolean) TO "service_role";
 
 
 
@@ -2593,8 +2721,32 @@ GRANT ALL ON TABLE "public"."signatures" TO "service_role";
 
 
 
-GRANT ALL ON TABLE "public"."tool_sets" TO "authenticated";
+GRANT SELECT,REFERENCES,DELETE,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."tool_sets" TO "authenticated";
 GRANT ALL ON TABLE "public"."tool_sets" TO "service_role";
+
+
+
+GRANT INSERT("id") ON TABLE "public"."tool_sets" TO "authenticated";
+
+
+
+GRANT INSERT("owner_id") ON TABLE "public"."tool_sets" TO "authenticated";
+
+
+
+GRANT INSERT("name"),UPDATE("name") ON TABLE "public"."tool_sets" TO "authenticated";
+
+
+
+GRANT INSERT("position"),UPDATE("position") ON TABLE "public"."tool_sets" TO "authenticated";
+
+
+
+GRANT INSERT("created_at") ON TABLE "public"."tool_sets" TO "authenticated";
+
+
+
+GRANT INSERT("updated_at"),UPDATE("updated_at") ON TABLE "public"."tool_sets" TO "authenticated";
 
 
 

@@ -78,8 +78,8 @@ export function WorkspaceShell({ user, theme = null }: { user: WorkspaceUser; th
   // In render, before the canvas mounts and would reopen the previous user's tabs.
   useMemo(() => {
     viewerTabs.setOwner(user.id);
-    setToolChestOwner(user.id);
-  }, [user.id]);
+    setToolChestOwner(user.id, user.isCompanyAdmin === true);
+  }, [user.id, user.isCompanyAdmin]);
   // Story 7.7: a new revision stamp's author.
   useMemo(() => {
     setRevisionAuthor(displayName(user));

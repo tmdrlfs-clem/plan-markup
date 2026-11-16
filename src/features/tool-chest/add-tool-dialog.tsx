@@ -15,7 +15,7 @@ import { FieldShell, fieldControlClasses } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
 import { toast } from "@/components/ui/toast-store";
 import { deviceSchema, imageUpload, suggestedToolName, toolContentOf, toolNameSchema, type Device } from "@/core/tools/tool";
-import { toolSetNameSchema } from "@/core/tools/tool-set";
+import { ownToolSets, toolSetNameSchema } from "@/core/tools/tool-set";
 
 import { addTool } from "./actions";
 import { addToolStore, closeAddTool, type AddToolRequest } from "./add-tool-store";
@@ -66,7 +66,9 @@ function requestKey(r: AddToolRequest): number {
 
 function AddToolForm({ request }: { request: AddToolRequest }) {
   const status = useStore(toolChestStore, (s) => s.status);
-  const sets = useStore(toolChestStore, (s) => s.sets);
+  const allSets = useStore(toolChestStore, (s) => s.sets);
+  // Story 10.11: a tool goes into one of the user's own sets, never into a company set of someone else.
+  const sets = useMemo(() => ownToolSets(allSets), [allSets]);
   const made = useMemo(() => toolContentOf(request.markups, { calibration: request.calibration, userUnit: request.userUnit }), [request]);
   const [name, setName] = useState(() => suggestedToolName(request.markups));
   const [setChoice, setSetChoice] = useState<string | null>(null);

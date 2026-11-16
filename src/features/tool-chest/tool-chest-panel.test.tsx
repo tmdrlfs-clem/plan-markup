@@ -9,13 +9,14 @@ import type { ToolSet } from "@/core/tools/tool-set";
 
 const tool = (id: string, name: string): Tool => ({ id, name, content: null, device: null, imageUrl: null });
 
-const m = vi.hoisted(() => ({ list: vi.fn(), create: vi.fn(), rename: vi.fn(), move: vi.fn(), remove: vi.fn() }));
+const m = vi.hoisted(() => ({ list: vi.fn(), create: vi.fn(), rename: vi.fn(), move: vi.fn(), remove: vi.fn(), publish: vi.fn() }));
 vi.mock("./actions", () => ({
   listToolSets: m.list,
   createToolSet: m.create,
   renameToolSet: m.rename,
   moveToolSet: m.move,
   deleteToolSet: m.remove,
+  publishToolSet: m.publish,
   addTool: vi.fn(),
 }));
 
@@ -117,5 +118,66 @@ describe("Tool Chest owner (Story 7.1)", () => {
     expect(toolChestStore.getState().sets).toEqual([A]);
     setToolChestOwner("user-b");
     expect(toolChestStore.getState()).toEqual({ status: "loading", sets: [] });
+  });
+});
+
+describe("company tool sets in the Tool Chest (Story 10.11)", () => {
+  const SHARED: ToolSet = { id: "s", name: "Company symbols", position: 1, tools: [tool("9", "Valve")], company: "shared" };
+  const controls = (name: string) =>
+    within(screen.getAllByTestId("tool-set").find((s) => s.textContent?.includes(name))!)
+      .getAllByRole("button")
+      .map((b) => b.getAttribute("aria-label"))
+      .filter(Boolean);
+
+  it("a set someone else published is marked Company, is used and exported, and cannot be changed", async () => {
+    setToolChestOwner("member", false);
+    const user = setup([SHARED, A]);
+    await screen.findAllByTestId("tool-set");
+    expect(setNames()).toEqual(["Company symbols (1)", "Sprinkler (2)"]);
+    expect(screen.getAllByTestId("company-set")).toHaveLength(1);
+    expect(screen.getAllByTestId("tool").map((t) => t.textContent)).toEqual(["Valve", "Pendant", "Upright"]);
+    expect(controls("Company symbols")).toEqual(["Export Company symbols", "Valve"]);
+    // Double-click does not rename it.
+    await user.dblClick(screen.getByRole("button", { name: "Company symbols (1)" }));
+    expect(screen.queryByRole("textbox", { name: "Tool set name" })).toBeNull();
+    // The user's only own set has nowhere to move, and nothing to publish with.
+    expect(screen.getByRole("button", { name: "Move Sprinkler up" })).toHaveAttribute("aria-disabled", "true");
+    expect(screen.getByRole("button", { name: "Move Sprinkler down" })).toHaveAttribute("aria-disabled", "true");
+    expect(screen.queryByRole("button", { name: /Publish/ })).toBeNull();
+  });
+
+  it("a company admin publishes and withdraws their own set", async () => {
+    setToolChestOwner("boss", true);
+    const user = setup([A]);
+    await screen.findAllByTestId("tool-set");
+    expect(screen.queryByTestId("company-set")).toBeNull();
+    m.publish.mockResolvedValue({ ok: true, data: { published: true, companyName: "Acme" } });
+    await user.click(screen.getByRole("button", { name: "Publish Sprinkler to your company" }));
+    expect(m.publish).toHaveBeenCalledWith({ id: "a", published: true });
+    expect(await screen.findByTestId("company-set")).toBeTruthy();
+    // Still the admin's own: every control is there.
+    expect(controls("Sprinkler")).toContain("Rename Sprinkler");
+    expect(controls("Sprinkler")).toContain("Delete Sprinkler");
+
+    await user.click(screen.getByRole("button", { name: "Delete Sprinkler" }));
+    const dialog = await screen.findByRole("alertdialog", { name: "Delete tool set?" });
+    expect(dialog.textContent).toContain("Your company will no longer have it.");
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    m.publish.mockResolvedValue({ ok: true, data: { published: false, companyName: "Acme" } });
+    await user.click(screen.getByRole("button", { name: "Withdraw Sprinkler from your company" }));
+    expect(m.publish).toHaveBeenLastCalledWith({ id: "a", published: false });
+    await vi.waitFor(() => expect(screen.queryByTestId("company-set")).toBeNull());
+  });
+
+  it("a refused publication leaves the set as it was", async () => {
+    setToolChestOwner("boss", true);
+    const user = setup([A]);
+    await screen.findAllByTestId("tool-set");
+    m.publish.mockResolvedValue({ ok: false, code: "FORBIDDEN", message: "You cannot do that." });
+    await user.click(screen.getByRole("button", { name: "Publish Sprinkler to your company" }));
+    await vi.waitFor(() => expect(m.publish).toHaveBeenCalled());
+    expect(screen.queryByTestId("company-set")).toBeNull();
+    expect(screen.getByRole("button", { name: "Publish Sprinkler to your company" })).toBeTruthy();
   });
 });

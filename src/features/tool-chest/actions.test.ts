@@ -9,12 +9,16 @@ const m = vi.hoisted(() => ({
   remove: vi.fn(),
   add: vi.fn(),
   error: vi.fn(),
+  getCompanyAdmin: vi.fn(),
+  rpc: vi.fn(),
 }));
 
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/auth", () => ({ getAuthUser: m.getAuthUser }));
 vi.mock("@/lib/logger", () => ({ logger: { error: m.error, warn: vi.fn(), info: vi.fn(), debug: vi.fn() } }));
 vi.mock("@/lib/supabase/server", () => ({ createServerSupabase: async () => ({}) }));
+vi.mock("@/lib/supabase/admin", () => ({ createAdminSupabase: () => ({ rpc: m.rpc }) }));
+vi.mock("@/features/company/guard", () => ({ getCompanyAdmin: m.getCompanyAdmin }));
 vi.mock("@/lib/db/tool-sets", () => ({
   listToolSets: m.list,
   createToolSet: m.create,
@@ -22,9 +26,10 @@ vi.mock("@/lib/db/tool-sets", () => ({
   moveToolSet: m.move,
   deleteToolSet: m.remove,
   addTool: m.add,
+  MAX_COMPANY_TOOL_SETS: 100,
 }));
 
-import { addTool, createToolSet, deleteToolSet, listToolSets, moveToolSet, renameToolSet } from "./actions";
+import { addTool, createToolSet, deleteToolSet, listToolSets, moveToolSet, publishToolSet, renameToolSet } from "./actions";
 
 const USER = { id: "11111111-1111-4111-8111-111111111111", email: "a@b.test", name: "A", isPlatformAdmin: false, theme: "blueprint" };
 const ID = "00000000-0000-4000-8000-000000000001";
@@ -54,13 +59,14 @@ describe("tool set actions (Story 7.1)", () => {
   it("create trims the name and reports the cap; others report a set that is not the user's", async () => {
     m.create.mockResolvedValueOnce({ id: ID, name: "Heads", position: 1, tools: [] });
     expect(await createToolSet({ name: " Heads " })).toEqual({ ok: true, data: { id: ID, name: "Heads", position: 1, tools: [] } });
-    expect(m.create).toHaveBeenCalledWith({}, "Heads");
+    expect(m.create).toHaveBeenCalledWith({}, USER.id, "Heads");
     m.create.mockResolvedValueOnce(null);
     expect(await createToolSet({ name: "More" })).toMatchObject({ ok: false, code: "INVALID_INPUT", message: "At most 500 tool sets." });
     m.rename.mockResolvedValue(false);
     expect(await renameToolSet({ id: ID, name: "B" })).toMatchObject({ ok: false, code: "NOT_FOUND" });
     m.move.mockResolvedValue(true);
     expect(await moveToolSet({ id: ID, direction: 1 })).toEqual({ ok: true, data: null });
+    expect(m.move).toHaveBeenCalledWith({}, USER.id, ID, 1);
     m.remove.mockResolvedValue(true);
     expect(await deleteToolSet({ id: ID })).toEqual({ ok: true, data: null });
   });
@@ -113,5 +119,43 @@ describe("addTool (Story 7.2)", () => {
     expect(await addTool({ set: { name: "New" }, name: "Pipe", content: CONTENT, device: null, image: null })).toMatchObject({ ok: false, code: "INVALID_INPUT", message: "That tool set is full." });
     m.add.mockResolvedValueOnce(null);
     expect(await addTool({ set: { id: ID }, name: "Pipe", content: CONTENT, device: null, image: null })).toMatchObject({ ok: false, code: "NOT_FOUND" });
+  });
+});
+
+describe("publishToolSet (Story 10.11)", () => {
+  const ADMIN = { user: USER, membership: { companyId: "c", companyName: "Acme", companyPlan: "free", role: "admin" } };
+
+  it("is for a company admin only, and checks the input first", async () => {
+    m.getCompanyAdmin.mockResolvedValue(null);
+    expect(await publishToolSet({ id: ID, published: true })).toMatchObject({ ok: false, code: "FORBIDDEN" });
+    m.getCompanyAdmin.mockResolvedValue(ADMIN);
+    expect(await publishToolSet({ id: ID })).toMatchObject({ ok: false, code: "INVALID_INPUT" });
+    expect(m.rpc).not.toHaveBeenCalled();
+  });
+
+  it("publishes and withdraws through the audited database function, as the signed-in admin", async () => {
+    m.getCompanyAdmin.mockResolvedValue(ADMIN);
+    m.rpc.mockResolvedValue({ data: [{ changed: true, company_name: "Acme" }], error: null });
+    expect(await publishToolSet({ id: ID, published: true })).toEqual({ ok: true, data: { published: true, companyName: "Acme" } });
+    expect(m.rpc).toHaveBeenCalledWith("set_tool_set_published", { p_actor_id: USER.id, p_tool_set_id: ID, p_published: true });
+    expect(await publishToolSet({ id: ID, published: false })).toEqual({ ok: true, data: { published: false, companyName: "Acme" } });
+    expect(m.rpc).toHaveBeenLastCalledWith("set_tool_set_published", { p_actor_id: USER.id, p_tool_set_id: ID, p_published: false });
+  });
+
+  it("maps the refusals of the database", async () => {
+    m.getCompanyAdmin.mockResolvedValue(ADMIN);
+    m.rpc.mockResolvedValueOnce({ data: null, error: { code: "PT403" } });
+    expect(await publishToolSet({ id: ID, published: true })).toMatchObject({ ok: false, code: "FORBIDDEN" });
+    m.rpc.mockResolvedValueOnce({ data: null, error: { code: "PT404" } });
+    expect(await publishToolSet({ id: ID, published: true })).toMatchObject({ ok: false, code: "NOT_FOUND" });
+    m.rpc.mockResolvedValueOnce({ data: null, error: { code: "PT409" } });
+    expect(await publishToolSet({ id: ID, published: true })).toMatchObject({
+      ok: false,
+      code: "CONFLICT",
+      message: "Your company already has 100 published tool sets. Withdraw one first.",
+    });
+    m.rpc.mockResolvedValueOnce({ data: null, error: { code: "XX000" } });
+    expect(await publishToolSet({ id: ID, published: true })).toMatchObject({ ok: false, code: "INTERNAL" });
+    expect(m.error).toHaveBeenCalled();
   });
 });

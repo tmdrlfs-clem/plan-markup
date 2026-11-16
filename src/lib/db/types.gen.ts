@@ -50,6 +50,9 @@ export type Database = {
                            },
 "fn_owns_tool_asset_path":
 { Args: { "p_name": string }; Returns: boolean
+                           },
+"fn_reads_company_tool_asset_path":
+{ Args: { "p_name": string }; Returns: boolean
                            }
           }
           Enums: {
@@ -304,17 +307,23 @@ isOneToOne: false
                   ]
                 },"tool_sets": {
                   Row: {
-                    "created_at": string,"id": string,"name": string,"owner_id": string,"position": number,"updated_at": string
+                    "company_id": string | null,"created_at": string,"id": string,"name": string,"owner_id": string,"position": number,"updated_at": string
                   }
                   ComputedFields: never
                   Insert: {
-                    "created_at"?: string,"id"?: string,"name": string,"owner_id"?: string,"position"?: number,"updated_at"?: string
+                    "company_id"?: string | null,"created_at"?: string,"id"?: string,"name": string,"owner_id"?: string,"position"?: number,"updated_at"?: string
                   }
                   Update: {
-                    "created_at"?: string,"id"?: string,"name"?: string,"owner_id"?: string,"position"?: number,"updated_at"?: string
+                    "company_id"?: string | null,"created_at"?: string,"id"?: string,"name"?: string,"owner_id"?: string,"position"?: number,"updated_at"?: string
                   }
                   Relationships: [
-
+                    {
+      foreignKeyName: "fk_tool_sets_company"
+      columns: ["company_id"]
+isOneToOne: false
+      referencedRelation: "companies"
+      referencedColumns: ["id"]
+    }
                   ]
                 },"tools": {
                   Row: {
@@ -474,6 +483,11 @@ isOneToOne: false
 "set_company_member_role":
 { Args: { "p_actor_id": string,"p_role": string,"p_user_id": string }; Returns: {
               "previous_role": string
+            }[]
+                           },
+"set_tool_set_published":
+{ Args: { "p_actor_id": string,"p_published": boolean,"p_tool_set_id": string }; Returns: {
+              "changed": boolean,"company_name": string
             }[]
                            }
           }

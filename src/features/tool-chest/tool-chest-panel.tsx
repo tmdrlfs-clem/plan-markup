@@ -9,9 +9,12 @@
 // each click on the drawing until Esc), a drag places it once; a tile drawn at
 // a scale is disabled on a page without one. Story 7.4: Import (import-btx-ui).
 // Story 7.6: each set exports to our own file (tool-file); Import takes it back.
+// Story 10.11 (FR44): the sets other admins published to the user's company
+// come first, marked Company: their tools are used like any other, and the
+// set only exports. A company admin publishes and withdraws their own sets.
 
 import { useEffect, useState, type KeyboardEvent } from "react";
-import { ArrowDown, ArrowUp, Download, Pencil, Plus, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Building2, Download, Pencil, Plus, Trash2 } from "lucide-react";
 import { useStore } from "zustand";
 import { createStore } from "zustand/vanilla";
 
@@ -25,11 +28,11 @@ import { toast } from "@/components/ui/toast-store";
 import { pageIdOf } from "@/core/calibration/calibration";
 import { NEEDS_SCALE, needsScale } from "@/core/tools/place";
 import type { Tool } from "@/core/tools/tool";
-import { MAX_TOOL_SET_NAME, deleteSetText, searchToolSets, type ToolSet } from "@/core/tools/tool-set";
+import { MAX_TOOL_SET_NAME, deleteSetText, ownToolSets, searchToolSets, type ToolSet } from "@/core/tools/tool-set";
 import { FirstUseTip } from "@/features/tips";
 import { TOOL_DRAG_TYPE, setTool, viewerCommands, viewerStore } from "@/features/viewer";
 
-import { createToolSet, deleteToolSet, listToolSets, moveToolSet, renameToolSet } from "./actions";
+import { createToolSet, deleteToolSet, listToolSets, moveToolSet, publishToolSet, renameToolSet } from "./actions";
 import { resetStamps, setArmedStamp, setDraggedStamp, stampStore, type StampTool } from "./stamp-store";
 import { ImportBtxButton } from "./import-btx-ui";
 import { ToolPreview, cachedToolImage, toolImageDataUrl } from "./tool-preview";
@@ -46,11 +49,15 @@ type ChestState = { status: "loading" | "ready" | "error"; sets: ToolSet[] };
 /** The user's tool sets (loaded when the panel first shows). */
 export const toolChestStore = createStore<ChestState>(() => ({ status: "loading", sets: [] }));
 
+/** Story 10.11: whether the Publish control shows. Display only: the server checks the admin again. */
+const publisherStore = createStore<{ canPublish: boolean }>(() => ({ canPublish: false }));
+
 let loadSeq = 0;
 let owner: string | null = null;
 
 /** The signed-in user: another user's workspace never shows the previous user's sets. */
-export function setToolChestOwner(userId: string): void {
+export function setToolChestOwner(userId: string, canPublish = false): void {
+  if (publisherStore.getState().canPublish !== canPublish) publisherStore.setState({ canPublish });
   if (owner !== userId) {
     loadSeq++;
     toolChestStore.setState({ status: "loading", sets: [] });
@@ -120,7 +127,24 @@ async function remove(set: ToolSet): Promise<void> {
   }
 }
 
-/** A set's name being typed: Enter or leaving keeps it, Esc cancels. */
+/** Story 10.11: shows `set` to the admin's company, or withdraws it. */
+async function publish(set: ToolSet, published: boolean): Promise<void> {
+  const result = await publishToolSet({ id: set.id, published }).catch(() => null);
+  if (!result?.ok) {
+    return failed(result?.message ?? (published ? "The tool set could not be published. Try again." : "The tool set could not be withdrawn. Try again."));
+  }
+  toolChestStore.setState((s) => ({
+    sets: s.sets.map((x) => (x.id === set.id ? { ...x, company: published ? ("published" as const) : undefined } : x)),
+  }));
+  toast({
+    title: published ? `“${set.name}” is now a company tool set` : `“${set.name}” is no longer a company tool set`,
+    description: published
+      ? `Everyone in ${result.data.companyName} can use it. Only you can change it.`
+      : `People in ${result.data.companyName} no longer see it.`,
+    variant: "success",
+  });
+}
+
 function stampOf(tool: Tool, imageSrc: string | null): StampTool | null {
   return tool.content ? { id: tool.id, name: tool.name, content: tool.content, device: tool.device, imageSrc } : null;
 }
@@ -187,6 +211,7 @@ function ToolTile({ tool }: { tool: Tool }) {
   );
 }
 
+/** A set's name being typed: Enter or leaving keeps it, Esc cancels. */
 function NameField({ initial, label, onDone }: { initial: string; label: string; onDone: (name: string | null) => void }) {
   const [draft, setDraft] = useState(initial);
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
@@ -240,6 +265,7 @@ function ImportButton() {
 export function ToolChestPanel() {
   const status = useStore(toolChestStore, (s) => s.status);
   const sets = useStore(toolChestStore, (s) => s.sets);
+  const canPublish = useStore(publisherStore, (s) => s.canPublish);
   const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(false);
   const [renaming, setRenaming] = useState<string | null>(null);
@@ -251,6 +277,7 @@ export function ToolChestPanel() {
   }, []);
 
   const shown = searchToolSets(sets, query);
+  const own = ownToolSets(sets);
   const searching = query.trim() !== "";
 
   const createField = creating ? (
@@ -322,7 +349,17 @@ export function ToolChestPanel() {
       <div className="min-h-0 flex-1 overflow-y-auto">
         {searching && shown.length === 0 ? <p className="p-3 text-ws-md text-muted">No tools match “{query.trim()}”.</p> : null}
         {shown.map((set) => {
-          const i = sets.findIndex((s) => s.id === set.id);
+          const shared = set.company === "shared";
+          const i = own.findIndex((s) => s.id === set.id);
+          const badge = set.company ? (
+            <span
+              data-testid="company-set"
+              title={shared ? "A company tool set: you can use its tools, not change them" : "You published this set to your company"}
+              className="rounded-[2px] border border-border px-1 text-ws-xs text-muted"
+            >
+              Company
+            </span>
+          ) : null;
           if (renaming === set.id) {
             return (
               <div key={set.id} className="flex h-8 items-center border-b border-border px-2" data-testid="tool-set">
@@ -338,7 +375,7 @@ export function ToolChestPanel() {
             );
           }
           return (
-            <div key={set.id} data-testid="tool-set" onDoubleClick={(e) => (e.target as HTMLElement).closest("button[aria-expanded]") && setRenaming(set.id)}>
+            <div key={set.id} data-testid="tool-set" onDoubleClick={(e) => !shared && (e.target as HTMLElement).closest("button[aria-expanded]") && setRenaming(set.id)}>
               <Collapsible
                 title={`${set.name} (${set.tools.length})`}
                 open={searching || !collapsed.has(set.id)}
@@ -351,17 +388,34 @@ export function ToolChestPanel() {
                   })
                 }
                 actions={
+                  shared ? (
+                    <>
+                      {badge}
+                      <IconButton size="xs" label={`Export ${set.name}`} icon={Download} onClick={() => void exportSet(set)} />
+                    </>
+                  ) : (
                   <>
+                    {badge}
+                    {canPublish ? (
+                      <IconButton
+                        size="xs"
+                        label={set.company === "published" ? `Withdraw ${set.name} from your company` : `Publish ${set.name} to your company`}
+                        icon={Building2}
+                        aria-pressed={set.company === "published"}
+                        onClick={() => void publish(set, set.company !== "published")}
+                      />
+                    ) : null}
                     <IconButton size="xs" label={`Rename ${set.name}`} icon={Pencil} onClick={() => setRenaming(set.id)} />
                     <IconButton size="xs" label={`Move ${set.name} up`} icon={ArrowUp} disabled={searching || i === 0} onClick={() => void move(set, -1)} />
-                    <IconButton size="xs" label={`Move ${set.name} down`} icon={ArrowDown} disabled={searching || i === sets.length - 1} onClick={() => void move(set, 1)} />
+                    <IconButton size="xs" label={`Move ${set.name} down`} icon={ArrowDown} disabled={searching || i === own.length - 1} onClick={() => void move(set, 1)} />
                     <IconButton size="xs" label={`Export ${set.name}`} icon={Download} onClick={() => void exportSet(set)} />
                     <IconButton size="xs" label={`Delete ${set.name}`} icon={Trash2} onClick={() => setDeleting(set)} />
                   </>
+                  )
                 }
               >
                 {set.tools.length === 0 ? (
-                  <p className="text-ws-sm text-muted">No tools yet. Select a markup and add it to the Tool Chest.</p>
+                  <p className="text-ws-sm text-muted">{shared ? "No tools yet." : "No tools yet. Select a markup and add it to the Tool Chest."}</p>
                 ) : (
                   <ul className="grid grid-cols-[repeat(auto-fill,minmax(72px,1fr))] gap-1" aria-label={`${set.name} tools`}>
                     {set.tools.map((tool) => (
