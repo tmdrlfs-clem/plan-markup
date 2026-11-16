@@ -1,6 +1,6 @@
 # Story 10.11: Company tool sets
 
-Status: review
+Status: done
 
 ## Story
 
