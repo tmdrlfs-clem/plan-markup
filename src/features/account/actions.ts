@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { getAuthState, readAuthState } from "@/lib/auth";
 import { getClientIp } from "@/lib/auth/client-ip";
-import { sanitizeNextPath } from "@/lib/auth/redirect";
+import { isInvitePath, sanitizeNextPath } from "@/lib/auth/redirect";
 import { checkSignInRateLimit, type RateLimitDecision } from "@/lib/auth/rate-limit";
 import { signInWithPassword, signOutCurrentSession } from "@/lib/auth/sign-in";
 import { logger } from "@/lib/logger";
@@ -93,8 +93,10 @@ export async function signIn(_prev: SignInState, formData: FormData): Promise<Si
   const state = await readAuthState();
 
   // 5. redirect() throws a control-flow error: outside any try/catch.
-  if (state.kind === "active") redirect(sanitizeNextPath(next));
-  if (state.kind === "inactive") redirect("/pending-activation");
+  const target = sanitizeNextPath(next);
+  if (state.kind === "active") redirect(target);
+  // Story 10.6: an invitation is accepted by accounts that are not active yet.
+  if (state.kind === "inactive") redirect(isInvitePath(target) ? target : "/pending-activation");
   // Signed in but the session did not verify: treat as unavailable.
   logger.error("auth.session_unreadable_after_sign_in");
   return { status: "error", code: "INTERNAL", message: MESSAGES.unavailable };

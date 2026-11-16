@@ -25,11 +25,17 @@ export const EMAIL_CHANGE_LIMITS = {
   email_change_user: { maxHits: 5, windowSeconds: 3600 },
 } as const;
 
+/** Company invitations per inviting user (Story 10.6): each sends one email. */
+export const INVITE_LIMITS = {
+  invite_user: { maxHits: 20, windowSeconds: 3600 },
+} as const;
+
 export type RateLimitBucket =
   | keyof typeof SIGN_IN_LIMITS
   | keyof typeof SIGN_UP_LIMITS
   | keyof typeof RESET_LIMITS
-  | keyof typeof EMAIL_CHANGE_LIMITS;
+  | keyof typeof EMAIL_CHANGE_LIMITS
+  | keyof typeof INVITE_LIMITS;
 
 export type ConsumeArgs = {
   bucket: RateLimitBucket;
@@ -96,6 +102,16 @@ export async function checkEmailChangeRateLimit(userId: string, consume: Consume
     bucket: "email_change_user",
     keyHash: rateLimitKeyHash("email_change_user", userId),
     ...EMAIL_CHANGE_LIMITS.email_change_user,
+  });
+  return r.allowed ? { allowed: true } : { allowed: false, retryAfterSeconds: r.retryAfterSeconds };
+}
+
+/** Invitations sent by one user (Story 10.6). Fails closed: throws when the limiter cannot be reached. */
+export async function checkInviteRateLimit(userId: string, consume: Consume = rpcConsume): Promise<RateLimitDecision> {
+  const r = await consume({
+    bucket: "invite_user",
+    keyHash: rateLimitKeyHash("invite_user", userId),
+    ...INVITE_LIMITS.invite_user,
   });
   return r.allowed ? { allowed: true } : { allowed: false, retryAfterSeconds: r.retryAfterSeconds };
 }

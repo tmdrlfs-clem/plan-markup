@@ -1,6 +1,6 @@
 # Story 10.5: Create companies and their first admin
 
-Status: review
+Status: done
 
 ## Story
 

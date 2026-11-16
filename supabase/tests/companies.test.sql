@@ -62,7 +62,7 @@ select results_eq(
 select results_eq(
   $$ select a.actor_id, a.action, a.target_type, a.target_id = c.id, a.detail
        from public.audit_log a join public.companies c on c.name = 'Acme Fire'
-      where a.action = 'company.created' $$,
+      where a.action = 'company.created' and a.actor_id = '91111111-1111-4111-8111-111111111111' $$,
   $$ values ('91111111-1111-4111-8111-111111111111'::uuid, 'company.created', 'company', true,
              '{"name":"Acme Fire","admin_user_id":"92222222-2222-4222-8222-222222222222"}'::jsonb) $$,
   'the creation is recorded');

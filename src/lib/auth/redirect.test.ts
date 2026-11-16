@@ -1,12 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { ALLOWED_NEXT_PREFIXES, DEFAULT_AFTER_SIGN_IN, sanitizeNextPath } from "./redirect";
+import { ALLOWED_NEXT_PREFIXES, DEFAULT_AFTER_SIGN_IN, isInvitePath, sanitizeNextPath } from "./redirect";
 
 const D = "/workspace";
 
 describe("sanitizeNextPath (NFR19)", () => {
-  it("defaults to /workspace and allowlists /workspace and /admin only", () => {
+  it("defaults to /workspace and allowlists the app areas only", () => {
     expect(DEFAULT_AFTER_SIGN_IN).toBe("/workspace");
-    expect(ALLOWED_NEXT_PREFIXES).toEqual(["/workspace", "/admin"]);
+    expect(ALLOWED_NEXT_PREFIXES).toEqual(["/workspace", "/admin", "/company", "/invite"]);
+    // Story 10.6: the invitation page keeps its token; nothing else is an invite path.
+    expect(sanitizeNextPath("/invite?token=abc-DEF_123")).toBe("/invite?token=abc-DEF_123");
+    expect(isInvitePath("/invite?token=abc")).toBe(true);
+    expect(isInvitePath("/invite")).toBe(true);
+    expect(isInvitePath("/invited")).toBe(false);
+    expect(isInvitePath("/workspace?x=/invite")).toBe(false);
     // Story 10.4: the admin area (a 404 there for anyone but the platform admin).
     expect(sanitizeNextPath("/admin/users?status=all")).toBe("/admin/users?status=all");
     expect(sanitizeNextPath("/administrator")).toBe("/workspace");

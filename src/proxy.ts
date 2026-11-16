@@ -13,6 +13,7 @@ import { cspModeFor } from "@/lib/security/route-policy";
 // Story 8.5: /api/health is the uptime monitor's check (no session, nothing secret).
 // Story 10.1: /sign-up and the email confirmation link; 10.2: /forgot-password;
 // 10.3: /email-change (the result of an email-change link, possibly opened elsewhere).
+// 10.6: /invite (an emailed company invitation, opened before signing in or up).
 const PUBLIC_PATHS: ReadonlySet<string> = new Set([
   "/",
   "/sign-in",
@@ -20,6 +21,7 @@ const PUBLIC_PATHS: ReadonlySet<string> = new Set([
   "/forgot-password",
   "/auth/confirm",
   "/email-change",
+  "/invite",
   "/api/health",
 ]);
 

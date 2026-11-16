@@ -136,6 +136,13 @@ describe("signIn", () => {
       status: "pending",
     });
     await expect(signIn(IDLE, form(VALID))).rejects.toThrow("REDIRECT:/pending-activation");
+    // A next path elsewhere changes nothing for a pending user.
+    await expect(signIn(IDLE, form({ ...VALID, next: "/workspace?x=1" }))).rejects.toThrow("REDIRECT:/pending-activation");
+  });
+
+  it("returns a pending user to the invitation they came from (Story 10.6)", async () => {
+    m.readAuthState.mockResolvedValue({ kind: "inactive", userId: "u", email: "pending@plan-markup.test", status: "pending" });
+    await expect(signIn(IDLE, form({ ...VALID, next: "/invite?token=abc" }))).rejects.toThrow("REDIRECT:/invite?token=abc");
   });
 
   it("returns INTERNAL when the limiter fails, and does not call Supabase", async () => {

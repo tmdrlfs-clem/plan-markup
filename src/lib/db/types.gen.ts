@@ -122,6 +122,26 @@ isOneToOne: true
                   Relationships: [
 
                   ]
+                },"company_invitations": {
+                  Row: {
+                    "accepted_at": string | null,"accepted_by": string | null,"company_id": string,"created_at": string,"email": string,"expires_at": string,"id": string,"invited_by": string,"revoked_at": string | null,"role": string,"token_hash": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "accepted_at"?: string | null,"accepted_by"?: string | null,"company_id": string,"created_at"?: string,"email": string,"expires_at": string,"id"?: string,"invited_by": string,"revoked_at"?: string | null,"role": string,"token_hash": string
+                  }
+                  Update: {
+                    "accepted_at"?: string | null,"accepted_by"?: string | null,"company_id"?: string,"created_at"?: string,"email"?: string,"expires_at"?: string,"id"?: string,"invited_by"?: string,"revoked_at"?: string | null,"role"?: string,"token_hash"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "fk_company_invitations_company"
+      columns: ["company_id"]
+isOneToOne: false
+      referencedRelation: "companies"
+      referencedColumns: ["id"]
+    }
+                  ]
                 },"company_members": {
                   Row: {
                     "company_id": string,"created_at": string,"role": string,"user_id": string
@@ -376,7 +396,12 @@ isOneToOne: false
                 }
           }
           Functions: {
-            "admin_create_company":
+            "accept_company_invitation":
+{ Args: { "p_token_hash": string,"p_user_id": string }; Returns: {
+              "company_id": string,"company_name": string,"role": string
+            }[]
+                           },
+"admin_create_company":
 { Args: { "p_actor_id": string,"p_admin_email": string,"p_name": string }; Returns: {
               "admin_user_id": string,"company_id": string
             }[]
@@ -394,15 +419,33 @@ isOneToOne: false
               "allowed": boolean,"retry_after_seconds": number
             }[]
                            },
+"create_company_invitation":
+{ Args: { "p_actor_id": string,"p_email": string,"p_role": string,"p_token_hash": string }; Returns: {
+              "company_id": string,"company_name": string,"expires_at": string,"invitation_id": string
+            }[]
+                           },
 "ensure_drawing_file":
 { Args: { "p_filename": string,"p_pages": Json,"p_sha256": string }; Returns: {
               "drawing_id": string,"file_id": string,"page_ids": (string)[]
+            }[]
+                           },
+"get_company_invitation":
+{ Args: { "p_token_hash": string }; Returns: {
+              "account_exists": boolean,"company_name": string,"email": string,"invitation_id": string,"role": string,"state": string
+            }[]
+                           },
+"list_company_members":
+{ Args: Record<PropertyKey, never>; Returns: {
+              "email": string,"joined_at": string,"name": string,"role": string,"user_id": string
             }[]
                            },
 "list_markup_sets":
 { Args: Record<PropertyKey, never>; Returns: {
               "drawing_id": string,"filename": string,"last_modified": string,"markup_count": number,"page_count": number,"sha256": string,"title": string
             }[]
+                           },
+"revoke_company_invitation":
+{ Args: { "p_actor_id": string,"p_invitation_id": string }; Returns: undefined
                            }
           }
           Enums: {

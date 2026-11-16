@@ -268,6 +268,68 @@ $$;
 ALTER FUNCTION "app"."fn_zone_layout_defaults"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."accept_company_invitation"("p_token_hash" "text", "p_user_id" "uuid") RETURNS TABLE("company_id" "uuid", "company_name" "text", "role" "text")
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+declare
+  v_inv public.company_invitations%rowtype;
+  v_email text;
+  v_status text;
+  v_member_company uuid;
+  v_company_name text;
+begin
+  if p_token_hash is null or p_user_id is null then
+    raise exception 'token and user are required' using errcode = '22023';
+  end if;
+
+  select i.* into v_inv from public.company_invitations i where i.token_hash = p_token_hash for update;
+  if not found then
+    raise exception 'no such invitation' using errcode = 'PT404';
+  end if;
+  if v_inv.accepted_at is not null or v_inv.revoked_at is not null or v_inv.expires_at <= pg_catalog.now() then
+    raise exception 'the invitation is no longer valid' using errcode = 'PT410';
+  end if;
+
+  select lower(p.email), p.status into v_email, v_status from public.profiles p where p.id = p_user_id for update;
+  if not found or v_email <> v_inv.email then
+    raise exception 'the invitation is for another email' using errcode = 'PT403';
+  end if;
+  if v_status = 'deactivated' then
+    raise exception 'the account is deactivated' using errcode = 'PT422';
+  end if;
+
+  select m.company_id into v_member_company from public.company_members m where m.user_id = p_user_id;
+  if found then
+    if v_member_company = v_inv.company_id then
+      raise exception 'already a member of this company' using errcode = 'PT409';
+    end if;
+    raise exception 'belongs to another company' using errcode = 'PT423';
+  end if;
+
+  insert into public.company_members (user_id, company_id, role) values (p_user_id, v_inv.company_id, v_inv.role);
+  if v_status = 'pending' then
+    update public.profiles set status = 'active' where id = p_user_id;
+  end if;
+  update public.company_invitations
+     set accepted_at = pg_catalog.now(), accepted_by = p_user_id
+   where id = v_inv.id;
+  insert into public.audit_log (actor_id, action, target_type, target_id, detail)
+  values (p_user_id, 'company.member_joined', 'company', v_inv.company_id,
+          pg_catalog.jsonb_build_object('invitation_id', v_inv.id, 'role', v_inv.role));
+
+  select c.name into v_company_name from public.companies c where c.id = v_inv.company_id;
+  company_id := v_inv.company_id;
+  company_name := v_company_name;
+  role := v_inv.role;
+  return next;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."accept_company_invitation"("p_token_hash" "text", "p_user_id" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."admin_create_company"("p_actor_id" "uuid", "p_name" "text", "p_admin_email" "text") RETURNS TABLE("company_id" "uuid", "admin_user_id" "uuid")
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO ''
@@ -634,6 +696,77 @@ $_$;
 ALTER FUNCTION "public"."consume_rate_limit"("p_bucket" "text", "p_key_hash" "text", "p_max_hits" integer, "p_window_seconds" integer) OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."create_company_invitation"("p_actor_id" "uuid", "p_email" "text", "p_role" "text", "p_token_hash" "text") RETURNS TABLE("invitation_id" "uuid", "company_id" "uuid", "company_name" "text", "expires_at" timestamp with time zone)
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $_$
+declare
+  v_email text := lower(btrim(coalesce(p_email, '')));
+  v_company_id uuid;
+  v_company_name text;
+  v_member_company uuid;
+  v_invitation_id uuid;
+  v_expires timestamptz;
+begin
+  if p_actor_id is null then
+    raise exception 'actor is required' using errcode = '22023';
+  end if;
+  if char_length(v_email) not between 3 and 254 or pg_catalog.strpos(v_email, '@') < 2 then
+    raise exception 'a valid email is required' using errcode = '22023';
+  end if;
+  if p_role is null or p_role not in ('admin', 'member', 'viewer') then
+    raise exception 'role must be admin, member or viewer' using errcode = '22023';
+  end if;
+  if p_token_hash is null or p_token_hash !~ '^[0-9a-f]{64}$' then
+    raise exception 'invalid token hash' using errcode = '22023';
+  end if;
+
+  select m.company_id, c.name into v_company_id, v_company_name
+  from public.company_members m
+  join public.profiles p on p.id = m.user_id
+  join public.companies c on c.id = m.company_id
+  where m.user_id = p_actor_id and m.role = 'admin' and p.status = 'active'
+  for update of c;
+  if not found then
+    raise exception 'not a company admin' using errcode = 'PT403';
+  end if;
+
+  select m.company_id into v_member_company
+  from public.profiles p
+  join public.company_members m on m.user_id = p.id
+  where lower(p.email) = v_email;
+  if found then
+    if v_member_company = v_company_id then
+      raise exception 'already a member of this company' using errcode = 'PT409';
+    end if;
+    raise exception 'belongs to another company' using errcode = 'PT423';
+  end if;
+
+  update public.company_invitations i
+     set revoked_at = pg_catalog.now()
+   where i.company_id = v_company_id and i.email = v_email
+     and i.accepted_at is null and i.revoked_at is null;
+
+  insert into public.company_invitations (company_id, email, role, token_hash, invited_by, expires_at)
+  values (v_company_id, v_email, p_role, p_token_hash, p_actor_id, pg_catalog.now() + interval '7 days')
+  returning id, company_invitations.expires_at into v_invitation_id, v_expires;
+
+  insert into public.audit_log (actor_id, action, target_type, target_id, detail)
+  values (p_actor_id, 'company.member_invited', 'company', v_company_id,
+          pg_catalog.jsonb_build_object('invitation_id', v_invitation_id, 'role', p_role));
+
+  invitation_id := v_invitation_id;
+  company_id := v_company_id;
+  company_name := v_company_name;
+  expires_at := v_expires;
+  return next;
+end;
+$_$;
+
+
+ALTER FUNCTION "public"."create_company_invitation"("p_actor_id" "uuid", "p_email" "text", "p_role" "text", "p_token_hash" "text") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."ensure_drawing_file"("p_sha256" "text", "p_filename" "text", "p_pages" "jsonb") RETURNS TABLE("drawing_id" "uuid", "file_id" "uuid", "page_ids" "uuid"[])
     LANGUAGE "plpgsql"
     SET "search_path" TO ''
@@ -690,6 +823,49 @@ $_$;
 ALTER FUNCTION "public"."ensure_drawing_file"("p_sha256" "text", "p_filename" "text", "p_pages" "jsonb") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."get_company_invitation"("p_token_hash" "text") RETURNS TABLE("invitation_id" "uuid", "company_name" "text", "email" "text", "role" "text", "state" "text", "account_exists" boolean)
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+  select i.id,
+         c.name,
+         i.email,
+         i.role,
+         case
+           when i.accepted_at is not null then 'accepted'
+           when i.revoked_at is not null then 'revoked'
+           when i.expires_at <= pg_catalog.now() then 'expired'
+           else 'open'
+         end,
+         exists (select 1 from public.profiles p where lower(p.email) = i.email)
+  from public.company_invitations i
+  join public.companies c on c.id = i.company_id
+  where i.token_hash = p_token_hash;
+$$;
+
+
+ALTER FUNCTION "public"."get_company_invitation"("p_token_hash" "text") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."list_company_members"() RETURNS TABLE("user_id" "uuid", "name" "text", "email" "text", "role" "text", "joined_at" timestamp with time zone)
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+  select m.user_id, p.name, p.email, m.role, m.created_at
+  from public.company_members me
+  join public.profiles mp on mp.id = me.user_id
+  join public.company_members m on m.company_id = me.company_id
+  join public.profiles p on p.id = m.user_id
+  where me.user_id = (select auth.uid())
+    and me.role = 'admin'
+    and mp.status = 'active'
+  order by m.created_at, m.user_id;
+$$;
+
+
+ALTER FUNCTION "public"."list_company_members"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."list_markup_sets"() RETURNS TABLE("drawing_id" "uuid", "title" "text", "filename" "text", "sha256" "text", "page_count" integer, "markup_count" integer, "last_modified" timestamp with time zone)
     LANGUAGE "sql" STABLE
     SET "search_path" TO ''
@@ -723,6 +899,42 @@ $$;
 
 
 ALTER FUNCTION "public"."list_markup_sets"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."revoke_company_invitation"("p_actor_id" "uuid", "p_invitation_id" "uuid") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+declare
+  v_company_id uuid;
+  v_closed boolean;
+begin
+  if p_actor_id is null or p_invitation_id is null then
+    raise exception 'actor and invitation are required' using errcode = '22023';
+  end if;
+
+  select i.company_id, (i.accepted_at is not null or i.revoked_at is not null) into v_company_id, v_closed
+  from public.company_invitations i
+  join public.company_members m on m.company_id = i.company_id
+  join public.profiles p on p.id = m.user_id
+  where i.id = p_invitation_id and m.user_id = p_actor_id and m.role = 'admin' and p.status = 'active'
+  for update of i;
+  if not found then
+    raise exception 'no such invitation' using errcode = 'PT404';
+  end if;
+  if v_closed then
+    raise exception 'the invitation is already closed' using errcode = 'PT409';
+  end if;
+
+  update public.company_invitations set revoked_at = pg_catalog.now() where id = p_invitation_id;
+  insert into public.audit_log (actor_id, action, target_type, target_id, detail)
+  values (p_actor_id, 'company.invitation_revoked', 'company', v_company_id,
+          pg_catalog.jsonb_build_object('invitation_id', p_invitation_id));
+end;
+$$;
+
+
+ALTER FUNCTION "public"."revoke_company_invitation"("p_actor_id" "uuid", "p_invitation_id" "uuid") OWNER TO "postgres";
 
 SET default_tablespace = '';
 
@@ -779,7 +991,7 @@ CREATE TABLE IF NOT EXISTS "public"."audit_log" (
     "target_type" "text" NOT NULL,
     "target_id" "uuid" NOT NULL,
     "detail" "jsonb" DEFAULT '{}'::"jsonb" NOT NULL,
-    CONSTRAINT "audit_log_action_check" CHECK (("action" = ANY (ARRAY['user.activated'::"text", 'user.deactivated'::"text", 'company.created'::"text"]))),
+    CONSTRAINT "audit_log_action_check" CHECK (("action" = ANY (ARRAY['user.activated'::"text", 'user.deactivated'::"text", 'company.created'::"text", 'company.member_invited'::"text", 'company.invitation_revoked'::"text", 'company.member_joined'::"text"]))),
     CONSTRAINT "audit_log_detail_check" CHECK (("jsonb_typeof"("detail") = 'object'::"text")),
     CONSTRAINT "audit_log_target_type_check" CHECK (("target_type" = ANY (ARRAY['user'::"text", 'company'::"text"])))
 );
@@ -820,6 +1032,34 @@ ALTER TABLE "public"."companies" OWNER TO "postgres";
 
 
 COMMENT ON TABLE "public"."companies" IS 'Customer companies (Story 10.5). Created by the platform admin; read by their members.';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."company_invitations" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "company_id" "uuid" NOT NULL,
+    "email" "text" NOT NULL,
+    "role" "text" NOT NULL,
+    "token_hash" "text" NOT NULL,
+    "invited_by" "uuid" NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "expires_at" timestamp with time zone NOT NULL,
+    "accepted_at" timestamp with time zone,
+    "accepted_by" "uuid",
+    "revoked_at" timestamp with time zone,
+    CONSTRAINT "company_invitations_accepted_check" CHECK ((("accepted_at" IS NULL) = ("accepted_by" IS NULL))),
+    CONSTRAINT "company_invitations_closed_once_check" CHECK ((("accepted_at" IS NULL) OR ("revoked_at" IS NULL))),
+    CONSTRAINT "company_invitations_email_check" CHECK ((("email" = "lower"("btrim"("email"))) AND (("char_length"("email") >= 3) AND ("char_length"("email") <= 254)))),
+    CONSTRAINT "company_invitations_expiry_check" CHECK ((("expires_at" > "created_at") AND ("expires_at" <= ("created_at" + '7 days'::interval)))),
+    CONSTRAINT "company_invitations_role_check" CHECK (("role" = ANY (ARRAY['admin'::"text", 'member'::"text", 'viewer'::"text"]))),
+    CONSTRAINT "company_invitations_token_hash_check" CHECK (("token_hash" ~ '^[0-9a-f]{64}$'::"text"))
+);
+
+
+ALTER TABLE "public"."company_invitations" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."company_invitations" IS 'Company invitations (Story 10.6). Written only by the invitation functions; read (without the token hash) by the company''s admins.';
 
 
 
@@ -1155,6 +1395,16 @@ ALTER TABLE ONLY "public"."companies"
 
 
 
+ALTER TABLE ONLY "public"."company_invitations"
+    ADD CONSTRAINT "company_invitations_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."company_invitations"
+    ADD CONSTRAINT "company_invitations_token_hash_key" UNIQUE ("token_hash");
+
+
+
 ALTER TABLE ONLY "public"."company_members"
     ADD CONSTRAINT "company_members_pkey" PRIMARY KEY ("user_id");
 
@@ -1254,6 +1504,14 @@ CREATE INDEX "audit_log_target_idx" ON "public"."audit_log" USING "btree" ("targ
 
 
 CREATE UNIQUE INDEX "companies_name_lower_key" ON "public"."companies" USING "btree" ("lower"("name"));
+
+
+
+CREATE INDEX "company_invitations_company_idx" ON "public"."company_invitations" USING "btree" ("company_id", "created_at" DESC);
+
+
+
+CREATE UNIQUE INDEX "company_invitations_open_key" ON "public"."company_invitations" USING "btree" ("company_id", "email") WHERE (("accepted_at" IS NULL) AND ("revoked_at" IS NULL));
 
 
 
@@ -1372,6 +1630,11 @@ ALTER TABLE ONLY "public"."drawing_files"
 
 ALTER TABLE ONLY "public"."drawings"
     ADD CONSTRAINT "drawings_owner_id_fkey" FOREIGN KEY ("owner_id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."company_invitations"
+    ADD CONSTRAINT "fk_company_invitations_company" FOREIGN KEY ("company_id") REFERENCES "public"."companies"("id") ON DELETE CASCADE;
 
 
 
@@ -1510,6 +1773,13 @@ ALTER TABLE "public"."companies" ENABLE ROW LEVEL SECURITY;
 
 
 CREATE POLICY "companies_select_member_or_platform_admin" ON "public"."companies" FOR SELECT TO "authenticated" USING ((( SELECT "app"."fn_is_company_member"("companies"."id") AS "fn_is_company_member") OR ( SELECT "app"."fn_is_platform_admin"() AS "fn_is_platform_admin")));
+
+
+
+ALTER TABLE "public"."company_invitations" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "company_invitations_select_company_admin_or_platform_admin" ON "public"."company_invitations" FOR SELECT TO "authenticated" USING ((( SELECT "app"."fn_is_company_admin"("company_invitations"."company_id") AS "fn_is_company_admin") OR ( SELECT "app"."fn_is_platform_admin"() AS "fn_is_platform_admin")));
 
 
 
@@ -1755,6 +2025,11 @@ REVOKE ALL ON FUNCTION "app"."fn_zone_layout_defaults"() FROM PUBLIC;
 
 
 
+REVOKE ALL ON FUNCTION "public"."accept_company_invitation"("p_token_hash" "text", "p_user_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."accept_company_invitation"("p_token_hash" "text", "p_user_id" "uuid") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."admin_create_company"("p_actor_id" "uuid", "p_name" "text", "p_admin_email" "text") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."admin_create_company"("p_actor_id" "uuid", "p_name" "text", "p_admin_email" "text") TO "service_role";
 
@@ -1776,15 +2051,36 @@ GRANT ALL ON FUNCTION "public"."consume_rate_limit"("p_bucket" "text", "p_key_ha
 
 
 
+REVOKE ALL ON FUNCTION "public"."create_company_invitation"("p_actor_id" "uuid", "p_email" "text", "p_role" "text", "p_token_hash" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."create_company_invitation"("p_actor_id" "uuid", "p_email" "text", "p_role" "text", "p_token_hash" "text") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."ensure_drawing_file"("p_sha256" "text", "p_filename" "text", "p_pages" "jsonb") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."ensure_drawing_file"("p_sha256" "text", "p_filename" "text", "p_pages" "jsonb") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."ensure_drawing_file"("p_sha256" "text", "p_filename" "text", "p_pages" "jsonb") TO "service_role";
 
 
 
+REVOKE ALL ON FUNCTION "public"."get_company_invitation"("p_token_hash" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."get_company_invitation"("p_token_hash" "text") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."list_company_members"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."list_company_members"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."list_company_members"() TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."list_markup_sets"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."list_markup_sets"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."list_markup_sets"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."revoke_company_invitation"("p_actor_id" "uuid", "p_invitation_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."revoke_company_invitation"("p_actor_id" "uuid", "p_invitation_id" "uuid") TO "service_role";
 
 
 
@@ -1805,6 +2101,50 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE "public"."calibrations" TO "authentic
 
 GRANT ALL ON TABLE "public"."companies" TO "service_role";
 GRANT SELECT ON TABLE "public"."companies" TO "authenticated";
+
+
+
+GRANT ALL ON TABLE "public"."company_invitations" TO "service_role";
+
+
+
+GRANT SELECT("id") ON TABLE "public"."company_invitations" TO "authenticated";
+
+
+
+GRANT SELECT("company_id") ON TABLE "public"."company_invitations" TO "authenticated";
+
+
+
+GRANT SELECT("email") ON TABLE "public"."company_invitations" TO "authenticated";
+
+
+
+GRANT SELECT("role") ON TABLE "public"."company_invitations" TO "authenticated";
+
+
+
+GRANT SELECT("invited_by") ON TABLE "public"."company_invitations" TO "authenticated";
+
+
+
+GRANT SELECT("created_at") ON TABLE "public"."company_invitations" TO "authenticated";
+
+
+
+GRANT SELECT("expires_at") ON TABLE "public"."company_invitations" TO "authenticated";
+
+
+
+GRANT SELECT("accepted_at") ON TABLE "public"."company_invitations" TO "authenticated";
+
+
+
+GRANT SELECT("accepted_by") ON TABLE "public"."company_invitations" TO "authenticated";
+
+
+
+GRANT SELECT("revoked_at") ON TABLE "public"."company_invitations" TO "authenticated";
 
 
 

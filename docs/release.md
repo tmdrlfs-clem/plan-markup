@@ -26,7 +26,7 @@ Each job skips itself with a notice until its secrets exist. Run it by hand from
    - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` (Supabase → Settings → API)
    - `SUPABASE_SERVICE_ROLE_KEY` (server only)
    - `NEXT_PUBLIC_TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY` (Cloudflare → Turnstile, a widget for the production hostname). Required: without the secret, sign-up refuses everyone in production.
-   - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `EMAIL_FROM`, `APP_URL` (Story 10.4): the SMTP account from step 2 again, a sender on the verified domain (for example `Plan Markup <no-reply@your-domain>`) and the production URL. The app sends the "You're in" email itself when you activate an account. Without them accounts are still activated, and the admin screen says the email was not sent.
+   - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `EMAIL_FROM`, `APP_URL` (Story 10.4): the SMTP account from step 2 again, a sender on the verified domain (for example `Plan Markup <no-reply@your-domain>`) and the production URL. The app sends the "You're in" email itself when you activate an account, and company invitations (Story 10.6). Without them accounts are still activated (the admin screen says the email was not sent), but no invitation can be made.
    - `NEXT_PUBLIC_SENTRY_DSN`, `NEXT_PUBLIC_SENTRY_ENVIRONMENT=production`
    - `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT` (source maps; optional)
 4. **GitHub**:

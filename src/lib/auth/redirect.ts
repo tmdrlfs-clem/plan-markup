@@ -5,8 +5,19 @@ export const DEFAULT_AFTER_SIGN_IN = "/workspace";
 /**
  * Paths a `next` parameter may point at. Later stories extend this list.
  * Story 10.4: /admin (its pages are a 404 for anyone but the platform admin).
+ * Story 10.6: /company (a 404 for anyone but a company admin) and /invite
+ * (an emailed invitation, opened before signing in).
  */
-export const ALLOWED_NEXT_PREFIXES: readonly string[] = ["/workspace", "/admin"];
+export const ALLOWED_NEXT_PREFIXES: readonly string[] = ["/workspace", "/admin", "/company", "/invite"];
+
+/**
+ * Story 10.6: true for a sanitised path that is the invitation page. Signing
+ * in leads there even for an account that is not active yet: accepting the
+ * invitation is what activates it.
+ */
+export function isInvitePath(safePath: string): boolean {
+  return safePath === "/invite" || safePath.startsWith("/invite?");
+}
 
 const MAX_LENGTH = 512;
 const MAX_DECODES = 3;

@@ -156,8 +156,8 @@ development_status:
   10-2-reset-my-password: done
   10-3-view-and-edit-my-profile: done
   10-4-platform-admin-manages-user-accounts: done
-  10-5-create-companies-and-their-first-admin: review
-  10-6-company-admin-invites-users: backlog
+  10-5-create-companies-and-their-first-admin: done
+  10-6-company-admin-invites-users: review
   10-7-change-roles-and-remove-members: backlog
   10-8-set-plans: backlog
   10-9-activity-dashboards: backlog
