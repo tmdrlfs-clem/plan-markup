@@ -2,7 +2,7 @@
 -- Rows are read by this test's own emails: a local database may hold rows from e2e runs.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(16);
+select plan(17);
 
 insert into auth.users (instance_id, id, aud, role, email, last_sign_in_at)
 values
@@ -40,19 +40,22 @@ from (values
   (5, (select w0 from w) - interval '60 days')
 ) v(n, at);
 
--- The member's events: 1 export this week, 2 exports two weeks ago, and a print (not a PDF export).
+-- The member's events: 1 export this week, 2 exports two weeks ago, a print this week (not a PDF export)
+-- and a Place heads run two weeks ago.
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"d3333333-3333-4333-8333-333333333333","role":"authenticated"}';
 insert into public.activity_events (id, name, page_count, markup_count, kind) values
   ('d3e00000-0000-4000-8000-000000000001', 'markup.exported', 1, 1, 'editable'),
   ('d3e00000-0000-4000-8000-000000000002', 'markup.exported', 1, 1, 'flattened'),
   ('d3e00000-0000-4000-8000-000000000003', 'markup.exported', 1, 1, 'flattened'),
-  ('d3e00000-0000-4000-8000-000000000004', 'drawing.printed', 1, 0, 'with_markups');
+  ('d3e00000-0000-4000-8000-000000000004', 'drawing.printed', 1, 0, 'with_markups'),
+  ('d3e00000-0000-4000-8000-000000000005', 'sprinkler.placed', 1, 12, 'all_zones');
 reset role;
 update public.activity_events set occurred_at = (select w0 from w) + interval '2 seconds' where id = 'd3e00000-0000-4000-8000-000000000001';
 update public.activity_events set occurred_at = (select w0 from w) - interval '10 days'
  where id in ('d3e00000-0000-4000-8000-000000000002', 'd3e00000-0000-4000-8000-000000000003');
 update public.activity_events set occurred_at = (select w0 from w) + interval '3 seconds' where id = 'd3e00000-0000-4000-8000-000000000004';
+update public.activity_events set occurred_at = (select w0 from w) - interval '10 days' where id = 'd3e00000-0000-4000-8000-000000000005';
 
 -- Privileges.
 select ok(
@@ -71,14 +74,19 @@ select results_eq(
        from public.activity_summary('platform') where email = 'act-member@rls.test' $$,
   $$ values ('Activity Co rls', 5, array[2, 1, 0, 1], 3, array[1, 0, 2, 0]) $$,
   'markups are counted by author and week, exported PDFs by week, prints not at all');
+select results_eq(
+  $$ select active_days_by_week, drawings_by_week, prints_by_week, placements_by_week
+       from public.activity_summary('platform') where email = 'act-member@rls.test' $$,
+  $$ values (array[1, 1, 1, 1], array[1, 1, 0, 1], array[1, 0, 0, 0], array[0, 0, 1, 0]) $$,
+  'days active, markup sets worked on, prints and Place heads runs are counted by week');
 select is(
   (select last_active_at from public.activity_summary('platform') where email = 'act-member@rls.test'),
   (select w0 + interval '3 seconds' from w),
   'last active is the newest of markups, events (prints included) and sign-in');
 select results_eq(
-  $$ select company_name, markups_total, exports_total, markups_by_week, last_active_at is null
+  $$ select company_name, markups_total, exports_total, markups_by_week, active_days_by_week, last_active_at is null
        from public.activity_summary('platform') where email = 'act-solo@rls.test' $$,
-  $$ values (null::text, 0, 0, array[0, 0, 0, 0], true) $$,
+  $$ values (null::text, 0, 0, array[0, 0, 0, 0], array[0, 0, 0, 0], true) $$,
   'an account with no activity and no company has zeros and no last-active time');
 select ok(
   (select last_active_at < now() - interval '39 days' from public.activity_summary('platform') where email = 'act-boss@rls.test'),

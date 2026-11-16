@@ -9,6 +9,14 @@ import type { Database } from "./types.gen";
 
 export type ActivityScope = "platform" | "company";
 
+/** "week": one week by kind of work. "weeks": markups and PDFs across four weeks. */
+export type ActivityView = "week" | "weeks";
+
+/** Reads ?view=, falling back to the one-week view. */
+export function parseActivityView(value: string | string[] | undefined): ActivityView {
+  return (Array.isArray(value) ? value[0] : value) === "weeks" ? "weeks" : "week";
+}
+
 /** How many weeks the summary covers: this week and the three before it. */
 export const ACTIVITY_WEEKS = 4;
 
@@ -23,12 +31,20 @@ export type ActivityRow = {
   companyName: string | null;
   /** ISO time, or null when the account has never signed in, saved or exported. */
   lastActiveAt: string | null;
+  /** Days with a saved markup or a recorded action per week (0 to 7), this week first. */
+  activeDaysByWeek: number[];
+  /** Different markup sets the account saved markups in, per week. */
+  drawingsByWeek: number[];
   markupsTotal: number;
   /** Markups saved per week, this week first. */
   markupsByWeek: number[];
   exportsTotal: number;
   /** PDFs exported per week, this week first. */
   exportsByWeek: number[];
+  /** Prints per week. */
+  printsByWeek: number[];
+  /** Place heads runs per week. */
+  placementsByWeek: number[];
 };
 
 const STATUSES: readonly ProfileStatus[] = ["pending", "active", "deactivated"];
@@ -49,10 +65,14 @@ export async function getActivitySummary(client: SupabaseClient<Database>, scope
     companyId: row.company_id,
     companyName: row.company_name,
     lastActiveAt: row.last_active_at,
+    activeDaysByWeek: weeks(row.active_days_by_week),
+    drawingsByWeek: weeks(row.drawings_by_week),
     markupsTotal: row.markups_total,
     markupsByWeek: weeks(row.markups_by_week),
     exportsTotal: row.exports_total,
     exportsByWeek: weeks(row.exports_by_week),
+    printsByWeek: weeks(row.prints_by_week),
+    placementsByWeek: weeks(row.placements_by_week),
   }));
 }
 
@@ -62,10 +82,16 @@ export type ActivityGroup = {
   companyName: string | null;
   rows: ActivityRow[];
   lastActiveAt: string | null;
+  /** How many of the group's people were active at all, per week. */
+  activePeopleByWeek: number[];
+  /** Markup sets worked on, added up across people (each person's own sets). */
+  drawingsByWeek: number[];
   markupsTotal: number;
   markupsByWeek: number[];
   exportsTotal: number;
   exportsByWeek: number[];
+  printsByWeek: number[];
+  placementsByWeek: number[];
 };
 
 function sum(lists: number[][]): number[] {
@@ -89,10 +115,14 @@ export function groupByCompany(rows: readonly ActivityRow[]): ActivityGroup[] {
         (latest, row) => (row.lastActiveAt && (!latest || Date.parse(row.lastActiveAt) > Date.parse(latest)) ? row.lastActiveAt : latest),
         null,
       ),
+      activePeopleByWeek: Array.from({ length: ACTIVITY_WEEKS }, (_, i) => list.filter((row) => (row.activeDaysByWeek[i] ?? 0) > 0).length),
+      drawingsByWeek: sum(list.map((row) => row.drawingsByWeek)),
       markupsTotal: list.reduce((total, row) => total + row.markupsTotal, 0),
       markupsByWeek: sum(list.map((row) => row.markupsByWeek)),
       exportsTotal: list.reduce((total, row) => total + row.exportsTotal, 0),
       exportsByWeek: sum(list.map((row) => row.exportsByWeek)),
+      printsByWeek: sum(list.map((row) => row.printsByWeek)),
+      placementsByWeek: sum(list.map((row) => row.placementsByWeek)),
     }))
     .sort((a, b) => {
       if (a.companyId === null) return 1;

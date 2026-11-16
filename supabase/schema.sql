@@ -382,7 +382,7 @@ $$;
 ALTER FUNCTION "public"."accept_company_invitation"("p_token_hash" "text", "p_user_id" "uuid") OWNER TO "postgres";
 
 
-CREATE OR REPLACE FUNCTION "public"."activity_summary"("p_scope" "text") RETURNS TABLE("user_id" "uuid", "name" "text", "email" "text", "status" "text", "company_id" "uuid", "company_name" "text", "last_active_at" timestamp with time zone, "markups_total" integer, "markups_by_week" integer[], "exports_total" integer, "exports_by_week" integer[])
+CREATE OR REPLACE FUNCTION "public"."activity_summary"("p_scope" "text") RETURNS TABLE("user_id" "uuid", "name" "text", "email" "text", "status" "text", "company_id" "uuid", "company_name" "text", "last_active_at" timestamp with time zone, "active_days_by_week" integer[], "drawings_by_week" integer[], "markups_total" integer, "markups_by_week" integer[], "exports_total" integer, "exports_by_week" integer[], "prints_by_week" integer[], "placements_by_week" integer[])
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO ''
     AS $$
@@ -427,10 +427,14 @@ begin
     c.id,
     c.name,
     greatest(mk.last_at, ev.last_at, u.last_sign_in_at),
+    array[coalesce(ad.w0, 0), coalesce(ad.w1, 0), coalesce(ad.w2, 0), coalesce(ad.w3, 0)]::integer[],
+    array[coalesce(mk.d0, 0), coalesce(mk.d1, 0), coalesce(mk.d2, 0), coalesce(mk.d3, 0)]::integer[],
     coalesce(mk.total, 0)::integer,
     array[coalesce(mk.w0, 0), coalesce(mk.w1, 0), coalesce(mk.w2, 0), coalesce(mk.w3, 0)]::integer[],
-    coalesce(ev.total, 0)::integer,
-    array[coalesce(ev.w0, 0), coalesce(ev.w1, 0), coalesce(ev.w2, 0), coalesce(ev.w3, 0)]::integer[]
+    coalesce(ev.exports, 0)::integer,
+    array[coalesce(ev.x0, 0), coalesce(ev.x1, 0), coalesce(ev.x2, 0), coalesce(ev.x3, 0)]::integer[],
+    array[coalesce(ev.p0, 0), coalesce(ev.p1, 0), coalesce(ev.p2, 0), coalesce(ev.p3, 0)]::integer[],
+    array[coalesce(ev.s0, 0), coalesce(ev.s1, 0), coalesce(ev.s2, 0), coalesce(ev.s3, 0)]::integer[]
   from public.profiles p
   join auth.users u on u.id = p.id
   left join public.company_members m on m.user_id = p.id
@@ -441,21 +445,49 @@ begin
            count(*) filter (where k.created_at >= v_w0) as w0,
            count(*) filter (where k.created_at >= v_w1 and k.created_at < v_w0) as w1,
            count(*) filter (where k.created_at >= v_w2 and k.created_at < v_w1) as w2,
-           count(*) filter (where k.created_at >= v_w3 and k.created_at < v_w2) as w3
+           count(*) filter (where k.created_at >= v_w3 and k.created_at < v_w2) as w3,
+           count(distinct k.drawing_id) filter (where k.created_at >= v_w0) as d0,
+           count(distinct k.drawing_id) filter (where k.created_at >= v_w1 and k.created_at < v_w0) as d1,
+           count(distinct k.drawing_id) filter (where k.created_at >= v_w2 and k.created_at < v_w1) as d2,
+           count(distinct k.drawing_id) filter (where k.created_at >= v_w3 and k.created_at < v_w2) as d3
     from public.markups k
     where k.author_id = p.id
   ) mk on true
   left join lateral (
-    -- Last activity counts every event; the totals count exported PDFs only.
-    select count(*) filter (where e.name = 'markup.exported') as total,
-           max(e.occurred_at) as last_at,
-           count(*) filter (where e.name = 'markup.exported' and e.occurred_at >= v_w0) as w0,
-           count(*) filter (where e.name = 'markup.exported' and e.occurred_at >= v_w1 and e.occurred_at < v_w0) as w1,
-           count(*) filter (where e.name = 'markup.exported' and e.occurred_at >= v_w2 and e.occurred_at < v_w1) as w2,
-           count(*) filter (where e.name = 'markup.exported' and e.occurred_at >= v_w3 and e.occurred_at < v_w2) as w3
+    -- Last activity counts every event; each kind has its own weekly counts.
+    select max(e.occurred_at) as last_at,
+           count(*) filter (where e.name = 'markup.exported') as exports,
+           count(*) filter (where e.name = 'markup.exported' and e.occurred_at >= v_w0) as x0,
+           count(*) filter (where e.name = 'markup.exported' and e.occurred_at >= v_w1 and e.occurred_at < v_w0) as x1,
+           count(*) filter (where e.name = 'markup.exported' and e.occurred_at >= v_w2 and e.occurred_at < v_w1) as x2,
+           count(*) filter (where e.name = 'markup.exported' and e.occurred_at >= v_w3 and e.occurred_at < v_w2) as x3,
+           count(*) filter (where e.name = 'drawing.printed' and e.occurred_at >= v_w0) as p0,
+           count(*) filter (where e.name = 'drawing.printed' and e.occurred_at >= v_w1 and e.occurred_at < v_w0) as p1,
+           count(*) filter (where e.name = 'drawing.printed' and e.occurred_at >= v_w2 and e.occurred_at < v_w1) as p2,
+           count(*) filter (where e.name = 'drawing.printed' and e.occurred_at >= v_w3 and e.occurred_at < v_w2) as p3,
+           count(*) filter (where e.name = 'sprinkler.placed' and e.occurred_at >= v_w0) as s0,
+           count(*) filter (where e.name = 'sprinkler.placed' and e.occurred_at >= v_w1 and e.occurred_at < v_w0) as s1,
+           count(*) filter (where e.name = 'sprinkler.placed' and e.occurred_at >= v_w2 and e.occurred_at < v_w1) as s2,
+           count(*) filter (where e.name = 'sprinkler.placed' and e.occurred_at >= v_w3 and e.occurred_at < v_w2) as s3
     from public.activity_events e
     where e.user_id = p.id
   ) ev on true
+  left join lateral (
+    -- Days (New Zealand dates) on which the account saved a markup or did something that is recorded.
+    select count(distinct d.at) filter (where d.at >= v_local::date) as w0,
+           count(distinct d.at) filter (where d.at >= (v_local - interval '7 days')::date and d.at < v_local::date) as w1,
+           count(distinct d.at) filter (where d.at >= (v_local - interval '14 days')::date and d.at < (v_local - interval '7 days')::date) as w2,
+           count(distinct d.at) filter (where d.at < (v_local - interval '14 days')::date) as w3
+    from (
+      select (k.created_at at time zone 'Pacific/Auckland')::date as at
+      from public.markups k
+      where k.author_id = p.id and k.created_at >= v_w3
+      union
+      select (e.occurred_at at time zone 'Pacific/Auckland')::date
+      from public.activity_events e
+      where e.user_id = p.id and e.occurred_at >= v_w3
+    ) d
+  ) ad on true
   where p_scope = 'platform' or m.company_id = v_company
   order by c.name nulls last, p.email
   limit 2000;

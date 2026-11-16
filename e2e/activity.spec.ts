@@ -7,9 +7,9 @@ import { signIn } from "./helpers";
 
 const PASSWORD = "activity e2e password";
 
-/** The numbers of a table row: markups this week and all time, then PDFs for four weeks. */
-async function counts(row: Locator): Promise<string[]> {
-  return (await row.getByRole("cell").allTextContents()).slice(1);
+/** The cells of a table row after its name. */
+async function cells(row: Locator): Promise<string[]> {
+  return row.getByRole("cell").allTextContents();
 }
 
 test("activity: the platform admin sees every company; a company admin sees their own; no drawing content is shown", async ({ browser }) => {
@@ -37,7 +37,7 @@ test("activity: the platform admin sees every company; a company admin sees thei
       [member, company],
     );
 
-    // The member: a markup set with 3 markups now and 1 a week ago, 2 exports now and 1 a week ago, 1 print.
+    // The member: a markup set with 3 markups now and 1 a week ago; 2 exports now and 1 a week ago; 1 print and 1 Place heads run now.
     const [{ drawing, page }] = await sql<{ drawing: string; page: string }>(
       `with d as (insert into public.drawings (owner_id, title) select id, $2 from public.profiles where email = $1 returning id),
             f as (insert into public.drawing_files (drawing_id, sha256, page_count, filename) select id, repeat('e', 64), 1, $2 from d returning id),
@@ -58,7 +58,8 @@ test("activity: the platform admin sees every company; a company admin sees thei
          insert into public.activity_events (user_id, name, drawing_id, page_count, markup_count, kind, occurred_at)
          select (select id from public.profiles where email = '${member}'), n, '${drawing}', 1, 3, k, at
          from (values ('markup.exported', 'editable', now()), ('markup.exported', 'flattened', now()),
-                      ('markup.exported', 'flattened', now() - interval '7 days'), ('drawing.printed', 'with_markups', now())) v(n, k, at);
+                      ('markup.exported', 'flattened', now() - interval '7 days'), ('drawing.printed', 'with_markups', now()),
+                      ('sprinkler.placed', 'all_zones', now())) v(n, k, at);
          alter table public.activity_events enable trigger user;
        end $do$`,
     );
@@ -70,19 +71,27 @@ test("activity: the platform admin sees every company; a company admin sees thei
     await expect(page1).toHaveURL("/admin/activity");
     await expect(page1.getByRole("heading", { name: "Activity", level: 1 })).toBeVisible();
     await expect(page1.getByRole("navigation", { name: "Admin" }).getByRole("link", { name: "Activity" })).toHaveAttribute("aria-current", "page");
-    const table = page1.getByRole("table", { name: "Activity by company and account" });
-    const memberRow = table.getByRole("row", { name: new RegExp(member) });
-    // Whether "a week ago" fell in last week or (on a Monday morning) two weeks ago, the totals hold.
-    const [markupsWeek, markupsAll, e0, e1, e2, e3] = (await counts(memberRow)).map(Number);
-    expect(markupsAll).toBe(4);
-    expect(markupsWeek).toBeGreaterThanOrEqual(3);
-    expect(e0 + e1 + e2 + e3).toBe(3);
-    expect(e0).toBeGreaterThanOrEqual(2);
-    await expect(memberRow).not.toContainText("Never");
-    const companyRow = table.getByRole("row", { name: new RegExp(`^${company} 2 people`) });
-    expect((await counts(companyRow))[1]).toBe("4");
+    // This week, by kind of work: last active, days active, drawings, markups, PDFs, prints, head layouts.
+    const table = page1.getByRole("table", { name: "Activity by company and account, this week" });
+    const memberCells = await cells(table.getByRole("row", { name: new RegExp(member) }));
+    expect(memberCells[0]).not.toBe("Never");
+    expect(memberCells.slice(1)).toEqual(["1 of 7", "1", "3", "2", "1", "1"]);
+    // The company's row: one of its two people was active, and the sums.
+    const companyCells = await cells(table.getByRole("row", { name: new RegExp(`^${company} 2 people`) }));
+    expect(companyCells.slice(1)).toEqual(["1 of 2", "1", "3", "2", "1", "1"]);
+    expect((await cells(table.getByRole("row", { name: new RegExp(boss) }))).slice(1)).toEqual(["0 of 7", "0", "0", "0", "0", "0"]);
     await expect(table.getByRole("row", { name: new RegExp(`^${other} 1 person`) })).toBeVisible();
     await expect(table.getByRole("row", { name: new RegExp(rival) })).toBeVisible();
+    const weekAxe = await new AxeBuilder({ page: page1 }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
+    expect(weekAxe.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.html).join(" | ")}`)).toEqual([]);
+    expect(await page1.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+
+    // Four weeks: markups (this week, last, 2 and 3 weeks ago, all time) and PDFs week by week.
+    await page1.getByRole("navigation", { name: "View" }).getByRole("link", { name: "Four weeks" }).click();
+    await expect(page1).toHaveURL("/admin/activity?view=weeks");
+    const weeks = page1.getByRole("table", { name: "Activity by company and account, the last four weeks" });
+    expect(await cells(weeks.getByRole("row", { name: new RegExp(member) }))).toEqual(["3", "1", "0", "0", "4", "2", "1", "0", "0"]);
+    expect(await cells(weeks.getByRole("row", { name: new RegExp(`^${company} 2 people`) }))).toEqual(["3", "1", "0", "0", "4", "2", "1", "0", "0"]);
 
     // Counts only: neither the title nor the file name is anywhere on the page.
     await expect(page1.getByText(secret)).toHaveCount(0);
@@ -101,9 +110,9 @@ test("activity: the platform admin sees every company; a company admin sees thei
     await expect(page2).toHaveURL("/company/members");
     await page2.getByRole("navigation", { name: "Company" }).getByRole("link", { name: "Activity" }).click();
     await expect(page2).toHaveURL("/company/activity");
-    const own = page2.getByRole("table", { name: `Activity of ${company}` });
-    await expect(own.getByRole("row", { name: /^Whole company 2 people/ })).toBeVisible();
-    expect((await counts(own.getByRole("row", { name: new RegExp(member) })))[1]).toBe("4");
+    const own = page2.getByRole("table", { name: `Activity of ${company}, this week` });
+    expect((await cells(own.getByRole("row", { name: /^Whole company 2 people/ }))).slice(1)).toEqual(["1 of 2", "1", "3", "2", "1", "1"]);
+    expect((await cells(own.getByRole("row", { name: new RegExp(member) }))).slice(1)).toEqual(["1 of 7", "1", "3", "2", "1", "1"]);
     await expect(own.getByRole("row", { name: new RegExp(boss) })).toBeVisible();
     await expect(page2.getByText(rival)).toHaveCount(0);
     await expect(page2.getByText(other)).toHaveCount(0);

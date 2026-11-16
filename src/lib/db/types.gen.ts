@@ -409,7 +409,7 @@ isOneToOne: false
                            },
 "activity_summary":
 { Args: { "p_scope": string }; Returns: {
-              "company_id": string,"company_name": string,"email": string,"exports_by_week": (number)[],"exports_total": number,"last_active_at": string,"markups_by_week": (number)[],"markups_total": number,"name": string,"status": string,"user_id": string
+              "active_days_by_week": (number)[],"company_id": string,"company_name": string,"drawings_by_week": (number)[],"email": string,"exports_by_week": (number)[],"exports_total": number,"last_active_at": string,"markups_by_week": (number)[],"markups_total": number,"name": string,"placements_by_week": (number)[],"prints_by_week": (number)[],"status": string,"user_id": string
             }[]
                            },
 "admin_create_company":
