@@ -1,6 +1,6 @@
 # Story 10.8: Set plans
 
-Status: review
+Status: done
 
 ## Story
 
