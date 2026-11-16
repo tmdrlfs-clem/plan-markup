@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { asPlan, type Plan } from "@/lib/plans";
 import { DEFAULT_THEME, isTheme, type Theme } from "@/lib/theme";
 import type { Database } from "./types.gen";
 
@@ -12,6 +13,8 @@ export type Profile = {
   isPlatformAdmin: boolean;
   /** The workspace theme (Story 3.8); the default for a value the app does not know. */
   theme: Theme;
+  /** The account's own plan (Story 10.8); the default for a database without the column. */
+  plan: Plan;
 };
 
 const STATUSES: readonly ProfileStatus[] = ["pending", "active", "deactivated"];
@@ -44,5 +47,6 @@ export async function getOwnProfile(
     status: data.status as ProfileStatus,
     isPlatformAdmin: data.is_platform_admin,
     theme: isTheme((data as { theme?: unknown }).theme) ? (data as { theme: Theme }).theme : DEFAULT_THEME,
+    plan: asPlan((data as { plan?: unknown }).plan),
   };
 }

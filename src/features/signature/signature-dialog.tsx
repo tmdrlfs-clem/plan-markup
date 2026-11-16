@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogFooter } from "@/components/ui/dialog";
 import { pickImage } from "@/features/editor";
 import { ProfileSection } from "@/features/account/profile-section";
+import type { EffectivePlan } from "@/lib/plans";
 import { hasDocument, viewerStore } from "@/features/viewer";
 
 import { deleteSignature, getSignature, saveSignature } from "./actions";
@@ -29,7 +30,7 @@ export const PLACE_HINT = "Click where the signature goes; then drag its handles
 
 type Saved = { preview: string; blob: Blob; width: number; height: number };
 
-export function SignatureDialog({ name, email }: { name: string; email: string }) {
+export function SignatureDialog({ name, email, plan }: { name: string; email: string; plan?: EffectivePlan }) {
   const open = useStore(signatureDialog, (s) => s.open);
   const drawing = useStore(viewerStore, hasDocument);
   const pad = useRef<SignaturePadHandle>(null);
@@ -128,7 +129,7 @@ export function SignatureDialog({ name, email }: { name: string; email: string }
     >
       <div className="flex flex-col gap-3 text-ws-md">
         {/* Story 10.3: name and email. */}
-        <ProfileSection name={name} email={email} />
+        <ProfileSection name={name} email={email} plan={plan} />
         <section aria-label="Saved signature" className="flex flex-col gap-2">
           <h3 className="text-ws-sm text-muted">Saved signature</h3>
           {loading ? (

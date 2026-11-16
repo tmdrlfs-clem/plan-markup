@@ -46,4 +46,14 @@ describe("ProfileSection", () => {
     await userEvent.click(screen.getByRole("button", { name: "Send links" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("That is already your email.");
   });
+
+  it("shows the plan the user works under, with nothing to change it (Story 10.8)", () => {
+    const { rerender } = render(<ProfileSection name="Me" email="me@plan-markup.test" plan={{ plan: "pilot", companyName: null }} />);
+    expect(screen.getByTestId("profile-plan")).toHaveTextContent(/^Pilot$/);
+    expect(screen.queryByRole("combobox")).toBeNull();
+    rerender(<ProfileSection name="Me" email="me@plan-markup.test" plan={{ plan: "standard", companyName: "Acme Fire" }} />);
+    expect(screen.getByTestId("profile-plan")).toHaveTextContent("Standard (the plan of Acme Fire)");
+    rerender(<ProfileSection name="Me" email="me@plan-markup.test" />);
+    expect(screen.queryByTestId("profile-plan")).toBeNull();
+  });
 });

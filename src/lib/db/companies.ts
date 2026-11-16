@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { asPlan, type Plan } from "@/lib/plans";
 import type { CompanyRole } from "./admin-companies";
 import type { Database } from "./types.gen";
 
@@ -15,18 +16,18 @@ function asRole(value: string): CompanyRole {
   return (COMPANY_ROLES as readonly string[]).includes(value) ? (value as CompanyRole) : "viewer";
 }
 
-export type Membership = { companyId: string; companyName: string; role: CompanyRole };
+export type Membership = { companyId: string; companyName: string; companyPlan: Plan; role: CompanyRole };
 
 /** The signed-in user's company and role, or null when they are in none. Throws on a query error. */
 export async function getOwnMembership(client: SupabaseClient<Database>, userId: string): Promise<Membership | null> {
   const { data, error } = await client
     .from("company_members")
-    .select("role, company:companies!fk_company_members_company(id, name)")
+    .select("role, company:companies!fk_company_members_company(id, name, plan)")
     .eq("user_id", userId)
     .maybeSingle();
   if (error) throw new Error(`Could not read the membership: ${error.code ?? "unknown"}`);
   if (!data || !data.company) return null;
-  return { companyId: data.company.id, companyName: data.company.name, role: asRole(data.role) };
+  return { companyId: data.company.id, companyName: data.company.name, companyPlan: asPlan(data.company.plan), role: asRole(data.role) };
 }
 
 export type CompanyMember = { userId: string; name: string; email: string; role: CompanyRole; joinedAt: string };

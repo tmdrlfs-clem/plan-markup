@@ -7,7 +7,7 @@ import { signIn } from "./helpers";
 
 const PASSWORD = "admin plans e2e password";
 
-test("the admin sets a plan on an account and on a company; both are saved and recorded", async ({ page }) => {
+test("the admin sets a plan on an account and on a company; both are saved, recorded and shown to their users", async ({ page }) => {
   const tag = crypto.randomUUID().slice(0, 12);
   const admin = `pladm-${tag}@plan-markup.test`;
   const solo = `plsolo-${tag}@plan-markup.test`;
@@ -62,6 +62,24 @@ test("the admin sets a plan on an account and on a company; both are saved and r
       { action: "user.plan_changed", actor: admin, detail: { from: "trial", to: "pilot" } },
       { action: "company.plan_changed", actor: admin, detail: { from: "trial", to: "standard" } },
     ]);
+    // Each user is shown the plan they work under: the admin, a member of the company, its plan.
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/workspace");
+    await page.getByRole("button", { name: "Account: Ada Admin" }).click();
+    await expect(page.getByTestId("account-plan")).toHaveText(`Standard plan, through ${company}`);
+    await page.keyboard.press("Escape");
+    // And someone in no company, their own: in the account menu and under Settings.
+    await page.context().clearCookies();
+    await page.goto("/sign-in");
+    await signIn(page, solo, PASSWORD);
+    await expect(page).toHaveURL("/workspace");
+    await page.getByRole("button", { name: "Account: Sol Solo" }).click();
+    await expect(page.getByTestId("account-plan")).toHaveText("Pilot plan");
+    await page.keyboard.press("Escape");
+    await page.getByRole("menubar", { name: "Main menu" }).getByRole("menuitem", { name: "Settings" }).click();
+    await page.getByRole("menuitem", { name: "Account & signature…" }).click();
+    await expect(page.getByTestId("profile-plan")).toHaveText("Pilot");
+
     expect(
       await sql("select (select plan from public.profiles where email = $1) as u, (select plan from public.companies where name = $2) as c", [solo, company]),
     ).toEqual([{ u: "pilot", c: "standard" }]);

@@ -8,7 +8,7 @@ vi.mock("@/lib/auth", () => ({ getPlatformAdmin: m.getPlatformAdmin }));
 vi.mock("@/lib/logger", () => ({ logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() } }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminSupabase: () => ({ rpc: m.rpc }) }));
 
-import { asPlan } from "@/lib/plans";
+import { asPlan, effectivePlan, planSentence } from "@/lib/plans";
 import { setPlan } from "./plan-actions";
 
 const ADMIN = { id: "00000000-0000-4000-8000-00000000000a", isPlatformAdmin: true };
@@ -62,5 +62,14 @@ describe("asPlan", () => {
     expect(asPlan("standard")).toBe("standard");
     expect(asPlan("gold")).toBe("trial");
     expect(asPlan(null)).toBe("trial");
+  });
+});
+
+describe("effectivePlan / planSentence", () => {
+  it("is the account's own plan outside a company, and the company's inside one", () => {
+    expect(effectivePlan("pilot", null)).toEqual({ plan: "pilot", companyName: null });
+    expect(effectivePlan("pilot", { plan: "standard", name: "Acme Fire" })).toEqual({ plan: "standard", companyName: "Acme Fire" });
+    expect(planSentence({ plan: "pilot", companyName: null })).toBe("Pilot plan");
+    expect(planSentence({ plan: "standard", companyName: "Acme Fire" })).toBe("Standard plan, through Acme Fire");
   });
 });

@@ -60,6 +60,7 @@ function profile(status: string, extra: Record<string, unknown> = {}) {
     status,
     is_platform_admin: false,
     theme: "daylight",
+    plan: "pilot",
     ...extra,
   };
 }
@@ -89,7 +90,7 @@ describe("readAuthState / getAuthUser", () => {
     fake.profile = profile("active");
     await expect(readAuthState()).resolves.toEqual({
       kind: "active",
-      user: { id: ID, email: "user@plan-markup.test", name: "Dev User", isPlatformAdmin: false, theme: "daylight" },
+      user: { id: ID, email: "user@plan-markup.test", name: "Dev User", isPlatformAdmin: false, theme: "daylight", plan: "pilot" },
     });
   });
 

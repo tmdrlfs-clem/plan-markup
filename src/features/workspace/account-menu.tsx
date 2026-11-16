@@ -5,6 +5,7 @@ import { ChevronDown, LogOut, ShieldCheck, Users } from "lucide-react";
 import { Menu, MenuContent, MenuItem, MenuLabel, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
 import { cx } from "@/components/ui/cx";
 import { MENU_TOP_TRIGGER } from "@/components/ui/menu-styles";
+import { planSentence, type EffectivePlan } from "@/lib/plans";
 
 export interface WorkspaceUser {
   id: string;
@@ -14,6 +15,8 @@ export interface WorkspaceUser {
   isPlatformAdmin?: boolean;
   /** Story 10.6: shows the Company item. Display only: the Company area checks for itself. */
   isCompanyAdmin?: boolean;
+  /** The plan the user works under: their company's, or their own. Shown, never set, here. */
+  plan?: EffectivePlan;
 }
 
 export function displayName(user: WorkspaceUser): string {
@@ -34,6 +37,7 @@ export function AccountMenu({ user, onSignOut }: { user: WorkspaceUser; onSignOu
       </MenuTrigger>
       <MenuContent align="end">
         <MenuLabel>{user.email}</MenuLabel>
+        {user.plan ? <MenuLabel data-testid="account-plan">{planSentence(user.plan)}</MenuLabel> : null}
         <MenuSeparator />
         {user.isCompanyAdmin ? (
           <MenuItem

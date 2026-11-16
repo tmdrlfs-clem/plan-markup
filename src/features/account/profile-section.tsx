@@ -7,6 +7,7 @@
 import { useRouter } from "next/navigation";
 import { useId, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { PLAN_LABELS, type EffectivePlan } from "@/lib/plans";
 import { changeEmail, updateName } from "./profile-actions";
 
 export const EMAIL_SENT = (email: string) =>
@@ -15,7 +16,7 @@ export const EMAIL_SENT = (email: string) =>
 const INPUT =
   "h-8 min-w-0 flex-1 rounded border border-strong bg-surface-2 px-2 text-ws-md text-text focus-ring disabled:opacity-50";
 
-export function ProfileSection({ name, email }: { name: string; email: string }) {
+export function ProfileSection({ name, email, plan }: { name: string; email: string; plan?: EffectivePlan }) {
   const router = useRouter();
   const nameId = useId();
   const emailId = useId();
@@ -125,6 +126,16 @@ export function ProfileSection({ name, email }: { name: string; email: string })
           </Button>
         </div>
       )}
+      {plan ? (
+        // Shown only: the plan is set by Plan Markup, never from here (Story 10.8).
+        <div className="flex items-baseline gap-2">
+          <span className="w-12 shrink-0 text-ws-sm text-muted">Plan</span>
+          <span className="min-w-0 flex-1 text-ws-md" data-testid="profile-plan">
+            {PLAN_LABELS[plan.plan]}
+            {plan.companyName ? <span className="text-muted"> (the plan of {plan.companyName})</span> : null}
+          </span>
+        </div>
+      ) : null}
       {message ? (
         <p role={message.kind === "error" ? "alert" : "status"} className={`text-ws-sm ${message.kind === "error" ? "text-danger" : "text-muted"}`}>
           {message.text}

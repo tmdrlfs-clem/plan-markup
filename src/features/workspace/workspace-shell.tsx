@@ -233,7 +233,7 @@ function ShellBody({ user, initialTheme }: { user: WorkspaceUser; initialTheme: 
             <AccountMenu user={user} onSignOut={handleSignOut} />
           </div>
           {/* Story 5.13: Settings > Account & signature. */}
-          <SignatureDialog name={user.name} email={user.email} />
+          <SignatureDialog name={user.name} email={user.email} plan={user.plan} />
         </div>
         <div data-region="toolbar">
           <WorkspaceToolbar onOpen={open} />
