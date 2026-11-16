@@ -1,6 +1,6 @@
 # Story 10.9: Activity dashboards
 
-Status: review
+Status: done
 
 ## Story
 
