@@ -3,17 +3,25 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-const ITEMS = [
+export type NavItem = { href: string; label: string };
+
+export const ADMIN_NAV: readonly NavItem[] = [
   { href: "/admin/users", label: "Accounts" },
   { href: "/admin/companies", label: "Companies" },
-] as const;
+  { href: "/admin/activity", label: "Activity" },
+];
 
-/** The admin area's sections; the current one is marked for sight and for screen readers. */
-export function AdminNav() {
+export const COMPANY_NAV: readonly NavItem[] = [
+  { href: "/company/members", label: "Members" },
+  { href: "/company/activity", label: "Activity" },
+];
+
+/** The sections of the admin or company area; the current one is marked for sight and for screen readers. */
+export function AreaNav({ label, items }: { label: string; items: readonly NavItem[] }) {
   const pathname = usePathname();
   return (
-    <nav aria-label="Admin" className="flex items-center gap-1">
-      {ITEMS.map((item) => {
+    <nav aria-label={label} className="flex items-center gap-1">
+      {items.map((item) => {
         const current = pathname === item.href || pathname.startsWith(`${item.href}/`);
         return (
           <Link
@@ -28,4 +36,12 @@ export function AdminNav() {
       })}
     </nav>
   );
+}
+
+export function AdminNav() {
+  return <AreaNav label="Admin" items={ADMIN_NAV} />;
+}
+
+export function CompanyNav() {
+  return <AreaNav label="Company" items={COMPANY_NAV} />;
 }

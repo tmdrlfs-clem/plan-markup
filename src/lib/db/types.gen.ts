@@ -407,6 +407,11 @@ isOneToOne: false
               "company_id": string,"company_name": string,"role": string
             }[]
                            },
+"activity_summary":
+{ Args: { "p_scope": string }; Returns: {
+              "company_id": string,"company_name": string,"email": string,"exports_by_week": (number)[],"exports_total": number,"last_active_at": string,"markups_by_week": (number)[],"markups_total": number,"name": string,"status": string,"user_id": string
+            }[]
+                           },
 "admin_create_company":
 { Args: { "p_actor_id": string,"p_admin_email": string,"p_name": string }; Returns: {
               "admin_user_id": string,"company_id": string

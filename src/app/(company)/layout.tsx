@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { Toaster } from "@/components/ui/toast";
+import { CompanyNav } from "@/features/admin/admin-nav";
 import { AdminTheme } from "@/features/admin/admin-theme";
 import { requireCompanyAdmin } from "@/features/company/guard";
 
@@ -17,15 +18,7 @@ export default async function CompanyLayout({ children }: LayoutProps<"/">) {
           <p className="min-w-0 truncate text-ad-md font-semibold">
             {membership.companyName} <span className="font-normal text-muted">Company</span>
           </p>
-          <nav aria-label="Company" className="flex items-center gap-1">
-            <Link
-              href="/company/members"
-              aria-current="page"
-              className="rounded border border-border bg-surface-2 px-3 py-1.5 text-ad-sm font-medium text-text focus-ring hover:bg-surface-3"
-            >
-              Members
-            </Link>
-          </nav>
+          <CompanyNav />
           <div className="ml-auto flex min-w-0 items-center gap-4">
             <span className="min-w-0 truncate text-ad-sm text-muted">{user.email}</span>
             <Link href="/workspace" className="shrink-0 rounded text-ad-sm font-medium text-text underline underline-offset-2 focus-ring">
