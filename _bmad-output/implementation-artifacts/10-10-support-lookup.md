@@ -1,6 +1,6 @@
 # Story 10.10: Support lookup
 
-Status: review
+Status: done
 
 ## Story
 
