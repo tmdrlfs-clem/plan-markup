@@ -444,6 +444,63 @@ $$;
 ALTER FUNCTION "public"."admin_create_company"("p_actor_id" "uuid", "p_name" "text", "p_admin_email" "text") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."admin_set_plan"("p_actor_id" "uuid", "p_target_type" "text", "p_target_id" "uuid", "p_plan" "text") RETURNS TABLE("previous_plan" "text")
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+declare
+  v_previous text;
+begin
+  if p_actor_id is null or p_target_id is null then
+    raise exception 'actor and target are required' using errcode = '22023';
+  end if;
+  if p_target_type is null or p_target_type not in ('user', 'company') then
+    raise exception 'target type must be user or company' using errcode = '22023';
+  end if;
+  if p_plan is null or p_plan not in ('trial', 'pilot', 'standard') then
+    raise exception 'plan must be trial, pilot or standard' using errcode = '22023';
+  end if;
+  if not exists (
+    select 1 from public.profiles a
+    where a.id = p_actor_id and a.status = 'active' and a.is_platform_admin
+  ) then
+    raise exception 'not a platform admin' using errcode = 'PT403';
+  end if;
+
+  if p_target_type = 'user' then
+    select p.plan into v_previous from public.profiles p where p.id = p_target_id for update;
+  else
+    select c.plan into v_previous from public.companies c where c.id = p_target_id for update;
+  end if;
+  if not found then
+    raise exception 'no such target' using errcode = 'PT404';
+  end if;
+
+  if v_previous <> p_plan then
+    if p_target_type = 'user' then
+      update public.profiles p set plan = p_plan where p.id = p_target_id;
+    else
+      update public.companies c set plan = p_plan where c.id = p_target_id;
+    end if;
+    insert into public.audit_log (actor_id, action, target_type, target_id, detail)
+    values (
+      p_actor_id,
+      case p_target_type when 'user' then 'user.plan_changed' else 'company.plan_changed' end,
+      p_target_type,
+      p_target_id,
+      pg_catalog.jsonb_build_object('from', v_previous, 'to', p_plan)
+    );
+  end if;
+
+  previous_plan := v_previous;
+  return next;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."admin_set_plan"("p_actor_id" "uuid", "p_target_type" "text", "p_target_id" "uuid", "p_plan" "text") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."admin_set_user_status"("p_actor_id" "uuid", "p_user_id" "uuid", "p_status" "text") RETURNS TABLE("previous_status" "text", "email" "text", "name" "text")
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO ''
@@ -1101,7 +1158,7 @@ CREATE TABLE IF NOT EXISTS "public"."audit_log" (
     "target_type" "text" NOT NULL,
     "target_id" "uuid" NOT NULL,
     "detail" "jsonb" DEFAULT '{}'::"jsonb" NOT NULL,
-    CONSTRAINT "audit_log_action_check" CHECK (("action" = ANY (ARRAY['user.activated'::"text", 'user.deactivated'::"text", 'company.created'::"text", 'company.member_invited'::"text", 'company.invitation_revoked'::"text", 'company.member_joined'::"text", 'company.member_role_changed'::"text", 'company.member_removed'::"text"]))),
+    CONSTRAINT "audit_log_action_check" CHECK (("action" = ANY (ARRAY['user.activated'::"text", 'user.deactivated'::"text", 'user.plan_changed'::"text", 'company.created'::"text", 'company.plan_changed'::"text", 'company.member_invited'::"text", 'company.invitation_revoked'::"text", 'company.member_joined'::"text", 'company.member_role_changed'::"text", 'company.member_removed'::"text"]))),
     CONSTRAINT "audit_log_detail_check" CHECK (("jsonb_typeof"("detail") = 'object'::"text")),
     CONSTRAINT "audit_log_target_type_check" CHECK (("target_type" = ANY (ARRAY['user'::"text", 'company'::"text"])))
 );
@@ -1134,7 +1191,9 @@ CREATE TABLE IF NOT EXISTS "public"."companies" (
     "name" "text" NOT NULL,
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    CONSTRAINT "companies_name_check" CHECK ((("name" = "btrim"("name")) AND (("char_length"("name") >= 1) AND ("char_length"("name") <= 100))))
+    "plan" "text" DEFAULT 'trial'::"text" NOT NULL,
+    CONSTRAINT "companies_name_check" CHECK ((("name" = "btrim"("name")) AND (("char_length"("name") >= 1) AND ("char_length"("name") <= 100)))),
+    CONSTRAINT "companies_plan_check" CHECK (("plan" = ANY (ARRAY['trial'::"text", 'pilot'::"text", 'standard'::"text"])))
 );
 
 
@@ -1142,6 +1201,10 @@ ALTER TABLE "public"."companies" OWNER TO "postgres";
 
 
 COMMENT ON TABLE "public"."companies" IS 'Customer companies (Story 10.5). Created by the platform admin; read by their members.';
+
+
+
+COMMENT ON COLUMN "public"."companies"."plan" IS 'Server-controlled (Story 10.8).';
 
 
 
@@ -1297,7 +1360,9 @@ CREATE TABLE IF NOT EXISTS "public"."profiles" (
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "theme" "text" DEFAULT 'blueprint'::"text" NOT NULL,
+    "plan" "text" DEFAULT 'trial'::"text" NOT NULL,
     CONSTRAINT "profiles_name_length" CHECK (("char_length"("name") <= 100)),
+    CONSTRAINT "profiles_plan_check" CHECK (("plan" = ANY (ARRAY['trial'::"text", 'pilot'::"text", 'standard'::"text"]))),
     CONSTRAINT "profiles_status_check" CHECK (("status" = ANY (ARRAY['pending'::"text", 'active'::"text", 'deactivated'::"text"]))),
     CONSTRAINT "profiles_theme_check" CHECK (("theme" = ANY (ARRAY['blueprint'::"text", 'daylight'::"text", 'contrast'::"text"])))
 );
@@ -1315,6 +1380,10 @@ COMMENT ON COLUMN "public"."profiles"."is_platform_admin" IS 'Server-controlled.
 
 
 COMMENT ON COLUMN "public"."profiles"."theme" IS 'Workspace theme: blueprint (default), daylight or contrast. Writable by the user for their own row.';
+
+
+
+COMMENT ON COLUMN "public"."profiles"."plan" IS 'Server-controlled (Story 10.8). The plan of an individual account; a company member works under the company''s plan.';
 
 
 
@@ -2150,6 +2219,11 @@ GRANT ALL ON FUNCTION "public"."accept_company_invitation"("p_token_hash" "text"
 
 REVOKE ALL ON FUNCTION "public"."admin_create_company"("p_actor_id" "uuid", "p_name" "text", "p_admin_email" "text") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."admin_create_company"("p_actor_id" "uuid", "p_name" "text", "p_admin_email" "text") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."admin_set_plan"("p_actor_id" "uuid", "p_target_type" "text", "p_target_id" "uuid", "p_plan" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."admin_set_plan"("p_actor_id" "uuid", "p_target_type" "text", "p_target_id" "uuid", "p_plan" "text") TO "service_role";
 
 
 

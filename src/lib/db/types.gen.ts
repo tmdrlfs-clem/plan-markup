@@ -116,14 +116,14 @@ isOneToOne: true
                   ]
                 },"companies": {
                   Row: {
-                    "created_at": string,"id": string,"name": string,"updated_at": string
+                    "created_at": string,"id": string,"name": string,"plan": string,"updated_at": string
                   }
                   ComputedFields: never
                   Insert: {
-                    "created_at"?: string,"id"?: string,"name": string,"updated_at"?: string
+                    "created_at"?: string,"id"?: string,"name": string,"plan"?: string,"updated_at"?: string
                   }
                   Update: {
-                    "created_at"?: string,"id"?: string,"name"?: string,"updated_at"?: string
+                    "created_at"?: string,"id"?: string,"name"?: string,"plan"?: string,"updated_at"?: string
                   }
                   Relationships: [
 
@@ -262,14 +262,14 @@ isOneToOne: false
                   ]
                 },"profiles": {
                   Row: {
-                    "created_at": string,"email": string,"id": string,"is_platform_admin": boolean,"name": string,"status": string,"theme": string,"updated_at": string
+                    "created_at": string,"email": string,"id": string,"is_platform_admin": boolean,"name": string,"plan": string,"status": string,"theme": string,"updated_at": string
                   }
                   ComputedFields: never
                   Insert: {
-                    "created_at"?: string,"email": string,"id": string,"is_platform_admin"?: boolean,"name"?: string,"status"?: string,"theme"?: string,"updated_at"?: string
+                    "created_at"?: string,"email": string,"id": string,"is_platform_admin"?: boolean,"name"?: string,"plan"?: string,"status"?: string,"theme"?: string,"updated_at"?: string
                   }
                   Update: {
-                    "created_at"?: string,"email"?: string,"id"?: string,"is_platform_admin"?: boolean,"name"?: string,"status"?: string,"theme"?: string,"updated_at"?: string
+                    "created_at"?: string,"email"?: string,"id"?: string,"is_platform_admin"?: boolean,"name"?: string,"plan"?: string,"status"?: string,"theme"?: string,"updated_at"?: string
                   }
                   Relationships: [
 
@@ -410,6 +410,11 @@ isOneToOne: false
 "admin_create_company":
 { Args: { "p_actor_id": string,"p_admin_email": string,"p_name": string }; Returns: {
               "admin_user_id": string,"company_id": string
+            }[]
+                           },
+"admin_set_plan":
+{ Args: { "p_actor_id": string,"p_plan": string,"p_target_id": string,"p_target_type": string }; Returns: {
+              "previous_plan": string
             }[]
                            },
 "admin_set_user_status":

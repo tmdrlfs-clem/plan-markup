@@ -1,6 +1,6 @@
 # Story 10.7: Change roles and remove members
 
-Status: review
+Status: done
 
 ## Story
 

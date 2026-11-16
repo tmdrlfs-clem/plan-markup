@@ -3,8 +3,9 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const m = vi.hoisted(() => ({ createCompany: vi.fn(), refresh: vi.fn(), toast: vi.fn(), pathname: "/admin/companies" }));
+const m = vi.hoisted(() => ({ createCompany: vi.fn(), setPlan: vi.fn(), refresh: vi.fn(), toast: vi.fn(), pathname: "/admin/companies" }));
 vi.mock("./company-actions", () => ({ createCompany: m.createCompany }));
+vi.mock("./plan-actions", () => ({ setPlan: m.setPlan }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: m.refresh }), usePathname: () => m.pathname }));
 vi.mock("@/components/ui/toast-store", () => ({ toast: m.toast }));
 
@@ -15,6 +16,7 @@ import { CompaniesScreen } from "./companies-screen";
 const ACME: AdminCompanyRow = {
   id: "00000000-0000-4000-8000-0000000000c1",
   name: "Acme Fire",
+  plan: "pilot",
   createdAt: "2026-11-15T22:00:00Z",
   memberCount: 3,
   admins: [
@@ -41,6 +43,17 @@ describe("CompaniesScreen", () => {
     expect(within(row).getByText("16 Nov 2026")).toBeInTheDocument();
     expect(within(screen.getByRole("row", { name: /Beta Sprinklers/ })).getByText("No admin")).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("2 companies");
+  });
+
+  it("shows the company's plan and saves a change at once (Story 10.8)", async () => {
+    m.setPlan.mockResolvedValueOnce({ ok: true, data: { plan: "standard", changed: true } });
+    render(<CompaniesScreen companies={[ACME]} />);
+    const select = screen.getByRole("combobox", { name: "Plan of Acme Fire" });
+    expect(select).toHaveValue("pilot");
+    await userEvent.selectOptions(select, "standard");
+    expect(m.setPlan).toHaveBeenCalledWith({ targetType: "company", targetId: ACME.id, plan: "standard" });
+    expect(m.toast).toHaveBeenCalledWith({ variant: "success", title: "Acme Fire is on the Standard plan." });
+    expect(m.refresh).toHaveBeenCalled();
   });
 
   it("says so when there are none", () => {

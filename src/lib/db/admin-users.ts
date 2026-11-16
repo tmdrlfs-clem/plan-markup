@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { asPlan, type Plan } from "@/lib/plans";
 import type { ProfileStatus } from "./profiles";
 import type { Database } from "./types.gen";
 
@@ -11,6 +12,8 @@ export type AdminUserRow = {
   email: string;
   status: ProfileStatus;
   isPlatformAdmin: boolean;
+  /** Story 10.8: the plan of the account itself (a company member works under the company's plan). */
+  plan: Plan;
   createdAt: string;
 };
 
@@ -55,7 +58,7 @@ export async function listAdminUsers(client: SupabaseClient<Database>, query: Ad
   const from = (query.page - 1) * ADMIN_USERS_PAGE_SIZE;
   let rowsQuery = client
     .from("profiles")
-    .select("id, name, email, status, is_platform_admin, created_at", { count: "exact" })
+    .select("id, name, email, status, is_platform_admin, plan, created_at", { count: "exact" })
     .order("created_at", { ascending: false })
     .order("id", { ascending: true })
     .range(from, from + ADMIN_USERS_PAGE_SIZE - 1);
@@ -83,6 +86,7 @@ export async function listAdminUsers(client: SupabaseClient<Database>, query: Ad
       email: row.email,
       status: STATUSES.includes(row.status as ProfileStatus) ? (row.status as ProfileStatus) : "pending",
       isPlatformAdmin: row.is_platform_admin,
+      plan: asPlan(row.plan),
       createdAt: row.created_at,
     })),
     total: rows.count ?? 0,

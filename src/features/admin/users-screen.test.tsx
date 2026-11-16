@@ -3,8 +3,9 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const m = vi.hoisted(() => ({ setUserStatus: vi.fn(), refresh: vi.fn(), toast: vi.fn() }));
+const m = vi.hoisted(() => ({ setUserStatus: vi.fn(), setPlan: vi.fn(), refresh: vi.fn(), toast: vi.fn() }));
 vi.mock("./actions", () => ({ setUserStatus: m.setUserStatus }));
+vi.mock("./plan-actions", () => ({ setPlan: m.setPlan }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: m.refresh }) }));
 vi.mock("@/components/ui/toast-store", () => ({ toast: m.toast }));
 
@@ -14,7 +15,7 @@ import { UsersScreen, usersHref } from "./users-screen";
 const ADMIN_ID = "00000000-0000-4000-8000-00000000000a";
 
 function row(over: Partial<AdminUserRow>): AdminUserRow {
-  return { id: "00000000-0000-4000-8000-00000000000c", name: "Pat Pending", email: "pat@plan-markup.test", status: "pending", isPlatformAdmin: false, createdAt: "2026-11-15T22:00:00Z", ...over };
+  return { id: "00000000-0000-4000-8000-00000000000c", name: "Pat Pending", email: "pat@plan-markup.test", status: "pending", isPlatformAdmin: false, plan: "trial", createdAt: "2026-11-15T22:00:00Z", ...over };
 }
 
 function list(rows: AdminUserRow[], total = rows.length): AdminUserList {
@@ -112,5 +113,20 @@ describe("UsersScreen", () => {
     expect(m.setUserStatus).toHaveBeenCalledWith({ userId: "00000000-0000-4000-8000-00000000000c", status: "deactivated" });
     expect(m.toast).toHaveBeenCalledWith({ variant: "danger", title: "This account no longer exists." });
     expect(m.refresh).not.toHaveBeenCalled();
+  });
+
+  it("shows each account's plan and saves a change at once (Story 10.8)", async () => {
+    m.setPlan.mockResolvedValueOnce({ ok: true, data: { plan: "pilot", changed: true } });
+    render(<UsersScreen adminId={ADMIN_ID} query={{ filter: "pending", search: "", page: 1 }} list={list([row({ plan: "standard" })])} />);
+    const select = screen.getByRole("combobox", { name: "Plan of Pat Pending" });
+    expect(select).toHaveValue("standard");
+    await userEvent.selectOptions(select, "pilot");
+    expect(m.setPlan).toHaveBeenCalledWith({ targetType: "user", targetId: "00000000-0000-4000-8000-00000000000c", plan: "pilot" });
+    expect(m.toast).toHaveBeenCalledWith({ variant: "success", title: "Pat Pending is on the Pilot plan." });
+    expect(m.refresh).toHaveBeenCalled();
+
+    m.setPlan.mockResolvedValueOnce({ ok: false, code: "NOT_FOUND", message: "This account no longer exists." });
+    await userEvent.selectOptions(select, "trial");
+    expect(m.toast).toHaveBeenLastCalledWith({ variant: "danger", title: "This account no longer exists." });
   });
 });

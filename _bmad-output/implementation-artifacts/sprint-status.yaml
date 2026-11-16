@@ -158,8 +158,8 @@ development_status:
   10-4-platform-admin-manages-user-accounts: done
   10-5-create-companies-and-their-first-admin: done
   10-6-company-admin-invites-users: done
-  10-7-change-roles-and-remove-members: review
-  10-8-set-plans: backlog
+  10-7-change-roles-and-remove-members: done
+  10-8-set-plans: review
   10-9-activity-dashboards: backlog
   10-10-support-lookup: backlog
   10-11-company-tool-sets: backlog

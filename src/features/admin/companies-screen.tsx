@@ -1,5 +1,6 @@
 import { ADMIN_COMPANIES_LIMIT, type AdminCompanyRow } from "@/lib/db/admin-companies";
 import { CreateCompanyForm } from "./create-company-form";
+import { PlanSelect } from "./plan-select";
 
 const DATE_FORMAT = new Intl.DateTimeFormat("en-NZ", {
   day: "numeric",
@@ -38,6 +39,9 @@ function CompanyRow({ row }: { row: AdminCompanyRow }) {
         )}
       </td>
       <td className="px-4 py-3 text-right text-ad-sm tabular-nums">{row.memberCount}</td>
+      <td className="px-3 py-3">
+        <PlanSelect targetType="company" targetId={row.id} label={row.name} plan={row.plan} />
+      </td>
       <td className="whitespace-nowrap px-4 py-3 text-ad-sm text-muted">{created(row.createdAt)}</td>
     </tr>
   );
@@ -57,13 +61,14 @@ export function CompaniesScreen({ companies }: { companies: AdminCompanyRow[] })
       <CreateCompanyForm />
 
       <div className="overflow-x-auto rounded border border-border bg-surface-2 shadow-1">
-        <table className="w-full min-w-[640px] table-fixed border-collapse">
+        <table className="w-full min-w-[700px] table-fixed border-collapse">
           <caption className="sr-only">Companies</caption>
           <colgroup>
             <col />
             <col />
-            <col className="w-[110px]" />
-            <col className="w-[130px]" />
+            <col className="w-[96px]" />
+            <col className="w-[124px]" />
+            <col className="w-[120px]" />
           </colgroup>
           <thead>
             <tr className="bg-surface-1 text-left text-ad-sm text-muted">
@@ -75,6 +80,9 @@ export function CompaniesScreen({ companies }: { companies: AdminCompanyRow[] })
               </th>
               <th scope="col" className="px-4 py-2.5 text-right font-medium">
                 Members
+              </th>
+              <th scope="col" className="px-3 py-2.5 font-medium">
+                Plan
               </th>
               <th scope="col" className="px-4 py-2.5 font-medium">
                 Created

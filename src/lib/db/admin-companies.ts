@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { asPlan, type Plan } from "@/lib/plans";
 import type { Database } from "./types.gen";
 
 // Story 10.5: the platform admin's company list. Read with the admin's own
@@ -9,6 +10,8 @@ export type CompanyRole = "admin" | "member" | "viewer";
 export type AdminCompanyRow = {
   id: string;
   name: string;
+  /** Story 10.8. */
+  plan: Plan;
   createdAt: string;
   memberCount: number;
   /** The company's admins, by name (or email when there is no name). */
@@ -23,7 +26,7 @@ export async function listAdminCompanies(client: SupabaseClient<Database>): Prom
     .from("companies")
     // The foreign keys are named: PostgREST refuses an embed it finds ambiguous (PGRST201).
     .select(
-      "id, name, created_at, members:company_members!fk_company_members_company(role, profile:profiles!fk_company_members_profile(name, email))",
+      "id, name, plan, created_at, members:company_members!fk_company_members_company(role, profile:profiles!fk_company_members_profile(name, email))",
     )
     .order("name", { ascending: true })
     .limit(ADMIN_COMPANIES_LIMIT);
@@ -31,6 +34,7 @@ export async function listAdminCompanies(client: SupabaseClient<Database>): Prom
   return (data ?? []).map((row) => ({
     id: row.id,
     name: row.name,
+    plan: asPlan(row.plan),
     createdAt: row.created_at,
     memberCount: row.members.length,
     admins: row.members

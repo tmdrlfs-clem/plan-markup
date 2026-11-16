@@ -10,6 +10,7 @@ import {
   type AdminUserRow,
 } from "@/lib/db/admin-users";
 import type { ProfileStatus } from "@/lib/db/profiles";
+import { PlanSelect } from "./plan-select";
 import { UserStatusAction } from "./user-status-action";
 
 const FILTER_LABELS: Record<AdminUserFilter, string> = {
@@ -88,6 +89,9 @@ function UserRow({ row, adminId }: { row: AdminUserRow; adminId: string }) {
         <StatusBadge status={row.status} />
       </td>
       <td className="whitespace-nowrap px-4 py-3 text-ad-sm text-muted">{signedUp(row.createdAt)}</td>
+      <td className="px-3 py-3">
+        <PlanSelect targetType="user" targetId={row.id} label={label} plan={row.plan} />
+      </td>
       <td className="px-4 py-3 text-right">
         <UserStatusAction userId={row.id} label={label} status={row.status} isSelf={row.id === adminId} />
       </td>
@@ -120,7 +124,8 @@ export function UsersScreen({ adminId, query, list }: UsersScreenProps) {
       <div className="flex flex-col gap-1">
         <h1 className="text-ad-xl font-semibold">Accounts</h1>
         <p className="text-ad-sm text-muted">
-          New sign-ups wait here until you activate them. Deactivating signs the person out at once; nothing is deleted.
+          New sign-ups wait here until you activate them. Deactivating signs the person out at once; nothing is deleted. The plan
+          here belongs to the account itself; someone in a company works under the plan of that company.
         </p>
       </div>
 
@@ -180,15 +185,16 @@ export function UsersScreen({ adminId, query, list }: UsersScreenProps) {
       </div>
 
       <div className="overflow-x-auto rounded border border-border bg-surface-2 shadow-1">
-        <table className="w-full min-w-[640px] table-fixed border-collapse">
+        <table className="w-full min-w-[700px] table-fixed border-collapse">
           <caption className="sr-only">
             {FILTER_LABELS[query.filter]} accounts{searching ? ` matching "${query.search}"` : ""}
           </caption>
           <colgroup>
             <col />
-            <col className="w-[150px]" />
             <col className="w-[130px]" />
-            <col className="w-[150px]" />
+            <col className="w-[120px]" />
+            <col className="w-[124px]" />
+            <col className="w-[140px]" />
           </colgroup>
           <thead>
             <tr className="bg-surface-1 text-left text-ad-sm text-muted">
@@ -200,6 +206,9 @@ export function UsersScreen({ adminId, query, list }: UsersScreenProps) {
               </th>
               <th scope="col" className="px-4 py-2.5 font-medium">
                 Signed up
+              </th>
+              <th scope="col" className="px-3 py-2.5 font-medium">
+                Plan
               </th>
               <th scope="col" className="px-4 py-2.5 text-right font-medium">
                 <span className="sr-only">Action</span>
