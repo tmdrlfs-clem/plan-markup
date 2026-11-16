@@ -417,6 +417,11 @@ isOneToOne: false
               "admin_user_id": string,"company_id": string
             }[]
                            },
+"admin_lookup_markup_sets":
+{ Args: { "p_actor_id": string,"p_user_id": string }; Returns: {
+              "created_at": string,"drawing_id": string,"file_count": number,"filename": string,"last_saved_at": string,"markup_count": number,"page_count": number
+            }[]
+                           },
 "admin_set_plan":
 { Args: { "p_actor_id": string,"p_plan": string,"p_target_id": string,"p_target_type": string }; Returns: {
               "previous_plan": string

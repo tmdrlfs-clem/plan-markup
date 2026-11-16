@@ -84,6 +84,14 @@ function UserRow({ row, adminId }: { row: AdminUserRow; adminId: string }) {
         <span className="block truncate text-ad-sm text-muted" title={row.email}>
           {row.email}
         </span>
+        {/* Story 10.10. A plain link, never prefetched: opening it is a recorded lookup. */}
+        <a
+          href={`/admin/users/${row.id}/support`}
+          aria-label={`Markup sets of ${label}`}
+          className="rounded text-[12px] font-medium text-text underline underline-offset-2 focus-ring"
+        >
+          Markup sets
+        </a>
       </th>
       <td className="px-4 py-3">
         <StatusBadge status={row.status} />
