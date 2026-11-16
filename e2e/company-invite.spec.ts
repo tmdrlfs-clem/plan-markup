@@ -33,7 +33,7 @@ async function openMembers(page: Page, boss: string) {
 
 async function invite(page: Page, email: string, role: "admin" | "member" | "viewer" = "member") {
   await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Role").selectOption(role);
+  await page.getByLabel("Role", { exact: true }).selectOption(role);
   await page.getByRole("button", { name: "Send invitation" }).click();
 }
 
@@ -120,7 +120,7 @@ test("invite someone new: they set a password from the link, are a member at onc
 
     // The admin sees the new member, and no waiting invitation.
     await page.reload();
-    await expect(page.getByRole("table", { name: /Members of/ }).getByRole("row", { name: new RegExp(fresh) })).toContainText("Viewer");
+    await expect(page.getByRole("combobox", { name: `Role of ${fresh}` })).toHaveValue("viewer");
     await expect(page.getByText("No invitations are waiting.")).toBeVisible();
     // A viewer has no Company area.
     const response = await guest.goto("/company/members");

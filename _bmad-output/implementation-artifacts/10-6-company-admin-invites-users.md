@@ -1,6 +1,6 @@
 # Story 10.6: Company admin invites users
 
-Status: review
+Status: done
 
 ## Story
 

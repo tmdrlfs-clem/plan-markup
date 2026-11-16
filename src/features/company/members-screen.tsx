@@ -1,5 +1,6 @@
 import { ROLE_LABELS, type CompanyInvitation, type CompanyMember } from "@/lib/db/companies";
 import { InviteForm, RevokeInvitationButton } from "./invite-form";
+import { MemberControls, ONLY_ADMIN_NOTE } from "./member-controls";
 
 const DATE_FORMAT = new Intl.DateTimeFormat("en-NZ", {
   day: "numeric",
@@ -25,12 +26,14 @@ export type MembersScreenProps = {
 
 /** Story 10.6: Company → Members for the company's admins: who is in, who is invited, and the invite form (FR6). */
 export function MembersScreen({ companyName, currentUserId, members, invitations }: MembersScreenProps) {
+  const adminCount = members.filter((member) => member.role === "admin").length;
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1">
         <h1 className="text-ad-xl font-semibold">Members</h1>
         <p className="text-ad-sm text-muted">
-          The people of {companyName}. Someone you invite joins as soon as they open the link from their email.
+          The people of {companyName}. Someone you invite joins as soon as they open the link from their email. Changing a role or
+          removing someone applies at once and signs them out; their own markup sets stay with them.
         </p>
       </div>
 
@@ -41,12 +44,12 @@ export function MembersScreen({ companyName, currentUserId, members, invitations
           Members <span className="font-normal text-muted">({members.length})</span>
         </h2>
         <div className={TABLE_WRAP}>
-          <table className="w-full min-w-[560px] table-fixed border-collapse">
+          <table className="w-full min-w-[640px] table-fixed border-collapse">
             <caption className="sr-only">Members of {companyName}</caption>
             <colgroup>
               <col />
-              <col className="w-[120px]" />
               <col className="w-[130px]" />
+              <col className="w-[250px]" />
             </colgroup>
             <thead>
               <tr className="bg-surface-1 text-left text-ad-sm text-muted">
@@ -54,16 +57,17 @@ export function MembersScreen({ companyName, currentUserId, members, invitations
                   Name and email
                 </th>
                 <th scope="col" className={TH}>
-                  Role
-                </th>
-                <th scope="col" className={TH}>
                   Joined
+                </th>
+                <th scope="col" className={`${TH} text-right`}>
+                  Role and membership
                 </th>
               </tr>
             </thead>
             <tbody>
               {members.map((member) => {
                 const name = member.name.trim();
+                const onlyAdmin = member.role === "admin" && adminCount === 1;
                 return (
                   <tr key={member.userId} className="border-t border-border align-middle">
                     <th scope="row" className="max-w-0 px-4 py-3 text-left font-normal">
@@ -81,14 +85,23 @@ export function MembersScreen({ companyName, currentUserId, members, invitations
                         {member.email}
                       </span>
                     </th>
-                    <td className="px-4 py-3 text-ad-sm">{ROLE_LABELS[member.role]}</td>
                     <td className="whitespace-nowrap px-4 py-3 text-ad-sm text-muted">{day(member.joinedAt)}</td>
+                    <td className="px-4 py-3">
+                      <MemberControls
+                        userId={member.userId}
+                        label={name === "" ? member.email : name}
+                        role={member.role}
+                        isSelf={member.userId === currentUserId}
+                        onlyAdmin={onlyAdmin}
+                      />
+                    </td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
         </div>
+        {adminCount === 1 ? <p className="text-ad-sm text-muted">{ONLY_ADMIN_NOTE}</p> : null}
       </section>
 
       <section aria-labelledby="invitations-heading" className="flex flex-col gap-3">

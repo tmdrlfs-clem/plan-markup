@@ -73,6 +73,58 @@ $$;
 ALTER FUNCTION "app"."fn_audit_log_append_only"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "app"."fn_company_admin_guard"("p_actor_id" "uuid", "p_user_id" "uuid", OUT "o_company_id" "uuid", OUT "o_role" "text") RETURNS "record"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+begin
+  if p_actor_id is null or p_user_id is null then
+    raise exception 'actor and user are required' using errcode = '22023';
+  end if;
+
+  select c.id into o_company_id
+  from public.company_members m
+  join public.profiles p on p.id = m.user_id
+  join public.companies c on c.id = m.company_id
+  where m.user_id = p_actor_id and m.role = 'admin' and p.status = 'active'
+  for update of c;
+  if not found then
+    raise exception 'not a company admin' using errcode = 'PT403';
+  end if;
+
+  select m.role into o_role
+  from public.company_members m
+  where m.user_id = p_user_id and m.company_id = o_company_id
+  for update;
+  if not found then
+    raise exception 'not a member of this company' using errcode = 'PT404';
+  end if;
+end;
+$$;
+
+
+ALTER FUNCTION "app"."fn_company_admin_guard"("p_actor_id" "uuid", "p_user_id" "uuid", OUT "o_company_id" "uuid", OUT "o_role" "text") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "app"."fn_company_has_other_admin"("p_company_id" "uuid", "p_user_id" "uuid") RETURNS boolean
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+  select exists (
+    select 1
+    from public.company_members m
+    join public.profiles p on p.id = m.user_id
+    where m.company_id = p_company_id
+      and m.user_id <> p_user_id
+      and m.role = 'admin'
+      and p.status = 'active'
+  );
+$$;
+
+
+ALTER FUNCTION "app"."fn_company_has_other_admin"("p_company_id" "uuid", "p_user_id" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "app"."fn_effective_access"("p_drawing_id" "uuid") RETURNS "text"
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO ''
@@ -901,6 +953,31 @@ $$;
 ALTER FUNCTION "public"."list_markup_sets"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."remove_company_member"("p_actor_id" "uuid", "p_user_id" "uuid") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+declare
+  v_company_id uuid;
+  v_role text;
+begin
+  select g.o_company_id, g.o_role into v_company_id, v_role from app.fn_company_admin_guard(p_actor_id, p_user_id) g;
+
+  if v_role = 'admin' and not app.fn_company_has_other_admin(v_company_id, p_user_id) then
+    raise exception 'a company needs an active admin' using errcode = 'PT409';
+  end if;
+  delete from public.company_members m where m.user_id = p_user_id;
+  delete from auth.sessions s where s.user_id = p_user_id;
+  insert into public.audit_log (actor_id, action, target_type, target_id, detail)
+  values (p_actor_id, 'company.member_removed', 'company', v_company_id,
+          pg_catalog.jsonb_build_object('user_id', p_user_id, 'role', v_role));
+end;
+$$;
+
+
+ALTER FUNCTION "public"."remove_company_member"("p_actor_id" "uuid", "p_user_id" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."revoke_company_invitation"("p_actor_id" "uuid", "p_invitation_id" "uuid") RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO ''
@@ -935,6 +1012,39 @@ $$;
 
 
 ALTER FUNCTION "public"."revoke_company_invitation"("p_actor_id" "uuid", "p_invitation_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."set_company_member_role"("p_actor_id" "uuid", "p_user_id" "uuid", "p_role" "text") RETURNS TABLE("previous_role" "text")
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+declare
+  v_company_id uuid;
+  v_previous text;
+begin
+  if p_role is null or p_role not in ('admin', 'member', 'viewer') then
+    raise exception 'role must be admin, member or viewer' using errcode = '22023';
+  end if;
+  select g.o_company_id, g.o_role into v_company_id, v_previous from app.fn_company_admin_guard(p_actor_id, p_user_id) g;
+
+  if v_previous <> p_role then
+    if v_previous = 'admin' and not app.fn_company_has_other_admin(v_company_id, p_user_id) then
+      raise exception 'a company needs an active admin' using errcode = 'PT409';
+    end if;
+    update public.company_members m set role = p_role where m.user_id = p_user_id;
+    delete from auth.sessions s where s.user_id = p_user_id;
+    insert into public.audit_log (actor_id, action, target_type, target_id, detail)
+    values (p_actor_id, 'company.member_role_changed', 'company', v_company_id,
+            pg_catalog.jsonb_build_object('user_id', p_user_id, 'from', v_previous, 'to', p_role));
+  end if;
+
+  previous_role := v_previous;
+  return next;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."set_company_member_role"("p_actor_id" "uuid", "p_user_id" "uuid", "p_role" "text") OWNER TO "postgres";
 
 SET default_tablespace = '';
 
@@ -991,7 +1101,7 @@ CREATE TABLE IF NOT EXISTS "public"."audit_log" (
     "target_type" "text" NOT NULL,
     "target_id" "uuid" NOT NULL,
     "detail" "jsonb" DEFAULT '{}'::"jsonb" NOT NULL,
-    CONSTRAINT "audit_log_action_check" CHECK (("action" = ANY (ARRAY['user.activated'::"text", 'user.deactivated'::"text", 'company.created'::"text", 'company.member_invited'::"text", 'company.invitation_revoked'::"text", 'company.member_joined'::"text"]))),
+    CONSTRAINT "audit_log_action_check" CHECK (("action" = ANY (ARRAY['user.activated'::"text", 'user.deactivated'::"text", 'company.created'::"text", 'company.member_invited'::"text", 'company.invitation_revoked'::"text", 'company.member_joined'::"text", 'company.member_role_changed'::"text", 'company.member_removed'::"text"]))),
     CONSTRAINT "audit_log_detail_check" CHECK (("jsonb_typeof"("detail") = 'object'::"text")),
     CONSTRAINT "audit_log_target_type_check" CHECK (("target_type" = ANY (ARRAY['user'::"text", 'company'::"text"])))
 );
@@ -1974,6 +2084,14 @@ REVOKE ALL ON FUNCTION "app"."fn_audit_log_append_only"() FROM PUBLIC;
 
 
 
+REVOKE ALL ON FUNCTION "app"."fn_company_admin_guard"("p_actor_id" "uuid", "p_user_id" "uuid", OUT "o_company_id" "uuid", OUT "o_role" "text") FROM PUBLIC;
+
+
+
+REVOKE ALL ON FUNCTION "app"."fn_company_has_other_admin"("p_company_id" "uuid", "p_user_id" "uuid") FROM PUBLIC;
+
+
+
 REVOKE ALL ON FUNCTION "app"."fn_effective_access"("p_drawing_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "app"."fn_effective_access"("p_drawing_id" "uuid") TO "authenticated";
 
@@ -2079,8 +2197,18 @@ GRANT ALL ON FUNCTION "public"."list_markup_sets"() TO "service_role";
 
 
 
+REVOKE ALL ON FUNCTION "public"."remove_company_member"("p_actor_id" "uuid", "p_user_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."remove_company_member"("p_actor_id" "uuid", "p_user_id" "uuid") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."revoke_company_invitation"("p_actor_id" "uuid", "p_invitation_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."revoke_company_invitation"("p_actor_id" "uuid", "p_invitation_id" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."set_company_member_role"("p_actor_id" "uuid", "p_user_id" "uuid", "p_role" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."set_company_member_role"("p_actor_id" "uuid", "p_user_id" "uuid", "p_role" "text") TO "service_role";
 
 
 

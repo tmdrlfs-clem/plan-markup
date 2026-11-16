@@ -24,7 +24,13 @@ export type Database = {
             [_ in never]: never
           }
           Functions: {
-            "fn_effective_access":
+            "fn_company_admin_guard":
+{ Args: { "p_actor_id": string,"p_user_id": string }; Returns: Record<string, unknown>
+                           },
+"fn_company_has_other_admin":
+{ Args: { "p_company_id": string,"p_user_id": string }; Returns: boolean
+                           },
+"fn_effective_access":
 { Args: { "p_drawing_id": string }; Returns: string
                            },
 "fn_is_active_user":
@@ -444,8 +450,16 @@ isOneToOne: false
               "drawing_id": string,"filename": string,"last_modified": string,"markup_count": number,"page_count": number,"sha256": string,"title": string
             }[]
                            },
+"remove_company_member":
+{ Args: { "p_actor_id": string,"p_user_id": string }; Returns: undefined
+                           },
 "revoke_company_invitation":
 { Args: { "p_actor_id": string,"p_invitation_id": string }; Returns: undefined
+                           },
+"set_company_member_role":
+{ Args: { "p_actor_id": string,"p_role": string,"p_user_id": string }; Returns: {
+              "previous_role": string
+            }[]
                            }
           }
           Enums: {

@@ -3,9 +3,18 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const m = vi.hoisted(() => ({ inviteMember: vi.fn(), revokeInvitation: vi.fn(), refresh: vi.fn(), toast: vi.fn() }));
+const m = vi.hoisted(() => ({
+  inviteMember: vi.fn(),
+  revokeInvitation: vi.fn(),
+  changeMemberRole: vi.fn(),
+  removeMember: vi.fn(),
+  refresh: vi.fn(),
+  push: vi.fn(),
+  toast: vi.fn(),
+}));
 vi.mock("./actions", () => ({ inviteMember: m.inviteMember, revokeInvitation: m.revokeInvitation }));
-vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: m.refresh }) }));
+vi.mock("./member-actions", () => ({ changeMemberRole: m.changeMemberRole, removeMember: m.removeMember }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: m.refresh, push: m.push }) }));
 vi.mock("@/components/ui/toast-store", () => ({ toast: m.toast }));
 
 import type { CompanyInvitation, CompanyMember } from "@/lib/db/companies";
@@ -22,9 +31,11 @@ const INVITATIONS: CompanyInvitation[] = [
   { id: "i2", email: "old@acme.test", role: "viewer", createdAt: "2026-11-01T00:00:00Z", expiresAt: "2026-11-08T00:00:00Z", expired: true },
 ];
 
-function show(invitations = INVITATIONS) {
-  render(<MembersScreen companyName="Acme Fire" currentUserId={ME} members={MEMBERS} invitations={invitations} />);
+function show(invitations = INVITATIONS, members = MEMBERS) {
+  render(<MembersScreen companyName="Acme Fire" currentUserId={ME} members={members} invitations={invitations} />);
 }
+
+const TWO_ADMINS: CompanyMember[] = [...MEMBERS, { userId: "u3", name: "Ann Other", email: "ann@acme.test", role: "admin", joinedAt: "2026-11-16T23:00:00Z" }];
 
 beforeEach(() => vi.clearAllMocks());
 
@@ -50,11 +61,11 @@ describe("MembersScreen", () => {
     const members = screen.getByRole("table", { name: "Members of Acme Fire" });
     const me = within(members).getByRole("row", { name: /Bo Boss/ });
     expect(within(me).getByText("You")).toBeInTheDocument();
-    expect(within(me).getByText("Admin")).toBeInTheDocument();
+    expect(within(me).getByRole("combobox", { name: "Role of Bo Boss" })).toHaveValue("admin");
     expect(within(me).getByText("16 Nov 2026")).toBeInTheDocument();
     const other = within(members).getByRole("row", { name: /vee@acme\.test/ });
     expect(within(other).getByText("No name yet")).toBeInTheDocument();
-    expect(within(other).getByText("Viewer")).toBeInTheDocument();
+    expect(within(other).getByRole("combobox", { name: "Role of vee@acme.test" })).toHaveValue("viewer");
     expect(screen.getByRole("heading", { name: "Members (2)" })).toBeInTheDocument();
   });
 
@@ -111,5 +122,60 @@ describe("MembersScreen", () => {
     m.revokeInvitation.mockResolvedValueOnce({ ok: false, code: "CONFLICT", message: "This invitation was already accepted or withdrawn." });
     await userEvent.click(screen.getByRole("button", { name: "Withdraw the invitation to old@acme.test" }));
     expect(m.toast).toHaveBeenLastCalledWith({ variant: "danger", title: "This invitation was already accepted or withdrawn." });
+  });
+});
+
+describe("member controls (Story 10.7)", () => {
+  it("locks the only admin's role and membership, and says why", () => {
+    show();
+    expect(screen.getByRole("combobox", { name: "Role of Bo Boss" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Leave the company" })).toBeDisabled();
+    expect(screen.getAllByText("The only admin. Make someone else an admin to change this.").length).toBeGreaterThan(0);
+    expect(screen.getByRole("combobox", { name: "Role of vee@acme.test" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Remove vee@acme.test" })).toBeEnabled();
+  });
+
+  it("changes another member's role at once", async () => {
+    m.changeMemberRole.mockResolvedValueOnce({ ok: true, data: { role: "member", changed: true, self: false } });
+    show();
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Role of vee@acme.test" }), "member");
+    expect(m.changeMemberRole).toHaveBeenCalledWith({ userId: "u2", role: "member" });
+    expect(m.toast).toHaveBeenCalledWith({ variant: "success", title: "vee@acme.test is now Member and was signed out." });
+    expect(m.refresh).toHaveBeenCalled();
+  });
+
+  it("shows a refusal and refreshes the list", async () => {
+    m.changeMemberRole.mockResolvedValueOnce({ ok: false, code: "CONFLICT", message: "A company needs at least one active admin. Make someone else an admin first." });
+    show([], TWO_ADMINS);
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Role of Ann Other" }), "viewer");
+    expect(m.toast).toHaveBeenCalledWith({ variant: "danger", title: expect.stringContaining("at least one active admin") });
+    expect(m.refresh).toHaveBeenCalled();
+  });
+
+  it("asks before the admin changes their own role, then leaves for sign-in", async () => {
+    m.changeMemberRole.mockResolvedValueOnce({ ok: true, data: { role: "viewer", changed: true, self: true } });
+    show([], TWO_ADMINS);
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Role of Bo Boss" }), "viewer");
+    expect(m.changeMemberRole).not.toHaveBeenCalled();
+    const dialog = await screen.findByRole("alertdialog", { name: "Change your own role?" });
+    expect(dialog).toHaveTextContent("You will be Viewer instead of Admin");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Change my role" }));
+    expect(m.changeMemberRole).toHaveBeenCalledWith({ userId: ME, role: "viewer" });
+    expect(m.push).toHaveBeenCalledWith("/sign-in");
+  });
+
+  it("asks before removing, and says the markup sets stay", async () => {
+    show();
+    await userEvent.click(screen.getByRole("button", { name: "Remove vee@acme.test" }));
+    const dialog = await screen.findByRole("alertdialog", { name: "Remove this member?" });
+    expect(dialog).toHaveTextContent("Their own markup sets stay with them");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(m.removeMember).not.toHaveBeenCalled();
+
+    m.removeMember.mockResolvedValueOnce({ ok: true, data: { self: false } });
+    await userEvent.click(screen.getByRole("button", { name: "Remove vee@acme.test" }));
+    await userEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Remove member" }));
+    expect(m.removeMember).toHaveBeenCalledWith({ userId: "u2" });
+    expect(m.toast).toHaveBeenCalledWith({ variant: "success", title: "vee@acme.test is removed from the company and was signed out." });
   });
 });
