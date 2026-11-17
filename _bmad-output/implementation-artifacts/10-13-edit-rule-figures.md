@@ -1,6 +1,6 @@
 # Story 10.13: Edit rule figures
 
-Status: review
+Status: done (the founder kept D1–D10, 2026-11-17)
 
 ## Story
 
