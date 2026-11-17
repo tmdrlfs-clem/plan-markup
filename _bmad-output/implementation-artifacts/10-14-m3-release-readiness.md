@@ -1,6 +1,6 @@
 # Story 10.14: M3 release readiness
 
-Status: review (in-repo work done; AC 1 and AC 2 wait on the production project, docs/release.md → "M3 gate")
+Status: done (closed on the in-repo part by the founder, 2026-11-17, who kept D1–D6; AC 1 and AC 2 are done with the production project, docs/release.md → "M3 gate")
 
 ## Story
 
