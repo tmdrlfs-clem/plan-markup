@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { factorForRatio } from "@/core/calibration/calibration";
 import type { Markup, ZoneMarkup } from "@/core/schema/markup";
 import { headMarkup, pageScaleOf } from "@/core/sprinkler/heads";
-import { newZone } from "@/core/sprinkler/zone";
+import { newZone, withUse } from "@/core/sprinkler/zone";
 import type { LayerView } from "@/features/viewer";
 
 import { COVERAGE_COLOR, COVERAGE_FADE_MS, coverageAlpha, coverageStore, holdCoverage, paintCoverage, resetCoverage, revealCoverage, setCoverageOn, setCoverageShape, zoneCoverage } from "./coverage-overlay";
@@ -19,7 +19,7 @@ const ring = (x: number, y: number, w: number, h: number) => [
 ];
 const zone = (id: string, use?: string): ZoneMarkup => {
   const z = newZone({ id, pageId: "doc:0", createdAt: "2026-11-12T00:00:00.000Z", outer: ring(100, 100, 200, 150), holes: [] }, [], CAL);
-  return use ? { ...z, zone: { ...z.zone, use } } : z;
+  return use ? withUse(z, use) : z;
 };
 const head = (z: ZoneMarkup, x: number, y: number, id: string) => headMarkup({ x, y, kind: "row" }, z, pageScaleOf(CAL), id, "t");
 

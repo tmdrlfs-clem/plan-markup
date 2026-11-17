@@ -3,21 +3,24 @@
 import { resolveUseMap, type ResolvedUseMap } from "@/core/sprinkler/use-map";
 import { saveZoneLayoutsSchema } from "@/core/sprinkler/zone-layout";
 import { getAuthUser } from "@/lib/auth";
+import { getOwnMembership } from "@/lib/db/companies";
 import { readUseHazardRows } from "@/lib/db/rules";
 import { ZoneLayoutError, insertZoneLayouts } from "@/lib/db/zone-layouts";
 import { fail, internalError, type Result } from "@/lib/result";
 import { createServerSupabase } from "@/lib/supabase/server";
 
 // Story 9.3 (FR71, FR72): the use -> hazard mapping the user's zones follow.
-// Companies arrive in M3 (FR72 admin): until then no user has one, so the
-// platform default rows apply (else the built-in JSON).
+// Story 10.12: their company's own mapping when it has one (RLS returns the
+// platform rows and the rows of the user's company), else the platform
+// default rows, else the built-in JSON.
 
 export async function getUseHazardMap(): Promise<Result<ResolvedUseMap>> {
   const user = await getAuthUser();
   if (!user) return fail("UNAUTHENTICATED");
   try {
-    const rows = await readUseHazardRows(await createServerSupabase());
-    return { ok: true, data: resolveUseMap(rows, null) };
+    const client = await createServerSupabase();
+    const [rows, membership] = await Promise.all([readUseHazardRows(client), getOwnMembership(client, user.id)]);
+    return { ok: true, data: resolveUseMap(rows, membership?.companyId ?? null) };
   } catch (error) {
     return internalError("rules.use_map_failed", error);
   }

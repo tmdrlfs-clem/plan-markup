@@ -14,6 +14,7 @@ export const ADMIN_NAV: readonly NavItem[] = [
 export const COMPANY_NAV: readonly NavItem[] = [
   { href: "/company/members", label: "Members" },
   { href: "/company/activity", label: "Activity" },
+  { href: "/company/4541", label: "4541 settings" },
 ];
 
 /** The sections of the admin or company area; the current one is marked for sight and for screen readers. */

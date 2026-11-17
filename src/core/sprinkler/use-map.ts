@@ -2,7 +2,20 @@
 // company's rows when it has any, else the platform default rows, else the
 // built-in JSON (offline, or before the rows are read). Framework-free.
 
-import { HAZARDS, NZS4541_V1, USE_HAZARD_V1, hazardOf, useHazardMapSchema, type Hazard, type HazardRule, type RuleSet, type UseHazardMap } from "./rules/rules";
+import { z } from "zod";
+
+import {
+  HAZARDS,
+  NZS4541_V1,
+  USE_HAZARD_V1,
+  USE_NAME,
+  hazardOf,
+  useHazardMapSchema,
+  type Hazard,
+  type HazardRule,
+  type RuleSet,
+  type UseHazardMap,
+} from "./rules/rules";
 
 /** A `use_hazard_map` row as read. */
 export type UseHazardRow = {
@@ -46,10 +59,46 @@ export function resolveUseMap(rows: readonly UseHazardRow[], companyId: string |
   return { map: USE_HAZARD_V1, source: "built-in" };
 }
 
-/** The uses offered for a zone: the mapping's, plus the zone's own when the mapping lacks it (shown unmapped). */
-export function useOptions(map: UseHazardMap, current: string): { use: string; hazard: Hazard | null }[] {
-  const options: { use: string; hazard: Hazard | null }[] = map.uses.map((u) => ({ use: u.use, hazard: u.hazard }));
-  if (!hazardOf(map, current)) options.push({ use: current, hazard: null });
+/** Story 10.12: at most this many uses in a company's mapping (the database refuses more). */
+export const MAX_COMPANY_USES = 50;
+
+export const USE_NAME_HINT = "Start with a letter; then letters, digits, spaces, / & or - (at most 40 characters).";
+
+/**
+ * Story 10.12 (FR72): a company's mapping as its admin saves it: each use once
+ * (whatever its case), one of them the default for a new zone.
+ */
+export const companyUseMapSchema = z
+  .strictObject({
+    defaultUse: z.string().trim(),
+    uses: z
+      .array(z.strictObject({ use: z.string().trim().regex(USE_NAME, USE_NAME_HINT), hazard: z.enum(HAZARDS, { error: "Choose a hazard class." }) }))
+      .min(1, "A mapping needs at least one use.")
+      .max(MAX_COMPANY_USES, `At most ${MAX_COMPANY_USES} uses.`),
+  })
+  .superRefine((m, ctx) => {
+    const seen = new Set<string>();
+    m.uses.forEach((u, i) => {
+      const key = u.use.toLowerCase();
+      if (seen.has(key)) ctx.addIssue({ code: "custom", message: `“${u.use}” is listed twice.`, path: ["uses", i, "use"] });
+      seen.add(key);
+    });
+    if (!m.uses.some((u) => u.use === m.defaultUse)) ctx.addIssue({ code: "custom", message: "Choose the default use.", path: ["defaultUse"] });
+  });
+export type CompanyUseMapInput = z.infer<typeof companyUseMapSchema>;
+
+/**
+ * The uses offered for a zone: the mapping's, plus the zone's own when the
+ * mapping lacks it. The zone's own use shows the class the zone keeps
+ * (`kept`, Story 10.12), else the mapping's (null: unmapped).
+ */
+export function useOptions(map: UseHazardMap, current: string, kept: Hazard | null = null): { use: string; hazard: Hazard | null }[] {
+  const key = current.trim().toLowerCase();
+  const options: { use: string; hazard: Hazard | null }[] = map.uses.map((u) => ({
+    use: u.use,
+    hazard: kept && u.use.toLowerCase() === key ? kept : u.hazard,
+  }));
+  if (!hazardOf(map, current)) options.push({ use: current, hazard: kept });
   return options;
 }
 

@@ -30,6 +30,9 @@ export type Database = {
 "fn_company_has_other_admin":
 { Args: { "p_company_id": string,"p_user_id": string }; Returns: boolean
                            },
+"fn_company_use_hazard_map":
+{ Args: { "p_company_id": string }; Returns: Json
+                           },
 "fn_effective_access":
 { Args: { "p_drawing_id": string }; Returns: string
                            },
@@ -357,7 +360,13 @@ isOneToOne: false
                     "company_id"?: string | null,"created_at"?: string,"hazard"?: string,"id"?: string,"is_default"?: boolean,"map_version"?: string,"updated_at"?: string,"use"?: string,"verified"?: boolean
                   }
                   Relationships: [
-
+                    {
+      foreignKeyName: "fk_use_hazard_map_company"
+      columns: ["company_id"]
+isOneToOne: false
+      referencedRelation: "companies"
+      referencedColumns: ["id"]
+    }
                   ]
                 },"zone_layouts": {
                   Row: {
@@ -384,14 +393,14 @@ isOneToOne: false
           Views: {
             "zones": {
                   Row: {
-                    "created_at": string | null,"drawing_id": string | null,"hole_tags": Json | null,"holes": Json | null,"id": string | null,"name": string | null,"options": Json | null,"page_id": string | null,"polygon": Json | null,"updated_at": string | null,"use": string | null,"version": number | null
+                    "created_at": string | null,"drawing_id": string | null,"hazard": string | null,"hole_tags": Json | null,"holes": Json | null,"id": string | null,"name": string | null,"options": Json | null,"page_id": string | null,"polygon": Json | null,"updated_at": string | null,"use": string | null,"version": number | null
                   }
                   ComputedFields: never
                   Insert: {
-                           "created_at"?: string | null,"drawing_id"?: string | null,"hole_tags"?: never,"holes"?: never,"id"?: string | null,"name"?: never,"options"?: never,"page_id"?: string | null,"polygon"?: never,"updated_at"?: string | null,"use"?: never,"version"?: number | null
+                           "created_at"?: string | null,"drawing_id"?: string | null,"hazard"?: never,"hole_tags"?: never,"holes"?: never,"id"?: string | null,"name"?: never,"options"?: never,"page_id"?: string | null,"polygon"?: never,"updated_at"?: string | null,"use"?: never,"version"?: number | null
                          }
                         Update: {
-                           "created_at"?: string | null,"drawing_id"?: string | null,"hole_tags"?: never,"holes"?: never,"id"?: string | null,"name"?: never,"options"?: never,"page_id"?: string | null,"polygon"?: never,"updated_at"?: string | null,"use"?: never,"version"?: number | null
+                           "created_at"?: string | null,"drawing_id"?: string | null,"hazard"?: never,"hole_tags"?: never,"holes"?: never,"id"?: string | null,"name"?: never,"options"?: never,"page_id"?: string | null,"polygon"?: never,"updated_at"?: string | null,"use"?: never,"version"?: number | null
                          }
                         Relationships: [
                     {
@@ -483,6 +492,11 @@ isOneToOne: false
 "set_company_member_role":
 { Args: { "p_actor_id": string,"p_role": string,"p_user_id": string }; Returns: {
               "previous_role": string
+            }[]
+                           },
+"set_company_use_hazard_map":
+{ Args: { "p_actor_id": string,"p_uses": Json }; Returns: {
+              "changed": boolean,"map_version": string
             }[]
                            },
 "set_tool_set_published":

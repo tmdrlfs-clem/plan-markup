@@ -125,6 +125,22 @@ $$;
 ALTER FUNCTION "app"."fn_company_has_other_admin"("p_company_id" "uuid", "p_user_id" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "app"."fn_company_use_hazard_map"("p_company_id" "uuid") RETURNS "jsonb"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+  select case when count(*) = 0 then null else pg_catalog.jsonb_build_object(
+    'default', (pg_catalog.array_agg(m.use) filter (where m.is_default))[1],
+    'uses', pg_catalog.jsonb_object_agg(m.use, m.hazard)
+  ) end
+  from public.use_hazard_map m
+  where m.company_id = p_company_id;
+$$;
+
+
+ALTER FUNCTION "app"."fn_company_use_hazard_map"("p_company_id" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "app"."fn_effective_access"("p_drawing_id" "uuid") RETURNS "text"
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO ''
@@ -1315,6 +1331,98 @@ $$;
 ALTER FUNCTION "public"."set_company_member_role"("p_actor_id" "uuid", "p_user_id" "uuid", "p_role" "text") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."set_company_use_hazard_map"("p_actor_id" "uuid", "p_uses" "jsonb") RETURNS TABLE("changed" boolean, "map_version" "text")
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+declare
+  v_company_id uuid;
+  v_before jsonb;
+  v_after jsonb;
+  v_version text;
+begin
+  if p_actor_id is null then
+    raise exception 'actor is required' using errcode = '22023';
+  end if;
+
+  -- The company row is locked: two changes to one mapping run one after the other.
+  select c.id into v_company_id
+  from public.company_members m
+  join public.profiles p on p.id = m.user_id
+  join public.companies c on c.id = m.company_id
+  where m.user_id = p_actor_id and m.role = 'admin' and p.status = 'active'
+  for update of c;
+  if not found then
+    raise exception 'not a company admin' using errcode = 'PT403';
+  end if;
+
+  v_before := app.fn_company_use_hazard_map(v_company_id);
+
+  if p_uses is null or pg_catalog.jsonb_typeof(p_uses) = 'null' then
+    changed := v_before is not null;
+    map_version := null;
+    if changed then
+      delete from public.use_hazard_map m where m.company_id = v_company_id;
+      insert into public.audit_log (actor_id, action, target_type, target_id, detail)
+      values (p_actor_id, 'company.use_hazard_map_reset', 'company', v_company_id, pg_catalog.jsonb_build_object('from', v_before));
+    end if;
+    return next;
+    return;
+  end if;
+
+  if pg_catalog.jsonb_typeof(p_uses) <> 'array' or pg_catalog.jsonb_array_length(p_uses) not between 1 and 50 then
+    raise exception 'uses must be an array of 1 to 50' using errcode = '22023';
+  end if;
+  if exists (
+    select 1 from pg_catalog.jsonb_array_elements(p_uses) e
+    where pg_catalog.jsonb_typeof(e) <> 'object'
+       or pg_catalog.jsonb_typeof(e -> 'use') is distinct from 'string'
+       or pg_catalog.jsonb_typeof(e -> 'hazard') is distinct from 'string'
+       or pg_catalog.jsonb_typeof(e -> 'is_default') is distinct from 'boolean'
+  ) then
+    raise exception 'each use needs use, hazard and is_default' using errcode = '22023';
+  end if;
+  if (select count(*) from pg_catalog.jsonb_array_elements(p_uses) e where (e ->> 'is_default')::boolean) <> 1 then
+    raise exception 'exactly one use is the default' using errcode = '22023';
+  end if;
+
+  select pg_catalog.jsonb_build_object(
+    'default', (pg_catalog.array_agg(e ->> 'use') filter (where (e ->> 'is_default')::boolean))[1],
+    'uses', pg_catalog.jsonb_object_agg(e ->> 'use', e ->> 'hazard')
+  ) into v_after
+  from pg_catalog.jsonb_array_elements(p_uses) e;
+
+  if v_before is not null and v_before = v_after then
+    changed := false;
+    select m.map_version into map_version from public.use_hazard_map m where m.company_id = v_company_id limit 1;
+    return next;
+    return;
+  end if;
+
+  select (count(*) + 1)::text into v_version
+  from public.audit_log a
+  where a.action = 'company.use_hazard_map_changed' and a.target_id = v_company_id;
+
+  delete from public.use_hazard_map m where m.company_id = v_company_id;
+  -- The table's own checks refuse a bad name (23514), hazard (23514) or a use named twice (23505).
+  insert into public.use_hazard_map (company_id, map_version, use, hazard, is_default, verified)
+  select v_company_id, v_version, e ->> 'use', e ->> 'hazard', (e ->> 'is_default')::boolean, true
+  from pg_catalog.jsonb_array_elements(p_uses) e;
+
+  insert into public.audit_log (actor_id, action, target_type, target_id, detail)
+  values (p_actor_id, 'company.use_hazard_map_changed', 'company', v_company_id,
+          pg_catalog.jsonb_build_object('version', v_version, 'from', v_before, 'to', v_after));
+
+  changed := true;
+  map_version := v_version;
+  return next;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."set_company_use_hazard_map"("p_actor_id" "uuid", "p_uses" "jsonb") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."set_tool_set_published"("p_actor_id" "uuid", "p_tool_set_id" "uuid", "p_published" boolean) RETURNS TABLE("changed" boolean, "company_name" "text")
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO ''
@@ -1428,7 +1536,7 @@ CREATE TABLE IF NOT EXISTS "public"."audit_log" (
     "target_type" "text" NOT NULL,
     "target_id" "uuid" NOT NULL,
     "detail" "jsonb" DEFAULT '{}'::"jsonb" NOT NULL,
-    CONSTRAINT "audit_log_action_check" CHECK (("action" = ANY (ARRAY['user.activated'::"text", 'user.deactivated'::"text", 'user.plan_changed'::"text", 'company.created'::"text", 'company.plan_changed'::"text", 'company.member_invited'::"text", 'company.invitation_revoked'::"text", 'company.member_joined'::"text", 'company.member_role_changed'::"text", 'company.member_removed'::"text", 'company.tool_set_published'::"text", 'company.tool_set_withdrawn'::"text", 'support.markup_sets_viewed'::"text"]))),
+    CONSTRAINT "audit_log_action_check" CHECK (("action" = ANY (ARRAY['user.activated'::"text", 'user.deactivated'::"text", 'user.plan_changed'::"text", 'company.created'::"text", 'company.plan_changed'::"text", 'company.member_invited'::"text", 'company.invitation_revoked'::"text", 'company.member_joined'::"text", 'company.member_role_changed'::"text", 'company.member_removed'::"text", 'company.tool_set_published'::"text", 'company.tool_set_withdrawn'::"text", 'company.use_hazard_map_changed'::"text", 'company.use_hazard_map_reset'::"text", 'support.markup_sets_viewed'::"text"]))),
     CONSTRAINT "audit_log_detail_check" CHECK (("jsonb_typeof"("detail") = 'object'::"text")),
     CONSTRAINT "audit_log_target_type_check" CHECK (("target_type" = ANY (ARRAY['user'::"text", 'company'::"text"])))
 );
@@ -1767,7 +1875,7 @@ CREATE TABLE IF NOT EXISTS "public"."use_hazard_map" (
 ALTER TABLE "public"."use_hazard_map" OWNER TO "postgres";
 
 
-COMMENT ON TABLE "public"."use_hazard_map" IS 'Use → hazard class (Story 9.1). company_id null = platform default. Read: active users; write: platform admin.';
+COMMENT ON TABLE "public"."use_hazard_map" IS 'Use → hazard class (Story 9.1). company_id null = platform default (read: active users; write: platform admin). A company''s rows (Story 10.12): read by its members, written by set_company_use_hazard_map().';
 
 
 
@@ -1812,7 +1920,8 @@ CREATE OR REPLACE VIEW "public"."zones" WITH ("security_invoker"='true', "securi
     COALESCE((("props" -> 'zone'::"text") -> 'options'::"text"), '{}'::"jsonb") AS "options",
     "version",
     "created_at",
-    "updated_at"
+    "updated_at",
+    (("props" -> 'zone'::"text") ->> 'hazard'::"text") AS "hazard"
    FROM "public"."markups" "m"
   WHERE (("type" = 'zone'::"text") AND ("deleted_at" IS NULL));
 
@@ -2128,6 +2237,11 @@ ALTER TABLE ONLY "public"."tool_sets"
 
 
 
+ALTER TABLE ONLY "public"."use_hazard_map"
+    ADD CONSTRAINT "fk_use_hazard_map_company" FOREIGN KEY ("company_id") REFERENCES "public"."companies"("id") ON DELETE CASCADE;
+
+
+
 ALTER TABLE ONLY "public"."markups"
     ADD CONSTRAINT "markups_author_id_fkey" FOREIGN KEY ("author_id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
 
@@ -2413,11 +2527,11 @@ CREATE POLICY "tools_update_own" ON "public"."tools" FOR UPDATE TO "authenticate
 ALTER TABLE "public"."use_hazard_map" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "use_hazard_map_select_active" ON "public"."use_hazard_map" FOR SELECT TO "authenticated" USING (( SELECT "app"."fn_is_active_user"() AS "fn_is_active_user"));
+CREATE POLICY "use_hazard_map_select_platform_or_company" ON "public"."use_hazard_map" FOR SELECT TO "authenticated" USING (((("company_id" IS NULL) AND ( SELECT "app"."fn_is_active_user"() AS "fn_is_active_user")) OR (("company_id" IS NOT NULL) AND "app"."fn_is_company_member"("company_id"))));
 
 
 
-CREATE POLICY "use_hazard_map_write_admin" ON "public"."use_hazard_map" TO "authenticated" USING (( SELECT "app"."fn_is_platform_admin"() AS "fn_is_platform_admin")) WITH CHECK (( SELECT "app"."fn_is_platform_admin"() AS "fn_is_platform_admin"));
+CREATE POLICY "use_hazard_map_write_admin" ON "public"."use_hazard_map" TO "authenticated" USING ((("company_id" IS NULL) AND ( SELECT "app"."fn_is_platform_admin"() AS "fn_is_platform_admin"))) WITH CHECK ((("company_id" IS NULL) AND ( SELECT "app"."fn_is_platform_admin"() AS "fn_is_platform_admin")));
 
 
 
@@ -2456,6 +2570,10 @@ REVOKE ALL ON FUNCTION "app"."fn_company_admin_guard"("p_actor_id" "uuid", "p_us
 
 
 REVOKE ALL ON FUNCTION "app"."fn_company_has_other_admin"("p_company_id" "uuid", "p_user_id" "uuid") FROM PUBLIC;
+
+
+
+REVOKE ALL ON FUNCTION "app"."fn_company_use_hazard_map"("p_company_id" "uuid") FROM PUBLIC;
 
 
 
@@ -2601,6 +2719,11 @@ GRANT ALL ON FUNCTION "public"."revoke_company_invitation"("p_actor_id" "uuid", 
 
 REVOKE ALL ON FUNCTION "public"."set_company_member_role"("p_actor_id" "uuid", "p_user_id" "uuid", "p_role" "text") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."set_company_member_role"("p_actor_id" "uuid", "p_user_id" "uuid", "p_role" "text") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."set_company_use_hazard_map"("p_actor_id" "uuid", "p_uses" "jsonb") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."set_company_use_hazard_map"("p_actor_id" "uuid", "p_uses" "jsonb") TO "service_role";
 
 
 

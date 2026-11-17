@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { markupSchema, type Markup, type ZoneMarkup } from "@/core/schema/markup";
+import { ZONE_HAZARDS, markupSchema, type Markup, type ZoneMarkup } from "@/core/schema/markup";
 import { hitMarkup } from "@/core/markup/geometry";
 import { MarkupIndex } from "@/core/markup/markup-index";
 
-import { defaultHoleTag, formatZoneArea, holeTagOf, newZone, nextZoneName, withHoleTag, zoneAreaM2, zoneChecklist, zoneHazard } from "./zone";
+import { HAZARDS, USE_HAZARD_V1, type UseHazardMap } from "./rules/rules";
+import { defaultHoleTag, formatZoneArea, holeTagOf, mappingChange, newZone, nextZoneName, withHoleTag, withUse, zoneAreaM2, zoneChecklist, zoneHazard } from "./zone";
 
 // 1 user unit = 10 mm: a 1000 × 800 ring is 10 m × 8 m.
 const CAL = { xFactor: 10, yFactor: 10 };
@@ -60,6 +61,7 @@ describe("zones (Story 9.2)", () => {
     expect(z.zone).toEqual({
       name: "Zone 5",
       use: "Office",
+      hazard: "ELH",
       holeTags: ["column", "shaft"],
     });
     expect(zoneHazard(z)).toBe("ELH");
@@ -129,5 +131,41 @@ describe("zones (Story 9.2)", () => {
     // The zone drawn after the line still yields to it.
     expect(new MarkupIndex([line, z], 1).hit({ x: 300, y: 300 }, 2)?.id).toBe(line.id);
     expect(new MarkupIndex([line, z], 1).hit({ x: 600, y: 300 }, 2)?.id).toBe(z.id);
+  });
+});
+
+describe("a zone keeps the class its use gave it (Story 10.12, FR72)", () => {
+  const changed: UseHazardMap = { ...USE_HAZARD_V1, version: "2", uses: USE_HAZARD_V1.uses.filter((u) => u.use !== "Storage").map((u) => (u.use === "Office" ? { ...u, hazard: "OH1" } : u)) };
+
+  it("has the same classes as the rules", () => {
+    expect(ZONE_HAZARDS).toEqual(HAZARDS);
+  });
+
+  it("a new zone takes the default use's class; a later mapping does not re-class it", () => {
+    const z = zone();
+    expect(z.zone.hazard).toBe("ELH");
+    expect(zoneHazard(z, changed)).toBe("ELH");
+    expect(newZone({ id: ID, pageId: "doc:0", createdAt: "2026-11-12T00:00:00Z", outer, holes: [] }, [], CAL, 1, changed).zone).toMatchObject({ use: "Office", hazard: "OH1" });
+    // A zone drawn before classes were kept follows the mapping.
+    expect(zoneHazard({ ...z, zone: { name: "A", use: "Office" } }, changed)).toBe("OH1");
+  });
+
+  it("choosing a use gives its class under the mapping in force, keeping the name, tags and options", () => {
+    const z = { ...zone(), zone: { name: "A", use: "Office", hazard: "ELH" as const, holeTags: ["column" as const], options: { grid: 600 } } };
+    expect(withUse(z, "Storage").zone).toEqual({ name: "A", use: "Storage", hazard: "OH2", holeTags: ["column"], options: { grid: 600 } });
+    expect(withUse(z, "Office", changed).zone.hazard).toBe("OH1");
+    expect(withUse(z, "Hangar").zone).toEqual({ name: "A", use: "Hangar", holeTags: ["column"], options: { grid: 600 } });
+    expect(markupSchema.safeParse(withUse(z, "Storage")).success).toBe(true);
+    expect(markupSchema.safeParse({ ...z, zone: { ...z.zone, hazard: "HH" } }).success).toBe(false);
+  });
+
+  it("tells a kept class from today's mapping", () => {
+    const office = zone();
+    const store = withUse(zone(), "Storage");
+    expect(mappingChange(office)).toBeNull();
+    expect(mappingChange(office, changed)).toEqual({ kept: "ELH", now: "OH1" });
+    expect(mappingChange(store, changed)).toEqual({ kept: "OH2", now: null });
+    expect(mappingChange({ ...office, zone: { name: "A", use: "Office" } }, changed)).toBeNull();
+    expect(zoneChecklist([office, store], changed).uses).toBe(true);
   });
 });

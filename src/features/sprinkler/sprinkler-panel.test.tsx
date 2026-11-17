@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { factorForRatio, type Calibration } from "@/core/calibration/calibration";
 import type { ZoneMarkup } from "@/core/schema/markup";
-import { newZone } from "@/core/sprinkler/zone";
+import { newZone, withUse } from "@/core/sprinkler/zone";
 import { calibrateStore } from "@/features/calibration";
 import { editorStore, markupsOf, resetEditor, setDocMarkups } from "@/features/editor/editor-store";
 import { undoActive } from "@/features/editor/undo-store";
@@ -235,10 +235,55 @@ describe("SprinklerPanel (Story 9.2)", () => {
     expect(screen.getByTestId("hazard-chip").textContent).toBe("ELH");
   });
 
+  it("a zone keeps its class when the mapping changes; Change to applies the mapping's (Story 10.12)", async () => {
+    // The mapping now gives Office OH1 and no longer names Storage.
+    const base = useMapStore.getState().map;
+    getUseHazardMap.mockResolvedValue({
+      ok: true,
+      data: {
+        source: "company",
+        map: { ...base, version: "3", verified: true, uses: base.uses.filter((u) => u.use !== "Storage").map((u) => (u.use === "Office" ? { ...u, hazard: "OH1" } : u)) },
+      },
+    });
+    const office = zone();
+    const store = withUse({ ...zone(), id: "00000000-0000-7000-8000-0000000000aa", zone: { ...zone().zone, name: "Store" } }, "Storage");
+    expect(office.zone.hazard).toBe("ELH");
+    expect(store.zone.hazard).toBe("OH2");
+    const user = setup([office, store]);
+    await vi.waitFor(() => expect(useMapStore.getState().loaded).toBe(true));
+    expect(screen.getAllByTestId("hazard-chip").map((c) => c.textContent)).toEqual(["ELH", "OH2"]);
+    expect(
+      within(screen.getByTestId("sprinkler-checklist"))
+        .getAllByRole("listitem")
+        .map((li) => li.getAttribute("data-done"))[1],
+    ).toBe("true");
+    expect(screen.getByRole("combobox", { name: "Use of Zone 1" }).textContent).toContain("Office (ELH)");
+    expect(screen.getByRole("combobox", { name: "Use of Store" }).textContent).toContain("Storage (OH2)");
+
+    await user.click(screen.getByRole("button", { name: /Store/ }));
+    let kept = screen.getByTestId("zone-kept-class");
+    expect(kept.textContent).toContain("This zone keeps OH2");
+    expect(kept.textContent).toContain("Storage is no longer in the mapping.");
+    expect(within(kept).queryByRole("button")).toBeNull();
+    expect(screen.getByTestId("zone-figures").textContent).toContain("OH2 · NZS 4541 v1");
+    expect(screen.getByTestId("mapping-source").textContent).toBe("Company mapping v3");
+
+    await user.click(screen.getByRole("button", { name: /Zone 1/ }));
+    kept = screen.getByTestId("zone-kept-class");
+    expect(kept.textContent).toContain("This zone keeps ELH");
+    expect(kept.textContent).toContain("The mapping now gives Office OH1.");
+    await user.click(within(kept).getByRole("button", { name: "Change to OH1" }));
+    expect((editorStore.getState().doc.markups.doc[0] as ZoneMarkup).zone).toMatchObject({ use: "Office", hazard: "OH1" });
+    expect(screen.getAllByTestId("hazard-chip")[0].textContent).toBe("OH1");
+    expect(screen.queryByTestId("zone-kept-class")).toBeNull();
+    act(() => void undoActive());
+    expect(screen.getAllByTestId("hazard-chip")[0].textContent).toBe("ELH");
+  });
+
   it("an unmapped use shows ? and asks for a use; the checklist's Uses stays open", async () => {
     getUseHazardMap.mockResolvedValue({ ok: false, code: "INTERNAL", message: "x" });
     const z = zone();
-    const user = setup([{ ...z, zone: { ...z.zone, use: "Hangar" } }]);
+    const user = setup([withUse(z, "Hangar")]);
     expect(screen.getByTestId("hazard-chip").textContent).toBe("?");
     expect(
       within(screen.getByTestId("sprinkler-checklist"))
@@ -308,7 +353,7 @@ describe("SprinklerPanel Place heads (Story 9.8)", () => {
 
   it("names the selected zones and shows an error card that reveals the zone", async () => {
     const a = zone();
-    const b = { ...zone(), zone: { ...zone().zone, name: "Store", use: "Hangar" } };
+    const b = withUse({ ...zone(), zone: { ...zone().zone, name: "Store" } }, "Hangar");
     const user = setup([a, b]);
     await user.click(screen.getByRole("button", { name: /Store/ }));
     expect(screen.getByTestId("place-heads").textContent).toBe("Place heads (1 selected)");

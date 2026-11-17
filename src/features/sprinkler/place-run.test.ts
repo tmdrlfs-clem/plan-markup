@@ -6,7 +6,7 @@ import type { Markup, ZoneMarkup } from "@/core/schema/markup";
 import { headMarkup, isHead, pageScaleOf, type HeadMarkup } from "@/core/sprinkler/heads";
 import type { EngineReply } from "@/core/sprinkler/engine/protocol";
 import { NZS4541_V1, USE_HAZARD_V1 } from "@/core/sprinkler/rules/rules";
-import { newZone } from "@/core/sprinkler/zone";
+import { newZone, withUse } from "@/core/sprinkler/zone";
 import { editorStore, resetEditor, setDocMarkups, setSelection } from "@/features/editor/editor-store";
 import { coverageStore } from "@/features/editor/coverage-overlay";
 import { redoActive, undoActive } from "@/features/editor/undo-store";
@@ -39,7 +39,8 @@ let n = 0;
 function zone(outer = ring(100, 100, 200, 150), use?: string): ZoneMarkup {
   n++;
   const z = newZone({ id: `00000000-0000-7000-8000-${String(n).padStart(12, "0")}`, pageId: "doc:0", createdAt: "2026-11-12T00:00:00.000Z", outer, holes: [] }, [], CAL);
-  return use ? { ...z, zone: { ...z.zone, name: `Z${n}`, use } } : { ...z, zone: { ...z.zone, name: `Z${n}` } };
+  const named = { ...z, zone: { ...z.zone, name: `Z${n}` } };
+  return use ? withUse(named, use) : named;
 }
 
 let ids = 0;

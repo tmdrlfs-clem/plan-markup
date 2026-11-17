@@ -57,18 +57,18 @@ select is(
   'applied', 'a zone is created through apply_markup_ops');
 
 select results_eq(
-  $$ select name, use, jsonb_array_length(polygon), jsonb_array_length(holes), hole_tags ->> 0, options from public.zones $$,
-  $$ values ('Zone 1', 'Office', 4, 1, 'column', '{}'::jsonb) $$,
-  'A reads the zone''s polygon, holes, tags, use and options');
+  $$ select name, use, jsonb_array_length(polygon), jsonb_array_length(holes), hole_tags ->> 0, options, hazard from public.zones $$,
+  $$ values ('Zone 1', 'Office', 4, 1, 'column', '{}'::jsonb, null::text) $$,
+  'A reads the zone''s polygon, holes, tags, use and options (no hazard class kept: it follows the mapping)');
 
 select is(
   public.apply_markup_ops('a9000000-0000-4000-8000-000000000001', jsonb_build_array(pg_temp.zop('update', '92', 1, 2000,
-    '{"props": {"createdAt": "2026-11-12T00:00:00Z", "zone": {"name": "Open office", "use": "Storage", "holeTags": ["shaft"]}}}'::jsonb))) -> 0 ->> 'status',
+    '{"props": {"createdAt": "2026-11-12T00:00:00Z", "zone": {"name": "Open office", "use": "Storage", "hazard": "OH2", "holeTags": ["shaft"]}}}'::jsonb))) -> 0 ->> 'status',
   'applied', 'a zone is changed through apply_markup_ops');
 select results_eq(
-  $$ select name, use, hole_tags ->> 0 from public.zones $$,
-  $$ values ('Open office', 'Storage', 'shaft') $$,
-  'the view shows the change');
+  $$ select name, use, hole_tags ->> 0, hazard from public.zones $$,
+  $$ values ('Open office', 'Storage', 'shaft', 'OH2') $$,
+  'the view shows the change, and the hazard class the zone keeps (Story 10.12)');
 
 select is(
   public.apply_markup_ops('a9000000-0000-4000-8000-000000000001', jsonb_build_array(pg_temp.zop('delete', '93', 2, 3000, '{}'::jsonb))) -> 0 ->> 'status',

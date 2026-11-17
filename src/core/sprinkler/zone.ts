@@ -52,9 +52,33 @@ export function defaultUse(map: UseHazardMap = USE_HAZARD_V1): string {
   return map.defaultUse;
 }
 
-/** The zone's hazard class under `map` (null: a use the map lacks). */
+/**
+ * The zone's hazard class: the one it was given when its use was chosen (Story
+ * 10.12, FR72: a later change of the mapping leaves the zone as classed), else
+ * its use's under `map` (a zone drawn before classes were kept; null: a use the
+ * map lacks).
+ */
 export function zoneHazard(z: ZoneMarkup, map: UseHazardMap = USE_HAZARD_V1): Hazard | null {
-  return hazardOf(map, z.zone.use);
+  return z.zone.hazard ?? hazardOf(map, z.zone.use);
+}
+
+/** The zone with `use` and the hazard class `map` gives that use (none kept when the map lacks the use). */
+export function withUse(z: ZoneMarkup, use: string, map: UseHazardMap = USE_HAZARD_V1): ZoneMarkup {
+  const { name, holeTags, options } = z.zone;
+  const hazard = hazardOf(map, use);
+  return { ...z, zone: { name, use, ...(hazard ? { hazard } : {}), ...(holeTags ? { holeTags } : {}), ...(options ? { options } : {}) } };
+}
+
+/**
+ * How a zone's kept class stands against `map` now: null when they agree (or
+ * the zone keeps no class); else the class the map gives its use today (null:
+ * the map no longer names the use).
+ */
+export function mappingChange(z: ZoneMarkup, map: UseHazardMap = USE_HAZARD_V1): { kept: Hazard; now: Hazard | null } | null {
+  const kept = z.zone.hazard;
+  if (!kept) return null;
+  const now = hazardOf(map, z.zone.use);
+  return now === kept ? null : { kept, now };
 }
 
 /** A hole's tag: its own, else the default for its size. */
@@ -85,7 +109,7 @@ export type ZoneInput = {
   holes: readonly (readonly Point[])[];
 };
 
-/** A new zone from a filled or drawn ring: the next name, the default use, each hole tagged by its size. */
+/** A new zone from a filled or drawn ring: the next name, the default use and its hazard class, each hole tagged by its size. */
 export function newZone(
   input: ZoneInput,
   existing: readonly ZoneMarkup[],
@@ -98,6 +122,8 @@ export function newZone(
     const mm2 = areaMm2(h, undefined, calibration, userUnit);
     return defaultHoleTag(mm2 === null ? null : mm2 / 1e6);
   });
+  const use = defaultUse(map);
+  const hazard = hazardOf(map, use);
   return {
     id: input.id,
     pageId: input.pageId,
@@ -108,7 +134,8 @@ export function newZone(
     ...(holes.length > 0 ? { holes } : {}),
     zone: {
       name: nextZoneName(existing),
-      use: defaultUse(map),
+      use,
+      ...(hazard ? { hazard } : {}),
       ...(holes.length > 0 ? { holeTags } : {}),
     },
   };

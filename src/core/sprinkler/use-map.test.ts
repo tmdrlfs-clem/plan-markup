@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { NZS4541_V1, USE_HAZARD_V1 } from "./rules/rules";
-import { figureRows, figuresOf, resolveUseMap, useOptions, type UseHazardRow } from "./use-map";
+import { MAX_COMPANY_USES, companyUseMapSchema, figureRows, figuresOf, resolveUseMap, useOptions, type UseHazardRow } from "./use-map";
 
 const COMPANY = "c0000000-0000-4000-8000-000000000001";
 const platform: UseHazardRow[] = USE_HAZARD_V1.uses.map((u) => ({
@@ -41,6 +41,10 @@ describe("use → hazard mapping (Story 9.3)", () => {
   it("offers the mapping's uses, plus the zone's own when unmapped", () => {
     expect(useOptions(USE_HAZARD_V1, "Office")).toHaveLength(8);
     expect(useOptions(USE_HAZARD_V1, "Hangar").at(-1)).toEqual({ use: "Hangar", hazard: null });
+    // Story 10.12: the zone's own use shows the class the zone keeps.
+    expect(useOptions(USE_HAZARD_V1, "Hangar", "OH3").at(-1)).toEqual({ use: "Hangar", hazard: "OH3" });
+    expect(useOptions(USE_HAZARD_V1, "office", "OH3").filter((o) => o.hazard === "OH3").map((o) => o.use)).toContain("Office");
+    expect(useOptions(USE_HAZARD_V1, "Office", "OH3")).toHaveLength(8);
   });
 
   it("shows a hazard's figures and the ruleset version", () => {
@@ -50,5 +54,30 @@ describe("use → hazard mapping (Story 9.3)", () => {
     expect(figureRows(f.rule).map((r) => `${r.key} ${r.value}`)).toEqual(["Amax 21 m²", "Smax 4.6 m", "Smin 1.8 m", "Wmax 2.3 m", "Wmin 0.05 m"]);
     expect(figureRows(figuresOf("OH2")!.rule)[0].value).toBe("12 m²");
     expect(figuresOf(null)).toBeNull();
+  });
+});
+
+describe("a company's mapping as its admin saves it (Story 10.12)", () => {
+  const ok = { defaultUse: "Lab", uses: [{ use: "Office", hazard: "OH1" }, { use: "Lab", hazard: "OH3" }] };
+  const paths = (input: unknown) => companyUseMapSchema.safeParse(input).error?.issues.map((i) => i.path.join("."));
+
+  it("accepts each use once with one of them the default, trimming names", () => {
+    expect(companyUseMapSchema.parse(ok)).toEqual(ok);
+    expect(companyUseMapSchema.parse({ defaultUse: " Lab ", uses: [{ use: "  Lab ", hazard: "ELH" }] })).toEqual({ defaultUse: "Lab", uses: [{ use: "Lab", hazard: "ELH" }] });
+    expect(companyUseMapSchema.safeParse({ defaultUse: "A", uses: Array.from({ length: MAX_COMPANY_USES }, (_, i) => ({ use: `A${i || ""}`, hazard: "OH1" })) }).success).toBe(true);
+  });
+
+  it("refuses a bad name, an unknown hazard, a use twice (whatever its case), no default, none or too many, and extra keys", () => {
+    expect(paths({ ...ok, uses: [...ok.uses, { use: "9 lives", hazard: "OH1" }] })).toEqual(["uses.2.use"]);
+    expect(paths({ ...ok, uses: [...ok.uses, { use: "", hazard: "OH1" }] })).toEqual(["uses.2.use"]);
+    expect(paths({ ...ok, uses: [...ok.uses, { use: "A".repeat(41), hazard: "OH1" }] })).toEqual(["uses.2.use"]);
+    expect(paths({ ...ok, uses: [...ok.uses, { use: "Shop", hazard: "HH" }] })).toEqual(["uses.2.hazard"]);
+    expect(paths({ ...ok, uses: [...ok.uses, { use: "OFFICE", hazard: "OH2" }] })).toEqual(["uses.2.use"]);
+    expect(paths({ ...ok, defaultUse: "Shop" })).toEqual(["defaultUse"]);
+    expect(paths({ ...ok, defaultUse: "lab" })).toEqual(["defaultUse"]);
+    expect(paths({ defaultUse: "", uses: [] })).toEqual(["uses", "defaultUse"]);
+    expect(companyUseMapSchema.safeParse({ defaultUse: "A", uses: Array.from({ length: MAX_COMPANY_USES + 1 }, (_, i) => ({ use: `A${i || ""}`, hazard: "OH1" })) }).success).toBe(false);
+    expect(companyUseMapSchema.safeParse({ ...ok, companyId: "c1" }).success).toBe(false);
+    expect(companyUseMapSchema.safeParse({ ...ok, uses: [{ use: "Lab", hazard: "OH3", verified: true }] }).success).toBe(false);
   });
 });

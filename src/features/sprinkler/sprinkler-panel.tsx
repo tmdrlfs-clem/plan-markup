@@ -26,7 +26,7 @@ import type { OracleReport } from "@/core/sprinkler/oracle";
 import { ADVISORY_NOTICE, reportRows, ruleBreaks, zoneStatus, type ZoneStatus } from "@/core/sprinkler/report";
 import type { UseHazardMap } from "@/core/sprinkler/rules/rules";
 import { MAPPING_SOURCE_LABELS, figureRows, figuresOf, useOptions, type MappingSource } from "@/core/sprinkler/use-map";
-import { HOLE_TAG_LABELS, ZONE_COLOR, formatZoneArea, holeTagOf, isZone, withHoleTag, zoneAreaM2, zoneChecklist, zoneHazard } from "@/core/sprinkler/zone";
+import { HOLE_TAG_LABELS, ZONE_COLOR, formatZoneArea, holeTagOf, isZone, mappingChange, withHoleTag, withUse, zoneAreaM2, zoneChecklist, zoneHazard } from "@/core/sprinkler/zone";
 import { openCalibrate } from "@/features/calibration";
 import { revealFlag, armGuideDraw, guideDrawStore, headDimensionsStore, setHeadDimensionsOn, armHeadPlace, coverageStore, editorStore, executeOp, headPlaceStore, markupsOf, armZoneDraw, setCoverageOn, setCoverageShape, setSelection, zoneDrawStore } from "@/features/editor";
 import { FirstUseTip } from "@/features/tips";
@@ -96,9 +96,11 @@ function revealZone(z: ZoneMarkup, pageIndex: number): void {
   setSelection([z.id]);
 }
 
-function setUse(documentId: string, z: ZoneMarkup, use: string): void {
-  if (use === z.zone.use) return;
-  executeOp({ kind: "markups.update", documentId, before: [z], after: [{ ...z, zone: { ...z.zone, use } }] }, CHANGE_USE);
+/** Gives the zone `use` and the hazard class the mapping gives that use now (also for the use it already has). */
+function setUse(documentId: string, z: ZoneMarkup, use: string, map: UseHazardMap): void {
+  const after = withUse(z, use, map);
+  if (after.zone.use === z.zone.use && after.zone.hazard === z.zone.hazard) return;
+  executeOp({ kind: "markups.update", documentId, before: [z], after: [after] }, CHANGE_USE);
 }
 
 function setHoleTag(documentId: string, z: ZoneMarkup, index: number, tag: HoleTag, calibration: Calibration | null, userUnit: number): void {
@@ -339,7 +341,7 @@ export function SprinklerPanel({ emptyText }: { emptyText: string }) {
       )}
       <StatusAnnouncer statuses={zones.map((z) => ({ id: z.id, name: z.zone.name, status: statusOf(z.id) }))} />
       {current && checks[current.id] ? <ZoneReport zone={current} report={checks[current.id]} hazard={zoneHazard(current, map) ?? "?"} focus={focus} /> : null}
-      {current ? <ZoneFiguresPanel zone={current} map={map} source={mapSource} /> : null}
+      {current ? <ZoneFiguresPanel zone={current} map={map} source={mapSource} documentId={documentId} /> : null}
       {current && (current.holes?.length ?? 0) > 0 ? (
         <div className="flex flex-col gap-2 border-t border-border p-3" data-testid="zone-holes">
           <p className="text-ws-sm font-semibold">Holes in {current.zone.name}</p>
@@ -474,7 +476,10 @@ const ZoneRow = memo(function ZoneRow({
   pageIndex,
 }: ZoneRowProps) {
   const onSelect = () => revealZone(zone, pageIndex);
-  const onUse = (use: string) => setUse(documentId, zone, use);
+  const onUse = (use: string) => {
+    // The use it already has stays as classed; Change to … in the figures applies today's mapping.
+    if (use !== zone.zone.use) setUse(documentId, zone, use, map);
+  };
   const hazard = zoneHazard(zone, map);
   return (
     <li data-testid="zone-row" data-selected={selected} className={cx("flex flex-col gap-1 px-3 py-1.5", selected ? "bg-accent-soft text-text" : "hover:bg-surface-3")}>
@@ -496,7 +501,7 @@ const ZoneRow = memo(function ZoneRow({
             labelHidden
             value={zone.zone.use}
             onValueChange={onUse}
-            options={useOptions(map, zone.zone.use).map((o) => ({ value: o.use, label: o.hazard ? `${o.use} (${o.hazard})` : `${o.use} (not mapped)` }))}
+            options={useOptions(map, zone.zone.use, zone.zone.hazard ?? null).map((o) => ({ value: o.use, label: o.hazard ? `${o.use} (${o.hazard})` : `${o.use} (not mapped)` }))}
           />
         </div>
         <span
@@ -647,8 +652,9 @@ function StatusAnnouncer({ statuses }: { statuses: readonly { id: string; name: 
   );
 }
 
-function ZoneFiguresPanel({ zone, map, source }: { zone: ZoneMarkup; map: UseHazardMap; source: MappingSource }) {
+function ZoneFiguresPanel({ zone, map, source, documentId }: { zone: ZoneMarkup; map: UseHazardMap; source: MappingSource; documentId: string }) {
   const figures = figuresOf(zoneHazard(zone, map));
+  const change = mappingChange(zone, map);
   return (
     <section className="flex flex-col gap-1 border-t border-border p-3 text-ws-sm" aria-label={`Rule figures for ${zone.zone.name}`} data-testid="zone-figures">
       {figures ? (
@@ -670,6 +676,20 @@ function ZoneFiguresPanel({ zone, map, source }: { zone: ZoneMarkup; map: UseHaz
       ) : (
         <p className="text-warning">{UNMAPPED_USE}</p>
       )}
+      {change ? (
+        <div className="flex flex-col items-start gap-1" data-testid="zone-kept-class">
+          <p>
+            {change.now
+              ? `This zone keeps ${change.kept}, the class ${zone.zone.use} had when it was chosen. The mapping now gives ${zone.zone.use} ${change.now}.`
+              : `This zone keeps ${change.kept}, the class ${zone.zone.use} had when it was chosen. ${zone.zone.use} is no longer in the mapping.`}
+          </p>
+          {change.now ? (
+            <Button variant="secondary" size="sm" onClick={() => setUse(documentId, zone, zone.zone.use, map)}>
+              Change to {change.now}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
       <p className="text-muted" data-testid="mapping-source">
         {MAPPING_SOURCE_LABELS[source]} v{map.version}
         {map.verified ? "" : ` (${DRAFT_MAPPING})`}
