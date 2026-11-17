@@ -1,6 +1,6 @@
 # Story 10.12: Company use → hazard mapping
 
-Status: review
+Status: done
 
 ## Story
 
