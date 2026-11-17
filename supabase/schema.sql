@@ -3154,17 +3154,17 @@ GRANT UPDATE("theme") ON TABLE "public"."profiles" TO "authenticated";
 
 
 
-GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."rule_figures" TO "authenticated";
+GRANT SELECT,MAINTAIN ON TABLE "public"."rule_figures" TO "authenticated";
 GRANT ALL ON TABLE "public"."rule_figures" TO "service_role";
 
 
 
-GRANT ALL ON TABLE "public"."signatures" TO "authenticated";
+GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."signatures" TO "authenticated";
 GRANT ALL ON TABLE "public"."signatures" TO "service_role";
 
 
 
-GRANT SELECT,REFERENCES,DELETE,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."tool_sets" TO "authenticated";
+GRANT SELECT,DELETE,MAINTAIN ON TABLE "public"."tool_sets" TO "authenticated";
 GRANT ALL ON TABLE "public"."tool_sets" TO "service_role";
 
 
@@ -3193,12 +3193,12 @@ GRANT INSERT("updated_at"),UPDATE("updated_at") ON TABLE "public"."tool_sets" TO
 
 
 
-GRANT ALL ON TABLE "public"."tools" TO "authenticated";
+GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."tools" TO "authenticated";
 GRANT ALL ON TABLE "public"."tools" TO "service_role";
 
 
 
-GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."use_hazard_map" TO "authenticated";
+GRANT SELECT,MAINTAIN ON TABLE "public"."use_hazard_map" TO "authenticated";
 GRANT ALL ON TABLE "public"."use_hazard_map" TO "service_role";
 
 
@@ -3234,8 +3234,6 @@ ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON FUN
 
 
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "postgres";
-ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "anon";
-ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "authenticated";
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "service_role";
 
 

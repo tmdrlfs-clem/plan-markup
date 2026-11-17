@@ -12,6 +12,7 @@ Each job skips itself with a notice until its secrets exist. Run it by hand from
 ## One-time setup
 
 1. **Supabase project**: create "plan-markup" in region **ap-southeast-2 (Sydney)**, Postgres 17. Keep the database password.
+   - Before the first pilot company (Story 10.14, NFR39): upgrade the organisation to **Pro** and turn on **Point in Time Recovery** with 7 days of retention (Project Settings → Add-ons; the PITR add-on needs at least the Small compute). Write down the restore steps (Database → Backups → Point in time) and do one practice restore into a new project.
 2. **Supabase Auth settings** (Authentication → Providers / URL configuration):
    - keep email sign-ups on, with **Confirm email** on (Story 10.1). New accounts start `pending` until the platform admin activates them;
    - set Site URL to the production URL;
@@ -21,6 +22,7 @@ Each job skips itself with a notice until its secrets exist. Run it by hand from
    - Authentication → Email provider: **Secure password change** on (a session older than 24 h must re-authenticate to change the password);
    - Emails → **SMTP settings**: a transactional provider (for example Resend or Postmark) with a verified sending domain. Supabase's built-in mailer is for testing only;
    - Authentication → Rate limits: emails per hour to suit the SMTP plan.
+   - Authentication → Providers → Email: **Leaked password protection** on (Pro). It applies the HIBP check to sign-ups that call Supabase Auth directly, past the app (security review M3, finding M3).
    - Storage buckets and policies come from the migrations.
 3. **Vercel project**: import the GitHub repo, framework Next.js, region `syd1` (from `vercel.json`). Environment variables (Production):
    - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` (Supabase → Settings → API)
@@ -41,6 +43,22 @@ Each job skips itself with a notice until its secrets exist. Run it by hand from
 5. **Sentry**: create a Next.js project. Its DSN goes in step 3. Check that errors arrive by opening `/workspace` and running `throw new Error("sentry check")` from the browser console, then confirm the event in Sentry.
 6. **Uptime monitoring (NFR38)**: in an uptime service (for example UptimeRobot or Better Stack), add an HTTP monitor on `$PRODUCTION_URL/api/health`. Use a 1–5 minute interval, alert on non-200 (it answers 503 when Supabase is down), and send alerts to your e-mail.
 7. **First admin**: `npm run admin:create-user` against production (with the production URL and service-role key in a temporary env, never committed). After that, new sign-ups are activated at `/admin/users` (Story 10.4; also in the workspace's account menu → Admin: accounts).
+
+## M3 gate (Story 10.14)
+
+Before the first pilot company. Tick each one in production and note the date here.
+
+- [ ] Supabase **Pro**, **Point in Time Recovery** on with 7 days, a practice restore done (step 1).
+- [ ] Email, end to end, each to a real inbox on a different provider (for example Gmail and Outlook), from the verified domain, not in spam:
+  - [ ] sign up → **Confirm signup** email → the link opens `/auth/confirm` → Confirm → the account is pending;
+  - [ ] activate it at `/admin/users` → the **You're in** email arrives (the app's own SMTP);
+  - [ ] Forgot password → **Reset password** email → a new password works, the other sessions are signed out;
+  - [ ] Profile → change email → **Change email address** emails to both addresses → the new address signs in;
+  - [ ] Company → Members → invite → the **invitation** email → join with a new account and with an existing one.
+- [ ] The Auth settings of step 2 (Confirm email, Secure email change, Secure password change, Leaked password protection, site URL, templates, SMTP).
+- [ ] The GitHub `production` environment is protected (step 4; security review finding M1).
+- [ ] CI's Database job green on the release commit: it runs the RLS matrix (`supabase/tests/rls_matrix.test.sql`).
+- [ ] `docs/security-review-m3.md`: no open High.
 
 ## Every release
 
