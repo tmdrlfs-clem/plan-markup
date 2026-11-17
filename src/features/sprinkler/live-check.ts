@@ -15,7 +15,7 @@ import { coverageRadiusMm } from "@/core/sprinkler/coverage";
 import type { EngineReply, EngineRequest } from "@/core/sprinkler/engine/protocol";
 import type { EngineZone } from "@/core/sprinkler/engine/site";
 import { engineZoneOf, headCentre, isHead, pageScaleOf, toMm, type HeadMarkup } from "@/core/sprinkler/heads";
-import { NZS4541_V1, type RuleSet } from "@/core/sprinkler/rules/rules";
+import type { RuleSet } from "@/core/sprinkler/rules/rules";
 import { isZone, zoneHazard } from "@/core/sprinkler/zone";
 import { editorStore, gestureMarkups, pageMarkups } from "@/features/editor";
 import { viewerStore } from "@/features/viewer";
@@ -23,6 +23,7 @@ import { viewerStore } from "@/features/viewer";
 import { setChecks, zoneCheckStore } from "./check-store";
 import { engine, nextRequestId } from "./engine-channel";
 import { placeRunStore } from "./place-run";
+import { rulesStore } from "./rules-store";
 import { useMapStore } from "./use-map-store";
 
 export { zoneCheckStore, type ZoneCheckState } from "./check-store";
@@ -30,7 +31,9 @@ export { zoneCheckStore, type ZoneCheckState } from "./check-store";
 type Head = { id: string; x: number; y: number };
 type Wanted = { key: string; zone: EngineZone; heads: Head[]; neighbours: { zone: EngineZone; heads: Head[] }[] };
 
-let rules: RuleSet = NZS4541_V1;
+/** A rule set given to startLiveCheck (tests); null: the one in use (rulesStore, Story 10.13). */
+let fixedRules: RuleSet | null = null;
+const rulesNow = (): RuleSet => fixedRules ?? rulesStore.getState().rules;
 /** The engine is opened by the first check, not by start (a page with no heads never needs it). */
 let unlisten: (() => void) | null = null;
 let stop: (() => void) | null = null;
@@ -43,14 +46,15 @@ let wanted = new Map<string, Wanted>();
 let inFlight = new Map<string, { reqId: number; key: string }>();
 let byReq = new Map<number, { zoneId: string; pageId: string; key: string }>();
 
-/** Starts the live check (idempotent). `ruleSet`: tests; the app uses the built-in rule set. */
-export function startLiveCheck(ruleSet: RuleSet = NZS4541_V1): void {
-  rules = ruleSet;
+/** Starts the live check (idempotent). `ruleSet`: tests; the app follows the rule set in use. */
+export function startLiveCheck(ruleSet?: RuleSet): void {
+  fixedRules = ruleSet ?? null;
   if (stop) return;
   const unsubs = [
     editorStore.subscribe(schedule),
     viewerStore.subscribe(schedule),
     useMapStore.subscribe(schedule),
+    rulesStore.subscribe(schedule),
     placeRunStore.subscribe(schedule),
   ];
   stop = () => {
@@ -93,6 +97,7 @@ export function evaluate(): void {
   const pageId = documentId ? pageIdOf(documentId, pageIndex) : null;
   const calibration: Calibration | null = pageId ? (viewer.calibrations[pageId] ?? null) : null;
   const map = useMapStore.getState().map;
+  const rules = rulesNow();
   const inputs = [pageId, calibration, map, rules, documentId ? editor.doc.markups[documentId] : null, editor.tools.moveDrag, editor.tools.preview, viewer.pages[pageIndex]?.userUnit];
   if (inputs.length === seen.length && inputs.every((v, i) => v === seen[i])) return;
   seen = inputs;
@@ -131,7 +136,7 @@ function send(zoneId: string, pageId: string, w: Wanted): void {
     type: "check",
     reqId,
     docRev: 0,
-    ruleSet: rules,
+    ruleSet: rulesNow(),
     zone: w.zone as Extract<EngineRequest, { type: "check" }>["zone"],
     heads: w.heads,
     ...(w.neighbours.length ? { neighbours: w.neighbours as NonNullable<Extract<EngineRequest, { type: "check" }>["neighbours"]> } : {}),
@@ -179,6 +184,7 @@ type Box = { x0: number; y0: number; x1: number; y1: number };
  */
 export function checksOf(markups: readonly Markup[], calibration: Pick<Calibration, "xFactor" | "yFactor">, userUnit: number, map = useMapStore.getState().map): Map<string, Wanted> {
   const scale = pageScaleOf(calibration, userUnit);
+  const rules = rulesNow();
   const byZone = new Map<string, HeadMarkup[]>();
   for (const m of markups) {
     if (!isHead(m)) continue;

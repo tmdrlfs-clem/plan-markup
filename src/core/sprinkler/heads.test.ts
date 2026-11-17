@@ -5,7 +5,7 @@ import { markupSchema, type ZoneMarkup } from "@/core/schema/markup";
 
 import { translateMarkup } from "@/core/markup/geometry";
 
-import { GUIDE_STYLE, GUIDE_SUBJECT, HEAD_DEVICE, HEAD_DIAMETER_MM, engineZoneOf, guidesOfZone, isGuide, headCentre, headMarkup, headsOfZone, isHead, pageScaleOf, refineHeadEdits, toMm, toPage, zoneAt, zoneOptions, type HeadMarkup } from "./heads";
+import { FIRST_RULES, GUIDE_STYLE, GUIDE_SUBJECT, HEAD_DEVICE, HEAD_DIAMETER_MM, engineZoneOf, guidesOfZone, isGuide, headCentre, headMarkup, headsOfZone, isHead, pageScaleOf, placedWith, refineHeadEdits, toMm, toPage, zoneAt, zoneOptions, type HeadMarkup } from "./heads";
 import { newZone } from "./zone";
 
 const k100 = factorForRatio(100);
@@ -147,5 +147,24 @@ describe("hand edits (Story 9.10)", () => {
     expect(refineHeadEdits(restore, doc)).toBe(restore);
     const compound = refineHeadEdits({ kind: "compound", documentId: "doc", ops: [{ kind: "markups.add", documentId: "doc", markups: [h] }] }, doc);
     expect(compound.kind === "compound" && compound.ops[0].kind === "markups.add" && (compound.ops[0].markups[0] as HeadMarkup).head.kind).toBe("manual");
+  });
+
+  it("Story 10.13: an engine head carries the ruleset version it was placed with", () => {
+    const z = zone();
+    const s = pageScaleOf(CAL);
+    const at = (kind: "row" | "gapFill" | "manual" | "locked", version?: string, i = 0) =>
+      headMarkup({ x: 5000 + i, y: 4000, kind }, z, s, `00000000-0000-7000-8000-0000000001${String(i).padStart(2, "0")}`, "t", version ? { id: "nzs4541", version } : undefined);
+    const stamped = at("row", "2");
+    expect(stamped.head).toEqual({ zoneId: z.id, kind: "row", rules: { id: "nzs4541", version: "2" } });
+    expect(markupSchema.safeParse(stamped).success).toBe(true);
+    expect(markupSchema.safeParse({ ...stamped, head: { ...stamped.head, rules: { id: "NZS 4541", version: "two" } } }).success).toBe(false);
+
+    expect(placedWith([])).toEqual([]);
+    expect(placedWith([stamped, at("gapFill", "2", 1)])).toEqual([{ id: "nzs4541", version: "2" }]);
+    // A head placed before versions were recorded was placed with v1, the only version then.
+    expect(placedWith([at("row")])).toEqual([FIRST_RULES]);
+    // Heads added or moved by hand are not the engine's.
+    expect(placedWith([at("manual", "3"), at("locked", "3", 1)])).toEqual([]);
+    expect(placedWith([at("row", "2"), at("row", "10", 1), at("row", undefined, 2)]).map((r) => r.version)).toEqual(["10", "2", "1"]);
   });
 });

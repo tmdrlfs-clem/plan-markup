@@ -1,6 +1,7 @@
 -- Story 9.1: RLS on public.rule_figures and public.use_hazard_map (FR79):
--- active signed-in users read them; only the platform admin writes; never
--- anon; the seed is there; a company has one default use and each use once.
+-- active signed-in users read them; never anon; the seed is there; a company
+-- has one default use and each use once. Story 10.13: nobody writes either
+-- table directly, the platform admin included (the audited functions do).
 begin;
 create extension if not exists pgtap with schema extensions;
 select plan(14);
@@ -43,24 +44,25 @@ select throws_ok(
      values ('nzs4541', '2', true, 'x', '{"ELH":{},"OH1":{},"OH2":{},"OH3":{}}') $$,
   '42501', null, 'a user cannot add a ruleset'
 );
-update public.use_hazard_map set hazard = 'OH3' where use = 'Office';
-select is((select hazard from public.use_hazard_map where company_id is null and use = 'Office'), 'ELH', 'a user cannot change the mapping');
+select throws_ok(
+  $$ update public.use_hazard_map set hazard = 'OH3' where use = 'Office' $$,
+  '42501', null, 'a user cannot change the mapping');
 
 -- A pending user reads nothing.
 set local request.jwt.claims = '{"sub":"b3333333-3333-4333-8333-333333333333","role":"authenticated"}';
 select is((select count(*)::int from public.rule_figures), 0, 'a pending user reads no rule figures');
 
--- The platform admin writes.
+-- The platform admin reads, and writes only through the audited functions (Story 10.13).
 set local request.jwt.claims = '{"sub":"b2222222-2222-4222-8222-222222222222","role":"authenticated"}';
-select lives_ok(
+select throws_ok(
   $$ insert into public.use_hazard_map (company_id, map_version, use, hazard) values (null, '1', 'Laboratory', 'OH1') $$,
-  'the platform admin adds a use'
+  '42501', null, 'the platform admin cannot add a use directly'
 );
-select lives_ok(
-  $$ update public.use_hazard_map set hazard = 'OH2' where company_id is null and use = 'Plant' $$,
-  'the platform admin changes a use'
+select throws_ok(
+  $$ update public.rule_figures set verified = false where ruleset_id = 'nzs4541' $$,
+  '42501', null, 'the platform admin cannot change rule figures directly'
 );
-select is((select hazard from public.use_hazard_map where company_id is null and use = 'Plant'), 'OH2', 'the change is kept');
+select is((select hazard from public.use_hazard_map where company_id is null and use = 'Kitchen'), 'OH1', 'the platform admin reads the mapping');
 
 select * from finish();
 rollback;

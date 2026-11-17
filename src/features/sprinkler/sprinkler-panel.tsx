@@ -24,7 +24,7 @@ import { markupBounds } from "@/core/markup/geometry";
 import { HOLE_TAGS, type HoleTag, type ZoneMarkup } from "@/core/schema/markup";
 import type { OracleReport } from "@/core/sprinkler/oracle";
 import { ADVISORY_NOTICE, reportRows, ruleBreaks, zoneStatus, type ZoneStatus } from "@/core/sprinkler/report";
-import type { UseHazardMap } from "@/core/sprinkler/rules/rules";
+import { rulesetLabel, type RuleSet, type RuleSetRef, type UseHazardMap } from "@/core/sprinkler/rules/rules";
 import { MAPPING_SOURCE_LABELS, figureRows, figuresOf, useOptions, type MappingSource } from "@/core/sprinkler/use-map";
 import { HOLE_TAG_LABELS, ZONE_COLOR, formatZoneArea, holeTagOf, isZone, mappingChange, withHoleTag, withUse, zoneAreaM2, zoneChecklist, zoneHazard } from "@/core/sprinkler/zone";
 import { openCalibrate } from "@/features/calibration";
@@ -32,12 +32,13 @@ import { revealFlag, armGuideDraw, guideDrawStore, headDimensionsStore, setHeadD
 import { FirstUseTip } from "@/features/tips";
 import { hasDocument, setTool, viewerCommands, viewerStore } from "@/features/viewer";
 
-import { isHead } from "@/core/sprinkler/heads";
+import { headsOfZone, isHead, placedWith } from "@/core/sprinkler/heads";
 
-import { getUseHazardMap } from "./actions";
+import { getRuleSetInUse, getUseHazardMap } from "./actions";
 import type { FlagRef } from "./check-store";
 import { startLiveCheck, zoneCheckStore } from "./live-check";
 import { cancelPlaceHeads, placeHeads, placeRunStore, placeScope, setRunSinks, type PlaceScope, type ZoneErrorCard } from "./place-run";
+import { loadRules, rulesStore } from "./rules-store";
 import { serverRunSinks } from "./run-sinks";
 import { loadUseMap, useMapStore } from "./use-map-store";
 
@@ -121,6 +122,7 @@ export function SprinklerPanel({ emptyText }: { emptyText: string }) {
   const tool = useStore(viewerStore, (s) => s.tool);
   const map = useStore(useMapStore, (s) => s.map);
   const mapSource = useStore(useMapStore, (s) => s.source);
+  const rules = useStore(rulesStore, (s) => s.rules);
   const run = useStore(placeRunStore, (s) => s);
   const checks = useStore(zoneCheckStore, (s) => s.reports);
   const focus = useStore(zoneCheckStore, (s) => s.focus);
@@ -134,6 +136,8 @@ export function SprinklerPanel({ emptyText }: { emptyText: string }) {
   // Story 9.3: the mapping is read once per session (the built-in one until then).
   useEffect(() => {
     void loadUseMap(getUseHazardMap);
+    // Story 10.13: so are the rule figures in use (the newest verified version).
+    void loadRules(getRuleSetInUse);
     // Story 9.10: zones are checked again whenever their heads change.
     startLiveCheck();
   }, []);
@@ -341,7 +345,9 @@ export function SprinklerPanel({ emptyText }: { emptyText: string }) {
       )}
       <StatusAnnouncer statuses={zones.map((z) => ({ id: z.id, name: z.zone.name, status: statusOf(z.id) }))} />
       {current && checks[current.id] ? <ZoneReport zone={current} report={checks[current.id]} hazard={zoneHazard(current, map) ?? "?"} focus={focus} /> : null}
-      {current ? <ZoneFiguresPanel zone={current} map={map} source={mapSource} documentId={documentId} /> : null}
+      {current ? (
+        <ZoneFiguresPanel zone={current} map={map} source={mapSource} documentId={documentId} rules={rules} placed={placedWith(headsOfZone(markups, current.id))} />
+      ) : null}
       {current && (current.holes?.length ?? 0) > 0 ? (
         <div className="flex flex-col gap-2 border-t border-border p-3" data-testid="zone-holes">
           <p className="text-ws-sm font-semibold">Holes in {current.zone.name}</p>
@@ -652,9 +658,39 @@ function StatusAnnouncer({ statuses }: { statuses: readonly { id: string; name: 
   );
 }
 
-function ZoneFiguresPanel({ zone, map, source, documentId }: { zone: ZoneMarkup; map: UseHazardMap; source: MappingSource; documentId: string }) {
-  const figures = figuresOf(zoneHazard(zone, map));
+/**
+ * Story 10.13 (A7): which rule figures a zone's heads were placed with, and what to do when
+ * those are no longer the figures in use (the check always uses the figures in use).
+ */
+export function placedWithText(placed: readonly RuleSetRef[], rules: RuleSetRef): string | null {
+  if (placed.length === 0) return null;
+  const names = placed.map(rulesetLabel);
+  const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+  const current = placed.every((p) => p.id === rules.id && p.version === rules.version);
+  return current
+    ? `Heads placed with ${list}.`
+    : `Heads placed with ${list}. The figures in use are now ${rulesetLabel(rules)}: the check uses them. Place heads again to lay the zone out with them.`;
+}
+
+function ZoneFiguresPanel({
+  zone,
+  map,
+  source,
+  documentId,
+  rules,
+  placed,
+}: {
+  zone: ZoneMarkup;
+  map: UseHazardMap;
+  source: MappingSource;
+  documentId: string;
+  rules: RuleSet;
+  placed: readonly RuleSetRef[];
+}) {
+  const figures = figuresOf(zoneHazard(zone, map), rules);
   const change = mappingChange(zone, map);
+  const placedText = placedWithText(placed, rules);
+  const outdated = placed.some((p) => p.id !== rules.id || p.version !== rules.version);
   return (
     <section className="flex flex-col gap-1 border-t border-border p-3 text-ws-sm" aria-label={`Rule figures for ${zone.zone.name}`} data-testid="zone-figures">
       {figures ? (
@@ -689,6 +725,11 @@ function ZoneFiguresPanel({ zone, map, source, documentId }: { zone: ZoneMarkup;
             </Button>
           ) : null}
         </div>
+      ) : null}
+      {placedText ? (
+        <p className={outdated ? "text-warning" : "text-muted"} data-testid="zone-placed-with">
+          {placedText}
+        </p>
       ) : null}
       <p className="text-muted" data-testid="mapping-source">
         {MAPPING_SOURCE_LABELS[source]} v{map.version}

@@ -73,6 +73,45 @@ $$;
 ALTER FUNCTION "app"."fn_audit_log_append_only"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "app"."fn_check_rule_hazards"("p_hazards" "jsonb") RETURNS "void"
+    LANGUAGE "plpgsql" IMMUTABLE
+    SET "search_path" TO ''
+    AS $$
+declare
+  v_class text;
+  v_f jsonb;
+  v_key text;
+begin
+  if p_hazards is null or pg_catalog.jsonb_typeof(p_hazards) <> 'object'
+     or (select pg_catalog.array_agg(k order by k) from pg_catalog.jsonb_object_keys(p_hazards) k)
+        is distinct from array['ELH', 'OH1', 'OH2', 'OH3'] then
+    raise exception 'hazards must name ELH, OH1, OH2 and OH3' using errcode = '22023';
+  end if;
+  foreach v_class in array array['ELH', 'OH1', 'OH2', 'OH3'] loop
+    v_f := p_hazards -> v_class;
+    if pg_catalog.jsonb_typeof(v_f) <> 'object'
+       or (select pg_catalog.array_agg(k order by k) from pg_catalog.jsonb_object_keys(v_f) k)
+          is distinct from array['Amax', 'Smax', 'Smin', 'Wmax', 'Wmin'] then
+      raise exception 'each hazard class needs Amax, Smax, Smin, Wmax and Wmin' using errcode = '22023';
+    end if;
+    foreach v_key in array array['Amax', 'Smax', 'Smin', 'Wmax', 'Wmin'] loop
+      if pg_catalog.jsonb_typeof(v_f -> v_key) <> 'number'
+         or (v_f ->> v_key)::numeric <= 0
+         or (v_f ->> v_key)::numeric > (case v_key when 'Amax' then 100 else 50 end) then
+        raise exception 'a figure is not a number in its range' using errcode = '22023';
+      end if;
+    end loop;
+    if (v_f ->> 'Smin')::numeric >= (v_f ->> 'Smax')::numeric or (v_f ->> 'Wmin')::numeric >= (v_f ->> 'Wmax')::numeric then
+      raise exception 'a minimum must be below its maximum' using errcode = '22023';
+    end if;
+  end loop;
+end;
+$$;
+
+
+ALTER FUNCTION "app"."fn_check_rule_hazards"("p_hazards" "jsonb") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "app"."fn_company_admin_guard"("p_actor_id" "uuid", "p_user_id" "uuid", OUT "o_company_id" "uuid", OUT "o_role" "text") RETURNS "record"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO ''
@@ -139,6 +178,22 @@ $$;
 
 
 ALTER FUNCTION "app"."fn_company_use_hazard_map"("p_company_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "app"."fn_default_use_hazard_map"() RETURNS "jsonb"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+  select case when count(*) = 0 then null else pg_catalog.jsonb_build_object(
+    'default', (pg_catalog.array_agg(m.use) filter (where m.is_default))[1],
+    'uses', pg_catalog.jsonb_object_agg(m.use, m.hazard)
+  ) end
+  from public.use_hazard_map m
+  where m.company_id is null;
+$$;
+
+
+ALTER FUNCTION "app"."fn_default_use_hazard_map"() OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "app"."fn_effective_access"("p_drawing_id" "uuid") RETURNS "text"
@@ -289,6 +344,27 @@ $$;
 
 
 ALTER FUNCTION "app"."fn_reads_company_tool_asset_path"("p_name" "text") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "app"."fn_require_platform_admin"("p_actor_id" "uuid") RETURNS "void"
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+begin
+  if p_actor_id is null then
+    raise exception 'actor is required' using errcode = '22023';
+  end if;
+  if not exists (
+    select 1 from public.profiles a
+    where a.id = p_actor_id and a.status = 'active' and a.is_platform_admin
+  ) then
+    raise exception 'not a platform admin' using errcode = 'PT403';
+  end if;
+end;
+$$;
+
+
+ALTER FUNCTION "app"."fn_require_platform_admin"("p_actor_id" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "app"."fn_set_updated_at"() RETURNS "trigger"
@@ -611,6 +687,61 @@ $$;
 ALTER FUNCTION "public"."admin_create_company"("p_actor_id" "uuid", "p_name" "text", "p_admin_email" "text") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."admin_create_rule_figures"("p_actor_id" "uuid", "p_ruleset_id" "text", "p_hazards" "jsonb", "p_source" "text") RETURNS TABLE("changed" boolean, "version" "text")
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+declare
+  v_latest public.rule_figures%rowtype;
+  v_source text := pg_catalog.btrim(coalesce(p_source, ''));
+  v_version text;
+  v_id uuid;
+begin
+  perform app.fn_require_platform_admin(p_actor_id);
+
+  -- One change to a ruleset at a time.
+  perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('rule_figures:' || coalesce(p_ruleset_id, ''), 0));
+  select f.* into v_latest
+  from public.rule_figures f
+  where f.ruleset_id = p_ruleset_id
+  order by f.version::integer desc
+  limit 1;
+  if not found then
+    raise exception 'no such ruleset' using errcode = 'PT404';
+  end if;
+
+  perform app.fn_check_rule_hazards(p_hazards);
+  if pg_catalog.length(v_source) not between 1 and 500 then
+    raise exception 'the source is 1 to 500 characters' using errcode = '22023';
+  end if;
+
+  if v_latest.hazards = p_hazards then
+    changed := false;
+    version := v_latest.version;
+    return next;
+    return;
+  end if;
+
+  v_version := (v_latest.version::integer + 1)::text;
+  insert into public.rule_figures (ruleset_id, version, verified, source, hazards, tables, created_by)
+  values (p_ruleset_id, v_version, false, v_source, p_hazards, v_latest.tables, p_actor_id)
+  returning id into v_id;
+
+  insert into public.audit_log (actor_id, action, target_type, target_id, detail)
+  values (p_actor_id, 'rules.figures_created', 'rule_figures', v_id,
+          pg_catalog.jsonb_build_object('ruleset', p_ruleset_id, 'version', v_version, 'from_version', v_latest.version,
+                                        'from', v_latest.hazards, 'to', p_hazards, 'source', v_source));
+
+  changed := true;
+  version := v_version;
+  return next;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."admin_create_rule_figures"("p_actor_id" "uuid", "p_ruleset_id" "text", "p_hazards" "jsonb", "p_source" "text") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."admin_lookup_markup_sets"("p_actor_id" "uuid", "p_user_id" "uuid") RETURNS TABLE("drawing_id" "uuid", "filename" "text", "page_count" integer, "file_count" integer, "markup_count" integer, "created_at" timestamp with time zone, "last_saved_at" timestamp with time zone)
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO ''
@@ -669,6 +800,77 @@ $$;
 
 
 ALTER FUNCTION "public"."admin_lookup_markup_sets"("p_actor_id" "uuid", "p_user_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."admin_set_default_use_hazard_map"("p_actor_id" "uuid", "p_uses" "jsonb") RETURNS TABLE("changed" boolean, "map_version" "text")
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+declare
+  v_before jsonb;
+  v_after jsonb;
+  v_current text;
+  v_version text;
+begin
+  perform app.fn_require_platform_admin(p_actor_id);
+
+  perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('use_hazard_map:platform', 0));
+
+  if p_uses is null or pg_catalog.jsonb_typeof(p_uses) <> 'array' or pg_catalog.jsonb_array_length(p_uses) not between 1 and 50 then
+    raise exception 'uses must be an array of 1 to 50' using errcode = '22023';
+  end if;
+  if exists (
+    select 1 from pg_catalog.jsonb_array_elements(p_uses) e
+    where pg_catalog.jsonb_typeof(e) <> 'object'
+       or pg_catalog.jsonb_typeof(e -> 'use') is distinct from 'string'
+       or pg_catalog.jsonb_typeof(e -> 'hazard') is distinct from 'string'
+       or pg_catalog.jsonb_typeof(e -> 'is_default') is distinct from 'boolean'
+  ) then
+    raise exception 'each use needs use, hazard and is_default' using errcode = '22023';
+  end if;
+  if (select count(*) from pg_catalog.jsonb_array_elements(p_uses) e where (e ->> 'is_default')::boolean) <> 1 then
+    raise exception 'exactly one use is the default' using errcode = '22023';
+  end if;
+
+  v_before := app.fn_default_use_hazard_map();
+  select max(m.map_version::integer)::text into v_current from public.use_hazard_map m where m.company_id is null;
+
+  select pg_catalog.jsonb_build_object(
+    'default', (pg_catalog.array_agg(e ->> 'use') filter (where (e ->> 'is_default')::boolean))[1],
+    'uses', pg_catalog.jsonb_object_agg(e ->> 'use', e ->> 'hazard')
+  ) into v_after
+  from pg_catalog.jsonb_array_elements(p_uses) e;
+
+  if v_before is not null and v_before = v_after then
+    changed := false;
+    map_version := v_current;
+    return next;
+    return;
+  end if;
+
+  -- Never a number used before: the audit rows count the changes since the seed (version 1).
+  select greatest(coalesce(v_current::integer, 0), count(*)::integer + 1) + 1 into v_version
+  from public.audit_log a
+  where a.action = 'rules.use_hazard_map_changed';
+
+  delete from public.use_hazard_map m where m.company_id is null;
+  -- The table's own checks refuse a bad name (23514), hazard (23514) or a use named twice (23505).
+  insert into public.use_hazard_map (company_id, map_version, use, hazard, is_default, verified)
+  select null, v_version, e ->> 'use', e ->> 'hazard', (e ->> 'is_default')::boolean, false
+  from pg_catalog.jsonb_array_elements(p_uses) e;
+
+  insert into public.audit_log (actor_id, action, target_type, target_id, detail)
+  values (p_actor_id, 'rules.use_hazard_map_changed', 'use_hazard_map', '00000000-0000-0000-0000-000000000000',
+          pg_catalog.jsonb_build_object('version', v_version, 'from_version', v_current, 'from', v_before, 'to', v_after));
+
+  changed := true;
+  map_version := v_version;
+  return next;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."admin_set_default_use_hazard_map"("p_actor_id" "uuid", "p_uses" "jsonb") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."admin_set_plan"("p_actor_id" "uuid", "p_target_type" "text", "p_target_id" "uuid", "p_plan" "text") RETURNS TABLE("previous_plan" "text")
@@ -785,6 +987,87 @@ $$;
 
 
 ALTER FUNCTION "public"."admin_set_user_status"("p_actor_id" "uuid", "p_user_id" "uuid", "p_status" "text") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."admin_verify_default_use_hazard_map"("p_actor_id" "uuid", "p_version" "text") RETURNS TABLE("changed" boolean)
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+declare
+  v_current text;
+begin
+  perform app.fn_require_platform_admin(p_actor_id);
+
+  perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('use_hazard_map:platform', 0));
+  select max(m.map_version::integer)::text into v_current from public.use_hazard_map m where m.company_id is null;
+  if v_current is null then
+    raise exception 'no platform default mapping' using errcode = 'PT404';
+  end if;
+  if p_version is distinct from v_current then
+    raise exception 'the mapping has changed' using errcode = 'PT409';
+  end if;
+
+  changed := exists (select 1 from public.use_hazard_map m where m.company_id is null and not m.verified);
+  if changed then
+    update public.use_hazard_map m set verified = true where m.company_id is null;
+    insert into public.audit_log (actor_id, action, target_type, target_id, detail)
+    values (p_actor_id, 'rules.use_hazard_map_verified', 'use_hazard_map', '00000000-0000-0000-0000-000000000000',
+            pg_catalog.jsonb_build_object('version', v_current, 'mapping', app.fn_default_use_hazard_map()));
+  end if;
+  return next;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."admin_verify_default_use_hazard_map"("p_actor_id" "uuid", "p_version" "text") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."admin_verify_rule_figures"("p_actor_id" "uuid", "p_ruleset_id" "text", "p_version" "text") RETURNS TABLE("changed" boolean)
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+declare
+  v_row public.rule_figures%rowtype;
+  v_replaces text;
+begin
+  perform app.fn_require_platform_admin(p_actor_id);
+
+  perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('rule_figures:' || coalesce(p_ruleset_id, ''), 0));
+  select f.* into v_row
+  from public.rule_figures f
+  where f.ruleset_id = p_ruleset_id and f.version = p_version;
+  if not found then
+    raise exception 'no such version' using errcode = 'PT404';
+  end if;
+  if exists (
+    select 1 from public.rule_figures f
+    where f.ruleset_id = p_ruleset_id and f.version::integer > v_row.version::integer
+  ) then
+    raise exception 'a newer version exists' using errcode = 'PT409';
+  end if;
+
+  changed := not v_row.verified;
+  if changed then
+    select f.version into v_replaces
+    from public.rule_figures f
+    where f.ruleset_id = p_ruleset_id and f.verified
+    order by f.version::integer desc
+    limit 1;
+
+    update public.rule_figures f
+    set verified = true, verified_at = pg_catalog.now(), verified_by = p_actor_id
+    where f.id = v_row.id;
+
+    insert into public.audit_log (actor_id, action, target_type, target_id, detail)
+    values (p_actor_id, 'rules.figures_verified', 'rule_figures', v_row.id,
+            pg_catalog.jsonb_build_object('ruleset', p_ruleset_id, 'version', p_version, 'replaces', v_replaces));
+  end if;
+  return next;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."admin_verify_rule_figures"("p_actor_id" "uuid", "p_ruleset_id" "text", "p_version" "text") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."apply_markup_ops"("p_drawing_id" "uuid", "p_ops" "jsonb") RETURNS "jsonb"
@@ -1536,9 +1819,9 @@ CREATE TABLE IF NOT EXISTS "public"."audit_log" (
     "target_type" "text" NOT NULL,
     "target_id" "uuid" NOT NULL,
     "detail" "jsonb" DEFAULT '{}'::"jsonb" NOT NULL,
-    CONSTRAINT "audit_log_action_check" CHECK (("action" = ANY (ARRAY['user.activated'::"text", 'user.deactivated'::"text", 'user.plan_changed'::"text", 'company.created'::"text", 'company.plan_changed'::"text", 'company.member_invited'::"text", 'company.invitation_revoked'::"text", 'company.member_joined'::"text", 'company.member_role_changed'::"text", 'company.member_removed'::"text", 'company.tool_set_published'::"text", 'company.tool_set_withdrawn'::"text", 'company.use_hazard_map_changed'::"text", 'company.use_hazard_map_reset'::"text", 'support.markup_sets_viewed'::"text"]))),
+    CONSTRAINT "audit_log_action_check" CHECK (("action" = ANY (ARRAY['user.activated'::"text", 'user.deactivated'::"text", 'user.plan_changed'::"text", 'company.created'::"text", 'company.plan_changed'::"text", 'company.member_invited'::"text", 'company.invitation_revoked'::"text", 'company.member_joined'::"text", 'company.member_role_changed'::"text", 'company.member_removed'::"text", 'company.tool_set_published'::"text", 'company.tool_set_withdrawn'::"text", 'company.use_hazard_map_changed'::"text", 'company.use_hazard_map_reset'::"text", 'support.markup_sets_viewed'::"text", 'rules.figures_created'::"text", 'rules.figures_verified'::"text", 'rules.use_hazard_map_changed'::"text", 'rules.use_hazard_map_verified'::"text"]))),
     CONSTRAINT "audit_log_detail_check" CHECK (("jsonb_typeof"("detail") = 'object'::"text")),
-    CONSTRAINT "audit_log_target_type_check" CHECK (("target_type" = ANY (ARRAY['user'::"text", 'company'::"text"])))
+    CONSTRAINT "audit_log_target_type_check" CHECK (("target_type" = ANY (ARRAY['user'::"text", 'company'::"text", 'rule_figures'::"text", 'use_hazard_map'::"text"])))
 );
 
 
@@ -1773,6 +2056,10 @@ CREATE TABLE IF NOT EXISTS "public"."rule_figures" (
     "hazards" "jsonb" NOT NULL,
     "tables" "jsonb" DEFAULT '{}'::"jsonb" NOT NULL,
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "created_by" "uuid",
+    "verified_at" timestamp with time zone,
+    "verified_by" "uuid",
     CONSTRAINT "rule_figures_hazards_check" CHECK ((("jsonb_typeof"("hazards") = 'object'::"text") AND ("hazards" ?& ARRAY['ELH'::"text", 'OH1'::"text", 'OH2'::"text", 'OH3'::"text"]) AND ("pg_column_size"("hazards") <= 8192))),
     CONSTRAINT "rule_figures_id_check" CHECK ((("ruleset_id" ~ '^[a-z0-9-]{1,40}$'::"text") AND ("version" ~ '^[0-9]{1,6}$'::"text"))),
     CONSTRAINT "rule_figures_source_check" CHECK ((("length"("source") >= 1) AND ("length"("source") <= 500))),
@@ -1783,7 +2070,11 @@ CREATE TABLE IF NOT EXISTS "public"."rule_figures" (
 ALTER TABLE "public"."rule_figures" OWNER TO "postgres";
 
 
-COMMENT ON TABLE "public"."rule_figures" IS 'NZS 4541 rule figures per ruleset version (Story 9.1). Read: active users; write: platform admin.';
+COMMENT ON TABLE "public"."rule_figures" IS 'NZS 4541 rule figures per ruleset version (Story 9.1). Read: active users. Written only by admin_create_rule_figures() and admin_verify_rule_figures() (Story 10.13): versions are never changed or removed; the newest verified one is in use.';
+
+
+
+COMMENT ON COLUMN "public"."rule_figures"."created_by" IS 'The platform admin who added the version (null: seeded). No foreign key: the record outlives the account.';
 
 
 
@@ -1875,7 +2166,7 @@ CREATE TABLE IF NOT EXISTS "public"."use_hazard_map" (
 ALTER TABLE "public"."use_hazard_map" OWNER TO "postgres";
 
 
-COMMENT ON TABLE "public"."use_hazard_map" IS 'Use → hazard class (Story 9.1). company_id null = platform default (read: active users; write: platform admin). A company''s rows (Story 10.12): read by its members, written by set_company_use_hazard_map().';
+COMMENT ON TABLE "public"."use_hazard_map" IS 'Use → hazard class (Story 9.1). company_id null = platform default (read: active users; written by admin_set_default_use_hazard_map(), Story 10.13). A company''s rows (Story 10.12): read by its members, written by set_company_use_hazard_map().';
 
 
 
@@ -2005,6 +2296,11 @@ ALTER TABLE ONLY "public"."pages"
 
 ALTER TABLE ONLY "public"."profiles"
     ADD CONSTRAINT "profiles_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."rule_figures"
+    ADD CONSTRAINT "rule_figures_id_key" UNIQUE ("id");
 
 
 
@@ -2457,10 +2753,6 @@ CREATE POLICY "rule_figures_select_active" ON "public"."rule_figures" FOR SELECT
 
 
 
-CREATE POLICY "rule_figures_write_admin" ON "public"."rule_figures" TO "authenticated" USING (( SELECT "app"."fn_is_platform_admin"() AS "fn_is_platform_admin")) WITH CHECK (( SELECT "app"."fn_is_platform_admin"() AS "fn_is_platform_admin"));
-
-
-
 ALTER TABLE "public"."signatures" ENABLE ROW LEVEL SECURITY;
 
 
@@ -2531,10 +2823,6 @@ CREATE POLICY "use_hazard_map_select_platform_or_company" ON "public"."use_hazar
 
 
 
-CREATE POLICY "use_hazard_map_write_admin" ON "public"."use_hazard_map" TO "authenticated" USING ((("company_id" IS NULL) AND ( SELECT "app"."fn_is_platform_admin"() AS "fn_is_platform_admin"))) WITH CHECK ((("company_id" IS NULL) AND ( SELECT "app"."fn_is_platform_admin"() AS "fn_is_platform_admin")));
-
-
-
 ALTER TABLE "public"."zone_layouts" ENABLE ROW LEVEL SECURITY;
 
 
@@ -2565,6 +2853,10 @@ REVOKE ALL ON FUNCTION "app"."fn_audit_log_append_only"() FROM PUBLIC;
 
 
 
+REVOKE ALL ON FUNCTION "app"."fn_check_rule_hazards"("p_hazards" "jsonb") FROM PUBLIC;
+
+
+
 REVOKE ALL ON FUNCTION "app"."fn_company_admin_guard"("p_actor_id" "uuid", "p_user_id" "uuid", OUT "o_company_id" "uuid", OUT "o_role" "text") FROM PUBLIC;
 
 
@@ -2574,6 +2866,10 @@ REVOKE ALL ON FUNCTION "app"."fn_company_has_other_admin"("p_company_id" "uuid",
 
 
 REVOKE ALL ON FUNCTION "app"."fn_company_use_hazard_map"("p_company_id" "uuid") FROM PUBLIC;
+
+
+
+REVOKE ALL ON FUNCTION "app"."fn_default_use_hazard_map"() FROM PUBLIC;
 
 
 
@@ -2621,6 +2917,10 @@ GRANT ALL ON FUNCTION "app"."fn_reads_company_tool_asset_path"("p_name" "text") 
 
 
 
+REVOKE ALL ON FUNCTION "app"."fn_require_platform_admin"("p_actor_id" "uuid") FROM PUBLIC;
+
+
+
 REVOKE ALL ON FUNCTION "app"."fn_set_updated_at"() FROM PUBLIC;
 
 
@@ -2653,8 +2953,18 @@ GRANT ALL ON FUNCTION "public"."admin_create_company"("p_actor_id" "uuid", "p_na
 
 
 
+REVOKE ALL ON FUNCTION "public"."admin_create_rule_figures"("p_actor_id" "uuid", "p_ruleset_id" "text", "p_hazards" "jsonb", "p_source" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."admin_create_rule_figures"("p_actor_id" "uuid", "p_ruleset_id" "text", "p_hazards" "jsonb", "p_source" "text") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."admin_lookup_markup_sets"("p_actor_id" "uuid", "p_user_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."admin_lookup_markup_sets"("p_actor_id" "uuid", "p_user_id" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."admin_set_default_use_hazard_map"("p_actor_id" "uuid", "p_uses" "jsonb") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."admin_set_default_use_hazard_map"("p_actor_id" "uuid", "p_uses" "jsonb") TO "service_role";
 
 
 
@@ -2665,6 +2975,16 @@ GRANT ALL ON FUNCTION "public"."admin_set_plan"("p_actor_id" "uuid", "p_target_t
 
 REVOKE ALL ON FUNCTION "public"."admin_set_user_status"("p_actor_id" "uuid", "p_user_id" "uuid", "p_status" "text") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."admin_set_user_status"("p_actor_id" "uuid", "p_user_id" "uuid", "p_status" "text") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."admin_verify_default_use_hazard_map"("p_actor_id" "uuid", "p_version" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."admin_verify_default_use_hazard_map"("p_actor_id" "uuid", "p_version" "text") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."admin_verify_rule_figures"("p_actor_id" "uuid", "p_ruleset_id" "text", "p_version" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."admin_verify_rule_figures"("p_actor_id" "uuid", "p_ruleset_id" "text", "p_version" "text") TO "service_role";
 
 
 
@@ -2834,7 +3154,7 @@ GRANT UPDATE("theme") ON TABLE "public"."profiles" TO "authenticated";
 
 
 
-GRANT ALL ON TABLE "public"."rule_figures" TO "authenticated";
+GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."rule_figures" TO "authenticated";
 GRANT ALL ON TABLE "public"."rule_figures" TO "service_role";
 
 
@@ -2878,7 +3198,7 @@ GRANT ALL ON TABLE "public"."tools" TO "service_role";
 
 
 
-GRANT ALL ON TABLE "public"."use_hazard_map" TO "authenticated";
+GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."use_hazard_map" TO "authenticated";
 GRANT ALL ON TABLE "public"."use_hazard_map" TO "service_role";
 
 

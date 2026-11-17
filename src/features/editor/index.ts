@@ -34,7 +34,7 @@ export {
   useMeasureTools,
 } from "./measure-tool";
 export type { UndoCommand } from "@/core/undo/stack";
-export { coverageStore, holdCoverage, revealCoverage, resetCoverage, setCoverageOn, setCoverageShape } from "./coverage-overlay";
+export { coverageStore, holdCoverage, revealCoverage, resetCoverage, setCoverageOn, setCoverageRules, setCoverageShape } from "./coverage-overlay";
 // Story 9.10: the 4541 panel's Add head.
 export { headDimensionsOf, headDimensionsStore, resetHeadDimensions, setHeadDimensionsOn } from "./head-dimensions";
 export { ADD_HEAD_LINE, armGuideDraw, endGuideDraw, guideDrawStore } from "./guide-draw";

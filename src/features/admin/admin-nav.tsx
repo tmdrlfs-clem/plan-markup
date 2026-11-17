@@ -9,6 +9,7 @@ export const ADMIN_NAV: readonly NavItem[] = [
   { href: "/admin/users", label: "Accounts" },
   { href: "/admin/companies", label: "Companies" },
   { href: "/admin/activity", label: "Activity" },
+  { href: "/admin/rules", label: "Rule figures" },
 ];
 
 export const COMPANY_NAV: readonly NavItem[] = [

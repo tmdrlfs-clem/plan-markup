@@ -24,7 +24,10 @@ export type Database = {
             [_ in never]: never
           }
           Functions: {
-            "fn_company_admin_guard":
+            "fn_check_rule_hazards":
+{ Args: { "p_hazards": Json }; Returns: undefined
+                           },
+"fn_company_admin_guard":
 { Args: { "p_actor_id": string,"p_user_id": string }; Returns: Record<string, unknown>
                            },
 "fn_company_has_other_admin":
@@ -32,6 +35,9 @@ export type Database = {
                            },
 "fn_company_use_hazard_map":
 { Args: { "p_company_id": string }; Returns: Json
+                           },
+"fn_default_use_hazard_map":
+{ Args: Record<PropertyKey, never>; Returns: Json
                            },
 "fn_effective_access":
 { Args: { "p_drawing_id": string }; Returns: string
@@ -56,6 +62,9 @@ export type Database = {
                            },
 "fn_reads_company_tool_asset_path":
 { Args: { "p_name": string }; Returns: boolean
+                           },
+"fn_require_platform_admin":
+{ Args: { "p_actor_id": string }; Returns: undefined
                            }
           }
           Enums: {
@@ -282,14 +291,14 @@ isOneToOne: false
                   ]
                 },"rule_figures": {
                   Row: {
-                    "created_at": string,"hazards": NonNullable<Json>,"ruleset_id": string,"source": string,"tables": NonNullable<Json>,"verified": boolean,"version": string
+                    "created_at": string,"created_by": string | null,"hazards": NonNullable<Json>,"id": string,"ruleset_id": string,"source": string,"tables": NonNullable<Json>,"verified": boolean,"verified_at": string | null,"verified_by": string | null,"version": string
                   }
                   ComputedFields: never
                   Insert: {
-                    "created_at"?: string,"hazards": NonNullable<Json>,"ruleset_id": string,"source": string,"tables"?: NonNullable<Json>,"verified": boolean,"version": string
+                    "created_at"?: string,"created_by"?: string | null,"hazards": NonNullable<Json>,"id"?: string,"ruleset_id": string,"source": string,"tables"?: NonNullable<Json>,"verified": boolean,"verified_at"?: string | null,"verified_by"?: string | null,"version": string
                   }
                   Update: {
-                    "created_at"?: string,"hazards"?: NonNullable<Json>,"ruleset_id"?: string,"source"?: string,"tables"?: NonNullable<Json>,"verified"?: boolean,"version"?: string
+                    "created_at"?: string,"created_by"?: string | null,"hazards"?: NonNullable<Json>,"id"?: string,"ruleset_id"?: string,"source"?: string,"tables"?: NonNullable<Json>,"verified"?: boolean,"verified_at"?: string | null,"verified_by"?: string | null,"version"?: string
                   }
                   Relationships: [
 
@@ -435,9 +444,19 @@ isOneToOne: false
               "admin_user_id": string,"company_id": string
             }[]
                            },
+"admin_create_rule_figures":
+{ Args: { "p_actor_id": string,"p_hazards": Json,"p_ruleset_id": string,"p_source": string }; Returns: {
+              "changed": boolean,"version": string
+            }[]
+                           },
 "admin_lookup_markup_sets":
 { Args: { "p_actor_id": string,"p_user_id": string }; Returns: {
               "created_at": string,"drawing_id": string,"file_count": number,"filename": string,"last_saved_at": string,"markup_count": number,"page_count": number
+            }[]
+                           },
+"admin_set_default_use_hazard_map":
+{ Args: { "p_actor_id": string,"p_uses": Json }; Returns: {
+              "changed": boolean,"map_version": string
             }[]
                            },
 "admin_set_plan":
@@ -448,6 +467,16 @@ isOneToOne: false
 "admin_set_user_status":
 { Args: { "p_actor_id": string,"p_status": string,"p_user_id": string }; Returns: {
               "email": string,"name": string,"previous_status": string
+            }[]
+                           },
+"admin_verify_default_use_hazard_map":
+{ Args: { "p_actor_id": string,"p_version": string }; Returns: {
+              "changed": boolean
+            }[]
+                           },
+"admin_verify_rule_figures":
+{ Args: { "p_actor_id": string,"p_ruleset_id": string,"p_version": string }; Returns: {
+              "changed": boolean
             }[]
                            },
 "apply_markup_ops":

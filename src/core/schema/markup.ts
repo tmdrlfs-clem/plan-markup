@@ -48,11 +48,14 @@ export type MarkupDevice = z.infer<typeof markupDeviceSchema>;
 /**
  * Story 9.8: a head the 4541 engine placed for a zone (the zone markup's id), and how: on a row,
  * a gap-fill exception, or kept fixed on a re-run. Story 9.10 adds heads moved by hand.
+ * Story 10.13: an engine head carries the ruleset version it was placed with.
  */
 export const HEAD_KINDS = ["row", "gapFill", "locked", "manual"] as const;
 export const headMetaSchema = z.object({
   zoneId: z.string().regex(UUID_PATTERN),
   kind: z.enum(HEAD_KINDS),
+  /** Story 10.13 (A7): the ruleset version the engine placed this head with (absent: a head placed before versions were recorded, or added by hand). */
+  rules: z.object({ id: z.string().regex(/^[a-z0-9-]{1,40}$/), version: z.string().regex(/^[0-9]{1,6}$/) }).optional(),
 });
 export type HeadMeta = z.infer<typeof headMetaSchema>;
 

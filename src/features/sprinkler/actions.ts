@@ -1,10 +1,11 @@
 "use server";
 
+import { ruleSetInUse, type RuleSet } from "@/core/sprinkler/rules/rules";
 import { resolveUseMap, type ResolvedUseMap } from "@/core/sprinkler/use-map";
 import { saveZoneLayoutsSchema } from "@/core/sprinkler/zone-layout";
 import { getAuthUser } from "@/lib/auth";
 import { getOwnMembership } from "@/lib/db/companies";
-import { readUseHazardRows } from "@/lib/db/rules";
+import { readRuleFigureRows, readUseHazardRows } from "@/lib/db/rules";
 import { ZoneLayoutError, insertZoneLayouts } from "@/lib/db/zone-layouts";
 import { fail, internalError, type Result } from "@/lib/result";
 import { createServerSupabase } from "@/lib/supabase/server";
@@ -23,6 +24,20 @@ export async function getUseHazardMap(): Promise<Result<ResolvedUseMap>> {
     return { ok: true, data: resolveUseMap(rows, membership?.companyId ?? null) };
   } catch (error) {
     return internalError("rules.use_map_failed", error);
+  }
+}
+
+/**
+ * Story 10.13 (A7): the rule figures placements and checks use: the newest
+ * verified version (a draft the platform admin is still working on is not it).
+ */
+export async function getRuleSetInUse(): Promise<Result<RuleSet>> {
+  const user = await getAuthUser();
+  if (!user) return fail("UNAUTHENTICATED");
+  try {
+    return { ok: true, data: ruleSetInUse(await readRuleFigureRows(await createServerSupabase())) };
+  } catch (error) {
+    return internalError("rules.figures_failed", error);
   }
 }
 

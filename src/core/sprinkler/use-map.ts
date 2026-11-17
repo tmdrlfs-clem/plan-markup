@@ -10,6 +10,7 @@ import {
   USE_HAZARD_V1,
   USE_NAME,
   hazardOf,
+  rulesetLabel,
   useHazardMapSchema,
   type Hazard,
   type HazardRule,
@@ -107,7 +108,7 @@ export type ZoneFigures = { hazard: Hazard; rule: HazardRule; ruleset: string };
 
 export function figuresOf(hazard: Hazard | null, rules: RuleSet = NZS4541_V1): ZoneFigures | null {
   if (!hazard || !HAZARDS.includes(hazard)) return null;
-  return { hazard, rule: rules.hazards[hazard], ruleset: `${rules.id.toUpperCase().replace(/^NZS/, "NZS ")} v${rules.version}` };
+  return { hazard, rule: rules.hazards[hazard], ruleset: rulesetLabel(rules) };
 }
 
 /** The figures as shown: label, value with its unit. */

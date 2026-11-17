@@ -42,6 +42,8 @@ function set(patch: Partial<CoverageState>): void {
 
 export const setCoverageOn = (on: boolean) => set({ on, fade: null });
 export const setCoverageShape = (shape: CoverageShape) => set({ shape });
+/** Story 10.13: the rule figures in use (the coverage radius follows them). */
+export const setCoverageRules = (rules: RuleSet) => set({ rules });
 
 /** A placement started: the overlay waits for it to finish. */
 export const holdCoverage = () => set({ fade: "hidden" });

@@ -30,12 +30,14 @@ import { setArmedStamp, stampStore } from "@/features/tool-chest/stamp-store";
 
 import { stopLiveCheck, zoneCheckStore } from "./live-check";
 import { resetPlaceRun, setEngineChannelFactory } from "./place-run";
-import { CALIBRATE_FIRST, NO_ZONES, SprinklerPanel, UNMAPPED_USE, ZONES_TIP } from "./sprinkler-panel";
+import { CALIBRATE_FIRST, NO_ZONES, SprinklerPanel, UNMAPPED_USE, ZONES_TIP, placedWithText } from "./sprinkler-panel";
+import { resetRules, rulesStore } from "./rules-store";
 import { resetUseMap, useMapStore } from "./use-map-store";
 
 const getUseHazardMap = vi.hoisted(() => vi.fn());
 const saveZoneLayouts = vi.hoisted(() => vi.fn(async () => ({ ok: true, data: null })));
-vi.mock("./actions", () => ({ getUseHazardMap: () => getUseHazardMap(), saveZoneLayouts }));
+const getRuleSetInUse = vi.hoisted(() => vi.fn());
+vi.mock("./actions", () => ({ getUseHazardMap: () => getUseHazardMap(), getRuleSetInUse: () => getRuleSetInUse(), saveZoneLayouts }));
 
 vi.mock("@/features/markup-set/actions", () => ({
   ensureMarkupSet: vi.fn(),
@@ -117,6 +119,8 @@ function setup(markups: ZoneMarkup[], calibrations: Record<string, Calibration> 
 beforeEach(() => {
   getUseHazardMap.mockReset();
   getUseHazardMap.mockResolvedValue({ ok: false, code: "INTERNAL", message: "" });
+  getRuleSetInUse.mockReset();
+  getRuleSetInUse.mockResolvedValue({ ok: false, code: "INTERNAL", message: "" });
 });
 
 afterEach(() => {
@@ -127,6 +131,7 @@ afterEach(() => {
     zoneDrawStore.setState({ tool: null });
     resetEditor();
     resetUseMap();
+    resetRules();
     resetViewer();
   });
 });
@@ -478,5 +483,34 @@ describe("SprinklerPanel Place heads (Story 9.8)", () => {
     const badge = screen.getByTestId("zone-check");
     expect(badge.getAttribute("data-tone")).toBe("infeasible");
     expect(badge.textContent).toBe("Infeasible");
+  });
+
+  it("Story 10.13: uses the rule figures in use and says which version a zone's heads were placed with", async () => {
+    const a = zone();
+    const user = setup([a]);
+    await vi.waitFor(() => expect(getRuleSetInUse).toHaveBeenCalledTimes(1));
+    await user.click(screen.getByRole("button", { name: /Zone 1/ }));
+    expect(screen.queryByTestId("zone-placed-with")).toBeNull();
+    await user.click(screen.getByTestId("place-heads"));
+    await screen.findByText(/head(s)? placed in 1 zone\./);
+    expect(screen.getByTestId("zone-placed-with").textContent).toBe("Heads placed with NZS 4541 v1.");
+
+    // The platform admin confirms v2: the figures shown and the check follow; the heads still say v1.
+    const base = rulesStore.getState().rules;
+    act(() => rulesStore.setState({ rules: { ...base, version: "2", hazards: { ...base.hazards, ELH: { ...base.hazards.ELH, Amax: 20 } } }, loaded: true }));
+    const figures = screen.getByTestId("zone-figures");
+    expect(figures.textContent).toContain("ELH · NZS 4541 v2");
+    expect(within(figures).getByTestId("figure-Amax").textContent).toContain("20 m²");
+    expect(screen.getByTestId("zone-placed-with").textContent).toBe(
+      "Heads placed with NZS 4541 v1. The figures in use are now NZS 4541 v2: the check uses them. Place heads again to lay the zone out with them.",
+    );
+    await vi.waitFor(() => expect(zoneCheckStore.getState().reports[a.id]?.ruleSet).toEqual({ id: "nzs4541", version: "2", verified: true }));
+  });
+
+  it("Story 10.13: placedWithText", () => {
+    const v = (version: string) => ({ id: "nzs4541", version });
+    expect(placedWithText([], v("1"))).toBeNull();
+    expect(placedWithText([v("2")], v("2"))).toBe("Heads placed with NZS 4541 v2.");
+    expect(placedWithText([v("2"), v("1")], v("2"))).toContain("Heads placed with NZS 4541 v2 and NZS 4541 v1. The figures in use are now NZS 4541 v2");
   });
 });

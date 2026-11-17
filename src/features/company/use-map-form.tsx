@@ -10,7 +10,7 @@ import { toast } from "@/components/ui/toast-store";
 import { HAZARDS, type Hazard } from "@/core/sprinkler/rules/rules";
 import { MAX_COMPANY_USES, USE_NAME_HINT, companyUseMapSchema, type MappingSource } from "@/core/sprinkler/use-map";
 
-import { resetCompanyUseMap, saveCompanyUseMap } from "./use-map-actions";
+import { resetCompanyUseMap, saveCompanyUseMap, type UseMapResult } from "./use-map-actions";
 
 const noSubscription = () => () => {};
 
@@ -28,13 +28,25 @@ export type UseMapFormProps = {
   source: MappingSource;
   defaultUse: string;
   uses: { use: string; hazard: Hazard }[];
+  /**
+   * Story 10.13: the platform admin edits the platform default mapping with the same table.
+   * `save` stores it (default: the company's own mapping); `saved` is what the toast says
+   * after a save, "{version}" standing for the new version.
+   */
+  save?: (input: unknown) => Promise<UseMapResult>;
+  saved?: { title: string; description: string };
+};
+
+const COMPANY_SAVED = {
+  title: "Mapping saved (v{version}).",
+  description: "New zones use it. Zones already drawn keep their use and hazard class.",
 };
 
 const CONTROL = "h-10 w-full rounded border bg-surface-2 px-3 text-ad-sm text-text focus-ring";
 const TH = "px-4 py-2.5 font-medium";
 
-/** Story 10.12: the company's use → hazard mapping as an editable table, saved as a whole. */
-export function UseMapForm({ source, defaultUse, uses }: UseMapFormProps) {
+/** Story 10.12: a use → hazard mapping as an editable table, saved as a whole (a company's own, or the platform default: Story 10.13). */
+export function UseMapForm({ source, defaultUse, uses, save = saveCompanyUseMap, saved = COMPANY_SAVED }: UseMapFormProps) {
   const router = useRouter();
   const nextKey = useRef(uses.length);
   const tableRef = useRef<HTMLTableElement>(null);
@@ -100,14 +112,14 @@ export function UseMapForm({ source, defaultUse, uses }: UseMapFormProps) {
       return;
     }
     startTransition(async () => {
-      const result = await saveCompanyUseMap(input);
+      const result = await save(input);
       if (!result.ok) {
         setFormError(result.message);
         return;
       }
       toast(
         result.data.changed
-          ? { variant: "success", title: `Mapping saved (v${result.data.version}).`, description: "New zones use it. Zones already drawn keep their use and hazard class." }
+          ? { variant: "success", title: saved.title.replace("{version}", result.data.version ?? ""), description: saved.description }
           : { variant: "info", title: "Nothing changed: the mapping already was like this." },
       );
       router.refresh();
@@ -227,7 +239,8 @@ export function UseMapForm({ source, defaultUse, uses }: UseMapFormProps) {
       </div>
       <p className="text-ad-sm text-muted">Use names: {USE_NAME_HINT}</p>
       {formError ? (
-        <p role="alert" className="text-ad-sm font-medium text-danger">
+        // On the page background the danger red needs a light backing to be readable (WCAG AA).
+        <p role="alert" className="rounded border border-danger bg-surface-2 px-3 py-2 text-ad-sm font-medium text-danger">
           {formError}
         </p>
       ) : null}

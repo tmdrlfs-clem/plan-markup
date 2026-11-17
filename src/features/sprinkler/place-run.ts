@@ -20,13 +20,14 @@ import type { EngineZone } from "@/core/sprinkler/engine/site";
 import { engineZoneOf, guidesOfZone, headMarkup, headsOfZone, pageScaleOf, toPage, type HeadMarkup } from "@/core/sprinkler/heads";
 import type { OracleReport } from "@/core/sprinkler/oracle";
 import type { PlaceErrorCode, PlaceResult } from "@/core/sprinkler/placer";
-import { NZS4541_V1, type RuleSet, type UseHazardMap } from "@/core/sprinkler/rules/rules";
+import type { RuleSet, UseHazardMap } from "@/core/sprinkler/rules/rules";
 import { isZone, zoneHazard } from "@/core/sprinkler/zone";
 import type { ZoneLayout } from "@/core/sprinkler/zone-layout";
 import { activeLayerOf, applyOp, editorStore, holdCoverage, markupsOf, recordAppliedOp, revealCoverage } from "@/features/editor";
 import { viewerStore } from "@/features/viewer";
 
 import { engine, nextRequestId } from "./engine-channel";
+import { rulesStore } from "./rules-store";
 
 export { setEngineChannelFactory, type EngineChannel } from "./engine-channel";
 
@@ -108,7 +109,8 @@ export function placeHeads(ctx: PlaceHeadsContext): Promise<void> {
   if (!calibration) return Promise.resolve();
   const userUnit = viewer.pages[pageIndex]?.userUnit ?? 1;
   const scale = pageScaleOf(calibration, userUnit);
-  const rules = ctx.rules ?? NZS4541_V1;
+  // Story 10.13: the rule set in use (the newest verified version), unless the caller names one.
+  const rules = ctx.rules ?? rulesStore.getState().rules;
   const now = ctx.now ?? (() => new Date());
   const newId = ctx.newId ?? (() => uuidv7());
 
@@ -183,7 +185,7 @@ export function placeHeads(ctx: PlaceHeadsContext): Promise<void> {
         const z = byId.get(reply.zoneId);
         if (!z) return;
         results.set(z.id, reply.result);
-        const heads = reply.result.heads.filter((h) => h.kind !== "locked").map((h) => withLayer(headMarkup(h, z, scale, newId(), now().toISOString()), layerId));
+        const heads = reply.result.heads.filter((h) => h.kind !== "locked").map((h) => withLayer(headMarkup(h, z, scale, newId(), now().toISOString(), rules), layerId));
         if (heads.length) {
           applyOp({ kind: "markups.add", documentId, markups: heads });
           added.push(...heads);

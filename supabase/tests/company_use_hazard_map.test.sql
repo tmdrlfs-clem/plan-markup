@@ -3,7 +3,7 @@
 -- Rows are counted by this test's own ids: a local database may hold rows from e2e runs.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(30);
+select plan(33);
 
 insert into auth.users (instance_id, id, aud, role, email)
 values
@@ -98,8 +98,12 @@ set local request.jwt.claims = '{"sub":"d3333333-3333-4333-8333-333333333333","r
 select is(
   (select count(*)::int from public.use_hazard_map where company_id = (select co from t)), 2, 'a member reads their company mapping');
 select is((select count(*)::int from public.use_hazard_map where company_id is null), 8, 'and the platform default');
-update public.use_hazard_map set hazard = 'ELH' where company_id = (select co from t);
-delete from public.use_hazard_map where company_id = (select co from t);
+select throws_ok(
+  $$ update public.use_hazard_map set hazard = 'ELH' where company_id = (select co from t) $$,
+  '42501', null, 'a member cannot change a row');
+select throws_ok(
+  $$ delete from public.use_hazard_map where company_id = (select co from t) $$,
+  '42501', null, 'or remove one');
 select throws_ok(
   $$ insert into public.use_hazard_map (company_id, map_version, use, hazard) values ((select co from t), '1', 'Sneak', 'ELH') $$,
   '42501', null, 'a member cannot add a row');
@@ -111,7 +115,9 @@ set local request.jwt.claims = '{"sub":"d5555555-5555-4555-8555-555555555555","r
 select is(
   (select count(*)::int from public.use_hazard_map where company_id is not null), 0, 'another company reads none of it');
 set local request.jwt.claims = '{"sub":"d1111111-1111-4111-8111-111111111111","role":"authenticated"}';
-update public.use_hazard_map set hazard = 'ELH' where company_id = (select co from t);
+select throws_ok(
+  $$ update public.use_hazard_map set hazard = 'ELH' where company_id = (select co from t) $$,
+  '42501', null, 'the platform admin cannot change a company''s rows');
 select is(
   (select count(*)::int from public.use_hazard_map where company_id is not null), 0, 'the platform admin reads none of it');
 reset role;

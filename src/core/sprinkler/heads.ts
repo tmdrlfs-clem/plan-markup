@@ -15,7 +15,7 @@ import type { HeadMeta, Markup, MarkupDevice, MarkupStyle, ZoneMarkup } from "@/
 import type { EngineZone } from "./engine/site";
 import type { PlacedHead } from "./placer";
 import { pointInRegion } from "./placer/geometry";
-import type { Hazard } from "./rules/rules";
+import type { Hazard, RuleSetRef } from "./rules/rules";
 import { holeTagOf, isZone } from "./zone";
 
 /** What a placed head counts as in the legend and the Markups List. */
@@ -45,6 +45,23 @@ export function isHead(m: Markup): m is HeadMarkup {
 /** The head markups placed for `zoneId`. */
 export function headsOfZone(markups: readonly Markup[], zoneId: string): HeadMarkup[] {
   return markups.filter((m): m is HeadMarkup => isHead(m) && m.head.zoneId === zoneId);
+}
+
+/** Before Story 10.13 a head did not carry its ruleset version; the only version there was then. */
+export const FIRST_RULES: RuleSetRef = { id: "nzs4541", version: "1" };
+
+/**
+ * Story 10.13 (A7): the ruleset versions the engine placed these heads with, newest first.
+ * Heads added or moved by hand are not the engine's and do not count.
+ */
+export function placedWith(heads: readonly HeadMarkup[]): RuleSetRef[] {
+  const seen = new Map<string, RuleSetRef>();
+  for (const h of heads) {
+    if (h.head.kind !== "row" && h.head.kind !== "gapFill") continue;
+    const ref = h.head.rules ?? FIRST_RULES;
+    seen.set(`${ref.id}@${ref.version}`, ref);
+  }
+  return [...seen.values()].sort((a, b) => a.id.localeCompare(b.id) || Number(b.version) - Number(a.version));
 }
 
 /** A head's centre (page points). */
@@ -122,6 +139,7 @@ export function headMarkup(
   scale: PageScale,
   id: string,
   createdAt: string,
+  rules?: RuleSetRef,
 ): HeadMarkup {
   const c = toPage(head, scale);
   const rx = HEAD_DIAMETER_MM / 2 / scale.x;
@@ -134,7 +152,7 @@ export function headMarkup(
     style: HEAD_STYLE,
     subject: HEAD_SUBJECT,
     device: HEAD_DEVICE,
-    head: { zoneId: zone.id, kind: head.kind },
+    head: { zoneId: zone.id, kind: head.kind, ...(rules ? { rules: { id: rules.id, version: rules.version } } : {}) },
     points: [
       { x: c.x - rx, y: c.y - ry },
       { x: c.x + rx, y: c.y - ry },

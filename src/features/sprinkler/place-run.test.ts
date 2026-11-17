@@ -14,6 +14,7 @@ import { viewerStore } from "@/features/viewer/viewer-store";
 import { resetViewer } from "@/features/viewer/viewer-tabs";
 import { EngineHost } from "@/workers/engine.worker";
 
+import { resetRules, rulesStore } from "./rules-store";
 import { cancelPlaceHeads, placeHeads, placeRunStore, resetPlaceRun, setEngineChannelFactory, setRunSinks, type EngineChannel } from "./place-run";
 
 vi.mock("@/features/markup-set/actions", () => ({
@@ -84,6 +85,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  resetRules();
   resetPlaceRun();
   setEngineChannelFactory(null);
   save.mockReset();
@@ -235,5 +237,28 @@ describe("placeHeads (Story 9.8)", () => {
     expect(run.status).toBe("done");
     expect(run.heads).toBe(12);
     expect(run.alignedExtra).toBe(1);
+  });
+
+  it("Story 10.13: places with the rule figures in use; the heads and the saved run carry that version", async () => {
+    const a = zone();
+    setup([a]);
+    await run();
+    const first = heads();
+    expect(first.every((h) => h.head.rules?.id === "nzs4541" && h.head.rules.version === "1")).toBe(true);
+    expect(save.mock.calls[0][1][0]).toMatchObject({ rulesetId: "nzs4541", ruleVersion: "1" });
+
+    // The platform admin confirmed v2 (a smaller area per head): a re-run uses it.
+    const v2 = { ...NZS4541_V1, version: "2", hazards: { ...NZS4541_V1.hazards, ELH: { ...NZS4541_V1.hazards.ELH, Amax: 9, Smax: 3, Wmax: 1.5 } } };
+    rulesStore.setState({ rules: v2, loaded: true });
+    await run();
+    const second = heads();
+    expect(second.length).toBeGreaterThan(first.length);
+    expect(second.every((h) => h.head.rules?.version === "2")).toBe(true);
+    expect(save.mock.calls[1][1][0]).toMatchObject({ rulesetId: "nzs4541", ruleVersion: "2" });
+    expect(save.mock.calls[1][1][0].report.ruleSet).toEqual({ id: "nzs4541", version: "2", verified: true });
+
+    // Undoing the re-run brings back the heads placed with v1, still marked v1.
+    expect(undoActive()).toBe(true);
+    expect(heads().every((h) => h.head.rules?.version === "1")).toBe(true);
   });
 });
