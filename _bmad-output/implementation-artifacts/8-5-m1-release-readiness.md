@@ -29,6 +29,8 @@ so that pilots can do as-built work for 5 days without Revu.
 - [x] **Pipeline:** `.github/workflows/release.yml` (migrate → deploy → verify; each job skips until its secrets exist), `vercel.json` (`syd1`, Git deploys of `main` off), and `docs/release.md`.
 - [x] **Security review:** `docs/security-review-m1.md`.
 - [ ] **Cloud setup and first production release** (docs/release.md): Supabase project, Vercel project, GitHub environment and secrets, Sentry, uptime monitor, first admin.
+  - [x] 2026-11-19, minimal setup for testing with several people (founder's choice; not a launch): Supabase free (Sydney, all 28 migrations), Vercel `plan-markup-eight.vercel.app`, the `production` environment with its six secrets and `PRODUCTION_URL`, Auth site URL and secure password change, the founder's platform admin account. The first release through `release.yml` went green (22f628e: migrate, deploy, health).
+  - [ ] Still open: SMTP and a domain (invitations, "You're in"), Turnstile (self sign-up refuses everyone without it), Sentry, uptime monitor, a required reviewer on `production`.
 - [ ] **Verify in production:** sign in, open → calibrate → measure → stamp → export, Sentry event received, monitor green.
 
 ## Dev Agent Record
