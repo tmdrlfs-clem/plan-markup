@@ -1,67 +1,58 @@
 // @vitest-environment jsdom
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { ADVISORY_NOTICE } from "@/core/sprinkler/report";
 import { Landing } from "./landing";
 
 describe("Landing", () => {
-  it("says what the product does and leads to sign-up and sign-in", () => {
+  it("says what the product does and leads to sign-in", () => {
     render(<Landing />);
-    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
-      "Head layouts in minutes.Not afternoons.",
-    );
-    const signUp = screen.getAllByRole("link", {
-      name: /Create (your )?account/,
-    });
-    expect(signUp.length).toBeGreaterThanOrEqual(3);
-    for (const a of signUp) expect(a).toHaveAttribute("href", "/sign-up");
-    for (const a of screen.getAllByRole("link", { name: "Sign in" }))
-      expect(a).toHaveAttribute("href", "/sign-in");
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("NZS 4541 head layouts, placed and checked for you.");
+    const signIn = screen.getAllByRole("link", { name: "Sign in" });
+    expect(signIn.length).toBeGreaterThanOrEqual(2);
+    for (const a of signIn) expect(a).toHaveAttribute("href", "/sign-in");
   });
 
   it("has one main landmark, a skip link to it and in-page section links", () => {
     const { container } = render(<Landing />);
     expect(screen.getAllByRole("main")).toHaveLength(1);
-    expect(
-      screen.getByRole("link", { name: "Skip to content" }),
-    ).toHaveAttribute("href", "#content");
+    expect(screen.getByRole("link", { name: "Skip to content" })).toHaveAttribute("href", "#content");
     expect(container.querySelector("#content")).not.toBeNull();
     for (const [name, id] of [
-      ["How it works", "how"],
+      ["Layout engine", "engine"],
       ["Features", "features"],
-      ["The 4541 engine", "engine"],
     ]) {
-      expect(screen.getByRole("link", { name })).toHaveAttribute(
-        "href",
-        `#${id}`,
-      );
+      expect(screen.getByRole("link", { name })).toHaveAttribute("href", `#${id}`);
       expect(container.querySelector(`#${id}`)).not.toBeNull();
     }
   });
 
-  it("carries the advisory notice and the trademark note", () => {
+  it("shows the zone, the placed heads and the report, with labelled pictures", () => {
     render(<Landing />);
-    expect(
-      screen.getAllByText(ADVISORY_NOTICE, { exact: false }).length,
-    ).toBeGreaterThanOrEqual(2);
-    expect(
-      screen.getByText(/not affiliated with or endorsed by Bluebeam, Inc\./),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: /zone outlined on a plan, before any heads/ })).toBeInTheDocument();
+    const placed = screen.getByRole("img", { name: /ten sprinkler heads placed/ });
+    expect(placed.querySelectorAll(".lp-head")).toHaveLength(10);
+    const report = screen.getByRole("table", { name: "Example zone report" });
+    expect(within(report).getByRole("rowheader", { name: "Coverage" })).toBeInTheDocument();
+    expect(within(report).getAllByText("OK")).toHaveLength(5);
   });
 
-  it("keeps decoration out of the accessibility tree and the pictures labelled", () => {
-    const { container } = render(<Landing />);
-    expect(container.querySelector(".lp-embers")).toHaveAttribute(
-      "aria-hidden",
-      "true",
-    );
-    expect(
-      screen.getByRole("img", {
-        name: "A sprinkler head operating over a fire",
-      }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("img", { name: /aligned rows/ }),
-    ).toBeInTheDocument();
+  it("lists the six things it does, in order", () => {
+    render(<Landing />);
+    const list = screen.getByRole("list");
+    expect(within(list).getAllByRole("heading", { level: 3 }).map((h) => h.textContent)).toEqual([
+      "Open and calibrate",
+      "Zones and uses",
+      "Automatic placement",
+      "Live checks",
+      "Measure and mark up",
+      "Export and print",
+    ]);
+  });
+
+  it("carries the advisory notice and the trademark note", () => {
+    render(<Landing />);
+    expect(screen.getByText(ADVISORY_NOTICE, { exact: false })).toBeInTheDocument();
+    expect(screen.getByText(/not affiliated with or endorsed by Bluebeam, Inc\./)).toBeInTheDocument();
   });
 });

@@ -1,23 +1,23 @@
 import type { Metadata } from "next";
-import { Barlow_Condensed } from "next/font/google";
+import { JetBrains_Mono } from "next/font/google";
 import { Landing } from "@/features/marketing/landing";
 
 // The landing page. The fuller marketing site (pricing, FAQ, help) is Epic 13.
-const display = Barlow_Condensed({
+const mono = JetBrains_Mono({
   subsets: ["latin"],
-  weight: ["700", "800"],
-  variable: "--font-display",
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-mono",
   display: "swap",
 });
 
 export const metadata: Metadata = {
   description:
-    "PDF markup for fire sprinkler designers: open a plan, draw a zone, and Plan Markup places and checks the heads to NZS 4541 spacing.",
+    "NZS 4541 sprinkler head layouts, placed and checked in your browser: outline a zone on your PDF, choose its use, and Plan Markup places the heads and reports every check.",
 };
 
 export default function Home() {
   return (
-    <div className={`${display.variable} flex flex-1 flex-col`}>
+    <div className={`${mono.variable} flex flex-1 flex-col`}>
       <Landing />
     </div>
   );
