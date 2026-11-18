@@ -55,3 +55,6 @@ fixtures/private/
 
 # pdf.js runtime assets, copied from node_modules by scripts/copy-pdfjs-assets.mjs
 /public/pdfjs/
+
+# vercel link
+.vercel
