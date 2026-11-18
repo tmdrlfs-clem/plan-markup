@@ -32,6 +32,7 @@ Result: **no open High findings.**
 - **L4 (Low, from M2)**: a saved zone layout's `report` is the client's; nothing reads it back yet. Unchanged.
 - **L6 (Low, accepted)**: the company name goes into the invitation email's subject. Names are set by the platform admin only, and nodemailer encodes header values, so a line break cannot start a new header.
 - **L7 (Low)**: Next.js 16.4.2 has a moderate advisory (information disclosure across root params through `'use cache'` and `unstable_cache`). The app uses neither. The upgrade `next dev` recommends waits on the founder's decision; take it with the next dependency update.
+- **L9 (Low, accepted by the founder 2026-11-19, review 2026-12-18)**: `picomatch` ReDoS (GHSA-fc5q-39xc-vjpf, High, every version up to 4.0.7, no fix published). Reached only through `@sentry/nextjs`'s build-time bundler plugins, which match our own file paths, never user input. CI's runtime audit (`scripts/audit-runtime.mjs`) accepts this one advisory until the review date; any other high or critical still fails.
 - **L8 (Low, ops)**: no screen shows `audit_log`; reading it needs SQL. Fine for one platform admin; add a view before there are more.
 
 Closed since M2: **L5** (rule figures change control), by Story 10.13.

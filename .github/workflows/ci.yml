@@ -44,7 +44,8 @@ jobs:
       - name: Static route guard
         run: npm run check:dynamic-routes
       - name: Audit runtime dependencies
-        run: npm audit --omit=dev --audit-level=high
+        # High/critical fail, except the advisories accepted (with a reason and a review date) in the script.
+        run: node scripts/audit-runtime.mjs
       - name: Audit all dependencies (report only)
         run: npm audit --audit-level=high || true
 
