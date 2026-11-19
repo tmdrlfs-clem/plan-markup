@@ -104,7 +104,13 @@ describe("listAuditLog", () => {
     const search = log.find((c) => c.table === "profiles")!;
     expect(search.calls[1]).toEqual(["or", ['email.ilike."%a,b\\"(%",name.ilike."%a,b\\"(%"']]);
     const audit = log.find((c) => c.table === "audit_log")!;
-    expect(audit.calls).toContainEqual(["or", [`actor_id.in.(${U}),and(target_type.eq.user,target_id.in.(${U})),and(target_type.eq.company,target_id.in.(${C}))`]]);
+    expect(audit.calls).toContainEqual([
+      "or",
+      [
+        `actor_id.in.(${U}),and(target_type.eq.user,target_id.in.(${U})),detail->>user_id.in.(${U}),detail->>admin_user_id.in.(${U}),` +
+          `and(target_type.eq.company,target_id.in.(${C}))`,
+      ],
+    ]);
     expect(audit.calls.some(([m]) => m === "like")).toBe(false);
   });
 

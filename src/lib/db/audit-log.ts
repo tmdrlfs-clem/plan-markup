@@ -96,7 +96,13 @@ export async function listAuditLog(client: SupabaseClient<Database>, query: Audi
     const clauses: string[] = [];
     if (userIds.length) {
       const list = userIds.join(",");
-      clauses.push(`actor_id.in.(${list})`, `and(target_type.eq.user,target_id.in.(${list}))`);
+      // Also the entries that name them in the detail (a role change or removal targets the company).
+      clauses.push(
+        `actor_id.in.(${list})`,
+        `and(target_type.eq.user,target_id.in.(${list}))`,
+        `detail->>user_id.in.(${list})`,
+        `detail->>admin_user_id.in.(${list})`,
+      );
     }
     if (companyIds.length) clauses.push(`and(target_type.eq.company,target_id.in.(${companyIds.join(",")}))`);
     rowsQuery = rowsQuery.or(clauses.join(","));
