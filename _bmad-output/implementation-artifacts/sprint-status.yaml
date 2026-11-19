@@ -45,7 +45,7 @@ story_location: _bmad-output/implementation-artifacts
 
 development_status:
   # Epic 1: Secure Foundation and Sign-in
-  epic-1: in-progress
+  epic-1: done
   1-1-scaffold-the-app-with-the-pinned-stack: done
   1-2-ci-quality-gates: done
   1-3-local-supabase-with-profiles-and-rls-baseline: done
@@ -63,7 +63,7 @@ development_status:
   2-4-spike-annotation-export-round-trip-in-revu: done
   epic-2-retrospective: optional
   # Epic 3: Open and Navigate Drawings
-  epic-3: in-progress
+  epic-3: done
   3-1-open-a-local-pdf-and-see-the-first-page-fast: done
   3-2-zoom-pan-fit-and-rotate-the-view: done
   3-3-page-pager-and-page-keys: done
@@ -104,7 +104,7 @@ development_status:
   5-13-personal-signature-stamp: done
   epic-5-retrospective: optional
   # Epic 6: Auto-save, Markup Sets and Markups List
-  epic-6: in-progress
+  epic-6: done
   6-1-identify-the-file-and-create-its-markup-set: done
   6-2-save-markups-through-the-ops-rpc: done
   6-3-offline-queue-and-save-status: done
