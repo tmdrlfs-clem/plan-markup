@@ -52,7 +52,7 @@ test("audit log: entries name people and companies, search and area filters work
     await expect(page.getByRole("status")).toHaveText("1–3 of 3 entries");
 
     // The area filter keeps the search.
-    await page.getByRole("link", { name: "Companies" }).click();
+    await page.getByRole("navigation", { name: "Filter by area" }).getByRole("link", { name: "Companies" }).click();
     await expect(page).toHaveURL(`/admin/audit?area=company&q=auduser-${tag}`);
     await expect(rows).toHaveCount(2);
 
