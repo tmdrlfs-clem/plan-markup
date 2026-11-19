@@ -3,10 +3,12 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const m = vi.hoisted(() => ({ updateName: vi.fn(), changeEmail: vi.fn(), refresh: vi.fn() }));
+const m = vi.hoisted(() => ({ updateName: vi.fn(), changeEmail: vi.fn(), changePassword: vi.fn(), refresh: vi.fn() }));
 vi.mock("./profile-actions", () => ({ updateName: m.updateName, changeEmail: m.changeEmail }));
+vi.mock("./password-change-actions", () => ({ changePassword: m.changePassword }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: m.refresh }) }));
 
+import { PASSWORD_CHANGE_MESSAGES } from "./password-change-messages";
 import { EMAIL_SENT, ProfileSection } from "./profile-section";
 
 beforeEach(() => vi.clearAllMocks());
@@ -55,5 +57,34 @@ describe("ProfileSection", () => {
     expect(screen.getByTestId("profile-plan")).toHaveTextContent("Standard (the plan of Acme Fire)");
     rerender(<ProfileSection name="Me" email="me@plan-markup.test" />);
     expect(screen.queryByTestId("profile-plan")).toBeNull();
+  });
+
+  it("changes the password with the current one, then closes the form", async () => {
+    m.changePassword.mockResolvedValue({ ok: true, data: null });
+    render(<ProfileSection name="Me" email="me@plan-markup.test" />);
+    await userEvent.click(screen.getByRole("button", { name: "Change password…" }));
+    const submit = screen.getByRole("button", { name: "Change password" });
+    expect(submit).toBeDisabled();
+    expect(screen.getByLabelText("Current password")).toHaveAttribute("autocomplete", "current-password");
+    expect(screen.getByLabelText("New password")).toHaveAttribute("autocomplete", "new-password");
+    await userEvent.type(screen.getByLabelText("Current password"), "old-password-123");
+    await userEvent.type(screen.getByLabelText("New password"), "new-password-456");
+    await userEvent.click(submit);
+    expect(m.changePassword).toHaveBeenCalledWith({ current: "old-password-123", password: "new-password-456" });
+    expect(await screen.findByRole("status")).toHaveTextContent(PASSWORD_CHANGE_MESSAGES.done);
+    expect(screen.queryByLabelText("Current password")).toBeNull();
+  });
+
+  it("shows a refusal on the field it is about and keeps the form open", async () => {
+    m.changePassword.mockResolvedValue({ ok: false, code: "INVALID_INPUT", message: PASSWORD_CHANGE_MESSAGES.wrongCurrent, field: "current" });
+    render(<ProfileSection name="Me" email="me@plan-markup.test" />);
+    await userEvent.click(screen.getByRole("button", { name: "Change password…" }));
+    await userEvent.type(screen.getByLabelText("Current password"), "wrong-one-123");
+    await userEvent.type(screen.getByLabelText("New password"), "new-password-456");
+    await userEvent.click(screen.getByRole("button", { name: "Change password" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(PASSWORD_CHANGE_MESSAGES.wrongCurrent);
+    expect(screen.getByLabelText("Current password")).toHaveAttribute("aria-invalid", "true");
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByLabelText("Current password")).toBeNull();
   });
 });

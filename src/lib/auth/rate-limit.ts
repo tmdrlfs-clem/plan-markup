@@ -25,6 +25,11 @@ export const EMAIL_CHANGE_LIMITS = {
   email_change_user: { maxHits: 5, windowSeconds: 3600 },
 } as const;
 
+/** Password changes per signed-in user: each checks the current password. */
+export const PASSWORD_CHANGE_LIMITS = {
+  password_change_user: { maxHits: 5, windowSeconds: 900 },
+} as const;
+
 /** Company invitations per inviting user (Story 10.6): each sends one email. */
 export const INVITE_LIMITS = {
   invite_user: { maxHits: 20, windowSeconds: 3600 },
@@ -35,6 +40,7 @@ export type RateLimitBucket =
   | keyof typeof SIGN_UP_LIMITS
   | keyof typeof RESET_LIMITS
   | keyof typeof EMAIL_CHANGE_LIMITS
+  | keyof typeof PASSWORD_CHANGE_LIMITS
   | keyof typeof INVITE_LIMITS;
 
 export type ConsumeArgs = {
@@ -102,6 +108,16 @@ export async function checkEmailChangeRateLimit(userId: string, consume: Consume
     bucket: "email_change_user",
     keyHash: rateLimitKeyHash("email_change_user", userId),
     ...EMAIL_CHANGE_LIMITS.email_change_user,
+  });
+  return r.allowed ? { allowed: true } : { allowed: false, retryAfterSeconds: r.retryAfterSeconds };
+}
+
+/** Password changes of one user: limits guesses of the current password. Fails closed. */
+export async function checkPasswordChangeRateLimit(userId: string, consume: Consume = rpcConsume): Promise<RateLimitDecision> {
+  const r = await consume({
+    bucket: "password_change_user",
+    keyHash: rateLimitKeyHash("password_change_user", userId),
+    ...PASSWORD_CHANGE_LIMITS.password_change_user,
   });
   return r.allowed ? { allowed: true } : { allowed: false, retryAfterSeconds: r.retryAfterSeconds };
 }

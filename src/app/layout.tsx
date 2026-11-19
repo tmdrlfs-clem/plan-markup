@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import { connection } from "next/server";
+import { StyleNonce } from "@/components/style-nonce";
 import "./globals.css";
 
 const inter = Inter({
@@ -27,6 +28,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
       className={`${inter.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-surface-0 text-text font-sans">
+        <StyleNonce />
         {children}
       </body>
     </html>

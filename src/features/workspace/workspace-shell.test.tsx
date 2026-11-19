@@ -28,6 +28,7 @@ const saveTheme = vi.fn(async (theme: string) => ({ ok: true as const, data: { t
 vi.mock("@/features/appearance/actions", () => ({ setTheme: (theme: string) => saveTheme(theme) }));
 vi.mock("@/features/signature/actions", () => ({ getSignature: async () => ({ ok: true, data: null }), saveSignature: vi.fn(), deleteSignature: vi.fn() }));
 vi.mock("@/features/account/profile-actions", () => ({ updateName: vi.fn(), changeEmail: vi.fn() }));
+vi.mock("@/features/account/password-change-actions", () => ({ changePassword: vi.fn() }));
 vi.mock("@/features/markup-set/actions", () => ({ ensureMarkupSet: vi.fn(), saveSetCalibrations: vi.fn(), applyMarkupOps: vi.fn(), loadMarkupSet: vi.fn(async () => ({ ok: true, data: null })), hasMarkupsOnOtherVersion: vi.fn(async () => ({ ok: true, data: false })), listMyMarkupSets: vi.fn(async () => ({ ok: true, data: [] })), loadMarkupSetPages: vi.fn() }));
 vi.mock("@/features/activity/actions", () => ({ recordActivity: vi.fn(async () => ({ ok: true, data: null })) }));
 vi.mock("@/features/sprinkler/actions", () => ({ getUseHazardMap: vi.fn(async () => ({ ok: false, code: "INTERNAL", message: "" })),
