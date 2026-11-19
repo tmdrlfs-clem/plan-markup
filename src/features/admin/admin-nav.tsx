@@ -10,6 +10,7 @@ export const ADMIN_NAV: readonly NavItem[] = [
   { href: "/admin/companies", label: "Companies" },
   { href: "/admin/activity", label: "Activity" },
   { href: "/admin/rules", label: "Rule figures" },
+  { href: "/admin/audit", label: "Audit log" },
 ];
 
 export const COMPANY_NAV: readonly NavItem[] = [
