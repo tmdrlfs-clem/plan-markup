@@ -13,6 +13,7 @@
 import { circleThrough } from "@/core/measure/circle";
 import type { Markup } from "@/core/schema/markup";
 
+import { arcPoints } from "./arc";
 import { dimensionLine, dimensionOutline } from "./dimension";
 import { NOTE_PT, cloudRingOf, leaderOf, textBoxOf } from "./text";
 import { quadsOf } from "./text-select";
@@ -36,6 +37,7 @@ function circleOf(m: Markup): { centre: Point; radius: number } | null {
 export function outlinePoints(m: Markup): readonly Point[] {
   if (m.type === "ellipse") return ellipseOutline(ellipseFrame(m.points), ELLIPSE_SAMPLES);
   if (m.type === "dimension") return dimensionOutline(m.points);
+  if (m.type === "arc") return arcPoints(m.points[0], m.points[1], m.points[2]);
   const circle = circleOf(m);
   if (!circle) return m.points;
   const out: Point[] = [];
@@ -58,7 +60,7 @@ export function markupBounds(m: Markup): Rect {
   let y0 = Infinity;
   let x1 = -Infinity;
   let y1 = -Infinity;
-  for (const p of m.type === "dimension" ? dimensionOutline(m.points) : m.points) {
+  for (const p of m.type === "dimension" ? dimensionOutline(m.points) : m.type === "arc" ? outlinePoints(m) : m.points) {
     x0 = Math.min(x0, p.x);
     y0 = Math.min(y0, p.y);
     x1 = Math.max(x1, p.x);
@@ -148,6 +150,8 @@ export function hitMarkup(m: Markup, p: Point, tol: number, userUnit = 1): boole
       if (!line) return nearPolyline(p, [a, b], tol, false);
       return segmentDistance(p, line.from, line.to) <= tol || segmentDistance(p, a, line.from) <= tol || segmentDistance(p, b, line.to) <= tol;
     }
+    case "arc":
+      return nearPolyline(p, outlinePoints(m), tol, false);
     case "ellipse": {
       const local = ellipseLocal(ellipseFrame(m.points), p);
       if (local && Math.hypot(local.x, local.y) <= 1) return true;

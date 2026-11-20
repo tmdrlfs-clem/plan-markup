@@ -40,6 +40,7 @@ export type ViewerTool =
   | "arrow"
   | "polyline"
   | "polygon"
+  | "arc"
   | "rectangle"
   | "ellipse"
   | "cloud"
@@ -69,8 +70,8 @@ export function isMeasureTool(tool: ViewerTool): tool is MeasureTool {
 }
 
 /** Story 5.4: the straight-line markup tools (they draw as the measuring tools do, with no value). */
-export type LineTool = "line" | "arrow" | "polyline" | "polygon";
-const LINE_TOOLS: ReadonlySet<ViewerTool> = new Set<ViewerTool>(["line", "arrow", "polyline", "polygon"]);
+export type LineTool = "line" | "arrow" | "polyline" | "polygon" | "arc";
+const LINE_TOOLS: ReadonlySet<ViewerTool> = new Set<ViewerTool>(["line", "arrow", "polyline", "polygon", "arc"]);
 export function isLineTool(tool: ViewerTool): tool is LineTool {
   return LINE_TOOLS.has(tool);
 }

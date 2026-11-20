@@ -19,6 +19,7 @@ import { cloudRingOf, leaderTo, leaderToRing } from "@/core/markup/text";
 import { angleCaption } from "@/core/measure/angle";
 import { areaCaption, areaCaptionText } from "@/core/measure/area";
 import { circleCaption, circleThrough } from "@/core/measure/circle";
+import { arcPoints } from "@/core/markup/arc";
 import { lengthCaption } from "@/core/measure/length";
 import type { Layer as AppLayer } from "@/core/schema/layer";
 import type { Markup as AppMarkup, MarkupStyle } from "@/core/schema/markup";
@@ -184,6 +185,9 @@ export function exportMarkup(m: AppMarkup, ctx: ConvertContext): Markup | null {
       return { ...base, type: "polyline", points: m.points.map(pt) };
     case "polygon":
       return { ...base, type: "polygon", points: m.points.map(pt) };
+    // An arc goes out as a polyline along it (PDF has no arc annotation).
+    case "arc":
+      return { ...base, type: "polyline", points: arcPoints(m.points[0], m.points[1], m.points[2]).map(pt) };
     case "rectangle":
       return axisAligned(m.points) ? { ...base, type: "rectangle", rect: box(m.points) } : { ...base, type: "polygon", points: m.points.map(pt) };
     case "ellipse":

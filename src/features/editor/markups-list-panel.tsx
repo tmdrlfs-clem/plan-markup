@@ -62,6 +62,7 @@ import { createStore } from "zustand/vanilla";
 
 import { Button } from "@/components/ui/button";
 import { cx } from "@/components/ui/cx";
+import { ArcIcon } from "@/components/ui/extra-icons";
 import { Menu, MenuCheckboxItem, MenuContent, MenuSub, MenuSubContent, MenuSubTrigger, MenuTrigger } from "@/components/ui/menu";
 import { markupBounds } from "@/core/markup/geometry";
 import { withGroups } from "@/core/markup/arrange";
@@ -104,6 +105,7 @@ const TYPE_ICONS: Record<MarkupType, LucideIcon> = {
   arrow: ArrowUpRight,
   polyline: Spline,
   polygon: Hexagon,
+  arc: ArcIcon,
   rectangle: Square,
   ellipse: Circle,
   cloud: Cloud,

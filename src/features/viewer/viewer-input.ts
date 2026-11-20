@@ -530,6 +530,13 @@ export class ViewerInput {
     // Story 4.3: Esc while picking calibration points cancels the pick (the dialog comes back).
     if (e.key === "Escape" && viewerStore.getState().tool === "calibrate") this.target.cancelCalibrationPick?.();
     if (e.key === "Escape") this.keyPointer = null;
+    // Zoom: Esc drops a box being dragged, else returns to Select.
+    if (e.key === "Escape" && viewerStore.getState().tool === "zoom" && this.active() && !e.defaultPrevented && this.canvasKeys()) {
+      e.preventDefault();
+      if (this.drag?.kind === "zoom") this.endDrag(false);
+      else setTool("select");
+      return;
+    }
     if (this.selectionKeys(e)) {
       e.preventDefault();
       return;

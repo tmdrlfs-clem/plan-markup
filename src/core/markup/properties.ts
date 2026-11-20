@@ -23,6 +23,7 @@ export const SUBJECT_NAMES: Record<MarkupType, string> = {
   arrow: "Arrow",
   polyline: "Polyline",
   polygon: "Polygon",
+  arc: "Arc",
   rectangle: "Rectangle",
   ellipse: "Ellipse",
   cloud: "Cloud",

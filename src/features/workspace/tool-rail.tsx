@@ -38,11 +38,13 @@ import {
   type LucideIcon,
   TypeOutline,
   Underline,
+  ZoomIn,
 } from "lucide-react";
 import { Fragment, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useStore } from "zustand";
 
 import { Menu, MenuContent, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "@/components/ui/menu";
+import { ArcIcon } from "@/components/ui/extra-icons";
 import { Toolbar, ToolbarButton, ToolbarSeparator, ToolbarToggleGroup, ToolbarToggleItem } from "@/components/ui/toolbar";
 import { dismissHint, showHint } from "@/components/ui/hint-store";
 import { pickImageFile } from "@/features/editor";
@@ -62,7 +64,7 @@ interface Tool {
  * Tools that work today: Select and Pan (Story 3.2), and Length (snapping from
  * Story 4.1, measuring from Story 4.5). The others arrive with the editor.
  */
-const LIVE_TOOLS: ReadonlySet<string> = new Set<ViewerTool>(["select", "pan", "length", "polylength", "area", "count", "angle", "radius", "diameter", "line", "arrow", "polyline", "polygon", "rectangle", "ellipse", "cloud", "text", "callout", "typewriter", "note", "cloudplus", "pen", "highlight", "image", "dimension", "underline", "strikethrough", "whiteout", "whiteoutpolygon", "eraser", "revision", "legend"]);
+const LIVE_TOOLS: ReadonlySet<string> = new Set<ViewerTool>(["select", "pan", "zoom", "length", "polylength", "area", "count", "angle", "radius", "diameter", "line", "arrow", "polyline", "polygon", "arc", "rectangle", "ellipse", "cloud", "text", "callout", "typewriter", "note", "cloudplus", "pen", "highlight", "image", "dimension", "underline", "strikethrough", "whiteout", "whiteoutpolygon", "eraser", "revision", "legend"]);
 
 export const SNAP_PREVIEW_HINT_ID = "snap-preview";
 /** Review S3: a page past the segment cap. */
@@ -89,6 +91,7 @@ const SNAPS = "Points snap to the drawing (Alt: off, Shift: 45° steps).";
 export const LINE_HINT = `Line: click the start and the end point. ${SNAPS} Esc cancels; Esc again returns to Select.`;
 export const ARROW_HINT = `Arrow: click the start, then the point the arrow points to. ${SNAPS} Esc cancels; Esc again returns to Select.`;
 export const POLYLINE_HINT = `Polyline: click each vertex; double-click or Enter finishes. Backspace removes the last vertex. ${SNAPS} Esc cancels; Esc again returns to Select.`;
+export const ARC_HINT = `Arc: click the start and the end, then a point the arc passes through. ${SNAPS} Esc cancels; Esc again returns to Select.`;
 export const POLYGON_HINT = `Polygon: click each corner; double-click, Enter or a click on the first corner closes it. Backspace removes the last corner. ${SNAPS} Esc cancels; Esc again returns to Select.`;
 /** Story 5.5: the HintBar while Rectangle, Ellipse or Cloud is armed. */
 const BOX_SNAPS = "Points snap to the drawing (Alt: off, Shift on the diagonal: a square).";
@@ -124,7 +127,9 @@ export const REVISION_HINT = "Revision stamp: click where it goes. Edit its revi
 export const LEGEND_HINT = "Legend: click where it goes. It lists the devices placed on this page with their counts and keeps them up to date. Set its title and scope (page or document) in Properties.";
 export const STAMP_HINT = "Tool: click where it goes (its centre); it stays armed for the next. S arms the last tool again. Esc returns to Select.";
 export const DIMENSION_HINT = `Dimension: click the two points to dimension, then where its line goes. ${SNAPS} Esc cancels; Esc again returns to Select.`;
+export const ZOOM_HINT = "Zoom: click to zoom in, Alt + click to zoom out; drag a box to zoom to it. Esc returns to Select.";
 const TOOL_HINTS: Partial<Record<ViewerTool, string>> = {
+  zoom: ZOOM_HINT,
   length: SNAP_PREVIEW_HINT,
   polylength: POLYLENGTH_HINT,
   area: AREA_HINT,
@@ -137,6 +142,7 @@ const TOOL_HINTS: Partial<Record<ViewerTool, string>> = {
   arrow: ARROW_HINT,
   polyline: POLYLINE_HINT,
   polygon: POLYGON_HINT,
+  arc: ARC_HINT,
   rectangle: RECTANGLE_HINT,
   ellipse: ELLIPSE_HINT,
   cloud: CLOUD_HINT,
@@ -167,6 +173,8 @@ const GROUPS: { label: string; tools: Tool[] }[] = [
     tools: [
       { id: "select", label: "Select", icon: MousePointer2, shortcut: "V" },
       { id: "pan", label: "Pan", icon: Hand, shortcut: "Shift+V" },
+      // Click zooms in, Alt + click out; a drag zooms to the box (Alt + drag out).
+      { id: "zoom", label: "Zoom", icon: ZoomIn, shortcut: "Z" },
     ],
   },
   // Story 5.4 (D4): Line, Arrow, Polyline and Polygon share one button and a menu (LINE_TOOLS).
@@ -222,6 +230,7 @@ export const LINE_TOOLS: readonly (Tool & { id: LineSlotTool })[] = [
   { id: "arrow", label: "Arrow", icon: ArrowUpRight, shortcut: "A" },
   { id: "polyline", label: "Polyline", icon: Spline, shortcut: "Shift+N" },
   { id: "polygon", label: "Polygon", icon: Hexagon, shortcut: "Shift+P" },
+  { id: "arc", label: "Arc", icon: ArcIcon },
   { id: "dimension", label: "Dimension", icon: RulerDimensionLine },
 ];
 export const MORE_LINE_TOOLS = "More line tools";

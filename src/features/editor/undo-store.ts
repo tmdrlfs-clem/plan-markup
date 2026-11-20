@@ -157,6 +157,7 @@ export const DRAWING_POINT_LABEL: Readonly<Record<DrawTool, string>> = {
   angle: "Angle point",
   radius: "Radius point",
   diameter: "Diameter point",
+  arc: "Arc point",
   // Story 4.10: while filling, Undo takes back the last stroke.
   fill: "Fill stroke",
   // Story 5.4.

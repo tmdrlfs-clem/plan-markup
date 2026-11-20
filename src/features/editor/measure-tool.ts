@@ -62,6 +62,7 @@
 
 import { useLayoutEffect } from "react";
 
+import { arcFromClicks, arcPoints } from "@/core/markup/arc";
 import { pageIdOf, type Calibration } from "@/core/calibration/calibration";
 import { uuidv7 } from "@/core/ids/uuid";
 import { angleCaption, bisector } from "@/core/measure/angle";
@@ -166,6 +167,7 @@ export const ADD_LINE = "Add line";
 export const ADD_ARROW = "Add arrow";
 export const ADD_POLYLINE = "Add polyline";
 export const ADD_POLYGON = "Add polygon";
+export const ADD_ARC = "Add arc";
 export const ADD_RECTANGLE = "Add rectangle";
 export const ADD_ELLIPSE = "Add ellipse";
 export const ADD_CLOUD = "Add cloud";
@@ -191,6 +193,7 @@ const ADD_LABEL: Record<DrawTool, string> = {
   arrow: ADD_ARROW,
   polyline: ADD_POLYLINE,
   polygon: ADD_POLYGON,
+  arc: ADD_ARC,
   rectangle: ADD_RECTANGLE,
   ellipse: ADD_ELLIPSE,
   cloud: ADD_CLOUD,
@@ -228,6 +231,7 @@ const MIN_POINTS: Record<DrawTool, number> = {
   arrow: 2,
   polyline: 2,
   polygon: 3,
+  arc: 3,
   rectangle: 2,
   ellipse: 2,
   cloud: 3,
@@ -250,7 +254,7 @@ const MIN_POINTS: Record<DrawTool, number> = {
   legend: 1,
 };
 /** Tools with a fixed number of points: the click that places the last one adds the measurement. */
-const FIXED_POINTS: Partial<Record<DrawTool, number>> = { length: 2, angle: 3, radius: 3, diameter: 3, line: 2, arrow: 2, rectangle: 2, ellipse: 2, text: 2, callout: 2, typewriter: 1, note: 1, dimension: 3, whiteout: 2 };
+const FIXED_POINTS: Partial<Record<DrawTool, number>> = { arc: 3, length: 2, angle: 3, radius: 3, diameter: 3, line: 2, arrow: 2, rectangle: 2, ellipse: 2, text: 2, callout: 2, typewriter: 1, note: 1, dimension: 3, whiteout: 2 };
 /** Tools whose outline is closed: a click on the first vertex closes it. */
 const CLOSED: ReadonlySet<DrawTool> = new Set<DrawTool>(["area", "polygon", "cloud", "cloudplus", "whiteoutpolygon"]);
 /** Story 5.4 (D1): an arrow head's length in line widths, and its least length, in points (page units). */
@@ -266,6 +270,7 @@ const SHAPE_LABEL: Record<ShapeMarkup["type"], string> = {
   arrow: "Arrow",
   polyline: "Polyline",
   polygon: "Polygon",
+  arc: "Arc",
   rectangle: "Rectangle",
   ellipse: "Ellipse",
   cloud: "Cloud",
@@ -1042,8 +1047,10 @@ function paintList(c: CanvasRenderingContext2D, markups: readonly Markup[], view
       const pts = devicePoints(any.points, view);
       if (!onCanvas(pts, any.style, view)) continue;
       // Story 5.5: an ellipse's outline lies inside its box's corners.
-      if (selected.has(any.id)) strokeSelection(c, any.type === "ellipse" ? devicePoints(outlinePoints(any), view) : pts, view);
-      strokeShape(c, any.type, pts, any.style, view);
+      const outline = any.type === "ellipse" || any.type === "arc" ? devicePoints(outlinePoints(any), view) : pts;
+      if (selected.has(any.id)) strokeSelection(c, outline, view);
+      if (any.type === "arc") strokeShape(c, "polyline", outline, any.style, view);
+      else strokeShape(c, any.type, pts, any.style, view);
       continue;
     }
     const m = any;
@@ -1225,6 +1232,12 @@ export const measurePainter: MarkupPainter = {
       c.restore();
       liveLabel(c, view.toDevice(pointer), live.text, live.scaled, view);
       return live.text;
+    }
+    // An arc: its chord to the pointer, then the arc from start to end through the pointer.
+    if (d.tool === "arc") {
+      const arc = points.length >= 3 ? arcPoints(points[0], pointer, points[1]) : points;
+      strokeShape(c, "polyline", devicePoints(arc, view), DEFAULT_MARKUP_STYLE, view);
+      return null;
     }
     // Story 5.5: a box from its first corner to the pointer (5.6: a text box's too).
     const pts = devicePoints(isBoxTool(d.tool) ? boxCorners(points[0], pointer) : points, view);
@@ -1635,6 +1648,9 @@ function markupOf(d: Drawing): Markup {
     case "radius":
     case "diameter":
       return { ...base, type: d.tool, points: [a, b, c] };
+    // Clicked start, end, then a point on the bulge.
+    case "arc":
+      return { ...base, type: "arc", points: arcFromClicks(a, b, c) };
     case "fill":
       return { ...base, type: "area", points };
     case "pen":

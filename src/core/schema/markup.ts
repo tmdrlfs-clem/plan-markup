@@ -139,6 +139,8 @@ export const lineMarkupSchema = z.object({ ...base, type: z.literal("line"), poi
 export const arrowMarkupSchema = z.object({ ...base, type: z.literal("arrow"), points: z.tuple([pointSchema, pointSchema]) });
 export const polylineMarkupSchema = z.object({ ...base, type: z.literal("polyline"), points: z.array(pointSchema).min(2).max(MAX_POLYLINE_POINTS) });
 export const polygonMarkupSchema = z.object({ ...base, type: z.literal("polygon"), points: z.array(pointSchema).min(3).max(MAX_POLYLINE_POINTS) });
+/** An arc: its start, a point it passes through, its end (core/markup/arc.ts draws the circular arc). */
+export const arcMarkupSchema = z.object({ ...base, type: z.literal("arc"), points: z.tuple([pointSchema, pointSchema, pointSchema]) });
 
 /**
  * Story 5.5: a rectangle and an ellipse (the one inscribed in its box), both stored as the box's
@@ -297,6 +299,7 @@ export const markupSchema = z.discriminatedUnion("type", [
   arrowMarkupSchema,
   polylineMarkupSchema,
   polygonMarkupSchema,
+  arcMarkupSchema,
   rectangleMarkupSchema,
   ellipseMarkupSchema,
   cloudMarkupSchema,
@@ -335,6 +338,7 @@ export type ShapeMarkup =
   | z.infer<typeof arrowMarkupSchema>
   | z.infer<typeof polylineMarkupSchema>
   | z.infer<typeof polygonMarkupSchema>
+  | z.infer<typeof arcMarkupSchema>
   | z.infer<typeof rectangleMarkupSchema>
   | z.infer<typeof ellipseMarkupSchema>
   | z.infer<typeof cloudMarkupSchema>;
