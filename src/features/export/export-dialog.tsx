@@ -4,8 +4,9 @@
 // the pages (all, the current one or a range), whether markups on hidden
 // layers go too (only asked when there are hidden layers), the count it will
 // write; Export writes and downloads it, then a toast says so.
-// Story 8.2 (FR58, FR61): the same dialog for Flatten (Ctrl+Shift+M) and
-// File → Export → Flattened PDF: the markups drawn into the pages, a new file.
+// Story 8.2 (FR58, FR61): the same dialog for File → Export → Flattened PDF:
+// the markups drawn into the pages, a new file. (Flatten… and Ctrl+Shift+M
+// flatten the open drawing in place since 2026-11-21: flatten-in-place.tsx.)
 // Story 9.12 (FR78): "Include advisory notice" draws the 4541 advisory notice onto
 // each exported page; it starts on when the drawing has zones or heads.
 // Save as… (File menu, a tab's right-click menu, Ctrl+Shift+S) is the editable
@@ -28,6 +29,7 @@ import { isHead } from "@/core/sprinkler/heads";
 import { editorStore, layersOf, markTabSaved, markupsOf } from "@/features/editor";
 import { tabsStore, viewerStore, viewerTabs } from "@/features/viewer";
 
+import { openFlatten } from "./flatten-in-place";
 import { exportBlocked, exportCount, runExport, type ExportKind } from "./run-export";
 
 /** The open dialog's kind (null: closed). */
@@ -61,7 +63,7 @@ export function isSaveAsShortcut(event: Pick<KeyboardEvent, "key" | "ctrlKey" | 
   return (event.ctrlKey || event.metaKey) && event.shiftKey && !event.altKey && event.key.toLowerCase() === "s";
 }
 
-/** Story 8.2: Ctrl+Shift+M (⌘⇧M) flattens, instead of the browser's own use of the keys. */
+/** Story 8.2: Ctrl+Shift+M (⌘⇧M) flattens (in place), instead of the browser's own use of the keys. */
 export function isFlattenShortcut(event: Pick<KeyboardEvent, "key" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey">): boolean {
   return (event.ctrlKey || event.metaKey) && event.shiftKey && !event.altKey && event.key.toLowerCase() === "m";
 }
@@ -93,7 +95,7 @@ export function ExportDialog() {
       }
       if (!isFlattenShortcut(event)) return;
       event.preventDefault();
-      openExport("flattened");
+      openFlatten();
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);

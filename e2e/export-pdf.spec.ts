@@ -112,8 +112,9 @@ test("export an editable PDF: native annotations, the caption as shown, white-ou
   await expect(markups(page)).toHaveAttribute("data-captions", captions);
 });
 
-// Story 8.2: Flatten (Ctrl+Shift+M) writes a new PDF with the markups drawn into the pages.
-test("flatten: Ctrl+Shift+M, the markups drawn into the page, a new file, the markups here unchanged", async ({ page }) => {
+// Story 8.2: File → Export → Flattened PDF… writes a new PDF with the markups drawn into the pages.
+// 2026-11-21: Flatten… (Ctrl+Shift+M) draws them into the open drawing; Ctrl+Z and File → Unflatten take them out.
+test("flatten: a flattened copy downloads; Ctrl+Shift+M flattens in place, Ctrl+Z and Unflatten bring the markups back", async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 900 });
   await page.goto("/sign-in");
   await signIn(page, "admin@plan-markup.test");
@@ -128,12 +129,15 @@ test("flatten: Ctrl+Shift+M, the markups drawn into the page, a new file, the ma
   await drag(page, [700, 300], [760, 360]);
   await expect(markups(page)).toHaveAttribute("data-captions", "Rectangle | White-out");
 
-  // File → Flatten… shows the key.
+  // File → Flatten… shows the key; Unflatten is next to it.
   await page.getByRole("menubar").getByRole("menuitem", { name: "File" }).click();
   await expect(page.getByRole("menuitem", { name: /^Flatten…/ })).toBeEnabled();
+  await expect(page.getByRole("menuitem", { name: "Unflatten" })).toBeEnabled();
   await page.keyboard.press("Escape");
 
-  await press(page, "Control+Shift+M");
+  await page.getByRole("menubar").getByRole("menuitem", { name: "File" }).click();
+  await page.getByRole("menuitem", { name: "Export" }).click();
+  await page.getByRole("menuitem", { name: "Flattened PDF…" }).click();
   const dialog = page.getByRole("dialog", { name: "Flatten and export" });
   await expect(dialog.getByTestId("export-count")).toHaveText("2 markups will be written.");
   const download = page.waitForEvent("download");
@@ -149,5 +153,30 @@ test("flatten: Ctrl+Shift+M, the markups drawn into the page, a new file, the ma
   // Story 8.4: recorded with the user's markup set, the kind and the counts (never the file name).
   await expect.poll(activityEvents).toEqual([{ name: "markup.exported", kind: "flattened", page_count: 2, markup_count: 2, has_set: true }]);
   // The markups here stay editable, as they were.
+  await expect(markups(page)).toHaveAttribute("data-captions", "Rectangle | White-out");
+
+  // Flatten in place: asked first; the tab shows the flattened drawing, no markups left to edit.
+  await press(page, "Control+Shift+M");
+  const ask = page.getByRole("dialog", { name: "Flatten markups into the drawing?" });
+  await expect(ask).toContainText("2 markups become part of the drawing");
+  await ask.getByRole("button", { name: "Flatten", exact: true }).click();
+  const tabs = page.getByRole("tablist", { name: "Open drawings" });
+  await expect(tabs.getByRole("tab", { name: "snap (flattened).pdf" })).toBeVisible();
+  await expect(canvas(page)).toHaveAttribute("data-state", "ready");
+  await expect(markups(page)).not.toHaveAttribute("data-captions", /Rectangle/);
+
+  // Ctrl+Z unflattens: the drawing as it was, the markups editable again.
+  await press(page, "Control+z");
+  await expect(tabs.getByRole("tab", { name: "snap.pdf" })).toBeVisible();
+  await expect(markups(page)).toHaveAttribute("data-captions", "Rectangle | White-out");
+
+  // So does File → Unflatten, after flattening again.
+  await press(page, "Control+Shift+M");
+  await page.getByRole("dialog", { name: "Flatten markups into the drawing?" }).getByRole("button", { name: "Flatten", exact: true }).click();
+  await expect(tabs.getByRole("tab", { name: "snap (flattened).pdf" })).toBeVisible();
+  await expect(canvas(page)).toHaveAttribute("data-state", "ready");
+  await page.getByRole("menubar").getByRole("menuitem", { name: "File" }).click();
+  await page.getByRole("menuitem", { name: "Unflatten" }).click();
+  await expect(tabs.getByRole("tab", { name: "snap.pdf" })).toBeVisible();
   await expect(markups(page)).toHaveAttribute("data-captions", "Rectangle | White-out");
 });
