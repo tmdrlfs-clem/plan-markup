@@ -22,7 +22,7 @@ import { calibrationOf, openCalibrate, openVerify } from "@/features/calibration
 import { activeUndoLabels, hasClipboard, redoActive, undoActive, editorStore, useSelectionState } from "@/features/editor";
 import { hasDocument, tabsStore, viewerCommands, viewerStore, viewerTabs, type SelectionCommand, type ViewerCommand } from "@/features/viewer";
 import { openMarkupSetList } from "@/features/markup-set/markup-sets-ui";
-import { openExport, openPrint } from "@/features/export";
+import { openExport, openPrint, saveAs } from "@/features/export";
 import { openShortcuts } from "./shortcuts-dialog";
 import { saveNow } from "@/features/markup-set/sync";
 import { THEMES, THEME_LABELS, isTheme, type Theme } from "@/lib/theme";
@@ -84,6 +84,16 @@ function ExportMenu() {
         </MenuBarItem>
       </MenuBarSubContent>
     </MenuBarSub>
+  );
+}
+
+/** Save as… (Ctrl+Shift+S): the drawing as a PDF to this computer (the editable export). */
+function SaveAsItem() {
+  const open = useStore(viewerStore, (s) => hasDocument(s) && !s.standIn);
+  return (
+    <MenuBarItem disabled={!open} shortcut="Ctrl+Shift+S" onSelect={() => saveAs()}>
+      Save as…
+    </MenuBarItem>
   );
 }
 
@@ -223,7 +233,7 @@ export function WorkspaceMenuBar({ onOpen, onSignOut, theme, onThemeChange, onAc
           <MenuBarItem shortcut="Ctrl+S" onSelect={() => saveNow()}>
             Save
           </MenuBarItem>
-          <Disabled label="Save as…" shortcut="Ctrl+Shift+S" />
+          <SaveAsItem />
           <PrintItem />
           <MenuBarSeparator />
           <FlattenItem />

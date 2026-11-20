@@ -35,7 +35,7 @@ import {
 
 import { AccountMenu, displayName, type WorkspaceUser } from "./account-menu";
 import { AddToolDialog } from "@/features/tool-chest/add-tool-dialog";
-import { ExportDialog, PrintDialog, setExportAuthor } from "@/features/export";
+import { ExportDialog, PrintDialog, SavePrompt, saveAs, setExportAuthor } from "@/features/export";
 import { ImportReportDialog } from "@/features/tool-chest/import-btx-ui";
 import { ToolChestPanel, setToolChestOwner } from "@/features/tool-chest/tool-chest-panel";
 
@@ -272,7 +272,7 @@ function ShellBody({ user, initialTheme }: { user: WorkspaceUser; initialTheme: 
           {viewerStatus === "empty" ? (
             <EmptyWorkspace onOpen={open} onOpenFiles={openFiles} recent={recentSets} onOpenRecent={openRecentSet} />
           ) : (
-            <DocumentTabs>
+            <DocumentTabs onSaveAs={(tabId) => saveAs(tabId)}>
               <DocumentViewer onOpen={open} onOpenFiles={openFiles} overlay={<TextEditor />} />
             </DocumentTabs>
           )}
@@ -282,6 +282,7 @@ function ShellBody({ user, initialTheme }: { user: WorkspaceUser; initialTheme: 
           <MarkupContextMenu />
           <AddToolDialog />
           <ExportDialog />
+          <SavePrompt />
           <PrintDialog />
           <ShortcutsDialog />
           <ImportReportDialog />

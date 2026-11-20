@@ -22,11 +22,11 @@ let activate: ReturnType<typeof vi.spyOn>;
 let close: ReturnType<typeof vi.spyOn>;
 let cycle: ReturnType<typeof vi.spyOn>;
 
-function setup(tabs: DocumentTab[], activeId: string | null = tabs[0]?.id ?? null) {
+function setup(tabs: DocumentTab[], activeId: string | null = tabs[0]?.id ?? null, onSaveAs?: (tabId: string) => void) {
   tabsStore.setState({ tabs, activeId });
   render(
     <TooltipProvider delayDuration={0}>
-      <DocumentTabs>
+      <DocumentTabs onSaveAs={onSaveAs}>
         <canvas data-testid="drawing-canvas" tabIndex={0} />
       </DocumentTabs>
     </TooltipProvider>,
@@ -44,7 +44,7 @@ beforeEach(() => {
   activate = vi.spyOn(viewerTabs, "activate").mockImplementation((id: string) => {
     tabsStore.setState({ activeId: id });
   });
-  close = vi.spyOn(viewerTabs, "close").mockImplementation(() => undefined);
+  close = vi.spyOn(viewerTabs, "requestClose").mockImplementation(() => undefined);
   cycle = vi.spyOn(viewerTabs, "cycle").mockImplementation(() => undefined);
 });
 
@@ -166,6 +166,20 @@ describe("DocumentTabs", () => {
     expect(close).toHaveBeenCalledWith("a");
     expect(document.activeElement).toBe(region);
     region.remove();
+  });
+
+  it("a right-click on a tab offers Save as… for that drawing", async () => {
+    const saveAs = vi.fn();
+    const user = setup([tab("a"), tab("b"), tab("c", { failed: true })], "a", saveAs);
+    // The menu's wrapper is no tab stop: the tablist owns only its tabs (axe aria-required-children).
+    for (const item of document.querySelectorAll("[data-tab-item]")) expect(item).not.toHaveAttribute("tabindex");
+    fireEvent.contextMenu(trigger("B"));
+    const menu = await screen.findByRole("menu", { name: "b-long-file-name.pdf menu" });
+    await user.click(within(menu).getByRole("menuitem", { name: /Save as…/ }));
+    expect(saveAs).toHaveBeenCalledWith("b");
+    fireEvent.contextMenu(trigger(/^C/));
+    const failed = await screen.findByRole("menu", { name: "c-long-file-name.pdf menu" });
+    expect(within(failed).getByRole("menuitem", { name: /Save as…/ })).toHaveAttribute("aria-disabled", "true");
   });
 
   it("scrolls the active tab into view when it changes", () => {
