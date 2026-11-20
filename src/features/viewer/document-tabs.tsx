@@ -137,7 +137,8 @@ function DocumentTabItem({
   // A right-click (or Shift+F10 on the tab) opens the tab's menu: Save as… (a PDF to this computer).
   return (
     <ContextMenu>
-      <ContextMenuTrigger asChild tabIndex={-1}>
+      {/* No tabindex on the wrapper: the tablist owns only its tabs (axe aria-required-children). */}
+      <ContextMenuTrigger asChild tabIndex={undefined}>
         <div
           data-tab-item=""
           className={cx("group relative flex max-w-[220px] min-w-0 shrink-0 items-center", active ? "bg-surface-0" : "hover:bg-surface-3")}

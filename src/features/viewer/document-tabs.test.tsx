@@ -171,6 +171,8 @@ describe("DocumentTabs", () => {
   it("a right-click on a tab offers Save as… for that drawing", async () => {
     const saveAs = vi.fn();
     const user = setup([tab("a"), tab("b"), tab("c", { failed: true })], "a", saveAs);
+    // The menu's wrapper is no tab stop: the tablist owns only its tabs (axe aria-required-children).
+    for (const item of document.querySelectorAll("[data-tab-item]")) expect(item).not.toHaveAttribute("tabindex");
     fireEvent.contextMenu(trigger("B"));
     const menu = await screen.findByRole("menu", { name: "b-long-file-name.pdf menu" });
     await user.click(within(menu).getByRole("menuitem", { name: /Save as…/ }));
