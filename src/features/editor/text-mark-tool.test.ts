@@ -129,6 +129,17 @@ describe("Underline and Strikethrough (Story 5.9)", () => {
     textPromptStore.setState({ prompt: null });
   });
 
+  it("Select text: the drag copies the words to the clipboard and adds nothing", async () => {
+    const writes: string[] = [];
+    Object.defineProperty(navigator, "clipboard", { value: { writeText: async (t: string) => void writes.push(t) }, configurable: true });
+    setTool("selecttext");
+    measurePainter.textMark!("start", { x: 3, y: 102 }, AT);
+    measurePainter.textMark!("end", { x: 33, y: 102 }, AT);
+    await Promise.resolve();
+    expect(writes).toEqual(["ROOM 101"]);
+    expect(added()).toHaveLength(0);
+  });
+
   it("Insert text: a click asks for the text; Add places a caret there with it", () => {
     setTool("inserttext");
     expect(measurePainter.place({ x: 50, y: 90 }, { ...AT, tolerance: 1 })).toBe("done");

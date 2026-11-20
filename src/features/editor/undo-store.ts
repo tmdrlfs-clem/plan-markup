@@ -191,6 +191,7 @@ export const DRAWING_POINT_LABEL: Readonly<Record<DrawTool, string>> = {
   squiggly: "Squiggly selection",
   strikethrough: "Strikethrough selection",
   replacetext: "Replace text selection",
+  selecttext: "Text selection",
   inserttext: "Insert text",
   // Story 7.3 (a placement is one click).
   stamp: "Tool placement",

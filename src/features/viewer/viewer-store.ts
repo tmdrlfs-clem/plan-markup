@@ -58,6 +58,7 @@ export type ViewerTool =
   | "texthighlight"
   | "squiggly"
   | "replacetext"
+  | "selecttext"
   | "inserttext"
   | "whiteout"
   | "whiteoutpolygon"
@@ -106,9 +107,9 @@ export function isCoverTool(tool: ViewerTool): tool is CoverTool {
 }
 
 /** Story 5.9: the tools that mark PDF text (a drag selects words). */
-export type TextMarkTool = "underline" | "strikethrough" | "texthighlight" | "squiggly" | "replacetext";
+export type TextMarkTool = "underline" | "strikethrough" | "texthighlight" | "squiggly" | "replacetext" | "selecttext";
 export function isTextMarkTool(tool: ViewerTool): tool is TextMarkTool {
-  return tool === "underline" || tool === "strikethrough" || tool === "texthighlight" || tool === "squiggly" || tool === "replacetext";
+  return tool === "underline" || tool === "strikethrough" || tool === "texthighlight" || tool === "squiggly" || tool === "replacetext" || tool === "selecttext";
 }
 
 /**

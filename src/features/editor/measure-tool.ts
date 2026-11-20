@@ -217,6 +217,7 @@ const ADD_LABEL: Record<DrawTool, string> = {
   texthighlight: ADD_TEXT_HIGHLIGHT,
   squiggly: ADD_SQUIGGLY,
   replacetext: ADD_REPLACE_TEXT,
+  selecttext: "Select text",
   inserttext: ADD_INSERT_TEXT,
   whiteout: ADD_WHITEOUT,
   whiteoutpolygon: ADD_WHITEOUT,
@@ -259,6 +260,7 @@ const MIN_POINTS: Record<DrawTool, number> = {
   texthighlight: 1,
   squiggly: 1,
   replacetext: 1,
+  selecttext: 1,
   inserttext: 1,
   whiteout: 2,
   whiteoutpolygon: 3,
@@ -1753,6 +1755,7 @@ function markupOf(d: Drawing): Markup {
     case "texthighlight":
     case "squiggly":
     case "replacetext":
+    case "selecttext":
       throw new Error("marked text is added by its drag (text-mark-tool.ts)");
     case "inserttext":
       throw new Error("insert text is placed by one click (placeCaret)");

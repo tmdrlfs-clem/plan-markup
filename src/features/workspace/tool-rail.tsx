@@ -35,6 +35,7 @@ import {
   StickyNote,
   Strikethrough,
   Type,
+  TextSelect,
   type LucideIcon,
   TypeOutline,
   Underline,
@@ -64,7 +65,7 @@ interface Tool {
  * Tools that work today: Select and Pan (Story 3.2), and Length (snapping from
  * Story 4.1, measuring from Story 4.5). The others arrive with the editor.
  */
-const LIVE_TOOLS: ReadonlySet<string> = new Set<ViewerTool>(["select", "pan", "zoom", "length", "polylength", "area", "count", "angle", "radius", "diameter", "line", "arrow", "polyline", "polygon", "arc", "rectangle", "ellipse", "cloud", "text", "callout", "typewriter", "note", "cloudplus", "pen", "highlight", "image", "dimension", "underline", "strikethrough", "texthighlight", "squiggly", "replacetext", "inserttext", "whiteout", "whiteoutpolygon", "eraser", "revision", "legend"]);
+const LIVE_TOOLS: ReadonlySet<string> = new Set<ViewerTool>(["select", "pan", "zoom", "length", "polylength", "area", "count", "angle", "radius", "diameter", "line", "arrow", "polyline", "polygon", "arc", "rectangle", "ellipse", "cloud", "text", "callout", "typewriter", "note", "cloudplus", "pen", "highlight", "image", "dimension", "underline", "strikethrough", "texthighlight", "squiggly", "replacetext", "selecttext", "inserttext", "whiteout", "whiteoutpolygon", "eraser", "revision", "legend"]);
 
 export const SNAP_PREVIEW_HINT_ID = "snap-preview";
 /** Review S3: a page past the segment cap. */
@@ -118,6 +119,7 @@ export const STRIKETHROUGH_HINT = `Strikethrough: ${MARKS}`;
 export const TEXT_HIGHLIGHT_HINT = `Text highlight: ${MARKS}`;
 export const SQUIGGLY_HINT = `Squiggly underline: ${MARKS}`;
 export const REPLACE_TEXT_HINT = "Replace text: drag across the words to replace (from a word); the release strikes them through and asks for their replacement. Esc returns to Select.";
+export const SELECT_TEXT_HINT = "Select text: drag across the words (from a word); the release copies them to the clipboard. Esc returns to Select.";
 export const INSERT_TEXT_HINT = "Insert text: click where the text goes; a caret marks it and you type the text to insert. Esc returns to Select.";
 export const NO_PAGE_TEXT = "This page is an image: it has no text to mark";
 /** Story 5.11: the HintBar while White-out or the Eraser is armed. */
@@ -165,6 +167,7 @@ const TOOL_HINTS: Partial<Record<ViewerTool, string>> = {
   squiggly: SQUIGGLY_HINT,
   replacetext: REPLACE_TEXT_HINT,
   inserttext: INSERT_TEXT_HINT,
+  selecttext: SELECT_TEXT_HINT,
   whiteout: WHITEOUT_HINT,
   whiteoutpolygon: WHITEOUT_POLYGON_HINT,
   eraser: ERASER_HINT,
@@ -268,6 +271,7 @@ export const TEXT_MARK_TOOLS: readonly (Tool & { id: TextMarkTool })[] = [
   { id: "texthighlight", label: "Text highlight", icon: TextHighlightIcon },
   { id: "squiggly", label: "Squiggly underline", icon: SquigglyIcon },
   { id: "replacetext", label: "Replace text", icon: ReplaceTextIcon },
+  { id: "selecttext", label: "Select text", icon: TextSelect },
 ];
 export const MORE_TEXT_MARK_TOOLS = "More text markup tools";
 /** Story 5.11: the cover tools share a slot (D4: Shift+W White-out; the others have no key). */

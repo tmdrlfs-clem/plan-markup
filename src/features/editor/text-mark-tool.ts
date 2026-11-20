@@ -14,6 +14,8 @@ import { DEFAULT_MARKUP_STYLE, type Markup, type MarkupStyle, type TextMarkMarku
 import { isTextMarkTool, viewerStore, type LayerView, type TextMarkTool } from "@/features/viewer";
 
 import { editorStore, setDrawing } from "./editor-store";
+import { toast } from "@/components/ui/toast-store";
+
 import { askText } from "./text-prompt";
 import { executeOp } from "./undo-store";
 
@@ -24,11 +26,13 @@ export const ADD_STRIKETHROUGH = "Add strikethrough";
 export const ADD_TEXT_HIGHLIGHT = "Add text highlight";
 export const ADD_SQUIGGLY = "Add squiggly underline";
 export const ADD_REPLACE_TEXT = "Add replace text";
-const ADD: Record<TextMarkTool, string> = { underline: ADD_UNDERLINE, strikethrough: ADD_STRIKETHROUGH, texthighlight: ADD_TEXT_HIGHLIGHT, squiggly: ADD_SQUIGGLY, replacetext: ADD_REPLACE_TEXT };
-/** The markup a text tool's drag makes (Replace text: a strikethrough with its replacement). */
+const ADD: Record<Exclude<TextMarkTool, "selecttext">, string> = { underline: ADD_UNDERLINE, strikethrough: ADD_STRIKETHROUGH, texthighlight: ADD_TEXT_HIGHLIGHT, squiggly: ADD_SQUIGGLY, replacetext: ADD_REPLACE_TEXT };
+/** The markup a text tool's drag makes (Replace text: a strikethrough with its replacement; Select text: none, it shows as a highlight). */
 export function textMarkKind(tool: TextMarkTool): TextMarkMarkup["type"] {
-  return tool === "replacetext" ? "strikethrough" : tool;
+  return tool === "replacetext" ? "strikethrough" : tool === "selecttext" ? "texthighlight" : tool;
 }
+/** Select text: what the toast says once the text is copied. */
+export const TEXT_COPIED = "Text copied";
 /** A text highlight's style: yellow at 40 %, multiplied over the sheet (as the Highlight pen). */
 const TEXT_HIGHLIGHT_STYLE: MarkupStyle = { ...DEFAULT_MARKUP_STYLE, color: "#ffff00", opacity: 0.4 };
 /** The press must be this near text on screen (CSS px). */
@@ -72,6 +76,11 @@ export function textMarkDrag(
   }
   setDrawing(null);
   if (!selected) return;
+  if (tool === "selecttext") {
+    // Select text: the words go to the clipboard (nothing is added).
+    copyText(selected.text);
+    return;
+  }
   const style = tool === "texthighlight" ? TEXT_HIGHLIGHT_STYLE : DEFAULT_MARKUP_STYLE;
   const markup: Markup = { id: uuidv7(), pageId, createdAt: new Date().toISOString(), style, type: textMarkKind(tool), points: selected.quads, text: selected.text };
   const documentId = at.documentId;
@@ -87,6 +96,22 @@ export function textMarkDrag(
     return;
   }
   executeOp({ kind: "markups.add", documentId, markups: [markup] }, ADD[tool]);
+}
+
+/** Writes `text` to the system clipboard and says so (or that it could not). */
+function copyText(text: string): void {
+  const done = () => toast({ title: TEXT_COPIED, description: text.length > LABEL_CHARS ? `${text.slice(0, LABEL_CHARS)}…` : text, variant: "success" });
+  const failed = () => toast({ title: "Could not copy the text", description: "The browser did not allow the clipboard.", variant: "danger" });
+  try {
+    const write = navigator.clipboard?.writeText(text);
+    if (!write) {
+      failed();
+      return;
+    }
+    write.then(done, failed);
+  } catch {
+    failed();
+  }
 }
 
 const clip = (s: string) => (s.length > LABEL_CHARS ? `${s.slice(0, LABEL_CHARS)}…` : s);
