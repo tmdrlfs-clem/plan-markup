@@ -8,6 +8,10 @@
 // File → Export → Flattened PDF: the markups drawn into the pages, a new file.
 // Story 9.12 (FR78): "Include advisory notice" draws the 4541 advisory notice onto
 // each exported page; it starts on when the drawing has zones or heads.
+// Save as… (File menu, a tab's right-click menu, Ctrl+Shift+S) is the editable
+// export: a PDF of the drawing to this computer. A successful export marks the
+// tab saved (the close prompt asks again only after a change), and closes the
+// tab when the close prompt asked for the save.
 
 import { useEffect, useState } from "react";
 import { createStore } from "zustand/vanilla";
@@ -21,8 +25,8 @@ import { TextField } from "@/components/ui/text-field";
 import { toast } from "@/components/ui/toast-store";
 import { parsePageRange } from "@/core/export/page-range";
 import { isHead } from "@/core/sprinkler/heads";
-import { editorStore, layersOf, markupsOf } from "@/features/editor";
-import { viewerStore } from "@/features/viewer";
+import { editorStore, layersOf, markTabSaved, markupsOf } from "@/features/editor";
+import { tabsStore, viewerStore, viewerTabs } from "@/features/viewer";
 
 import { exportBlocked, exportCount, runExport, type ExportKind } from "./run-export";
 
@@ -37,7 +41,24 @@ export function openExport(kind: ExportKind = "editable"): void {
 }
 
 function closeExport(): void {
+  closeAfterSave = null;
   exportDialogStore.setState({ open: null });
+}
+
+/** The tab the close prompt's "Save as PDF…" closes once its PDF is saved. */
+let closeAfterSave: string | null = null;
+
+/** Save as…: the drawing in `tabId` (shown first), else the active one, as a PDF to this computer. */
+export function saveAs(tabId?: string, { thenClose = false }: { thenClose?: boolean } = {}): void {
+  if (tabId && tabsStore.getState().activeId !== tabId) viewerTabs.activate(tabId);
+  openExport("editable");
+  const opened = exportDialogStore.getState().open === "editable";
+  closeAfterSave = opened && thenClose ? (tabsStore.getState().activeId ?? null) : null;
+}
+
+/** Ctrl+Shift+S (⌘⇧S): Save as…, instead of the browser's own use of the keys. */
+export function isSaveAsShortcut(event: Pick<KeyboardEvent, "key" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey">): boolean {
+  return (event.ctrlKey || event.metaKey) && event.shiftKey && !event.altKey && event.key.toLowerCase() === "s";
 }
 
 /** Story 8.2: Ctrl+Shift+M (⌘⇧M) flattens, instead of the browser's own use of the keys. */
@@ -66,6 +87,10 @@ export function ExportDialog() {
   const open = useStore(exportDialogStore, (s) => s.open);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      if (isSaveAsShortcut(event)) {
+        event.preventDefault();
+        return saveAs();
+      }
       if (!isFlattenShortcut(event)) return;
       event.preventDefault();
       openExport("flattened");
@@ -102,7 +127,11 @@ function ExportForm({ kind }: { kind: ExportKind }) {
     const n = (k: number) => `${k} ${k === 1 ? "markup" : "markups"}`;
     const description = kind === "flattened" ? `${n(outcome.flattened)} drawn into the pages.` : `${n(outcome.annotations)} as editable PDF annotations.`;
     toast({ title: `Exported ${outcome.name}`, description, variant: "success" });
+    const saved = tabsStore.getState().activeId;
+    const close = closeAfterSave;
+    if (saved) markTabSaved(saved);
     closeExport();
+    if (close && close === saved) viewerTabs.close(close);
   }
 
   return (

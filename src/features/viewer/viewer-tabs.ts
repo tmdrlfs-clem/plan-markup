@@ -191,9 +191,28 @@ class ViewerTabs {
     this.publish();
   }
 
-  /** Closes the active tab (Alt+W, Ctrl+F4). */
+  private closeGuard: ((id: string) => boolean) | null = null;
+
+  /**
+   * What a user's close asks first (the workspace: a PDF save of a changed drawing).
+   * `guard` returns true when it took the close over (it closes the tab itself, or not).
+   */
+  setCloseGuard(guard: (id: string) => boolean): () => void {
+    this.closeGuard = guard;
+    return () => {
+      if (this.closeGuard === guard) this.closeGuard = null;
+    };
+  }
+
+  /** A user's close (the X, a middle click, Delete, Alt+W, File → Close drawing): the guard may ask first. */
+  requestClose(id: string): void {
+    if (!this.find(id) || this.closeGuard?.(id)) return;
+    this.close(id);
+  }
+
+  /** Closes the active tab (Alt+W, Ctrl+F4), asking first like any user's close. */
   closeActive(): void {
-    if (this.activeId) this.close(this.activeId);
+    if (this.activeId) this.requestClose(this.activeId);
   }
 
   /** Closes every tab (tests; another user's workspace). */

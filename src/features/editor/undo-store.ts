@@ -24,9 +24,26 @@ function setHistory(key: string, history: UndoHistory): void {
   editorStore.setState((s) => ({ history: { histories: { ...s.history.histories, [key]: history } } }));
 }
 
-/** Sets a tab's history (the session restore only). */
+/** Sets a tab's history (the session restore only); what it restores counts as saved. */
 export function setTabHistory(tabId: string, history: UndoHistory): void {
   setHistory(tabId, history);
+  markTabSaved(tabId);
+}
+
+/** Where each tab's history stood at its last PDF save (Save as): its length and last step. */
+const savedPoints = new Map<string, { length: number; last: UndoCommand | undefined }>();
+
+/** The tab's drawing was just saved as a PDF (the active tab, or `tabId`). */
+export function markTabSaved(tabId: string = activeKey()): void {
+  const past = historyOf(tabId).past;
+  savedPoints.set(tabId, { length: past.length, last: past.at(-1) });
+}
+
+/** Whether the tab's markups changed since its last PDF save (or since it opened); undoing back to it is no change. */
+export function tabChangedSinceSaved(tabId: string): boolean {
+  const past = historyOf(tabId).past;
+  const saved = savedPoints.get(tabId) ?? { length: 0, last: undefined };
+  return past.length !== saved.length || past.at(-1) !== saved.last;
 }
 
 /** Runs `command` in the active tab (or `tabId`'s) and records it as one undo step. */
@@ -171,9 +188,11 @@ export function activeUndoLabels(state: EditorState, tabId: string | null): { un
 /** Forgets every history (tests, another user's workspace). */
 export function clearUndo(): void {
   editorStore.setState({ history: { histories: {} } });
+  savedPoints.clear();
 }
 
 function dropHistory(tabId: string): void {
+  savedPoints.delete(tabId);
   const histories = editorStore.getState().history.histories;
   if (!histories[tabId]) return;
   const next = { ...histories };
