@@ -98,7 +98,8 @@ export type Markup = MarkupBase &
         leader: Pt[];
       } & TextStyle)
     | ({ type: "callout"; textRect: Box; text: string; leader: Pt[] } & TextStyle)
-    | ({ type: "textBox"; rect: Box; text: string } & TextStyle)
+    /** `cloud`: a cloud border instead of a plain one. */
+    | ({ type: "textBox"; rect: Box; text: string; cloud?: boolean } & TextStyle)
     | ({ type: "typewriter"; at: Pt; text: string } & TextStyle)
     | { type: "note"; at: Pt; text: string }
     /** Insert text: a caret, its tip at `at`, and the text to insert. */

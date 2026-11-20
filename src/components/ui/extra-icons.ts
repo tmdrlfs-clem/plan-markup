@@ -35,3 +35,10 @@ export const ReplaceTextIcon = createLucideIcon("replace-text", [
   ["path", { d: "M6 12v8M18 12v8", key: "ends" }],
   ["path", { d: "M8 9l4-6 4 6", key: "caret" }],
 ]);
+
+/** Text box with a cloud border: a box with a wavy bottom edge and text lines. */
+export const TextCloudIcon = createLucideIcon("text-cloud", [
+  ["path", { d: "M4 16V4h16v12", key: "box" }],
+  ["path", { d: "M4 16c1.3 2 2.7 2 4 0s2.7-2 4 0 2.7 2 4 0 2.7-2 4 0", key: "wave" }],
+  ["path", { d: "M8 8h8M8 12h5", key: "lines" }],
+]);

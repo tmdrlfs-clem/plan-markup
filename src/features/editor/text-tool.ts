@@ -45,9 +45,10 @@ const ADD_LABEL: Record<TextTool, string> = {
   typewriter: ADD_TYPEWRITER,
   note: ADD_NOTE,
   cloudplus: ADD_CLOUD_PLUS,
+  textcloud: ADD_TEXT,
 };
 /** What layer 2's list calls each (with the text's start). */
-export const TEXT_LABEL: Record<TextTool, string> = { text: "Text box", callout: "Callout", typewriter: "Typewriter", note: "Note", cloudplus: "Cloud+" };
+export const TEXT_LABEL: Record<TextTool, string> = { text: "Text box", callout: "Callout", typewriter: "Typewriter", note: "Note", cloudplus: "Cloud+", textcloud: "Text box" };
 /** The list's text is cut to this many characters. */
 const LABEL_CHARS = 40;
 /** A note's field width (CSS px): it opens beside the icon. */
@@ -137,6 +138,9 @@ export function draftOf(tool: TextTool, pageId: string, points: readonly Point[]
   switch (tool) {
     case "text":
       return { ...base, type: "text", points: orientBox(points[0], points[1], toScreen) };
+    // A text box with a cloud border.
+    case "textcloud":
+      return { ...base, style: { ...style, cloud: true }, type: "text", points: orientBox(points[0], points[1], toScreen) };
     case "typewriter": {
       const { right, down } = screenAxes(points[0], toScreen);
       return { ...base, type: "typewriter", points: boxFrom(points[0], right, down, font, font * TEXT_LINE_HEIGHT) };

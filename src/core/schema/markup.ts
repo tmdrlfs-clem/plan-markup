@@ -38,6 +38,8 @@ export const markupStyleSchema = z.object({
   underline: z.boolean().optional(),
   strike: z.boolean().optional(),
   align: z.enum(["center", "right"]).optional(),
+  /** A text box with a cloud border (founder 2026-11-21); absent: a plain border. */
+  cloud: z.boolean().optional(),
 });
 export type MarkupStyle = z.infer<typeof markupStyleSchema>;
 

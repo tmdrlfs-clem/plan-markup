@@ -50,6 +50,7 @@ export type ViewerTool =
   | "typewriter"
   | "note"
   | "cloudplus"
+  | "textcloud"
   | "pen"
   | "highlight"
   | "image"
@@ -83,14 +84,14 @@ export function isLineTool(tool: ViewerTool): tool is LineTool {
 }
 
 /** Story 5.5: the box tools (a rectangle, an ellipse: two corners, clicked or dragged; 5.6: a text box too). */
-export type BoxTool = "rectangle" | "ellipse" | "text" | "whiteout";
+export type BoxTool = "rectangle" | "ellipse" | "text" | "textcloud" | "whiteout";
 export function isBoxTool(tool: ViewerTool): tool is BoxTool {
-  return tool === "rectangle" || tool === "ellipse" || tool === "text" || tool === "whiteout";
+  return tool === "rectangle" || tool === "ellipse" || tool === "text" || tool === "textcloud" || tool === "whiteout";
 }
 
 /** Story 5.6: the text tools (placed by points, then typed). */
-export type TextTool = "text" | "callout" | "typewriter" | "note" | "cloudplus";
-const TEXT_TOOLS: ReadonlySet<ViewerTool> = new Set<ViewerTool>(["text", "callout", "typewriter", "note", "cloudplus"]);
+export type TextTool = "text" | "callout" | "typewriter" | "note" | "cloudplus" | "textcloud";
+const TEXT_TOOLS: ReadonlySet<ViewerTool> = new Set<ViewerTool>(["text", "callout", "typewriter", "note", "cloudplus", "textcloud"]);
 export function isTextTool(tool: ViewerTool): tool is TextTool {
   return TEXT_TOOLS.has(tool);
 }

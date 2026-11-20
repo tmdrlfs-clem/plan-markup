@@ -571,6 +571,18 @@ export function markupAppearance(m: Markup, cal: Calibration): MarkupAppearance 
       return calloutAppearance(m, m.textRect, m.leader);
     case "textBox": {
       opacity(ap, m);
+      if (m.cloud) {
+        // A cloud border around the box (its bumps outside it), then the text in the box.
+        const s = strokeOf(m);
+        const [x0, y0, x1, y1] = m.rect;
+        const cloud = cloudPath([[x0, y0], [x1, y0], [x1, y1], [x0, y1]], 1);
+        const stroke = setStroke(ap, s, true);
+        if (m.fill) ap.push(colorOp(m.fill, false)!);
+        ap.push(cloud.ops, paint(!!m.fill, stroke));
+        includeAll(ap, cloud.controls, s.width / 2);
+        textBlock(ap, m.rect, m.text, m);
+        return { form: ap.finish() };
+      }
       frame(ap, m.rect, strokeOf(m), m.fill);
       textBlock(ap, m.rect, m.text, m);
       return { form: ap.finish(m.rect) };

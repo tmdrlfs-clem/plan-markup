@@ -207,7 +207,7 @@ export function exportMarkup(m: AppMarkup, ctx: ConvertContext): Markup | null {
     case "cloud":
       return { ...base, type: "cloud", points: m.points.map(pt), intensity: 1 };
     case "text":
-      return { ...base, ...text, type: "textBox", rect: box(m.points), text: m.text };
+      return { ...base, ...text, type: "textBox", rect: box(m.points), text: m.text, ...(s.cloud ? { cloud: true } : {}) };
     case "typewriter": {
       const [x0, , , y1] = box(m.points);
       return { ...noStroke(base), ...text, type: "typewriter", at: [x0, y1], text: m.text };

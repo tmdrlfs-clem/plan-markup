@@ -46,7 +46,7 @@ import { Fragment, useEffect, useRef, useState, type KeyboardEvent } from "react
 import { useStore } from "zustand";
 
 import { Menu, MenuContent, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "@/components/ui/menu";
-import { ArcIcon, InsertTextIcon, ReplaceTextIcon, SquigglyIcon, TextHighlightIcon } from "@/components/ui/extra-icons";
+import { ArcIcon, TextCloudIcon, InsertTextIcon, ReplaceTextIcon, SquigglyIcon, TextHighlightIcon } from "@/components/ui/extra-icons";
 import { Toolbar, ToolbarButton, ToolbarSeparator, ToolbarToggleGroup, ToolbarToggleItem } from "@/components/ui/toolbar";
 import { dismissHint, showHint } from "@/components/ui/hint-store";
 import { pickImageFile } from "@/features/editor";
@@ -66,7 +66,7 @@ interface Tool {
  * Tools that work today: Select and Pan (Story 3.2), and Length (snapping from
  * Story 4.1, measuring from Story 4.5). The others arrive with the editor.
  */
-const LIVE_TOOLS: ReadonlySet<string> = new Set<ViewerTool>(["select", "pan", "zoom", "snapshot", "length", "polylength", "area", "count", "angle", "radius", "diameter", "line", "arrow", "polyline", "polygon", "arc", "rectangle", "ellipse", "cloud", "text", "callout", "typewriter", "note", "cloudplus", "pen", "highlight", "image", "dimension", "underline", "strikethrough", "texthighlight", "squiggly", "replacetext", "selecttext", "inserttext", "whiteout", "whiteoutpolygon", "eraser", "revision", "legend"]);
+const LIVE_TOOLS: ReadonlySet<string> = new Set<ViewerTool>(["select", "pan", "zoom", "snapshot", "length", "polylength", "area", "count", "angle", "radius", "diameter", "line", "arrow", "polyline", "polygon", "arc", "rectangle", "ellipse", "cloud", "text", "callout", "typewriter", "note", "cloudplus", "pen", "highlight", "image", "dimension", "underline", "strikethrough", "texthighlight", "squiggly", "replacetext", "selecttext", "inserttext", "textcloud", "whiteout", "whiteoutpolygon", "eraser", "revision", "legend"]);
 
 export const SNAP_PREVIEW_HINT_ID = "snap-preview";
 /** Review S3: a page past the segment cap. */
@@ -121,6 +121,7 @@ export const TEXT_HIGHLIGHT_HINT = `Text highlight: ${MARKS}`;
 export const SQUIGGLY_HINT = `Squiggly underline: ${MARKS}`;
 export const REPLACE_TEXT_HINT = "Replace text: drag across the words to replace (from a word); the release strikes them through and asks for their replacement. Esc returns to Select.";
 export const SELECT_TEXT_HINT = "Select text: drag across the words (from a word); the release copies them to the clipboard. Esc returns to Select.";
+export const TEXT_CLOUD_HINT = `Text box (cloud border): drag from one corner to the opposite one, or click both. ${TYPING}`;
 export const INSERT_TEXT_HINT = "Insert text: click where the text goes; a caret marks it and you type the text to insert. Esc returns to Select.";
 export const NO_PAGE_TEXT = "This page is an image: it has no text to mark";
 /** Story 5.11: the HintBar while White-out or the Eraser is armed. */
@@ -170,6 +171,7 @@ const TOOL_HINTS: Partial<Record<ViewerTool, string>> = {
   squiggly: SQUIGGLY_HINT,
   replacetext: REPLACE_TEXT_HINT,
   inserttext: INSERT_TEXT_HINT,
+  textcloud: TEXT_CLOUD_HINT,
   selecttext: SELECT_TEXT_HINT,
   whiteout: WHITEOUT_HINT,
   whiteoutpolygon: WHITEOUT_POLYGON_HINT,
@@ -266,6 +268,7 @@ export const TEXT_TOOLS: readonly (Tool & { id: TextSlotTool })[] = [
   { id: "callout", label: "Callout", icon: MessageSquareText, shortcut: "Q" },
   { id: "typewriter", label: "Typewriter", icon: TypeOutline },
   { id: "note", label: "Note", icon: StickyNote },
+  { id: "textcloud", label: "Text box (cloud border)", icon: TextCloudIcon },
   { id: "inserttext", label: "Insert text", icon: InsertTextIcon },
 ];
 export const MORE_TEXT_TOOLS = "More text tools";

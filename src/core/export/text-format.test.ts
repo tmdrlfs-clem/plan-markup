@@ -32,4 +32,11 @@ describe("text format in the PDF (founder 2026-11-21)", () => {
     // "Hello" in Courier 10 pt is 30 pt wide: (194 − 30) / 2 + 3.
     expect(x).toBeCloseTo(85, 3);
   });
+
+  it("a cloud-bordered text box draws scallops (curves) outside its box", () => {
+    const { form } = markupAppearance(box({ cloud: true }), cal);
+    expect(form.content).toMatch(/ c$/m);
+    expect(form.bbox[0]).toBeLessThan(0);
+    expect(form.bbox[3]).toBeGreaterThan(40);
+  });
 });

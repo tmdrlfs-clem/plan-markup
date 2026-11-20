@@ -33,6 +33,7 @@ const CHANGE_LABELS: Record<keyof PropertyChange, string> = {
   underline: "Underline text",
   strike: "Strike through text",
   align: "Align text",
+  cloud: "Cloud border",
   revision: "Edit revision stamp",
   legend: "Edit legend",
   subject: "Change subject",
