@@ -150,6 +150,30 @@ class ViewerTabs {
     return "opened";
   }
 
+  /**
+   * Flatten in place / Unflatten: the tab shows `file` instead of its file (a new
+   * document: its own id, markups and history), in the same place in the strip.
+   */
+  replaceFile(id: string, file: File): void {
+    const entry = this.find(id);
+    if (!entry) return;
+    entry.file = file;
+    entry.fileKey = fileKeyOf(file);
+    entry.sha256 = null;
+    entry.documentId = undefined;
+    if (this.activeId !== id) {
+      entry.engine?.destroy();
+      entry.engine = null;
+      entry.snapshot = this.loadingState(file, id, entry.snapshot.tool);
+      this.publish();
+      return;
+    }
+    viewerStore.setState(this.loadingState(file, id, viewerStore.getState().tool), true);
+    if (entry.engine) void entry.engine.open(file);
+    else this.startEngine(entry);
+    this.publish();
+  }
+
   /** Opens the active tab's file again (Try again after a render failure). */
   retry(): void {
     const entry = this.active();

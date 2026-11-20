@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const saveAs = vi.fn();
 vi.mock("./export-dialog", () => ({ saveAs: (...args: unknown[]) => saveAs(...args) }));
 
-import { clearUndo, executeCommand, markTabSaved, redoActive, tabChangedSinceSaved, undoActive } from "@/features/editor";
+import { activeUndoLabels, clearUndo, editorStore, executeCommand, markTabSaved, markTabUnsaved, redoActive, registerFallbackUndo, tabChangedSinceSaved, undoActive } from "@/features/editor";
 import { tabsStore, viewerStore, viewerTabs, type DocumentTab } from "@/features/viewer";
 
 import { SavePrompt, savePromptStore } from "./save-prompt";
@@ -50,6 +50,29 @@ describe("tabChangedSinceSaved", () => {
     expect(tabChangedSinceSaved("t1")).toBe(true);
     redoActive();
     expect(tabChangedSinceSaved("t1")).toBe(false);
+  });
+
+  it("a drawing flattened in place (not on the computer yet) is a change until its PDF is saved", () => {
+    markTabUnsaved("t1");
+    expect(tabChangedSinceSaved("t1")).toBe(true);
+    markTabSaved("t1");
+    expect(tabChangedSinceSaved("t1")).toBe(false);
+  });
+});
+
+describe("Undo with no step left (Flatten in place)", () => {
+  it("runs the fallback and the menus name it", () => {
+    const run = vi.fn(() => true);
+    const off = registerFallbackUndo({ label: (tabId) => (tabId === "t1" ? "Flatten" : null), run });
+    expect(activeUndoLabels(editorStore.getState(), "t1").undo).toBe("Flatten");
+    expect(activeUndoLabels(editorStore.getState(), "t2").undo).toBeNull();
+    expect(undoActive()).toBe(true);
+    expect(run).toHaveBeenCalledWith("t1");
+    executeCommand(step("Add"), "t1");
+    expect(activeUndoLabels(editorStore.getState(), "t1").undo).toBe("Add");
+    off();
+    undoActive();
+    expect(undoActive()).toBe(false);
   });
 });
 

@@ -39,6 +39,11 @@ export function markTabSaved(tabId: string = activeKey()): void {
   savedPoints.set(tabId, { length: past.length, last: past.at(-1) });
 }
 
+/** Flatten in place / Unflatten: the tab shows a drawing not saved as a PDF yet (the close prompt asks). */
+export function markTabUnsaved(tabId: string): void {
+  savedPoints.set(tabId, { length: -1, last: undefined });
+}
+
 /** Whether the tab's markups changed since its last PDF save (or since it opened); undoing back to it is no change. */
 export function tabChangedSinceSaved(tabId: string): boolean {
   const past = historyOf(tabId).past;
@@ -104,6 +109,18 @@ export function recordAppliedOp(op: DocOp, label: string, tabId?: string): void 
 
 let drawingUndo: (() => boolean) | null = null;
 
+/** What Undo does in a tab with no step left (Flatten in place: Unflatten), and its menu label. */
+export type FallbackUndo = { label: (tabId: string) => string | null; run: (tabId: string) => boolean };
+let fallbackUndo: FallbackUndo | null = null;
+
+/** Registers the fallback undo (one at a time). */
+export function registerFallbackUndo(fallback: FallbackUndo): () => void {
+  fallbackUndo = fallback;
+  return () => {
+    if (fallbackUndo === fallback) fallbackUndo = null;
+  };
+}
+
 /** The drawing tool's undo while drawing (removes the last point; false when nothing is drawn). */
 export function registerDrawingUndo(fn: (() => boolean) | null): () => void {
   drawingUndo = fn;
@@ -117,7 +134,7 @@ export function undoActive(): boolean {
   if (drawingUndo?.()) return true;
   const key = activeKey();
   const before = historyOf(key);
-  if (before.past.length === 0) return false;
+  if (before.past.length === 0) return fallbackUndo?.run(key) ?? false;
   setHistory(key, undo(before));
   return true;
 }
@@ -182,7 +199,9 @@ export const DRAWING_POINT_LABEL: Readonly<Record<DrawTool, string>> = {
  */
 export function activeUndoLabels(state: EditorState, tabId: string | null): { undo: string | null; redo: string | null } {
   const labels = nextLabels(state.history.histories[tabId ?? ""] ?? EMPTY_HISTORY);
-  return state.tools.drawing ? { ...labels, undo: DRAWING_POINT_LABEL[state.tools.drawing.tool] } : labels;
+  if (state.tools.drawing) return { ...labels, undo: DRAWING_POINT_LABEL[state.tools.drawing.tool] };
+  // A tab with no step left: what the fallback undoes (Flatten).
+  return labels.undo === null && tabId && fallbackUndo ? { ...labels, undo: fallbackUndo.label(tabId) } : labels;
 }
 
 /** Forgets every history (tests, another user's workspace). */

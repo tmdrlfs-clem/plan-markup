@@ -172,7 +172,8 @@ function propertiesDict(page: PDFPage): PDFDict {
 }
 
 /** Flattens the annotations of one page (Story 8.1: with `only`, just those; the others are kept as they are). */
-export function flattenPage(doc: PDFDocument, pageIndex: number, only?: ReadonlySet<PDFRef>): FlattenResult {
+/** `added`: collects the content streams this adds to the page (Unflatten removes them: flatten-record.ts). */
+export function flattenPage(doc: PDFDocument, pageIndex: number, only?: ReadonlySet<PDFRef>, added?: PDFRef[]): FlattenResult {
   const context = doc.context;
   const page = doc.getPage(pageIndex);
   const annots = page.node.Annots();
@@ -247,7 +248,9 @@ export function flattenPage(doc: PDFDocument, pageIndex: number, only?: Readonly
     const start = context.register(context.flateStream("q\n"));
     const end = context.register(context.flateStream("\nQ\n"));
     page.node.wrapContentStreams(start, end);
-    page.node.addContentStream(context.register(context.flateStream(ops.join("\n") + "\n")));
+    const drawn = context.register(context.flateStream(ops.join("\n") + "\n"));
+    page.node.addContentStream(drawn);
+    added?.push(start, end, drawn);
   }
   if (keep.length > 0) page.node.set(PDFName.of("Annots"), context.obj(keep));
   else page.node.delete(PDFName.of("Annots"));

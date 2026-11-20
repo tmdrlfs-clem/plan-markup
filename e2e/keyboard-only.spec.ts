@@ -86,14 +86,23 @@ test("keyboard only: open, calibrate, measure, stamp, flatten and export; axe cl
   await page.keyboard.press("Enter");
   await expect(markups(page)).toHaveAttribute("data-captions", new RegExp(`^${length!.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\| Revision A — As-built$`));
 
-  // Flatten and export: Ctrl+Shift+M, Enter.
+  // Flatten: Ctrl+Shift+M, then the dialog's Flatten (2026-11-21: into the open drawing).
   await page.keyboard.press("Escape");
   await page.keyboard.press("Control+Shift+M");
-  const flatten = page.getByRole("dialog", { name: "Flatten and export" });
+  const flatten = page.getByRole("dialog", { name: "Flatten markups into the drawing?" });
   await expect(flatten).toBeVisible();
   expect(await seriousViolations(page)).toEqual([]);
-  const download = page.waitForEvent("download");
   await tabTo(page, flatten.getByRole("button", { name: "Flatten", exact: true }));
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("tablist", { name: "Open drawings" }).getByRole("tab", { name: "scales (flattened).pdf" })).toBeVisible();
+
+  // Export: Save as… (Ctrl+Shift+S), Enter on Export.
+  await expect(page.getByTestId("drawing-canvas")).toHaveAttribute("data-state", "ready");
+  await page.keyboard.press("Control+Shift+S");
+  const exportDialog = page.getByRole("dialog", { name: "Export editable PDF" });
+  await expect(exportDialog).toBeVisible();
+  const download = page.waitForEvent("download");
+  await tabTo(page, exportDialog.getByRole("button", { name: "Export", exact: true }));
   await page.keyboard.press("Enter");
   const file = await download;
   expect(file.suggestedFilename()).toBe("scales (flattened).pdf");

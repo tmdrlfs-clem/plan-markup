@@ -22,7 +22,7 @@ import { calibrationOf, openCalibrate, openVerify } from "@/features/calibration
 import { activeUndoLabels, hasClipboard, redoActive, undoActive, editorStore, useSelectionState } from "@/features/editor";
 import { hasDocument, tabsStore, viewerCommands, viewerStore, viewerTabs, type SelectionCommand, type ViewerCommand } from "@/features/viewer";
 import { openMarkupSetList } from "@/features/markup-set/markup-sets-ui";
-import { openExport, openPrint, saveAs } from "@/features/export";
+import { openExport, openFlatten, openPrint, saveAs, unflatten } from "@/features/export";
 import { openShortcuts } from "./shortcuts-dialog";
 import { saveNow } from "@/features/markup-set/sync";
 import { THEMES, THEME_LABELS, isTheme, type Theme } from "@/lib/theme";
@@ -107,13 +107,18 @@ function PrintItem() {
   );
 }
 
-/** Story 8.2: Flatten… (Ctrl+Shift+M): the flattened PDF. */
+/** Flatten… (Ctrl+Shift+M): the markups drawn into the open drawing; Unflatten takes them out again (2026-11-21). */
 function FlattenItem() {
   const open = useStore(viewerStore, (s) => hasDocument(s) && !s.standIn);
   return (
-    <MenuBarItem disabled={!open} shortcut="Ctrl+Shift+M" onSelect={() => openExport("flattened")}>
-      Flatten…
-    </MenuBarItem>
+    <>
+      <MenuBarItem disabled={!open} shortcut="Ctrl+Shift+M" onSelect={openFlatten}>
+        Flatten…
+      </MenuBarItem>
+      <MenuBarItem disabled={!open} onSelect={() => void unflatten()}>
+        Unflatten
+      </MenuBarItem>
+    </>
   );
 }
 

@@ -27,6 +27,7 @@ import { recordActivity } from "@/features/activity/actions";
 import { editorStore, headDimensionsOf, layersOf, markupsOf } from "@/features/editor";
 import { markupSetIdOf } from "@/features/markup-set/sync";
 import { viewerStore } from "@/features/viewer";
+import type { FlattenRecord } from "@/core/export/flatten-record";
 import type { ExportWorkerReply } from "@/workers/export.worker";
 
 /** An export longer than this is given up (a fresh worker each time). */
@@ -78,7 +79,7 @@ export function exportBlocked(): string | null {
 }
 
 /** The drawing's file and the job for `choice` (images decoded), or why not. */
-async function prepare(choice: Pick<ExportChoice, "pages" | "includeHidden">, decode: ExportDeps["decode"]): Promise<{ ok: true; file: File; bytes: Uint8Array; job: ExportJob } | { ok: false; reason: string }> {
+export async function prepare(choice: Pick<ExportChoice, "pages" | "includeHidden">, decode: ExportDeps["decode"]): Promise<{ ok: true; file: File; bytes: Uint8Array; job: ExportJob } | { ok: false; reason: string }> {
   const blocked = exportBlocked();
   if (blocked) return { ok: false, reason: blocked };
   const v = viewerStore.getState();
@@ -175,7 +176,7 @@ export function exportCount(choice: ExportChoice): number {
 }
 
 /** An image markup's pixels: 8-bit RGB, and alpha when any pixel is not opaque. */
-async function decodeImage(src: string): Promise<DecodedImage | null> {
+export async function decodeImage(src: string): Promise<DecodedImage | null> {
   const comma = src.indexOf(",");
   const type = /^data:([^;]+);base64$/.exec(src.slice(0, comma))?.[1];
   if (comma < 0 || !type) return null;
@@ -280,3 +281,15 @@ function saveFile(name: string, bytes: Uint8Array): void {
 }
 
 const browserDeps: ExportDeps = { decode: decodeImage, write: writeInWorker, save: saveFile, record: reportActivity };
+
+/** Flatten in place: the job drawn into the pages, with the record Unflatten reads (null: failed). */
+export function flattenInWorker(bytes: Uint8Array, job: ExportJob, record: FlattenRecord): Promise<Uint8Array | null> {
+  return inWorker({ type: "export", job, date: new Date().toISOString(), flatten: true, notice: false, record }, bytes).then((reply) =>
+    reply?.type === "exported" ? reply.bytes : null,
+  );
+}
+
+/** Unflatten: the PDF without its flatten and the record (both null: nothing to unflatten); null when it failed. */
+export function unflattenInWorker(bytes: Uint8Array): Promise<{ bytes: Uint8Array | null; record: FlattenRecord | null } | null> {
+  return inWorker({ type: "unflatten" }, bytes).then((reply) => (reply?.type === "unflattened" ? { bytes: reply.bytes, record: reply.record } : null));
+}

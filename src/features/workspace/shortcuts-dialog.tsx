@@ -73,8 +73,9 @@ export const SHORTCUTS: readonly ShortcutGroup[] = [
     group: "Document",
     rows: [
       { action: "Open / Save", keys: "Ctrl+O / Ctrl+S" },
+      { action: "Save as PDF", keys: "Ctrl+Shift+S" },
       { action: "Print", keys: "Ctrl+P" },
-      { action: "Flatten", keys: "Ctrl+Shift+M" },
+      { action: "Flatten", keys: "Ctrl+Shift+M", note: "Ctrl+Z or File → Unflatten undoes it" },
       { action: "Search text / next / previous", keys: "Ctrl+F / F3 / Shift+F3", note: "Enter / Shift+Enter in the Search field" },
       { action: "Next / previous drawing", keys: "Alt+PageDown / Alt+PageUp" },
       { action: "Close drawing", keys: "Alt+W", note: "Also Ctrl+F4" },
