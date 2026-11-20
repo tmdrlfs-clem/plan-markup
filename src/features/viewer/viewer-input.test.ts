@@ -143,6 +143,7 @@ function target() {
     panBy: vi.fn(),
     zoomToRect: vi.fn(),
     zoomOutToRect: vi.fn(),
+    snapshot: vi.fn(),
     setZoomRect: vi.fn(),
     fitPage: vi.fn(),
     fitWidth: vi.fn(),
@@ -489,6 +490,20 @@ describe("ViewerInput", () => {
     canvas.dispatchEvent(pointer("pointermove", { x: 160, y: 140 }));
     canvas.dispatchEvent(pointer("pointerup", { x: 160, y: 140 }));
     expect(t.zoomOutToRect).toHaveBeenCalledWith({ x: 100, y: 100, width: 60, height: 40 });
+    expect(t.zoomToRect).not.toHaveBeenCalled();
+  });
+
+  it("Snapshot tool: a drag copies the box (shown as the zoom box); a click copies nothing and never zooms", () => {
+    setTool("snapshot");
+    canvas.dispatchEvent(pointer("pointerdown", { x: 100, y: 100 }));
+    canvas.dispatchEvent(pointer("pointermove", { x: 160, y: 140 }));
+    expect(t.setZoomRect).toHaveBeenLastCalledWith({ x: 100, y: 100, width: 60, height: 40 });
+    canvas.dispatchEvent(pointer("pointerup", { x: 160, y: 140 }));
+    expect(t.snapshot).toHaveBeenCalledWith({ x: 100, y: 100, width: 60, height: 40 });
+    canvas.dispatchEvent(pointer("pointerdown", { x: 50, y: 50 }));
+    canvas.dispatchEvent(pointer("pointerup", { x: 50, y: 50 }));
+    expect(t.snapshot).toHaveBeenCalledTimes(1);
+    expect(t.zoomStep).not.toHaveBeenCalled();
     expect(t.zoomToRect).not.toHaveBeenCalled();
   });
 

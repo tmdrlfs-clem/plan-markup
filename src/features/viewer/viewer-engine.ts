@@ -37,6 +37,7 @@
 // worker at the lowest priority (render.thumbnail, IndexedDB-cached). A
 // listener that goes away cancels the request once nobody else waits for it.
 
+import { copySnapshot } from "./snapshot";
 import {
   DEFAULT_TILE_SIZE,
   LruByteCache,
@@ -121,6 +122,12 @@ const REVEAL_MIN_PT = 72;
 const SELECT_TOLERANCE_PX = 5;
 
 /** Story 5.7: `highlights`, between the tiles and the markups, is multiplied over the sheet (CSS). */
+/** Where a snapshot goes (the clipboard); replaceable for tests. */
+let snapshotSink: (canvas: HTMLCanvasElement) => void = copySnapshot;
+export function setSnapshotSink(sink: (canvas: HTMLCanvasElement) => void): void {
+  snapshotSink = sink;
+}
+
 export type ViewerCanvases = { tiles: HTMLCanvasElement; highlights?: HTMLCanvasElement; markups: HTMLCanvasElement; active: HTMLCanvasElement };
 
 /** The canvas backing store in whole device px, as the host measured it. */
@@ -1098,6 +1105,33 @@ export class ViewerEngine {
     const rotated = rotateView(this.view, delta);
     if (this.fitMode) this.applyView(this.fittedView(this.fitMode, rotated.rotation), this.fitMode);
     else this.setView(rotated);
+  }
+
+  /**
+   * Snapshot: the box (viewport CSS px) of what is shown, the sheet with its markups as shown
+   * (not the tool's feedback on the active canvas), as a PNG on the system clipboard.
+   */
+  snapshot(rect: Rect): void {
+    const { tiles, highlights, markups } = this.canvases;
+    const k = tiles.clientWidth > 0 ? tiles.width / tiles.clientWidth : 1;
+    const sx = Math.max(0, Math.round(rect.x * k));
+    const sy = Math.max(0, Math.round(rect.y * k));
+    const w = Math.min(tiles.width - sx, Math.round(rect.width * k));
+    const h = Math.min(tiles.height - sy, Math.round(rect.height * k));
+    if (w <= 0 || h <= 0) return;
+    const out = document.createElement("canvas");
+    out.width = w;
+    out.height = h;
+    const c = out.getContext("2d");
+    if (!c) return;
+    c.drawImage(tiles, sx, sy, w, h, 0, 0, w, h);
+    if (highlights) {
+      c.globalCompositeOperation = "multiply";
+      c.drawImage(highlights, sx, sy, w, h, 0, 0, w, h);
+      c.globalCompositeOperation = "source-over";
+    }
+    c.drawImage(markups, sx, sy, w, h, 0, 0, w, h);
+    snapshotSink(out);
   }
 
   /** The Zoom tool's rubber band on the active canvas (viewport CSS px), or null. */

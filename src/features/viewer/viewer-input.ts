@@ -130,6 +130,7 @@ export function cursorFor(state: { tool: ViewerTool; tempPan: boolean; dragging:
   if (isTextMarkTool(state.tool)) return "text";
   if (pointTool(state.tool)) return "crosshair";
   if (state.tool === "zoom") return state.zoomOut ? "zoom-out" : "zoom-in";
+  if (state.tool === "snapshot") return "crosshair";
   return "default";
 }
 
@@ -141,6 +142,8 @@ export interface ViewerInputTarget {
   zoomToRect(rect: Rect): void;
   zoomOutToRect(rect: Rect): void;
   setZoomRect(rect: Rect | null): void;
+  /** Snapshot: the viewport-relative box (CSS px) copied as an image. */
+  snapshot?(rect: Rect): void;
   fitPage(): void;
   fitWidth(): void;
   goToPage(index: number): void;
@@ -209,7 +212,7 @@ export type SnapModifiers = { alt: boolean; shift: boolean };
 
 type Drag =
   | { kind: "pan"; pointerId: number; last: Point }
-  | { kind: "zoom"; pointerId: number; start: Point; zoomOut: boolean }
+  | { kind: "zoom"; pointerId: number; start: Point; zoomOut: boolean; snapshot?: boolean }
   | { kind: "caption"; pointerId: number }
   | { kind: "press"; pointerId: number; brush: PressBrush }
   | { kind: "select"; pointerId: number; shift: boolean; alt: boolean; ctrl: boolean }
@@ -359,6 +362,9 @@ export class ViewerInput {
       this.drag = { kind: "pan", pointerId: e.pointerId, last: this.point(e) };
     } else if (e.button === 0 && tool === "zoom") {
       this.drag = { kind: "zoom", pointerId: e.pointerId, start: this.point(e), zoomOut: e.altKey };
+    } else if (e.button === 0 && tool === "snapshot") {
+      // Snapshot: the box dragged out (drawn as the Zoom tool's) is copied as an image.
+      this.drag = { kind: "zoom", pointerId: e.pointerId, start: this.point(e), zoomOut: false, snapshot: true };
     } else if (e.button === 0 && tool === "fill" && this.target.pressTool) {
       // Story 4.10: Dynamic fill spreads while held; Shift paints, Ctrl erases.
       e.preventDefault();
@@ -475,7 +481,9 @@ export class ViewerInput {
       const end = this.pointer;
       if (commit && end) {
         const rect = rectOf(drag.start, end);
-        if (rect.width < CLICK_SLOP && rect.height < CLICK_SLOP) this.target.zoomStep(drag.zoomOut ? -1 : 1, drag.start);
+        if (drag.snapshot) {
+          if (rect.width >= CLICK_SLOP && rect.height >= CLICK_SLOP) this.target.snapshot?.(rect);
+        } else if (rect.width < CLICK_SLOP && rect.height < CLICK_SLOP) this.target.zoomStep(drag.zoomOut ? -1 : 1, drag.start);
         else if (drag.zoomOut) this.target.zoomOutToRect(rect);
         else this.target.zoomToRect(rect);
       }
@@ -530,8 +538,8 @@ export class ViewerInput {
     // Story 4.3: Esc while picking calibration points cancels the pick (the dialog comes back).
     if (e.key === "Escape" && viewerStore.getState().tool === "calibrate") this.target.cancelCalibrationPick?.();
     if (e.key === "Escape") this.keyPointer = null;
-    // Zoom: Esc drops a box being dragged, else returns to Select.
-    if (e.key === "Escape" && viewerStore.getState().tool === "zoom" && this.active() && !e.defaultPrevented && this.canvasKeys()) {
+    // Zoom and Snapshot: Esc drops a box being dragged, else returns to Select.
+    if (e.key === "Escape" && (viewerStore.getState().tool === "zoom" || viewerStore.getState().tool === "snapshot") && this.active() && !e.defaultPrevented && this.canvasKeys()) {
       e.preventDefault();
       if (this.drag?.kind === "zoom") this.endDrag(false);
       else setTool("select");

@@ -27,6 +27,7 @@ export type ViewerTool =
   | "select"
   | "pan"
   | "zoom"
+  | "snapshot"
   | "length"
   | "polylength"
   | "area"
