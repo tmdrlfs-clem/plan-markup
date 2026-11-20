@@ -37,6 +37,8 @@ export const SUBJECT_NAMES: Record<MarkupType, string> = {
   image: "Image",
   dimension: "Dimension",
   underline: "Underline",
+  texthighlight: "Text highlight",
+  squiggly: "Squiggly",
   strikethrough: "Strikethrough",
   whiteout: "White-out",
   eraser: "Eraser",

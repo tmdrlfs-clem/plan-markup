@@ -93,6 +93,7 @@ import {
   type RevisionMarkup,
   type ShapeMarkup,
   type TextMarkup,
+  isTextMarkMarkup,
 } from "@/core/schema/markup";
 import {
   isBoxTool,
@@ -101,6 +102,7 @@ import {
   isInkTool,
   isMarkupTool,
   isTextTool,
+  isTextMarkTool,
   notifyMarkups,
   registerMarkupPainter,
   setTool,
@@ -135,7 +137,7 @@ import {
   textLabel,
   type TextFrame,
 } from "./text-tool";
-import { ADD_STRIKETHROUGH, ADD_UNDERLINE, paintTextMark, paintTextMarkActive, textMarkDrag, textMarkLabel } from "./text-mark-tool";
+import { ADD_SQUIGGLY, ADD_STRIKETHROUGH, ADD_TEXT_HIGHLIGHT, ADD_UNDERLINE, paintTextMark, paintTextMarkActive, textMarkDrag, textMarkLabel } from "./text-mark-tool";
 import { executeOp, registerDrawingUndo } from "./undo-store";
 import { cssFontOf, fontFamilyOf } from "./fonts";
 import { revisionLabel, revisionText } from "@/core/markup/revision";
@@ -208,6 +210,8 @@ const ADD_LABEL: Record<DrawTool, string> = {
   dimension: ADD_DIMENSION,
   underline: ADD_UNDERLINE,
   strikethrough: ADD_STRIKETHROUGH,
+  texthighlight: ADD_TEXT_HIGHLIGHT,
+  squiggly: ADD_SQUIGGLY,
   whiteout: ADD_WHITEOUT,
   whiteoutpolygon: ADD_WHITEOUT,
   eraser: ADD_ERASER,
@@ -246,6 +250,8 @@ const MIN_POINTS: Record<DrawTool, number> = {
   dimension: 3,
   underline: 1,
   strikethrough: 1,
+  texthighlight: 1,
+  squiggly: 1,
   whiteout: 2,
   whiteoutpolygon: 3,
   eraser: 2,
@@ -1000,7 +1006,7 @@ function paintList(c: CanvasRenderingContext2D, markups: readonly Markup[], view
       paintImage(c, any, pts, view);
       continue;
     }
-    if (any.type === "underline" || any.type === "strikethrough") {
+    if (isTextMarkMarkup(any)) {
       // Story 5.9: marked PDF text.
       captions.push(textMarkLabel(any));
       const pts = devicePoints(any.points, view);
@@ -1216,7 +1222,7 @@ export const measurePainter: MarkupPainter = {
     const d = drawing();
     if (d?.tool === "fill") return paintFillActive(c, view, pointer);
     // Story 5.9: the words selected so far.
-    if (d && (d.tool === "underline" || d.tool === "strikethrough") && d.pageId === pageIdOf(view.documentId, view.pageIndex)) {
+    if (d && isTextMarkTool(d.tool) && d.pageId === pageIdOf(view.documentId, view.pageIndex)) {
       if (d.quads) paintTextMarkActive(c, d.tool, devicePoints(d.quads, view), view);
       return d.selected ?? null;
     }
@@ -1270,7 +1276,7 @@ export const measurePainter: MarkupPainter = {
       paintCover(c, pts);
       strokeShape(c, d.tool === "whiteout" ? "rectangle" : "polyline", pts, DEFAULT_MARKUP_STYLE, view);
     }
-    else if (isMarkupTool(d.tool) && !isTextTool(d.tool) && !isInkTool(d.tool) && !isCoverTool(d.tool) && d.tool !== "image" && d.tool !== "stamp" && d.tool !== "revision" && d.tool !== "legend" && d.tool !== "underline" && d.tool !== "strikethrough") strokeShape(c, d.tool, pts, DEFAULT_MARKUP_STYLE, view);
+    else if (isMarkupTool(d.tool) && !isTextTool(d.tool) && !isInkTool(d.tool) && !isCoverTool(d.tool) && d.tool !== "image" && d.tool !== "stamp" && d.tool !== "revision" && d.tool !== "legend" && !isTextMarkTool(d.tool)) strokeShape(c, d.tool, pts, DEFAULT_MARKUP_STYLE, view);
     else strokeMeasure(c, pts, DEFAULT_MEASURE_STYLE, view);
     c.restore();
     if (!live) return null;
@@ -1306,7 +1312,7 @@ export const measurePainter: MarkupPainter = {
     }
     const tool = viewerStore.getState().tool;
     // Dynamic fill is pressed, not clicked (press below); Pen and Highlight are dragged (ink below).
-    if (!isDrawTool(tool) || tool === "fill" || isInkTool(tool) || tool === "underline" || tool === "strikethrough") return "ignored";
+    if (!isDrawTool(tool) || tool === "fill" || isInkTool(tool) || isTextMarkTool(tool)) return "ignored";
     const pageId = pageIdOf(at.documentId, at.pageIndex);
     // Story 5.8: the picked image, centred on the click; then Select has it (to resize).
     if (tool === "image") return placeImage(point, at.documentId, pageId);
@@ -1690,6 +1696,8 @@ function markupOf(d: Drawing): Markup {
       throw new Error("a legend is placed by one click (legend-tool.ts)");
     case "underline":
     case "strikethrough":
+    case "texthighlight":
+    case "squiggly":
       throw new Error("marked text is added by its drag (text-mark-tool.ts)");
     case "text":
     case "callout":

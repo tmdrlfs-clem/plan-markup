@@ -223,7 +223,17 @@ const quadPoints = z
   .max(4 * MAX_TEXT_QUADS)
   .refine((pts) => pts.length % 4 === 0, "four points a quad");
 export const underlineMarkupSchema = z.object({ ...base, type: z.literal("underline"), points: quadPoints, text: z.string().max(MAX_TEXT_LENGTH).optional() });
-export const strikethroughMarkupSchema = z.object({ ...base, type: z.literal("strikethrough"), points: quadPoints, text: z.string().max(MAX_TEXT_LENGTH).optional() });
+export const strikethroughMarkupSchema = z.object({
+  ...base,
+  type: z.literal("strikethrough"),
+  points: quadPoints,
+  text: z.string().max(MAX_TEXT_LENGTH).optional(),
+  /** Replace text (Bluebeam toolbar set, founder 2026-11-21): what the struck text is to be replaced by; a caret marks it. */
+  replacement: z.string().max(MAX_TEXT_LENGTH).optional(),
+});
+/** Text highlight and squiggly underline of PDF text (founder 2026-11-21), stored as an underline is. */
+export const textHighlightMarkupSchema = z.object({ ...base, type: z.literal("texthighlight"), points: quadPoints, text: z.string().max(MAX_TEXT_LENGTH).optional() });
+export const squigglyMarkupSchema = z.object({ ...base, type: z.literal("squiggly"), points: quadPoints, text: z.string().max(MAX_TEXT_LENGTH).optional() });
 
 /**
  * Story 7.7 (FR37, UX-DR27): a revision stamp, its box's four corners ordered like a text box's
@@ -322,6 +332,8 @@ export const markupSchema = z.discriminatedUnion("type", [
   dimensionMarkupSchema,
   underlineMarkupSchema,
   strikethroughMarkupSchema,
+  textHighlightMarkupSchema,
+  squigglyMarkupSchema,
   revisionMarkupSchema,
   legendMarkupSchema,
   zoneMarkupSchema,
@@ -351,9 +363,13 @@ export type ShapeMarkup =
 export type ImageMarkup = z.infer<typeof imageMarkupSchema>;
 export type DimensionMarkup = z.infer<typeof dimensionMarkupSchema>;
 /** Story 5.9: an underline or a strikethrough of PDF text. */
-export type TextMarkMarkup = z.infer<typeof underlineMarkupSchema> | z.infer<typeof strikethroughMarkupSchema>;
+export type TextMarkMarkup =
+  | z.infer<typeof underlineMarkupSchema>
+  | z.infer<typeof strikethroughMarkupSchema>
+  | z.infer<typeof textHighlightMarkupSchema>
+  | z.infer<typeof squigglyMarkupSchema>;
 export function isTextMarkMarkup(m: Markup): m is TextMarkMarkup {
-  return m.type === "underline" || m.type === "strikethrough";
+  return m.type === "underline" || m.type === "strikethrough" || m.type === "texthighlight" || m.type === "squiggly";
 }
 /** Story 5.7: the freehand strokes. */
 export type InkMarkup = z.infer<typeof penMarkupSchema> | z.infer<typeof highlightMarkupSchema> | z.infer<typeof eraserMarkupSchema>;

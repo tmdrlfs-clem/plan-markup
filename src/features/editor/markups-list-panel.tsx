@@ -119,6 +119,8 @@ const TYPE_ICONS: Record<MarkupType, LucideIcon> = {
   image: ImagePlus,
   dimension: RulerDimensionLine,
   underline: Underline,
+  texthighlight: Highlighter,
+  squiggly: Underline,
   strikethrough: Strikethrough,
   whiteout: SquareDashed,
   eraser: Eraser,

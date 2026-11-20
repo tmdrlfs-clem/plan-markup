@@ -8,3 +8,17 @@ export const ArcIcon = createLucideIcon("arc", [
   ["circle", { cx: "4", cy: "20", r: "1.5", key: "a" }],
   ["circle", { cx: "20", cy: "4", r: "1.5", key: "b" }],
 ]);
+
+/** Text highlight: a T over a highlighter bar. */
+export const TextHighlightIcon = createLucideIcon("text-highlight", [
+  ["path", { d: "M6 4h12", key: "top" }],
+  ["path", { d: "M12 4v11", key: "stem" }],
+  ["rect", { x: "3", y: "17", width: "18", height: "4", rx: "1", key: "bar" }],
+]);
+
+/** Squiggly underline: a T over a wave. */
+export const SquigglyIcon = createLucideIcon("squiggly", [
+  ["path", { d: "M6 3h12", key: "top" }],
+  ["path", { d: "M12 3v12", key: "stem" }],
+  ["path", { d: "M3 20l3-2 3 2 3-2 3 2 3-2 3 2", key: "wave" }],
+]);

@@ -93,6 +93,24 @@ describe("Underline and Strikethrough (Story 5.9)", () => {
     expect(vertexIndices(m)).toEqual([]);
   });
 
+  it("Text highlight (yellow, 40 %, filled) and Squiggly underline (a zigzag) mark the words the same way", () => {
+    setTool("texthighlight");
+    measurePainter.textMark!("start", { x: 3, y: 102 }, AT);
+    measurePainter.textMark!("end", { x: 33, y: 102 }, AT);
+    setTool("squiggly");
+    measurePainter.textMark!("start", { x: 3, y: 82 }, AT);
+    measurePainter.textMark!("end", { x: 40, y: 82 }, AT);
+    const [hl, sq] = added();
+    expect(hl).toMatchObject({ type: "texthighlight", text: "ROOM 101", style: { color: "#ffff00", opacity: 0.4 } });
+    expect(sq).toMatchObject({ type: "squiggly", text: "CH +2700" });
+    expect(markupSchema.safeParse(hl).success && markupSchema.safeParse(sq).success).toBe(true);
+    expect(undoLabel()).toBe("Add squiggly underline");
+    const r = recorder();
+    expect(measurePainter.paintStatic(r.ctx, view)).toEqual(["Text highlight: ROOM 101", "Squiggly: CH +2700"]);
+    // The squiggle is a run of short segments, not one line.
+    expect(r.ops.filter((o) => o.op === "lineTo").length).toBeGreaterThan(5);
+  });
+
   it("a press away from text, or before the page's text is read, marks nothing; a cancel drops the drag", () => {
     setTool("underline");
     measurePainter.textMark!("start", { x: 300, y: 300 }, AT);

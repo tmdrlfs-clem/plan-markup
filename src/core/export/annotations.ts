@@ -155,6 +155,8 @@ function nativeKeys(m: Markup, cal: Calibration, form: FormContent, rd: [number,
       return { subtype: "Underline", keys: { QuadPoints: quadPoints(m.quads) } };
     case "strikeout":
       return { subtype: "StrikeOut", keys: { QuadPoints: quadPoints(m.quads) } };
+    case "squiggly":
+      return { subtype: "Squiggly", keys: { QuadPoints: quadPoints(m.quads) } };
     case "pen":
       return { subtype: "Ink", keys: { InkList: m.strokes.map(flat), BS: bs } };
     case "stamp":

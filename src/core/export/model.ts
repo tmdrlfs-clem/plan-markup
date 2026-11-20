@@ -101,7 +101,7 @@ export type Markup = MarkupBase &
     | ({ type: "textBox"; rect: Box; text: string } & TextStyle)
     | ({ type: "typewriter"; at: Pt; text: string } & TextStyle)
     | { type: "note"; at: Pt; text: string }
-    | { type: "highlight" | "underline" | "strikeout"; quads: Box[] }
+    | { type: "highlight" | "underline" | "strikeout" | "squiggly"; quads: Box[] }
     | { type: "pen"; strokes: Pt[][] }
     | { type: "stamp"; rect: Box; label: string }
     | { type: "imageStamp"; rect: Box; image: { width: number; height: number; rgb: Uint8Array; alpha?: Uint8Array } }

@@ -474,7 +474,7 @@ function sprinklerIcon(ap: ApBuilder, m: Markup & { center: Pt; size: number }):
   ap.includeBox([cx - r, cy - r, cx + r, cy + r], 0.4);
 }
 
-function quadAppearance(ap: ApBuilder, m: Markup & { type: "highlight" | "underline" | "strikeout"; quads: Box[] }): void {
+function quadAppearance(ap: ApBuilder, m: Markup & { type: "highlight" | "underline" | "strikeout" | "squiggly"; quads: Box[] }): void {
   const color = m.color ?? [1, 1, 0];
   if (m.type === "highlight") {
     ap.gs({ BM: "Multiply", ...(m.opacity !== undefined && m.opacity < 1 ? { ca: m.opacity, CA: m.opacity } : {}) });
@@ -490,8 +490,14 @@ function quadAppearance(ap: ApBuilder, m: Markup & { type: "highlight" | "underl
     const h = q[3] - q[1];
     const w = Math.max(0.5, h / 14);
     // Underline sits just above the quad bottom; strike-out at the middle of the x-height.
-    const y = m.type === "underline" ? q[1] + w / 2 + h * 0.05 : q[1] + h * 0.42;
-    ap.push(colorOp(color, true)!, `${fmt(w)} w`, `${nums(q[0], y)} m ${nums(q[2], y)} l S`);
+    const y = m.type === "strikeout" ? q[1] + h * 0.42 : q[1] + w / 2 + h * 0.05;
+    if (m.type === "squiggly") {
+      // A zigzag along the bottom, `amp` either side.
+      const amp = Math.max(0.6, h / 12);
+      const pts: string[] = [`${nums(q[0], y + amp)} m`];
+      for (let x = q[0] + amp * 2, i = 0; x < q[2]; x += amp * 2, i++) pts.push(`${nums(x, i % 2 === 0 ? y - amp : y + amp)} l`);
+      ap.push(colorOp(color, true)!, `${fmt(w)} w`, ...pts, "S");
+    } else ap.push(colorOp(color, true)!, `${fmt(w)} w`, `${nums(q[0], y)} m ${nums(q[2], y)} l S`);
     ap.includeBox(q);
   }
 }
@@ -580,6 +586,7 @@ export function markupAppearance(m: Markup, cal: Calibration): MarkupAppearance 
     case "highlight":
     case "underline":
     case "strikeout":
+    case "squiggly":
       quadAppearance(ap, m);
       return { form: ap.finish() };
     case "pen": {

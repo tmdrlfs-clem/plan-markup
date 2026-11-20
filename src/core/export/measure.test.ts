@@ -90,7 +90,7 @@ describe("synthetic sample set", () => {
   it("keeps every markup appearance inside the page and inside its cell", () => {
     const cellOf = (i: number) => (i < 33 ? i : i < 36 ? 33 : 34);
     doc.markups.forEach((m, i) => {
-      const [x0, y0, x1, y1] = cellBox(cellOf(i));
+      const [x0, y0, x1, y1] = cellBox(m.id === "pm-squiggly" ? 15 : cellOf(i));
       const ap = markupAppearance(m, doc.calibration);
       for (const f of [ap.form, ...(ap.extra ?? [])]) {
         expect(f.bbox[0], m.id).toBeGreaterThanOrEqual(x0);

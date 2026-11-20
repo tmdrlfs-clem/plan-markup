@@ -111,8 +111,8 @@ export function selectionText(index: PageTextIndex, selection: TextMatch): strin
 }
 
 /** The lines an underline or a strikethrough draws: one along each quad of `points`. */
-export function decorationLines(points: readonly Point[], kind: "underline" | "strikethrough"): [Point, Point][] {
-  const at = kind === "underline" ? UNDERLINE_AT : STRIKETHROUGH_AT;
+export function decorationLines(points: readonly Point[], kind: "underline" | "strikethrough" | "squiggly"): [Point, Point][] {
+  const at = kind === "strikethrough" ? STRIKETHROUGH_AT : UNDERLINE_AT;
   const lerp = (p: Point, q: Point): Point => ({ x: p.x + (q.x - p.x) * at, y: p.y + (q.y - p.y) * at });
   const lines: [Point, Point][] = [];
   for (let i = 0; i + 3 < points.length; i += 4) {

@@ -142,6 +142,8 @@ export function hitMarkup(m: Markup, p: Point, tol: number, userUnit = 1): boole
     // Story 5.9: any of its glyph boxes.
     case "underline":
     case "strikethrough":
+    case "texthighlight":
+    case "squiggly":
       return quadsOf(m.points).some((q) => insidePolygon(p, q) || nearPolyline(p, q, tol, true));
     // Story 5.8: the dimension line and the extension lines out to it.
     case "dimension": {
