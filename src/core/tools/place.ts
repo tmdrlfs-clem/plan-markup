@@ -1,12 +1,14 @@
 // Story 7.3 (FR41): placing a tool. Framework-free.
 //
 // A tool's markups are centred on the origin in its source page's user space.
-// Placed, they are centred on the click. A tool drawn on a calibrated page is
+// placedMarkups centres them on a point; held at the pointer (anchorTopLeft),
+// the pointer holds the placement's top-left corner as the screen shows it. A tool drawn on a calibrated page is
 // placed at real size: scaled by the source's real millimetres per user unit
 // over the target's (so it needs the target calibrated too); an unscaled tool
 // keeps its paper size. Several markups become one group; a device-typed
 // tool's placement counts once, by its first markup.
 
+import { markupBounds, type Point } from "@/core/markup/geometry";
 import { transformMarkup } from "@/core/markup/transform";
 import type { Calibration } from "@/core/calibration/calibration";
 import type { Markup, MarkupDevice } from "@/core/schema/markup";
@@ -61,6 +63,41 @@ export function placedMarkups(tool: PlacedTool, at: { x: number; y: number }, ta
       ...(device && i === 0 ? { device } : {}),
     } as Markup;
   });
+}
+
+/**
+ * `markups` moved so that their box's top-left corner on screen (`toScreen`:
+ * user space → screen, y down, any view rotation) is at `at` (user space):
+ * the pointer holds a held tool by that corner. Unchanged when empty.
+ */
+export function anchorTopLeft(markups: Markup[], at: Point, toScreen: (p: Point) => Point): Markup[] {
+  if (markups.length === 0) return markups;
+  let x0 = Infinity;
+  let y0 = Infinity;
+  let x1 = -Infinity;
+  let y1 = -Infinity;
+  for (const m of markups) {
+    const b = markupBounds(m);
+    x0 = Math.min(x0, b.x);
+    y0 = Math.min(y0, b.y);
+    x1 = Math.max(x1, b.x + b.width);
+    y1 = Math.max(y1, b.y + b.height);
+  }
+  if (!Number.isFinite(x0) || !Number.isFinite(y0)) return markups;
+  // The view turns in quarter turns: one corner of the user-space box is the screen box's top-left.
+  let corner: Point = { x: x0, y: y0 };
+  let best = Infinity;
+  for (const c of [{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }]) {
+    const s = toScreen(c);
+    if (s.x + s.y < best) {
+      best = s.x + s.y;
+      corner = c;
+    }
+  }
+  const dx = at.x - corner.x;
+  const dy = at.y - corner.y;
+  if (dx === 0 && dy === 0) return markups;
+  return markups.map((m) => transformMarkup(m, (p) => ({ x: p.x + dx, y: p.y + dy })));
 }
 
 /** Story 7.3: device placements counted per device type (group, label), in name order. */

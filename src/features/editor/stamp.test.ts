@@ -75,15 +75,16 @@ afterEach(() => {
 });
 
 describe("Stamp: placing Tool Chest tools (Story 7.3)", () => {
-  it("each click places the armed tool centred there (one undo step each); it stays armed", () => {
+  it("each click places the armed tool with its top-left corner there (one undo step each); it stays armed", () => {
     setArmedStamp(stamp(null));
     setTool("stamp");
     expect(measurePainter.place({ x: 300, y: 200 }, AT)).toBe("done");
     expect(measurePainter.place({ x: 500, y: 200 }, AT)).toBe("done");
     expect(viewerStore.getState().tool).toBe("stamp");
     const [a, b] = added();
-    expect(a.points[0]).toEqual({ x: 280, y: 190 });
-    expect(b.points[0]).toEqual({ x: 480, y: 190 });
+    // The 40 x 20 box hangs right and down from the click on screen (user space is y up here).
+    expect(a.points).toEqual([{ x: 300, y: 180 }, { x: 340, y: 180 }, { x: 340, y: 200 }, { x: 300, y: 200 }]);
+    expect(b.points[0]).toEqual({ x: 500, y: 180 });
     expect(a.device).toEqual({ group: "Sprinklers", label: "Pendant" });
     expect(a.pageId).toBe(pageIdOf(SHA, 0));
     expect(activeUndoLabels(editorStore.getState(), "t1").undo).toBe(PLACE_TOOL);
@@ -115,11 +116,28 @@ describe("Stamp: placing Tool Chest tools (Story 7.3)", () => {
     expect(none.ops).not.toContain("stroke");
   });
 
-  it("a dropped tile is placed once, whatever the tool", () => {
+  it("a dropped tile is placed once, whatever the tool, held by its top-left corner", () => {
     expect(measurePainter.drop!({ x: 100, y: 100 }, { documentId: SHA, pageIndex: 0, view })).toBe(false);
     setDraggedStamp(stamp(null));
     expect(measurePainter.drop!({ x: 100, y: 100 }, { documentId: SHA, pageIndex: 0, view })).toBe(true);
     expect(added()).toHaveLength(1);
+    expect(added()[0].points[0]).toEqual({ x: 100, y: 80 });
     expect(viewerStore.getState().tool).toBe("select");
+  });
+
+  it("the ghost follows every move with the Stamp tool, and a dragged tile's ghost shows whatever the tool", () => {
+    expect(measurePainter.followsPointer).toBe(false);
+    setTool("stamp");
+    expect(measurePainter.followsPointer).toBe(true);
+    setTool("select");
+    setDraggedStamp(stamp(null));
+    expect(measurePainter.followsPointer).toBe(true);
+    const r = recorder();
+    measurePainter.paintActive(r.ctx, view, { x: 300, y: 200 });
+    expect(r.ops).toContain("stroke");
+    setDraggedStamp(null);
+    const none = recorder();
+    measurePainter.paintActive(none.ctx, view, { x: 300, y: 200 });
+    expect(none.ops).not.toContain("stroke");
   });
 });

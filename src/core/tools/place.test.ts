@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { factorForRatio, type Calibration } from "@/core/calibration/calibration";
 import { DEFAULT_MARKUP_STYLE, markupSchema, type Markup } from "@/core/schema/markup";
 
-import { deviceCounts, deviceText, needsScale, placedMarkups, toolScale, type PlacedTool } from "./place";
+import { anchorTopLeft, deviceCounts, deviceText, needsScale, placedMarkups, toolScale, type PlacedTool } from "./place";
 import { toolContentOf } from "./tool";
 
 const cal = (ratio: number): Calibration => ({ xFactor: factorForRatio(ratio), yFactor: factorForRatio(ratio), unit: "mm", precision: "0", source: "ratio", ratio }) as Calibration;
@@ -93,5 +93,28 @@ describe("placing a tool (Story 7.3)", () => {
     expect(placedMarkups(t, { x: 0, y: 0 }, { pageId: "p:0", calibration: null, userUnit: 1 }, newId, T)![0]).toMatchObject({ type: "image", src: PNG });
     const counted = mk("line", [{ x: 0, y: 0 }, { x: 1, y: 1 }], { device: { group: "A", label: "B" } });
     expect(toolContentOf([counted], { calibration: null, userUnit: 1 })!.content.markups[0]).not.toHaveProperty("device");
+  });
+});
+
+describe("anchorTopLeft: the pointer holds a placement's top-left corner on screen", () => {
+  const at = { x: 500, y: 500 };
+  const placed = () => [box(), line()]; // together x 100..140, y 100..120
+
+  it("upright with y up (a PDF page): the box's left, top edge is at the pointer", () => {
+    const moved = anchorTopLeft(placed(), at, (p) => ({ x: p.x, y: -p.y }));
+    expect(moved[0].points).toEqual([{ x: 500, y: 480 }, { x: 540, y: 480 }, { x: 540, y: 500 }, { x: 500, y: 500 }]);
+    expect(moved[1].points).toEqual([{ x: 500, y: 480 }, { x: 540, y: 500 }]);
+  });
+
+  it("with the view turned a quarter (y up turned to x right), the corner shown top-left is used", () => {
+    // Screen x = user y, screen y = user x: the user-space minimum corner is the screen's top-left.
+    const moved = anchorTopLeft(placed(), at, (p) => ({ x: p.y, y: p.x }));
+    expect(moved[0].points[0]).toEqual({ x: 500, y: 500 });
+  });
+
+  it("keeps ids and leaves nothing to move unchanged", () => {
+    const m = placed();
+    expect(anchorTopLeft(m, at, (p) => p).map((x) => x.id)).toEqual(m.map((x) => x.id));
+    expect(anchorTopLeft([], at, (p) => p)).toEqual([]);
   });
 });

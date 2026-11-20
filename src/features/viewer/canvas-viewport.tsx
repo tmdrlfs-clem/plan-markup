@@ -176,11 +176,19 @@ export function CanvasViewport({ onOpen, onOpenFiles, createWorker = defaultWork
     if (hasTool(event) && status === "ready") {
       event.preventDefault();
       event.dataTransfer.dropEffect = "copy";
+      // The ghost of the drop follows the drag (pointer events stop while dragging).
+      const rect = event.currentTarget.getBoundingClientRect();
+      engineRef.current?.pointerAt({ x: event.clientX - rect.left, y: event.clientY - rect.top });
       return;
     }
     if (!hasFiles(event)) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = "copy";
+  }
+
+  function onDragLeave(event: DragEvent<HTMLDivElement>) {
+    // Left the drawing (not just moved onto a child): the ghost goes.
+    if (hasTool(event) && !event.currentTarget.contains(event.relatedTarget as Node | null)) engineRef.current?.pointerAt(null);
   }
 
   function onDrop(event: DragEvent<HTMLDivElement>) {
@@ -205,6 +213,7 @@ export function CanvasViewport({ onOpen, onOpenFiles, createWorker = defaultWork
       ref={hostRef}
       data-testid="canvas-viewport"
       onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
       onDrop={onDrop}
       className="relative isolate h-full w-full touch-none overflow-hidden select-none bg-surface-0"
     >

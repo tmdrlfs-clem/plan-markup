@@ -117,6 +117,8 @@ export interface MarkupPainter {
   paintActive(c: CanvasRenderingContext2D, view: LayerView, pointer: Point | null): string | null;
   /** A drawing follows the pointer (the overlay repaints on every move). */
   readonly tracking: boolean;
+  /** A ghost under the pointer (no drawing yet) also repaints on every move. */
+  readonly followsPointer?: boolean;
   /**
    * A measuring tool's click at `point` (user space): "continue" while drawing, "done" when a
    * markup was added. `tolerance`: user units within which a click repeats the last point
