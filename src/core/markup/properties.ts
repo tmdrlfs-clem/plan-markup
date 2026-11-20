@@ -3,12 +3,13 @@
 // markup has; a change applies only to the markups it fits (pure; the editor
 // makes it one undo step).
 
+import { isLink } from "./link";
 import { isMeasureMarkup, isTextMarkup, legendMetaSchema, revisionMetaSchema, type LegendMeta, type Markup, type MarkupStyle, type MarkupType, type RevisionMeta } from "@/core/schema/markup";
 
-export type PropertyField = "color" | "width" | "fill" | "opacity" | "fontSize" | "text" | "subject" | "revision" | "legend";
+export type PropertyField = "color" | "width" | "fill" | "opacity" | "fontSize" | "text" | "subject" | "revision" | "legend" | "link";
 
 /** The panel's order. */
-export const PROPERTY_FIELDS: readonly PropertyField[] = ["subject", "revision", "legend", "color", "fill", "width", "opacity", "fontSize", "text"];
+export const PROPERTY_FIELDS: readonly PropertyField[] = ["subject", "revision", "legend", "link", "color", "fill", "width", "opacity", "fontSize", "text"];
 
 /** The default subject: the type's name. */
 export const SUBJECT_NAMES: Record<MarkupType, string> = {
@@ -40,6 +41,7 @@ export const SUBJECT_NAMES: Record<MarkupType, string> = {
   texthighlight: "Text highlight",
   squiggly: "Squiggly",
   caret: "Insert text",
+  link: "Link",
   strikethrough: "Strikethrough",
   whiteout: "White-out",
   eraser: "Eraser",
@@ -56,6 +58,8 @@ export function fieldsOf(m: Markup): ReadonlySet<PropertyField> {
   // Story 5.11 (D3): a cover stays opaque white; an eraser's brush width can change.
   if (m.type === "whiteout") return new Set<PropertyField>(["subject"]);
   if (m.type === "eraser") return new Set<PropertyField>(["subject", "width"]);
+  // A link: its address (its box is only a hint on screen).
+  if (m.type === "link") return new Set<PropertyField>(["subject", "link"]);
   const fields = new Set<PropertyField>(["subject", "opacity"]);
   if (m.type === "image") return fields;
   fields.add("color");
@@ -74,7 +78,7 @@ export function fieldsOf(m: Markup): ReadonlySet<PropertyField> {
 export function sharedFields(markups: readonly Markup[]): PropertyField[] {
   if (markups.length === 0) return [];
   const each = markups.map(fieldsOf);
-  return PROPERTY_FIELDS.filter((f) => ((f !== "text" && f !== "revision" && f !== "legend") || markups.length === 1) && each.every((s) => s.has(f)));
+  return PROPERTY_FIELDS.filter((f) => ((f !== "text" && f !== "revision" && f !== "legend" && f !== "link") || markups.length === 1) && each.every((s) => s.has(f)));
 }
 
 /** What a size field is called: "Font size" for text, "Caption size" for measurements and dimensions, "Text size" for both. */
@@ -99,6 +103,8 @@ export function subjectOf(m: Markup): string {
 
 /** A change from the panel: style fields (fill null: none), the subject (empty: the type's name), the text. */
 export type PropertyChange = Partial<Omit<MarkupStyle, "fill" | "font" | "align">> & {
+  /** A link's address (kept only when it is a web or mail link). */
+  uri?: string;
   fill?: string | null;
   /** null: the app's own face. */
   font?: MarkupStyle["font"] | null;
@@ -138,6 +144,7 @@ export function withChange(m: Markup, change: PropertyChange): Markup {
   }
   if (change.text !== undefined && isTextMarkup(next) && next.text !== change.text) next = { ...next, text: change.text };
   // Insert text's text; Replace text's replacement (the struck text stays what the PDF says).
+  if (change.uri !== undefined && next.type === "link" && next.uri !== change.uri && isLink(change.uri)) next = { ...next, uri: change.uri };
   if (change.text !== undefined && next.type === "caret" && next.text !== change.text) next = { ...next, text: change.text };
   if (change.text !== undefined && next.type === "strikethrough" && next.replacement !== undefined && next.replacement !== change.text) next = { ...next, replacement: change.text };
   // Story 7.7: a stamp's fields, kept only when they still make a valid stamp.

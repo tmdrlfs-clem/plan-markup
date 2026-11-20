@@ -3,6 +3,7 @@
 import {
   Angle,
   Camera,
+  Link2,
   ArrowUpRight,
   ChevronDown,
   Circle,
@@ -66,7 +67,7 @@ interface Tool {
  * Tools that work today: Select and Pan (Story 3.2), and Length (snapping from
  * Story 4.1, measuring from Story 4.5). The others arrive with the editor.
  */
-const LIVE_TOOLS: ReadonlySet<string> = new Set<ViewerTool>(["select", "pan", "zoom", "snapshot", "length", "polylength", "area", "count", "angle", "radius", "diameter", "line", "arrow", "polyline", "polygon", "arc", "rectangle", "ellipse", "cloud", "text", "callout", "typewriter", "note", "cloudplus", "pen", "highlight", "image", "dimension", "underline", "strikethrough", "texthighlight", "squiggly", "replacetext", "selecttext", "inserttext", "textcloud", "whiteout", "whiteoutpolygon", "eraser", "revision", "legend"]);
+const LIVE_TOOLS: ReadonlySet<string> = new Set<ViewerTool>(["select", "pan", "zoom", "snapshot", "length", "polylength", "area", "count", "angle", "radius", "diameter", "line", "arrow", "polyline", "polygon", "arc", "rectangle", "ellipse", "cloud", "text", "callout", "typewriter", "note", "cloudplus", "pen", "highlight", "image", "dimension", "underline", "strikethrough", "texthighlight", "squiggly", "replacetext", "selecttext", "inserttext", "textcloud", "link", "whiteout", "whiteoutpolygon", "eraser", "revision", "legend"]);
 
 export const SNAP_PREVIEW_HINT_ID = "snap-preview";
 /** Review S3: a page past the segment cap. */
@@ -135,11 +136,13 @@ export const REVISION_HINT = "Revision stamp: click where it goes. Edit its revi
 export const LEGEND_HINT = "Legend: click where it goes. It lists the devices placed on this page with their counts and keeps them up to date. Set its title and scope (page or document) in Properties.";
 export const STAMP_HINT = "Tool: click where it goes (its centre); it stays armed for the next. S arms the last tool again. Esc returns to Select.";
 export const DIMENSION_HINT = `Dimension: click the two points to dimension, then where its line goes. ${SNAPS} Esc cancels; Esc again returns to Select.`;
+export const LINK_HINT = "Link: drag a box over what the link is for, then give its web or email address. Esc cancels; Esc again returns to Select.";
 export const SNAPSHOT_HINT = "Snapshot: drag a box; what it shows goes to the clipboard as an image. Esc returns to Select.";
 export const ZOOM_HINT = "Zoom: click to zoom in, Alt + click to zoom out; drag a box to zoom to it. Esc returns to Select.";
 const TOOL_HINTS: Partial<Record<ViewerTool, string>> = {
   zoom: ZOOM_HINT,
   snapshot: SNAPSHOT_HINT,
+  link: LINK_HINT,
   length: SNAP_PREVIEW_HINT,
   polylength: POLYLENGTH_HINT,
   area: AREA_HINT,
@@ -211,6 +214,8 @@ const GROUPS: { label: string; tools: Tool[] }[] = [
       { id: "revision", label: "Revision stamp", icon: FileBadge },
       // Story 7.8: no key (D).
       { id: "legend", label: "Legend", icon: TableProperties },
+      // A box that opens a web or mail address.
+      { id: "link", label: "Link", icon: Link2 },
     ],
   },
   // The measuring tools share one button and a menu (FlyoutGroup).

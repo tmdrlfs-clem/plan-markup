@@ -8,6 +8,8 @@
 // markup's style for the format painter (properties.ts). Story 7.7: a
 // revision stamp's revision, description, author and date.
 
+import { ExternalLink } from "lucide-react";
+import { MAX_LINK_LENGTH, NOT_A_LINK, normalizeLink } from "@/core/markup/link";
 import { useId, useState, type KeyboardEvent } from "react";
 import { Paintbrush } from "lucide-react";
 import { useStore } from "zustand";
@@ -238,6 +240,25 @@ export function PropertiesPanel({ emptyText }: { emptyText: string }) {
         ) : null}
         {fields.has("revision") && one?.type === "revision" ? <RevisionFields markup={one} onChange={change} /> : null}
         {fields.has("legend") && one?.type === "legend" ? <LegendFields markup={one} onChange={change} /> : null}
+        {fields.has("link") && one?.type === "link" ? (
+          <>
+            <TextValueField
+              key={`link:${one.id}`}
+              label="Link"
+              value={one.uri}
+              maxLength={MAX_LINK_LENGTH}
+              onCommit={(t) => {
+                const uri = normalizeLink(t);
+                if (uri) change({ uri });
+                else toast({ title: NOT_A_LINK, variant: "warning" });
+              }}
+            />
+            <Button size="sm" variant="secondary" onClick={() => window.open(one.uri, "_blank", "noopener,noreferrer")}>
+              <ExternalLink size={14} aria-hidden="true" />
+              Open link
+            </Button>
+          </>
+        ) : null}
         {fields.has("color") ? <ColorField label="Colour" value={value((m) => m.style.color.toLowerCase())} onChange={(c) => c && change({ color: c })} /> : null}
         {fields.has("fill") ? <ColorField label="Fill" none value={value((m) => m.style.fill?.toLowerCase() ?? null)} onChange={(c) => change({ fill: c })} /> : null}
         {fields.has("width") ? (

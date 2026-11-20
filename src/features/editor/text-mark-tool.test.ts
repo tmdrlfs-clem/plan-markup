@@ -152,6 +152,24 @@ describe("Underline and Strikethrough (Story 5.9)", () => {
     textPromptStore.setState({ prompt: null });
   });
 
+  it("Link: a box, then its address (made a web link); a bad address adds nothing", () => {
+    setTool("link");
+    measurePainter.place({ x: 10, y: 10 }, { ...AT, tolerance: 1 });
+    expect(measurePainter.place({ x: 60, y: 40 }, { ...AT, tolerance: 1 })).toBe("done");
+    textPromptStore.getState().prompt!.onSubmit("www.example.com/spec");
+    const [m] = added();
+    expect(m).toMatchObject({ type: "link", uri: "https://www.example.com/spec" });
+    expect(markupSchema.safeParse(m).success).toBe(true);
+    expect(undoLabel()).toBe("Add link");
+    expect(new MarkupIndex([m]).hit({ x: 30, y: 25 }, 0)?.id).toBe(m.id);
+    measurePainter.place({ x: 70, y: 10 }, { ...AT, tolerance: 1 });
+    measurePainter.place({ x: 90, y: 40 }, { ...AT, tolerance: 1 });
+    textPromptStore.getState().prompt!.onSubmit("javascript:alert(1)");
+    expect(added()).toHaveLength(1);
+    expect(markupSchema.safeParse({ ...m, uri: "javascript:alert(1)" }).success).toBe(false);
+    textPromptStore.setState({ prompt: null });
+  });
+
   it("a press away from text, or before the page's text is read, marks nothing; a cancel drops the drag", () => {
     setTool("underline");
     measurePainter.textMark!("start", { x: 300, y: 300 }, AT);

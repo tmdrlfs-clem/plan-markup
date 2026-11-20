@@ -62,6 +62,7 @@ export type ViewerTool =
   | "replacetext"
   | "selecttext"
   | "inserttext"
+  | "link"
   | "whiteout"
   | "whiteoutpolygon"
   | "eraser"
@@ -84,9 +85,9 @@ export function isLineTool(tool: ViewerTool): tool is LineTool {
 }
 
 /** Story 5.5: the box tools (a rectangle, an ellipse: two corners, clicked or dragged; 5.6: a text box too). */
-export type BoxTool = "rectangle" | "ellipse" | "text" | "textcloud" | "whiteout";
+export type BoxTool = "rectangle" | "ellipse" | "text" | "textcloud" | "whiteout" | "link";
 export function isBoxTool(tool: ViewerTool): tool is BoxTool {
-  return tool === "rectangle" || tool === "ellipse" || tool === "text" || tool === "textcloud" || tool === "whiteout";
+  return tool === "rectangle" || tool === "ellipse" || tool === "text" || tool === "textcloud" || tool === "whiteout" || tool === "link";
 }
 
 /** Story 5.6: the text tools (placed by points, then typed). */

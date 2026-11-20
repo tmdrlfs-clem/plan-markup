@@ -140,6 +140,7 @@ import {
 import { ADD_REPLACE_TEXT, ADD_SQUIGGLY, ADD_STRIKETHROUGH, ADD_TEXT_HIGHLIGHT, ADD_UNDERLINE, textMarkKind, paintTextMark, paintTextMarkActive, textMarkDrag, textMarkLabel } from "./text-mark-tool";
 import { executeOp, registerDrawingUndo } from "./undo-store";
 import { askText } from "./text-prompt";
+import { NOT_A_LINK, normalizeLink } from "@/core/markup/link";
 import { cssFontOf, fontFamilyOf } from "./fonts";
 import { revisionLabel, revisionText } from "@/core/markup/revision";
 import { ZONE_FILL_OPACITY, isZone } from "@/core/sprinkler/zone";
@@ -172,8 +173,12 @@ export const ADD_POLYLINE = "Add polyline";
 export const ADD_POLYGON = "Add polygon";
 export const ADD_ARC = "Add arc";
 export const ADD_INSERT_TEXT = "Add insert text";
+export const ADD_LINK = "Add link";
+
 /** Insert text's caret, in points (page units), drawn upright with its tip at its point. */
 const CARET_PT = 8;
+/** A link's box on screen: blue, thin, dashed. */
+const LINK_STYLE: MarkupStyle = { color: "#1d4ed8", width: 0.75, fontSize: DEFAULT_MARKUP_STYLE.fontSize };
 export const ADD_RECTANGLE = "Add rectangle";
 export const ADD_ELLIPSE = "Add ellipse";
 export const ADD_CLOUD = "Add cloud";
@@ -209,6 +214,7 @@ const ADD_LABEL: Record<DrawTool, string> = {
   note: ADD_NOTE,
   cloudplus: ADD_CLOUD_PLUS,
   textcloud: ADD_TEXT,
+  link: ADD_LINK,
   pen: ADD_PEN,
   highlight: ADD_HIGHLIGHT,
   image: ADD_IMAGE,
@@ -253,6 +259,7 @@ const MIN_POINTS: Record<DrawTool, number> = {
   note: 1,
   cloudplus: 3,
   textcloud: 2,
+  link: 2,
   pen: 2,
   highlight: 2,
   image: 1,
@@ -272,7 +279,7 @@ const MIN_POINTS: Record<DrawTool, number> = {
   legend: 1,
 };
 /** Tools with a fixed number of points: the click that places the last one adds the measurement. */
-const FIXED_POINTS: Partial<Record<DrawTool, number>> = { textcloud: 2, arc: 3, length: 2, angle: 3, radius: 3, diameter: 3, line: 2, arrow: 2, rectangle: 2, ellipse: 2, text: 2, callout: 2, typewriter: 1, note: 1, dimension: 3, whiteout: 2 };
+const FIXED_POINTS: Partial<Record<DrawTool, number>> = { link: 2, textcloud: 2, arc: 3, length: 2, angle: 3, radius: 3, diameter: 3, line: 2, arrow: 2, rectangle: 2, ellipse: 2, text: 2, callout: 2, typewriter: 1, note: 1, dimension: 3, whiteout: 2 };
 /** Tools whose outline is closed: a click on the first vertex closes it. */
 const CLOSED: ReadonlySet<DrawTool> = new Set<DrawTool>(["area", "polygon", "cloud", "cloudplus", "whiteoutpolygon"]);
 /** Story 5.4 (D1): an arrow head's length in line widths, and its least length, in points (page units). */
@@ -1045,6 +1052,15 @@ function paintList(c: CanvasRenderingContext2D, markups: readonly Markup[], view
       if (any.type === "strikethrough" && any.replacement !== undefined) drawCaret(c, pts[pts.length - 3], any.style, view);
       continue;
     }
+    if (any.type === "link") {
+      // A link: its box, dashed (it shows on screen only as a hint; the PDF link has no border).
+      captions.push(`Link: ${any.uri.length > 40 ? `${any.uri.slice(0, 40)}…` : any.uri}`);
+      const pts = devicePoints(any.points, view);
+      if (!onCanvas(pts, any.style, view)) continue;
+      if (selected.has(any.id)) strokeSelection(c, pts, view);
+      strokeShape(c, "rectangle", pts, { ...any.style, dash: [4, 3] }, view);
+      continue;
+    }
     if (any.type === "caret") {
       // Insert text: a caret where the text goes.
       captions.push(`Insert: ${any.text.length > 40 ? `${any.text.slice(0, 40)}…` : any.text}`);
@@ -1315,6 +1331,7 @@ export const measurePainter: MarkupPainter = {
     else if (d.tool === "radius" || d.tool === "diameter") strokeCircle(c, d.tool, pts, deviceCircle(points, view), DEFAULT_MEASURE_STYLE, view);
     else if (d.tool === "text") strokeShape(c, "rectangle", pts, DEFAULT_MARKUP_STYLE, view);
     else if (d.tool === "textcloud") strokeShape(c, "cloud", pts, DEFAULT_MARKUP_STYLE, view);
+    else if (d.tool === "link") strokeShape(c, "rectangle", pts, LINK_STYLE, view);
     else if (d.tool === "cloudplus") strokeShape(c, "cloud", pts, DEFAULT_MARKUP_STYLE, view);
     else if (d.tool === "whiteout" || d.tool === "whiteoutpolygon") {
       // Story 5.11: the cover so far, outlined (the outline is not kept).
@@ -1762,6 +1779,8 @@ function markupOf(d: Drawing): Markup {
       throw new Error("marked text is added by its drag (text-mark-tool.ts)");
     case "inserttext":
       throw new Error("insert text is placed by one click (placeCaret)");
+    case "link":
+      throw new Error("a link is added once its address is given (commit)");
     case "text":
     case "callout":
     case "typewriter":
@@ -1792,6 +1811,28 @@ function commit(documentId: string, tabId?: string): "done" | "continue" {
   if (d.tool === "area" && makesZone("area")) {
     setDrawing(null);
     addZone(documentId, { pageId: d.pageId, outer: [...d.points], holes: [] }, tabId);
+    return "done";
+  }
+  if (d.tool === "link") {
+    // A link's box, then its address (asked for; Cancel adds nothing).
+    const points = boxCorners(d.points[0], d.points[1]);
+    const pageId = d.pageId;
+    setDrawing(null);
+    const tab = tabId ?? viewerStore.getState().tabId ?? undefined;
+    askText({
+      title: "Add link",
+      label: "Web or email address",
+      description: "Select the link to open or change it in Properties. In an exported PDF a click on it opens it.",
+      onSubmit: (input) => {
+        const uri = normalizeLink(input);
+        if (!uri) {
+          toast({ title: NOT_A_LINK, variant: "warning" });
+          return;
+        }
+        const link: Markup = { id: uuidv7(), pageId, createdAt: new Date().toISOString(), style: LINK_STYLE, type: "link", points, uri };
+        executeOp({ kind: "markups.add", documentId, markups: [link] }, ADD_LINK, tab);
+      },
+    });
     return "done";
   }
   const markup = markupOf(d);

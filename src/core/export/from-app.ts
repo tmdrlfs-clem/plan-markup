@@ -216,6 +216,8 @@ export function exportMarkup(m: AppMarkup, ctx: ConvertContext): Markup | null {
       return { ...base, type: "note", at: pt(m.points[0]), text: m.text };
     case "caret":
       return { ...base, type: "caret", at: pt(m.points[0]), text: m.text };
+    case "link":
+      return { ...base, type: "hyperlink", rect: box(m.points), uri: m.uri };
     case "callout": {
       const frame = m.points.slice(0, 4);
       const [side, tip] = leaderTo(frame, m.points[4]);

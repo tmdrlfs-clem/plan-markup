@@ -34,6 +34,7 @@ const CHANGE_LABELS: Record<keyof PropertyChange, string> = {
   strike: "Strike through text",
   align: "Align text",
   cloud: "Cloud border",
+  uri: "Change link",
   revision: "Edit revision stamp",
   legend: "Edit legend",
   subject: "Change subject",

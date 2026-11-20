@@ -21,6 +21,7 @@
 
 import {
   ChevronUp,
+  Link2,
   Angle,
   ArrowDown,
   ArrowUp,
@@ -123,6 +124,7 @@ const TYPE_ICONS: Record<MarkupType, LucideIcon> = {
   texthighlight: Highlighter,
   squiggly: Underline,
   caret: ChevronUp,
+  link: Link2,
   strikethrough: Strikethrough,
   whiteout: SquareDashed,
   eraser: Eraser,
