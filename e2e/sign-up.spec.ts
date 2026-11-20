@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { clearLimits, deleteUser, emailLink, sql, openEmailLink } from "./auth-mail";
 import { formAlert, signIn } from "./helpers";
@@ -79,5 +81,39 @@ test("sign up, confirm the email, then wait for approval", async ({ page }) => {
   } finally {
     await deleteUser(email);
     await clearSignUpLimits();
+  }
+});
+
+// Security review M3: Auth itself refuses a sign-up made around the app (the
+// public key straight to /auth/v1/signup), which would skip our rate limit,
+// Turnstile and leaked-password checks. Accounts are made only by the server.
+test("Auth refuses a sign-up that does not come through the app", async () => {
+  // CI exports the local keys as environment variables; a local run has them in .env.local.
+  const fromFile = (): Record<string, string> => {
+    try {
+      return Object.fromEntries(
+        readFileSync(path.join(__dirname, "..", ".env.local"), "utf8")
+          .split(/\r?\n/)
+          .filter((l) => l.includes("=") && !l.startsWith("#"))
+          .map((l) => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1)]),
+      );
+    } catch {
+      return {};
+    }
+  };
+  const env = { ...fromFile(), ...process.env };
+  expect(env.NEXT_PUBLIC_SUPABASE_URL && env.NEXT_PUBLIC_SUPABASE_ANON_KEY).toBeTruthy();
+  const email = `direct-${Date.now()}-${test.info().retry}@plan-markup.test`;
+  try {
+    const res = await fetch(`${env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/signup`, {
+      method: "POST",
+      headers: { apikey: env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "", "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password: `plan markup ${crypto.randomUUID()}` }),
+    });
+    expect(res.status).toBe(422);
+    expect(((await res.json()) as { error_code?: string }).error_code).toBe("signup_disabled");
+    expect(await sql("select 1 from auth.users where email = $1", [email])).toEqual([]);
+  } finally {
+    await deleteUser(email);
   }
 });
