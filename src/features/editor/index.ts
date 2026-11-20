@@ -43,3 +43,4 @@ export { ADD_HEAD, OUTSIDE_ZONES, armHeadPlace, endHeadPlace, headPlaceStore, pl
 export { revealFlag } from "./rule-markers";
 export { TextFormatBar } from "./text-format-bar";
 export { TextPrompt, askText } from "./text-prompt";
+export { copyFormat, dropFormat, formatPainter, selectedMarkups } from "./properties";

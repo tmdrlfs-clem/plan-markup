@@ -4,6 +4,7 @@ import {
   ClipboardPaste,
   Copy,
   FolderOpen,
+  Paintbrush,
   Maximize,
   MoveHorizontal,
   Printer,
@@ -21,8 +22,9 @@ import {
 
 import { useStore } from "zustand";
 
+import { ToggleButton } from "@/components/ui/toggle-button";
 import { Toolbar, ToolbarButton, ToolbarSeparator } from "@/components/ui/toolbar";
-import { TextFormatBar, activeUndoLabels, editorStore, hasClipboard, redoActive, undoActive, useSelectionState } from "@/features/editor";
+import { TextFormatBar, copyFormat, dropFormat, formatPainter, markupsOf, activeUndoLabels, editorStore, hasClipboard, redoActive, undoActive, useSelectionState } from "@/features/editor";
 import { openPrint } from "@/features/export";
 import { saveNow } from "@/features/markup-set/sync";
 import { hasDocument, viewerCommands, viewerStore, type SelectionCommand, type ViewerCommand } from "@/features/viewer";
@@ -131,6 +133,36 @@ function ToolOptions() {
   );
 }
 
+/** The format painter (as Properties' Copy format): one markup's format, applied by the next click on a markup. */
+function FormatPainterButton() {
+  const documentId = useStore(viewerStore, (s) => (hasDocument(s) ? s.documentId : null));
+  const painting = useStore(formatPainter, (s) => s.format !== null);
+  const source = useStore(editorStore, (s) => {
+    const ids = s.selection.ids;
+    if (!documentId || ids.length === 0) return null;
+    const chosen = new Set(ids);
+    const selected = markupsOf(s, documentId).filter((m) => chosen.has(m.id));
+    // One markup, or one group's (its first member).
+    return selected.length === 1 || (selected.length > 0 && selected.every((m) => m.groupId && m.groupId === selected[0].groupId)) ? selected[0] : null;
+  });
+  if (!documentId) return <Needs label="Format painter" icon={Paintbrush} />;
+  return (
+    <ToggleButton
+      label="Format painter"
+      tooltip={painting ? "Click a markup to apply the format (Esc cancels)" : "Copy the selected markup's format, then click a markup to apply it"}
+      icon={Paintbrush}
+      pressed={painting}
+      disabled={!source && !painting}
+      disabledReason="Select one markup first"
+      onPressedChange={() => {
+        if (painting) dropFormat();
+        else if (source) copyFormat(source);
+        viewerCommands.focusCanvas();
+      }}
+    />
+  );
+}
+
 /** Row 1: document and view commands. Row 2: options of the active tool. */
 export function WorkspaceToolbar({ onOpen }: { onOpen: () => void }) {
   return (
@@ -144,6 +176,7 @@ export function WorkspaceToolbar({ onOpen }: { onOpen: () => void }) {
         <UndoButtons />
         <ToolbarSeparator />
         <ClipboardButtons />
+        <FormatPainterButton />
         <ToolbarSeparator />
         <ViewButton label="Zoom out" icon={ZoomOut} shortcut="-" command="zoomOut" />
         <ViewButton label="Zoom in" icon={ZoomIn} shortcut="+" command="zoomIn" />
