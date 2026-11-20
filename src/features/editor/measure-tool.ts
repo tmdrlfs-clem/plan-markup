@@ -149,7 +149,7 @@ import { ADD_REVISION, placeRevision, revisionAt } from "./revision-tool";
 import { LEGEND_EMPTY, LEGEND_QTY, LEGEND_TEXT, LEGEND_TOTAL, fitSymbol, legendLabel, legendLayout, legendRows, legendScopeMarkups, legendTotal, type LegendRow, type MeasureText } from "@/core/markup/legend";
 import { ADD_LEGEND, legendAt, placeLegend } from "./legend-tool";
 import { toast } from "@/components/ui/toast-store";
-import { NEEDS_SCALE, placedMarkups, toolScale } from "@/core/tools/place";
+import { NEEDS_SCALE, anchorTopLeft, placedMarkups, toolScale } from "@/core/tools/place";
 import { stampStore, type StampTool } from "@/features/tool-chest/stamp-store";
 
 type Point = { x: number; y: number };
@@ -1146,6 +1146,12 @@ export const measurePainter: MarkupPainter = {
       }
     }
     // Story 7.3: the armed tool under the pointer, where a click places it.
+    // A Tool Chest tile dragged over the drawing: the ghost of the drop, whatever the tool.
+    const dragged = stampStore.getState().dragging;
+    if (dragged) {
+      if (pointer) paintStampGhost(c, dragged, pointer, view);
+      return null;
+    }
     if (viewerStore.getState().tool === "stamp") {
       // Story 9.10: the head a click would add, at half strength.
       if (placingHeads()) {
@@ -1247,6 +1253,12 @@ export const measurePainter: MarkupPainter = {
     return drawing() !== null;
   },
 
+  // A ghost under the pointer (a held tool, a head, a revision, a legend, a dragged tile) follows every move.
+  get followsPointer() {
+    const tool = viewerStore.getState().tool;
+    return stampStore.getState().dragging !== null || tool === "stamp" || tool === "revision" || tool === "legend";
+  },
+
   get lastPoint() {
     return drawing()?.points.at(-1) ?? null;
   },
@@ -1269,7 +1281,7 @@ export const measurePainter: MarkupPainter = {
     const pageId = pageIdOf(at.documentId, at.pageIndex);
     // Story 5.8: the picked image, centred on the click; then Select has it (to resize).
     if (tool === "image") return placeImage(point, at.documentId, pageId);
-    // Story 7.3: the armed tool, centred on the click; it stays armed (Esc returns to Select).
+    // Story 7.3: the armed tool, its top-left corner at the click; it stays armed (Esc returns to Select).
     // Story 9.10: in head mode (the 4541 panel's Add head) a click adds a manual head.
     if (tool === "stamp" && placingHeads()) return placeHeadAt(point, at.documentId, at.pageIndex) ? "done" : "ignored";
     if (tool === "stamp") return placeStamp(stampStore.getState().armed, point, at.documentId, at.pageIndex) ? "done" : "ignored";
@@ -1559,13 +1571,17 @@ function dimensionCaption(m: DimensionMarkup, calibration: Calibration | null, u
 
 /** Story 5.8: adds the picked image centred at `point` ("Add image"), then selects it with Select. */
 /** Story 7.3: where `tool` goes on page `pageIndex` (null: the page needs a scale or its image is loading). */
-function stampMarkups(tool: StampTool, point: Point, documentId: string, pageIndex: number, userUnit?: number): Markup[] | null {
+/** The tool held at `point`: the pointer holds its top-left corner as the screen shows it (the ghost, a click and a drop alike). */
+function stampMarkups(tool: StampTool, point: Point, documentId: string, pageIndex: number, view?: LayerView): Markup[] | null {
   const pageId = pageIdOf(documentId, pageIndex);
-  const unit = userUnit ?? lastViewOf(pageId)?.userUnit ?? 1;
-  return placedMarkups(tool, point, { pageId, calibration: calibrationOf(documentId, pageIndex), userUnit: unit }, uuidv7, new Date().toISOString());
+  const shown = view ?? lastViewOf(pageId);
+  const unit = shown?.userUnit ?? 1;
+  const placed = placedMarkups(tool, point, { pageId, calibration: calibrationOf(documentId, pageIndex), userUnit: unit }, uuidv7, new Date().toISOString());
+  // Without a painted view, the page upright (y up in user space).
+  return placed && anchorTopLeft(placed, point, shown ? (p) => shown.toDevice(p) : (p) => ({ x: p.x, y: -p.y }));
 }
 
-/** Story 7.3: places `tool` centred at `point` (one undo step); false when it cannot go on that page. */
+/** Story 7.3: places `tool` held at `point` (one undo step); false when it cannot go on that page. */
 function placeStamp(tool: StampTool | null, point: Point, documentId: string, pageIndex: number): boolean {
   if (!tool) {
     toast({ title: NO_STAMP, variant: "info" });
@@ -1583,7 +1599,7 @@ function placeStamp(tool: StampTool | null, point: Point, documentId: string, pa
 }
 
 function paintStampGhost(c: CanvasRenderingContext2D, tool: StampTool, pointer: Point, view: LayerView): void {
-  const markups = stampMarkups(tool, pointer, view.documentId, view.pageIndex, view.userUnit);
+  const markups = stampMarkups(tool, pointer, view.documentId, view.pageIndex, view);
   if (!markups) return;
   c.save();
   c.globalAlpha = 0.5;

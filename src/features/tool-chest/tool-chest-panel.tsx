@@ -44,6 +44,17 @@ export const UNREADABLE_TOOL = "This tool could not be read";
 export const TOOL_CHEST_TIP = "Click a tool, then click the drawing to place it (it stays armed until Esc), or drag it onto the drawing. S arms the last tool again.";
 const NEW_SET_NAME = "New tool set";
 
+let blankImage: HTMLImageElement | null = null;
+/** A transparent picture for a tile's drag (made once, so it has loaded by the next drag). */
+function blankDragImage(): HTMLImageElement | null {
+  if (typeof Image === "undefined") return null;
+  if (!blankImage) {
+    blankImage = new Image(1, 1);
+    blankImage.src = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+  }
+  return blankImage;
+}
+
 type ChestState = { status: "loading" | "ready" | "error"; sets: ToolSet[] };
 
 /** The user's tool sets (loaded when the panel first shows). */
@@ -189,11 +200,15 @@ function ToolTile({ tool }: { tool: Tool }) {
         onClick={() => {
           if (reason === null) void arm(tool);
         }}
+        onPointerDown={() => void blankDragImage()}
         onDragStart={(e) => {
           const stamp = reason === null ? stampOf(tool, tool.imageUrl ? cachedToolImage(tool.imageUrl) : null) : null;
           if (!stamp) return e.preventDefault();
           e.dataTransfer.setData(TOOL_DRAG_TYPE, tool.id);
           e.dataTransfer.effectAllowed = "copy";
+          // The drawing shows the tool's own ghost, held by its top-left corner, not the tile's picture.
+          const blank = blankDragImage();
+          if (blank) e.dataTransfer.setDragImage?.(blank, 0, 0);
           setDraggedStamp(stamp);
         }}
         onDragEnd={() => setDraggedStamp(null)}

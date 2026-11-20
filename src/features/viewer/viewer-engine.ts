@@ -1654,7 +1654,8 @@ export class ViewerEngine {
   private publishCursor(): void {
     if (this.suspended || this.destroyed) return;
     // A calibration pick's rubber band follows every move.
-    if (this.updateCursor() || this.pick?.points.length === 1 || markupPainter()?.tracking) this.paintOverlay();
+    const painter = markupPainter();
+    if (this.updateCursor() || this.pick?.points.length === 1 || painter?.tracking || painter?.followsPointer) this.paintOverlay();
   }
 
   /**
