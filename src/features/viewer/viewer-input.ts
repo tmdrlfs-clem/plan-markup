@@ -620,6 +620,7 @@ export class ViewerInput {
     }
     // Story 5.2: Ctrl+C copies the selection, Ctrl+V pastes at the pointer, Ctrl+Shift+V in place.
     if (ctrl && !e.altKey && !e.shiftKey && isLetter(e, "c")) return e.repeat || this.target.selectionKey("copy");
+    if (ctrl && !e.altKey && !e.shiftKey && isLetter(e, "x")) return e.repeat || this.target.selectionKey("cut");
     if (ctrl && !e.altKey && isLetter(e, "v")) return e.repeat || this.target.selectionKey(e.shiftKey ? "paste-in-place" : "paste");
     // Story 5.3: Ctrl+G groups, Ctrl+Shift+G ungroups (also over the browser's find next / previous).
     if (ctrl && !e.altKey && isLetter(e, "g")) return e.repeat || this.target.selectionKey(e.shiftKey ? "ungroup" : "group") || true;

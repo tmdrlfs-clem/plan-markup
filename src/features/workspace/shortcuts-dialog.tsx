@@ -60,7 +60,7 @@ export const SHORTCUTS: readonly ShortcutGroup[] = [
     group: "Edit",
     rows: [
       { action: "Undo / Redo", keys: "Ctrl+Z / Ctrl+Y", note: "Also Ctrl+Shift+Z; while drawing, Undo removes the last point" },
-      { action: "Copy / Paste / Paste in place", keys: "Ctrl+C / Ctrl+V / Ctrl+Shift+V" },
+      { action: "Cut / Copy / Paste / Paste in place", keys: "Ctrl+X / Ctrl+C / Ctrl+V / Ctrl+Shift+V" },
       { action: "Delete", keys: "Del", note: "Also Backspace" },
       { action: "Select all", keys: "Ctrl+A" },
       { action: "Group / Ungroup", keys: "Ctrl+G / Ctrl+Shift+G" },

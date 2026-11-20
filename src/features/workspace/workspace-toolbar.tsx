@@ -1,6 +1,8 @@
 "use client";
 
 import {
+  ClipboardPaste,
+  Copy,
   FolderOpen,
   Maximize,
   MoveHorizontal,
@@ -9,6 +11,8 @@ import {
   RotateCcw,
   RotateCw,
   Save,
+  Scissors,
+  Trash2,
   Undo2,
   ZoomIn,
   ZoomOut,
@@ -18,8 +22,10 @@ import {
 import { useStore } from "zustand";
 
 import { Toolbar, ToolbarButton, ToolbarSeparator } from "@/components/ui/toolbar";
+import { activeUndoLabels, editorStore, hasClipboard, redoActive, undoActive, useSelectionState } from "@/features/editor";
 import { openPrint } from "@/features/export";
-import { hasDocument, viewerCommands, viewerStore, type ViewerCommand } from "@/features/viewer";
+import { saveNow } from "@/features/markup-set/sync";
+import { hasDocument, viewerCommands, viewerStore, type SelectionCommand, type ViewerCommand } from "@/features/viewer";
 
 export const NO_DRAWING = "Open a drawing first";
 
@@ -41,17 +47,92 @@ function PrintButton() {
   return <ToolbarButton label="Print…" icon={Printer} shortcut="Ctrl+P" onClick={openPrint} />;
 }
 
+/** Undo / Redo: the active drawing's next step, named in the tooltip. */
+function UndoButtons() {
+  const tabId = useStore(viewerStore, (s) => s.tabId);
+  const open = useStore(viewerStore, hasDocument);
+  const undo = useStore(editorStore, (s) => activeUndoLabels(s, tabId).undo);
+  const redo = useStore(editorStore, (s) => activeUndoLabels(s, tabId).redo);
+  if (!open) {
+    return (
+      <>
+        <Needs label="Undo" icon={Undo2} shortcut="Ctrl+Z" />
+        <Needs label="Redo" icon={Redo2} shortcut="Ctrl+Y" />
+      </>
+    );
+  }
+  return (
+    <>
+      <ToolbarButton
+        label={undo ? `Undo ${undo}` : "Undo"}
+        icon={Undo2}
+        shortcut="Ctrl+Z"
+        disabled={!undo}
+        disabledReason="Nothing to undo"
+        onClick={() => {
+          undoActive();
+          viewerCommands.focusCanvas();
+        }}
+      />
+      <ToolbarButton
+        label={redo ? `Redo ${redo}` : "Redo"}
+        icon={Redo2}
+        shortcut="Ctrl+Y"
+        disabled={!redo}
+        disabledReason="Nothing to redo"
+        onClick={() => {
+          redoActive();
+          viewerCommands.focusCanvas();
+        }}
+      />
+    </>
+  );
+}
+
+/** Cut, Copy, Paste, Delete: the shown page's selection (as Edit and the markup menu). */
+function ClipboardButtons() {
+  const documentId = useStore(viewerStore, (s) => (hasDocument(s) ? s.documentId : null));
+  const pageIndex = useStore(viewerStore, (s) => s.pageIndex);
+  const s = useSelectionState(documentId, pageIndex);
+  const button = (label: string, icon: LucideIcon, shortcut: string, command: SelectionCommand, enabled: boolean, reason: string) =>
+    !documentId ? (
+      <Needs label={label} icon={icon} shortcut={shortcut} />
+    ) : (
+      <ToolbarButton
+        label={label}
+        icon={icon}
+        shortcut={shortcut}
+        disabled={!enabled}
+        disabledReason={reason}
+        onClick={() => {
+          viewerCommands.selection(command);
+          viewerCommands.focusCanvas();
+        }}
+      />
+    );
+  return (
+    <>
+      {button("Cut", Scissors, "Ctrl+X", "cut", s.editable > 0, "Select a markup first")}
+      {button("Copy", Copy, "Ctrl+C", "copy", s.selected > 0, "Select a markup first")}
+      {button("Paste", ClipboardPaste, "Ctrl+V", "paste", hasClipboard(), "Copy a markup first")}
+      {button("Delete", Trash2, "Del", "delete", s.editable > 0, "Select a markup first")}
+    </>
+  );
+}
+
 /** Row 1: document and view commands. Row 2: options of the active tool. */
 export function WorkspaceToolbar({ onOpen }: { onOpen: () => void }) {
   return (
     <>
       <Toolbar aria-label="Document" className="border-b border-border">
         <ToolbarButton label="Open…" icon={FolderOpen} shortcut="Ctrl+O" onClick={onOpen} />
-        <Needs label="Save" icon={Save} shortcut="Ctrl+S" />
+        {/* Story 6.3: saving is automatic; Save sends what waits now. */}
+        <ToolbarButton label="Save" icon={Save} shortcut="Ctrl+S" onClick={() => saveNow()} />
         <PrintButton />
         <ToolbarSeparator />
-        <Needs label="Undo" icon={Undo2} shortcut="Ctrl+Z" />
-        <Needs label="Redo" icon={Redo2} shortcut="Ctrl+Y" />
+        <UndoButtons />
+        <ToolbarSeparator />
+        <ClipboardButtons />
         <ToolbarSeparator />
         <ViewButton label="Zoom out" icon={ZoomOut} shortcut="-" command="zoomOut" />
         <ViewButton label="Zoom in" icon={ZoomIn} shortcut="+" command="zoomIn" />

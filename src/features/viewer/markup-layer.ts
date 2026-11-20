@@ -87,6 +87,7 @@ export type SelectionCommand =
   | "all"
   | "nudge-end"
   | "copy"
+  | "cut"
   | "paste"
   | "paste-in-place"
   | "group"

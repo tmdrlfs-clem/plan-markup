@@ -1875,6 +1875,8 @@ export class ViewerEngine {
       const where = this.screenToUser(this.pointerScreen ?? { x: this.viewport.width / 2, y: this.viewport.height / 2 });
       return !!where && painter.selectionKey({ kind: "paste", inPlace: key === "paste-in-place", at: where }, at);
     }
+    // Cut: copy, then delete what can be (a locked markup stays, as Delete keeps it).
+    if (key === "cut") return painter.selectionKey({ kind: "copy" }, at) && painter.selectionKey({ kind: "delete" }, at);
     // Story 5.3: lock / unlock, the drawing order, align.
     if (key === "lock" || key === "unlock") return painter.selectionKey({ kind: "lock", locked: key === "lock" }, at);
     if (typeof key === "string" && key.startsWith("order:")) return painter.selectionKey({ kind: "order", step: key.slice(6) as OrderStep }, at);
