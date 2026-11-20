@@ -44,7 +44,8 @@ describe("supabase/config.toml auth settings", () => {
     ["enable_refresh_token_rotation", "true"],
     ["refresh_token_reuse_interval", "10"],
     ["minimum_password_length", "12"],
-    ["enable_signup", "true"],
+    // Security review M3: accounts are made only by the app's server (src/lib/auth/sign-up.ts).
+    ["enable_signup", "false"],
   ])("[auth] %s = %s", (key, value) => {
     expect(auth?.get(key)).toBe(value);
   });
