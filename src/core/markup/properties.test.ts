@@ -72,3 +72,22 @@ describe("markup properties (Story 5.10)", () => {
     expect(withFormat(filled, formatOf(make("line"))).style.fill).toBeUndefined();
   });
 });
+
+describe("text format bar (founder 2026-11-21)", () => {
+  it("sets and clears the face, bold, italic, underline, strikethrough and alignment of text only", () => {
+    const box = make("text", { text: "Hi" });
+    const bold = withChange(box, { font: "serif", bold: true, underline: true, align: "center" });
+    expect(bold.style).toMatchObject({ font: "serif", bold: true, underline: true, align: "center" });
+    const plain = withChange(bold, { font: null, bold: false, underline: false, align: null });
+    expect(plain.style).toEqual(DEFAULT_MARKUP_STYLE);
+    // A line has no text: unchanged (the same object).
+    const line = make("line");
+    expect(withChange(line, { bold: true, align: "right" })).toBe(line);
+  });
+
+  it("the format painter carries the text format", () => {
+    const from = withChange(make("text", { text: "A" }), { italic: true, strike: true, font: "mono" });
+    const to = withFormat(make("callout", { text: "B", points: [...BOX, { x: -20, y: -20 }] }), formatOf(from));
+    expect(to.style).toMatchObject({ italic: true, strike: true, font: "mono" });
+  });
+});

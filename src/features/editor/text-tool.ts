@@ -24,11 +24,13 @@ import {
   textBoxOf,
   wrapText,
 } from "@/core/markup/text";
-import { DEFAULT_MARKUP_STYLE, MAX_TEXT_LENGTH, type TextMarkup } from "@/core/schema/markup";
+import { MAX_TEXT_LENGTH, type MarkupStyle, type TextMarkup } from "@/core/schema/markup";
 import type { LayerView, TextTool } from "@/features/viewer";
 
 import { editorStore, setTextEdit, type TextEdit } from "./editor-store";
 import { executeOp } from "./undo-store";
+import { cssFontOf } from "./fonts";
+import { newTextStyle } from "./text-format";
 
 type Point = { x: number; y: number };
 
@@ -52,7 +54,24 @@ const LABEL_CHARS = 40;
 export const NOTE_FIELD_PX = 200;
 
 /** The field over the canvas, in the viewport's CSS px: its top left, size and turn, its font size and padding. */
-export type TextFrame = { x: number; y: number; width: number; height: number; angle: number; fontPx: number; padPx: number; color: string; kind: TextTool };
+export type TextFrame = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  angle: number;
+  fontPx: number;
+  padPx: number;
+  color: string;
+  kind: TextTool;
+  /** Text format bar: the face (CSS family), bold, italic, decoration and alignment (absent: the app's, plain, left). */
+  font?: string;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  strike?: boolean;
+  align?: "left" | "center" | "right";
+};
 
 /** The field's frame as last painted (its own store: painting it must not repaint the markups). */
 export const textFrameStore = createStore<{ frame: TextFrame | null }>(() => ({ frame: null }));
@@ -104,10 +123,12 @@ function userUnitOf(pageId: string): number {
  * the text's click (`ring`).
  */
 export function draftOf(tool: TextTool, pageId: string, points: readonly Point[], ring?: readonly Point[]): TextMarkup {
-  const base = { id: uuidv7(), pageId, createdAt: new Date().toISOString(), style: DEFAULT_MARKUP_STYLE, text: "" };
+  // Text format bar: the next text's face, size, colour and format.
+  const style = newTextStyle();
+  const base = { id: uuidv7(), pageId, createdAt: new Date().toISOString(), style, text: "" };
   const toScreen = toScreenOf(pageId);
   const unit = userUnitOf(pageId);
-  const font = DEFAULT_MARKUP_STYLE.fontSize / unit;
+  const font = style.fontSize / unit;
   const height = font * TEXT_LINE_HEIGHT + (2 * TEXT_PAD_PT) / unit;
   const placed = (origin: Point) => {
     const { right, down } = screenAxes(origin, toScreen);
@@ -132,12 +153,12 @@ export function draftOf(tool: TextTool, pageId: string, points: readonly Point[]
 /** Width of `s` at font size `size` (any unit): a canvas where there is one, else an estimate. */
 export type Measure = (s: string, size: number) => number;
 let measureContext: OffscreenCanvasRenderingContext2D | null | undefined;
-export function measureText(family: string): Measure {
+export function measureText(family: string, style?: Pick<MarkupStyle, "font" | "bold" | "italic">): Measure {
   if (measureContext === undefined) measureContext = typeof OffscreenCanvas === "undefined" ? null : new OffscreenCanvas(1, 1).getContext("2d");
   const ctx = measureContext;
   if (!ctx) return (s, size) => s.length * size * 0.55;
   return (s, size) => {
-    ctx.font = `100px ${family}`;
+    ctx.font = style ? cssFontOf(style, 100, family) : `100px ${family}`;
     return (ctx.measureText(s).width * size) / 100;
   };
 }
@@ -194,7 +215,7 @@ export function endTextEdit(commit: boolean): boolean {
   setTextFrame(null);
   if (!commit || text.trim() === "") return false;
   const family = views.get(edit.draft.pageId)?.colors.fontFamily ?? "sans-serif";
-  const markup = finalizeText(edit.draft, text, userUnitOf(edit.draft.pageId), measureText(family));
+  const markup = finalizeText(edit.draft, text, userUnitOf(edit.draft.pageId), measureText(family, edit.draft.style));
   executeOp({ kind: "markups.add", documentId: edit.documentId, markups: [markup] }, ADD_LABEL[markup.type], edit.tabId ?? undefined);
   return true;
 }

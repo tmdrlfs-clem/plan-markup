@@ -31,7 +31,13 @@ export const markupStyleSchema = z.object({
   /** Story 7.5: a dash pattern in points (on, off, …; a Revu import's /BS /D); absent: solid. */
   dash: z.array(z.number().finite().min(0).max(144)).min(1).max(8).optional(),
   /** Story 7.5: the text's face when not the app's own: Carlito (bundled, metric-compatible with Calibri). */
-  font: z.enum(["carlito"]).optional(),
+  font: z.enum(["carlito", "serif", "mono"]).optional(),
+  /** Text format bar (founder 2026-11-21): bold, italic, underlined, struck through, centred or right-aligned text; absent: plain, left. */
+  bold: z.boolean().optional(),
+  italic: z.boolean().optional(),
+  underline: z.boolean().optional(),
+  strike: z.boolean().optional(),
+  align: z.enum(["center", "right"]).optional(),
 });
 export type MarkupStyle = z.infer<typeof markupStyleSchema>;
 

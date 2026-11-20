@@ -41,3 +41,4 @@ export { ADD_HEAD_LINE, armGuideDraw, endGuideDraw, guideDrawStore } from "./gui
 export { ADD_HEAD, OUTSIDE_ZONES, armHeadPlace, endHeadPlace, headPlaceStore, placeHeadAt } from "./head-place";
 // Story 9.11: rule-break markers.
 export { revealFlag } from "./rule-markers";
+export { TextFormatBar } from "./text-format-bar";

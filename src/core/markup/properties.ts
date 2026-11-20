@@ -95,7 +95,12 @@ export function subjectOf(m: Markup): string {
 }
 
 /** A change from the panel: style fields (fill null: none), the subject (empty: the type's name), the text. */
-export type PropertyChange = Partial<Omit<MarkupStyle, "fill">> & { fill?: string | null; subject?: string; text?: string; revision?: Partial<RevisionMeta>; legend?: Partial<LegendMeta> };
+export type PropertyChange = Partial<Omit<MarkupStyle, "fill" | "font" | "align">> & {
+  fill?: string | null;
+  /** null: the app's own face. */
+  font?: MarkupStyle["font"] | null;
+  /** null: left. */
+  align?: MarkupStyle["align"] | null; subject?: string; text?: string; revision?: Partial<RevisionMeta>; legend?: Partial<LegendMeta> };
 
 /** `m` with the change's fields it has (the others are left alone); the same object when nothing changes. */
 export function withChange(m: Markup, change: PropertyChange): Markup {
@@ -107,6 +112,12 @@ export function withChange(m: Markup, change: PropertyChange): Markup {
   if (change.opacity !== undefined) {
     if (change.opacity >= 1) delete style.opacity;
     else style.opacity = change.opacity;
+  }
+  // Text format bar: the face and format of a markup with text (a note's text is in its popup: none).
+  if (hasTextFormat(m)) {
+    if (change.font !== undefined) setOr(style, "font", change.font ?? undefined);
+    for (const k of ["bold", "italic", "underline", "strike"] as const) if (change[k] !== undefined) setOr(style, k, change[k] || undefined);
+    if (change.align !== undefined) setOr(style, "align", change.align ?? undefined);
   }
   if (change.fill !== undefined && fields.has("fill")) {
     if (change.fill === null) delete style.fill;
@@ -140,7 +151,30 @@ export function withChange(m: Markup, change: PropertyChange): Markup {
 }
 
 function sameStyle(a: MarkupStyle, b: MarkupStyle): boolean {
-  return a.color === b.color && a.width === b.width && a.fontSize === b.fontSize && a.fill === b.fill && a.opacity === b.opacity;
+  return (
+    a.color === b.color &&
+    a.width === b.width &&
+    a.fontSize === b.fontSize &&
+    a.fill === b.fill &&
+    a.opacity === b.opacity &&
+    a.font === b.font &&
+    a.bold === b.bold &&
+    a.italic === b.italic &&
+    a.underline === b.underline &&
+    a.strike === b.strike &&
+    a.align === b.align
+  );
+}
+
+/** Sets `key` to `value`, or removes it when `value` is undefined. */
+function setOr<K extends keyof MarkupStyle>(style: MarkupStyle, key: K, value: MarkupStyle[K] | undefined): void {
+  if (value === undefined) delete style[key];
+  else style[key] = value;
+}
+
+/** Whether `m` shows text the format bar can format (a text box, typewriter, callout or Cloud+). */
+export function hasTextFormat(m: Markup): boolean {
+  return m.type === "text" || m.type === "typewriter" || m.type === "callout" || m.type === "cloudplus";
 }
 
 /** The format painter's copy of `m`: its style (D2: not its subject or text). */
@@ -150,5 +184,17 @@ export function formatOf(m: Markup): MarkupStyle {
 
 /** `m` with a copied format: the style fields it has (no fill copied: none, when it can have one). */
 export function withFormat(m: Markup, format: MarkupStyle): Markup {
-  return withChange(m, { color: format.color, width: format.width, fontSize: format.fontSize, opacity: format.opacity ?? 1, fill: format.fill ?? null });
+  return withChange(m, {
+    color: format.color,
+    width: format.width,
+    fontSize: format.fontSize,
+    opacity: format.opacity ?? 1,
+    fill: format.fill ?? null,
+    font: format.font ?? null,
+    align: format.align ?? null,
+    bold: format.bold ?? false,
+    italic: format.italic ?? false,
+    underline: format.underline ?? false,
+    strike: format.strike ?? false,
+  });
 }

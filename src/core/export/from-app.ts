@@ -24,7 +24,7 @@ import { lengthCaption } from "@/core/measure/length";
 import type { Layer as AppLayer } from "@/core/schema/layer";
 import type { Markup as AppMarkup, MarkupStyle } from "@/core/schema/markup";
 
-import type { Box, Calibration, ExportDocument, Layer, Markup, MarkupBase, Pt, Rgb } from "./model";
+import type { Box, Calibration, ExportDocument, Layer, Markup, MarkupBase, Pt, Rgb, TextStyle } from "./model";
 
 type Point = { x: number; y: number };
 
@@ -146,7 +146,16 @@ export function exportMarkup(m: AppMarkup, ctx: ConvertContext): Markup | null {
     ...(m.layerId ? { layer: m.layerId } : {}),
     ...(m.groupId ? { group: m.groupId } : {}),
   };
-  const text = { fontSize: s.fontSize / u, textColor: rgbOf(s.color) };
+  const text: TextStyle = {
+    fontSize: s.fontSize / u,
+    textColor: rgbOf(s.color),
+    ...(s.font === "serif" || s.font === "mono" ? { font: s.font } : {}),
+    ...(s.bold ? { bold: true } : {}),
+    ...(s.italic ? { italic: true } : {}),
+    ...(s.underline ? { underline: true } : {}),
+    ...(s.strike ? { strike: true } : {}),
+    ...(s.align ? { align: s.align } : {}),
+  };
   const value = captionText(m, ctx.calibration, u);
   const measured = value !== undefined ? { ...base, valueText: value } : base;
   const box = (points: readonly Point[]): Box => boundsOf(points);

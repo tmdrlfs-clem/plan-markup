@@ -18,8 +18,9 @@ import {
 } from "../pdf/content";
 import type { ExtGStateResource, FormContent, ImageResource } from "../pdf/form";
 import { HELVETICA_ASCENT, HELVETICA_DESCENT, helveticaWidth } from "../pdf/helvetica";
+import { faceWidth, pdfFace, type PdfFace } from "../pdf/std-fonts";
 import { measureValue, polygonCentroid } from "./measure";
-import type { Calibration, LineEndingStyle, Markup, Rgb } from "./model";
+import type { Calibration, LineEndingStyle, Markup, Rgb, TextStyle } from "./model";
 
 export const FONT_NAME = "Helv";
 /** Label size for measurement captions, in pt. */
@@ -70,9 +71,15 @@ export class ApBuilder {
     return n;
   }
 
-  font(): string {
-    this.fonts[FONT_NAME] = "Helvetica";
-    return FONT_NAME;
+  /** Selects a standard-14 face for text (Helvetica by default) and returns its resource name. */
+  font(face?: PdfFace): string {
+    if (!face || face.baseFont === "Helvetica") {
+      this.fonts[FONT_NAME] = "Helvetica";
+      return FONT_NAME;
+    }
+    const n = `F${face.baseFont.replace(/[^A-Za-z]/g, "")}`;
+    this.fonts[n] = face.baseFont;
+    return n;
   }
 
   /** The bounds of everything included so far, or undefined. */
@@ -297,20 +304,35 @@ export function layoutText(str: string, size: number): TextLayout {
 }
 
 /** Width/height a text needs at `size` with the standard margin. */
-export function textBlockSize(str: string, size: number): [number, number] {
+export function textBlockSize(str: string, size: number, style?: Omit<TextStyle, "fontSize" | "textColor">): [number, number] {
   const l = layoutText(str, size);
-  const w = Math.max(...l.lines.map((s) => helveticaWidth(s, size)));
+  const f = pdfFace(style?.font, style?.bold, style?.italic);
+  const w = Math.max(...l.lines.map((s) => faceWidth(f, s, size)));
   return [w + 2 * l.margin, l.lines.length * l.lineHeight + 2 * l.margin - (l.lineHeight - size)];
 }
 
-function textBlock(ap: ApBuilder, box: Box, str: string, size: number, color: Rgb): void {
+/** A text's lines in `box` from its top, in its face, aligned, underlined or struck through as its style says. */
+function textBlock(ap: ApBuilder, box: Box, str: string, style: TextStyle): void {
+  const size = style.fontSize;
   const l = layoutText(str, size);
+  const f = pdfFace(style.font, style.bold, style.italic);
+  const font = ap.font(f);
   ap.push("q", `${nums(box[0], box[1], box[2] - box[0], box[3] - box[1])} re W n`);
-  let y = box[3] - l.margin - (HELVETICA_ASCENT / 1000) * size;
+  let y = box[3] - l.margin - (f.ascent / 1000) * size;
+  const decorations: string[] = [];
   for (const line of l.lines) {
-    textAt(ap, line, box[0] + l.margin, y, size, color);
+    const w = faceWidth(f, line, size);
+    const room = box[2] - box[0] - 2 * l.margin;
+    const x = box[0] + l.margin + (style.align === "center" ? (room - w) / 2 : style.align === "right" ? room - w : 0);
+    if (line !== "") {
+      ap.push("BT", colorOp(style.textColor, false)!, `/${font} ${fmt(size)} Tf`, `${nums(1, 0, 0, 1, x, y)} Tm`, `(${literalText(line)}) Tj`, "ET");
+      const t = Math.max(0.5, size / 18);
+      if (style.underline) decorations.push(`${nums(x, y - size * 0.12 - t / 2, w, t)} re`);
+      if (style.strike) decorations.push(`${nums(x, y + size * 0.28 - t / 2, w, t)} re`);
+    }
     y -= l.lineHeight;
   }
+  if (decorations.length > 0) ap.push(colorOp(style.textColor, false)!, ...decorations, "f");
   ap.push("Q");
 }
 
@@ -542,14 +564,14 @@ export function markupAppearance(m: Markup, cal: Calibration): MarkupAppearance 
     case "textBox": {
       opacity(ap, m);
       frame(ap, m.rect, strokeOf(m), m.fill);
-      textBlock(ap, m.rect, m.text, m.fontSize, m.textColor);
+      textBlock(ap, m.rect, m.text, m);
       return { form: ap.finish(m.rect) };
     }
     case "typewriter": {
-      const [w, h] = textBlockSize(m.text, m.fontSize);
+      const [w, h] = textBlockSize(m.text, m.fontSize, m);
       const rect: Box = [m.at[0], m.at[1] - h, m.at[0] + w, m.at[1]];
       opacity(ap, m);
-      textBlock(ap, rect, m.text, m.fontSize, m.textColor);
+      textBlock(ap, rect, m.text, m);
       return { form: ap.finish(rect) };
     }
     case "note":
@@ -676,7 +698,7 @@ export function markupAppearance(m: Markup, cal: Calibration): MarkupAppearance 
   }
 }
 
-function calloutAppearance(m: Markup & { fontSize: number; textColor: Rgb; text: string }, textRect: Box, leader: Pt[]): MarkupAppearance {
+function calloutAppearance(m: Markup & TextStyle & { text: string }, textRect: Box, leader: Pt[]): MarkupAppearance {
   const ap = new ApBuilder();
   const s = strokeOf(m);
   opacity(ap, m);
@@ -687,7 +709,7 @@ function calloutAppearance(m: Markup & { fontSize: number; textColor: Rgb; text:
   }
   includeAll(ap, leader, s.width / 2);
   frame(ap, textRect, s, m.type === "cloudPlus" ? [1, 1, 1] : m.fill);
-  textBlock(ap, textRect, m.text, m.fontSize, m.textColor);
+  textBlock(ap, textRect, m.text, m);
   const form = ap.finish();
   const b = form.bbox;
   return { form, rd: [textRect[0] - b[0], b[3] - textRect[3], b[2] - textRect[2], textRect[1] - b[1]] };

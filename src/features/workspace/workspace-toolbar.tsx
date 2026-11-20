@@ -22,7 +22,7 @@ import {
 import { useStore } from "zustand";
 
 import { Toolbar, ToolbarButton, ToolbarSeparator } from "@/components/ui/toolbar";
-import { activeUndoLabels, editorStore, hasClipboard, redoActive, undoActive, useSelectionState } from "@/features/editor";
+import { TextFormatBar, activeUndoLabels, editorStore, hasClipboard, redoActive, undoActive, useSelectionState } from "@/features/editor";
 import { openPrint } from "@/features/export";
 import { saveNow } from "@/features/markup-set/sync";
 import { hasDocument, viewerCommands, viewerStore, type SelectionCommand, type ViewerCommand } from "@/features/viewer";
@@ -120,6 +120,17 @@ function ClipboardButtons() {
   );
 }
 
+/** Row 2: the text format bar while a drawing is open. */
+function ToolOptions() {
+  const open = useStore(viewerStore, hasDocument);
+  if (open) return <TextFormatBar />;
+  return (
+    <div data-testid="tool-options" className="flex h-9 items-center border-b border-border bg-surface-2 px-3 text-ws-sm text-muted">
+      Select a tool to see its options
+    </div>
+  );
+}
+
 /** Row 1: document and view commands. Row 2: options of the active tool. */
 export function WorkspaceToolbar({ onOpen }: { onOpen: () => void }) {
   return (
@@ -141,12 +152,7 @@ export function WorkspaceToolbar({ onOpen }: { onOpen: () => void }) {
         <ViewButton label="Rotate view counter-clockwise" icon={RotateCcw} command="rotateCounterClockwise" />
         <ViewButton label="Rotate view clockwise" icon={RotateCw} command="rotateClockwise" />
       </Toolbar>
-      <div
-        data-testid="tool-options"
-        className="flex h-9 items-center border-b border-border bg-surface-2 px-3 text-ws-sm text-muted"
-      >
-        Select a tool to see its options
-      </div>
+      <ToolOptions />
     </>
   );
 }

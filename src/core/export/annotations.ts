@@ -19,7 +19,7 @@ import { FormWriter, type FormContent } from "../pdf/form";
 import { name, text, toPdfDict, toPdfObject, type PdfDictValue, type PdfValue } from "../pdf/value";
 import { AREA_FILL_OPACITY, arcVertices, markupAppearance } from "./appearance";
 import { measureDictionary, measureValue } from "./measure";
-import type { Calibration, ExportDocument, Markup, MarkupType, Rgb } from "./model";
+import type { Calibration, ExportDocument, Markup, MarkupType, Rgb, TextStyle } from "./model";
 
 export type ExportMode = "native" | "appearance-only";
 
@@ -85,9 +85,16 @@ function defaultAppearance(size: number, textColor: Rgb, borderColor: Rgb | unde
   return `${borderColor ? `${f(borderColor)} RG ` : ""}${f(textColor)} rg /Helv ${size} Tf`;
 }
 
-function defaultStyle(size: number, textColor: Rgb): string {
-  const hex = textColor.map((x) => Math.round(x * 255).toString(16).padStart(2, "0")).join("");
-  return `font: Helvetica ${size}pt; text-align:left; color:#${hex}`;
+function defaultStyle(m: TextStyle): string {
+  const hex = m.textColor.map((x) => Math.round(x * 255).toString(16).padStart(2, "0")).join("");
+  const family = m.font === "serif" ? "Times" : m.font === "mono" ? "Courier" : "Helvetica";
+  const decoration = [m.underline ? "underline" : "", m.strike ? "line-through" : ""].filter(Boolean).join(" ");
+  return [
+    `font: ${m.italic ? "italic " : ""}${m.bold ? "bold " : ""}${m.fontSize}pt ${family}`,
+    `text-align:${m.align ?? "left"}`,
+    `color:#${hex}`,
+    ...(decoration ? [`text-decoration:${decoration}`] : []),
+  ].join("; ");
 }
 
 function contentsOf(m: Markup, cal: Calibration): string | undefined {
@@ -217,7 +224,7 @@ function nativeKeys(m: Markup, cal: Calibration, form: FormContent, rd: [number,
 }
 
 function freeTextKeys(
-  m: Markup & { fontSize: number; textColor: Rgb },
+  m: Markup & TextStyle,
   textRect: Box,
   leader: Pt[] | undefined,
   form: FormContent,
@@ -227,8 +234,8 @@ function freeTextKeys(
   return {
     IT: name(intent),
     DA: text(defaultAppearance(m.fontSize, m.textColor, m.color)),
-    DS: text(defaultStyle(m.fontSize, m.textColor)),
-    Q: 0,
+    DS: text(defaultStyle(m)),
+    Q: m.align === "center" ? 1 : m.align === "right" ? 2 : 0,
     CL: leader ? flat(leader) : undefined,
     LE: leader ? name("OpenArrow") : undefined,
     RD: [textRect[0] - b[0], b[3] - textRect[3], b[2] - textRect[2], textRect[1] - b[1]],

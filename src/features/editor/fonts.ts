@@ -44,9 +44,17 @@ export function loadCarlito(): Promise<void> {
 
 /** The CSS font family `style`'s text draws in (`fallback`: the app's face). */
 export function fontFamilyOf(style: Pick<MarkupStyle, "font">, fallback: string): string {
+  // Text format bar: the standard serif and monospace faces (Times and Courier in a PDF).
+  if (style.font === "serif") return `"Times New Roman", Times, serif`;
+  if (style.font === "mono") return `"Courier New", Courier, monospace`;
   if (style.font !== "carlito") return fallback;
   void loadCarlito();
   return `${CARLITO_FAMILY}, ${fallback}`;
+}
+
+/** The CSS font shorthand of `style`'s text at `px` (its face, bold and italic). */
+export function cssFontOf(style: Pick<MarkupStyle, "font" | "bold" | "italic">, px: number, fallback: string): string {
+  return `${style.italic ? "italic " : ""}${style.bold ? "bold " : ""}${px}px ${fontFamilyOf(style, fallback)}`;
 }
 
 /** Resolves once the faces `markups` ask for are loaded (painters outside the layer: a tool's preview). */

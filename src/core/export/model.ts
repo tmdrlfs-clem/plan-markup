@@ -1,6 +1,7 @@
 // The export engine's input model (framework-free, plain data). Geometry is in
 // PDF user space of the target page (points, y up), as stored by the app.
 
+import type { FontFamily } from "../pdf/std-fonts";
 import type { Box, Pt } from "../pdf/content";
 
 export type { Box, Pt };
@@ -65,7 +66,17 @@ export type MarkupBase = {
   valueText?: string;
 };
 
-export type TextStyle = { fontSize: number; textColor: Rgb };
+/** A text's face and its format bar settings (absent: Helvetica, left, plain). */
+export type TextStyle = {
+  fontSize: number;
+  textColor: Rgb;
+  font?: FontFamily;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  strike?: boolean;
+  align?: "center" | "right";
+};
 
 export type Markup = MarkupBase &
   (

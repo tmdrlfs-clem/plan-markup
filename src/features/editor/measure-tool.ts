@@ -137,7 +137,7 @@ import {
 } from "./text-tool";
 import { ADD_STRIKETHROUGH, ADD_UNDERLINE, paintTextMark, paintTextMarkActive, textMarkDrag, textMarkLabel } from "./text-mark-tool";
 import { executeOp, registerDrawingUndo } from "./undo-store";
-import { fontFamilyOf } from "./fonts";
+import { cssFontOf, fontFamilyOf } from "./fonts";
 import { revisionLabel, revisionText } from "@/core/markup/revision";
 import { ZONE_FILL_OPACITY, isZone } from "@/core/sprinkler/zone";
 import { ADD_HEAD_LINE, guideOf, makesGuide } from "./guide-draw";
@@ -507,12 +507,22 @@ function drawText(c: CanvasRenderingContext2D, box: readonly Point[], text: stri
   if ((style.opacity ?? 1) < 1) c.globalAlpha = style.opacity ?? 1;
   c.translate(d0.x, d0.y);
   c.rotate(Math.atan2(d1.y - d0.y, d1.x - d0.x));
-  c.font = `${size}px ${fontFamilyOf(style, view.colors.fontFamily)}`;
+  c.font = cssFontOf(style, size, view.colors.fontFamily);
   c.textAlign = "left";
   c.textBaseline = "top";
   c.fillStyle = style.color;
   const lines = wrapText(text, wrap ? Math.max(size, width - 2 * pad) : null, (s) => c.measureText(s).width);
-  lines.forEach((line, i) => c.fillText(line, pad, pad + i * size * TEXT_LINE_HEIGHT));
+  // Text format bar: alignment in the box (a typewriter's box is its widest line), underline, strikethrough.
+  const widths = lines.map((line) => c.measureText(line).width);
+  const room = wrap ? width - 2 * pad : Math.max(0, ...widths);
+  const thick = Math.max(1, size / 18);
+  lines.forEach((line, i) => {
+    const x = pad + (style.align === "center" ? (room - widths[i]) / 2 : style.align === "right" ? room - widths[i] : 0);
+    const y = pad + i * size * TEXT_LINE_HEIGHT;
+    c.fillText(line, x, y);
+    if (style.underline && widths[i] > 0) c.fillRect(x, y + size * 0.95, widths[i], thick);
+    if (style.strike && widths[i] > 0) c.fillRect(x, y + size * 0.52, widths[i], thick);
+  });
   c.restore();
 }
 
@@ -696,6 +706,12 @@ function textFrameOf(m: TextMarkup, view: LayerView): TextFrame {
     padPx: pad,
     color: m.style.color,
     kind: m.type,
+    font: fontFamilyOf(m.style, view.colors.fontFamily),
+    bold: !!m.style.bold,
+    italic: !!m.style.italic,
+    underline: !!m.style.underline,
+    strike: !!m.style.strike,
+    align: m.style.align ?? "left",
   };
 }
 
