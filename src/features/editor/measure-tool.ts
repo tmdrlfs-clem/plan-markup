@@ -137,8 +137,9 @@ import {
   textLabel,
   type TextFrame,
 } from "./text-tool";
-import { ADD_SQUIGGLY, ADD_STRIKETHROUGH, ADD_TEXT_HIGHLIGHT, ADD_UNDERLINE, paintTextMark, paintTextMarkActive, textMarkDrag, textMarkLabel } from "./text-mark-tool";
+import { ADD_REPLACE_TEXT, ADD_SQUIGGLY, ADD_STRIKETHROUGH, ADD_TEXT_HIGHLIGHT, ADD_UNDERLINE, textMarkKind, paintTextMark, paintTextMarkActive, textMarkDrag, textMarkLabel } from "./text-mark-tool";
 import { executeOp, registerDrawingUndo } from "./undo-store";
+import { askText } from "./text-prompt";
 import { cssFontOf, fontFamilyOf } from "./fonts";
 import { revisionLabel, revisionText } from "@/core/markup/revision";
 import { ZONE_FILL_OPACITY, isZone } from "@/core/sprinkler/zone";
@@ -170,6 +171,9 @@ export const ADD_ARROW = "Add arrow";
 export const ADD_POLYLINE = "Add polyline";
 export const ADD_POLYGON = "Add polygon";
 export const ADD_ARC = "Add arc";
+export const ADD_INSERT_TEXT = "Add insert text";
+/** Insert text's caret, in points (page units), drawn upright with its tip at its point. */
+const CARET_PT = 8;
 export const ADD_RECTANGLE = "Add rectangle";
 export const ADD_ELLIPSE = "Add ellipse";
 export const ADD_CLOUD = "Add cloud";
@@ -212,6 +216,8 @@ const ADD_LABEL: Record<DrawTool, string> = {
   strikethrough: ADD_STRIKETHROUGH,
   texthighlight: ADD_TEXT_HIGHLIGHT,
   squiggly: ADD_SQUIGGLY,
+  replacetext: ADD_REPLACE_TEXT,
+  inserttext: ADD_INSERT_TEXT,
   whiteout: ADD_WHITEOUT,
   whiteoutpolygon: ADD_WHITEOUT,
   eraser: ADD_ERASER,
@@ -252,6 +258,8 @@ const MIN_POINTS: Record<DrawTool, number> = {
   strikethrough: 1,
   texthighlight: 1,
   squiggly: 1,
+  replacetext: 1,
+  inserttext: 1,
   whiteout: 2,
   whiteoutpolygon: 3,
   eraser: 2,
@@ -651,6 +659,22 @@ function paintLegendSymbol(c: CanvasRenderingContext2D, symbol: readonly Markup[
   paintList(c, symbol, sub, null, { selected: new Set(), captions: [], boxes: [], selectedShown: [] });
 }
 
+/** A caret (^) in `style`'s colour, its tip at `at` (device), upright on screen. */
+function drawCaret(c: CanvasRenderingContext2D, at: Point, style: MarkupStyle, view: LayerView): void {
+  const h = Math.max(6 * view.dpr, CARET_PT * view.devicePerPt);
+  c.save();
+  if ((style.opacity ?? 1) < 1) c.globalAlpha = style.opacity ?? 1;
+  c.beginPath();
+  c.moveTo(at.x - h / 2, at.y + h);
+  c.lineTo(at.x, at.y);
+  c.lineTo(at.x + h / 2, at.y + h);
+  c.lineWidth = Math.max(1, h / 6);
+  c.lineJoin = "round";
+  c.strokeStyle = style.color;
+  c.stroke();
+  c.restore();
+}
+
 /** Story 5.6 (D7): a note's icon, a page (folded corner) in page units, upright, centred on its point. */
 function drawNote(c: CanvasRenderingContext2D, at: Point, style: MarkupStyle, view: LayerView): void {
   const side = Math.max(8 * view.dpr, NOTE_PT * view.devicePerPt);
@@ -1013,6 +1037,22 @@ function paintList(c: CanvasRenderingContext2D, markups: readonly Markup[], view
       if (!onCanvas(pts, any.style, view)) continue;
       if (selected.has(any.id)) strokeSelection(c, pts, view);
       paintTextMark(c, any.type, pts, any.style, view);
+      // Replace text: a caret at the end of the struck words (their last box's bottom right).
+      if (any.type === "strikethrough" && any.replacement !== undefined) drawCaret(c, pts[pts.length - 3], any.style, view);
+      continue;
+    }
+    if (any.type === "caret") {
+      // Insert text: a caret where the text goes.
+      captions.push(`Insert: ${any.text.length > 40 ? `${any.text.slice(0, 40)}…` : any.text}`);
+      const at = view.toDevice(any.points[0]);
+      const half = Math.max(6 * view.dpr, CARET_PT * view.devicePerPt);
+      const box = [
+        { x: at.x - half, y: at.y - half / 4 },
+        { x: at.x + half, y: at.y + half },
+      ];
+      if (!onCanvas(box, any.style, view)) continue;
+      if (selected.has(any.id)) strokeSelection(c, [box[0], { x: box[1].x, y: box[0].y }, box[1], { x: box[0].x, y: box[1].y }], view);
+      drawCaret(c, at, any.style, view);
       continue;
     }
     if (any.type === "dimension") {
@@ -1223,7 +1263,7 @@ export const measurePainter: MarkupPainter = {
     if (d?.tool === "fill") return paintFillActive(c, view, pointer);
     // Story 5.9: the words selected so far.
     if (d && isTextMarkTool(d.tool) && d.pageId === pageIdOf(view.documentId, view.pageIndex)) {
-      if (d.quads) paintTextMarkActive(c, d.tool, devicePoints(d.quads, view), view);
+      if (d.quads) paintTextMarkActive(c, textMarkKind(d.tool), devicePoints(d.quads, view), view);
       return d.selected ?? null;
     }
     // Story 5.7: the stroke so far (a highlight's at its opacity, not yet multiplied).
@@ -1276,7 +1316,7 @@ export const measurePainter: MarkupPainter = {
       paintCover(c, pts);
       strokeShape(c, d.tool === "whiteout" ? "rectangle" : "polyline", pts, DEFAULT_MARKUP_STYLE, view);
     }
-    else if (isMarkupTool(d.tool) && !isTextTool(d.tool) && !isInkTool(d.tool) && !isCoverTool(d.tool) && d.tool !== "image" && d.tool !== "stamp" && d.tool !== "revision" && d.tool !== "legend" && !isTextMarkTool(d.tool)) strokeShape(c, d.tool, pts, DEFAULT_MARKUP_STYLE, view);
+    else if (isMarkupTool(d.tool) && !isTextTool(d.tool) && !isInkTool(d.tool) && !isCoverTool(d.tool) && d.tool !== "image" && d.tool !== "stamp" && d.tool !== "revision" && d.tool !== "legend" && d.tool !== "inserttext" && !isTextMarkTool(d.tool)) strokeShape(c, d.tool, pts, DEFAULT_MARKUP_STYLE, view);
     else strokeMeasure(c, pts, DEFAULT_MEASURE_STYLE, view);
     c.restore();
     if (!live) return null;
@@ -1324,6 +1364,20 @@ export const measurePainter: MarkupPainter = {
     if (tool === "revision") return placeRevision(point, at.documentId, pageId);
     // Story 7.8: a legend centred on the click.
     if (tool === "legend") return placeLegend(point, at.documentId, pageId);
+    // Insert text: a caret at the click, with the text asked for.
+    if (tool === "inserttext") {
+      const documentId = at.documentId;
+      const tabId = viewerStore.getState().tabId ?? undefined;
+      askText({
+        title: "Insert text",
+        label: "Text to insert here",
+        onSubmit: (text) => {
+          const caret: Markup = { id: uuidv7(), pageId, createdAt: new Date().toISOString(), style: DEFAULT_MARKUP_STYLE, type: "caret", points: [point], text };
+          executeOp({ kind: "markups.add", documentId, markups: [caret] }, ADD_INSERT_TEXT, tabId);
+        },
+      });
+      return "done";
+    }
     const d = drawing();
     if (!d || d.pageId !== pageId || d.tool !== tool) {
       setDrawing({ tool, pageId, pageIndex: at.pageIndex, points: [point] });
@@ -1698,7 +1752,10 @@ function markupOf(d: Drawing): Markup {
     case "strikethrough":
     case "texthighlight":
     case "squiggly":
+    case "replacetext":
       throw new Error("marked text is added by its drag (text-mark-tool.ts)");
+    case "inserttext":
+      throw new Error("insert text is placed by one click (placeCaret)");
     case "text":
     case "callout":
     case "typewriter":

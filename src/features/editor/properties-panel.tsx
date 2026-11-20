@@ -262,6 +262,13 @@ export function PropertiesPanel({ emptyText }: { emptyText: string }) {
         {fields.has("text") && one && isTextMarkup(one) ? (
           <TextValueField key={`text:${one.id}`} label="Text" multiline value={one.text} maxLength={MAX_TEXT_LENGTH} onCommit={(t) => change({ text: t })} />
         ) : null}
+        {/* Insert text's text; Replace text's replacement. */}
+        {fields.has("text") && one?.type === "caret" ? (
+          <TextValueField key={`text:${one.id}`} label="Text to insert" multiline value={one.text} maxLength={MAX_TEXT_LENGTH} onCommit={(t) => t.trim() && change({ text: t })} />
+        ) : null}
+        {fields.has("text") && one?.type === "strikethrough" && one.replacement !== undefined ? (
+          <TextValueField key={`text:${one.id}`} label="Replace with" multiline value={one.replacement} maxLength={MAX_TEXT_LENGTH} onCommit={(t) => t.trim() && change({ text: t })} />
+        ) : null}
       </div>
     </div>
   );

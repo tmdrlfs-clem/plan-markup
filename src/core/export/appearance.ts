@@ -31,6 +31,8 @@ export const NOTE_SIZE = 20;
 export const AREA_FILL_OPACITY = 0.35;
 /** Padding added around the drawn geometry (beyond half the stroke width). */
 const PAD = 1;
+/** Insert text's caret height, in points. */
+const CARET_SIZE = 8;
 
 // ---------------------------------------------------------------- builder
 
@@ -579,6 +581,15 @@ export function markupAppearance(m: Markup, cal: Calibration): MarkupAppearance 
       opacity(ap, m);
       textBlock(ap, rect, m.text, m);
       return { form: ap.finish(rect) };
+    }
+    case "caret": {
+      // An upright caret, its tip at the point (PDF y up: the legs go down).
+      const h = CARET_SIZE;
+      const s = strokeOf(m);
+      opacity(ap, m);
+      ap.push(colorOp(m.color ?? [1, 0, 0], true)!, `${fmt(Math.max(0.8, s.width))} w`, "1 j", `${nums(m.at[0] - h / 2, m.at[1] - h)} m ${nums(m.at[0], m.at[1])} l ${nums(m.at[0] + h / 2, m.at[1] - h)} l S`);
+      ap.includeBox([m.at[0] - h / 2, m.at[1] - h, m.at[0] + h / 2, m.at[1]], 1);
+      return { form: ap.finish() };
     }
     case "note":
       noteIcon(ap, m.at);

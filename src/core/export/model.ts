@@ -101,6 +101,8 @@ export type Markup = MarkupBase &
     | ({ type: "textBox"; rect: Box; text: string } & TextStyle)
     | ({ type: "typewriter"; at: Pt; text: string } & TextStyle)
     | { type: "note"; at: Pt; text: string }
+    /** Insert text: a caret, its tip at `at`, and the text to insert. */
+    | { type: "caret"; at: Pt; text: string }
     | { type: "highlight" | "underline" | "strikeout" | "squiggly"; quads: Box[] }
     | { type: "pen"; strokes: Pt[][] }
     | { type: "stamp"; rect: Box; label: string }

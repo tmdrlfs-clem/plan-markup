@@ -16,7 +16,7 @@ import { redoActive, setRevisionAuthor, undoActive } from "@/features/editor";
 import { SprinklerPanel } from "@/features/sprinkler";
 import { useFirstUseTipsPersistence } from "@/features/tips";
 import { chooseTheme, useWorkspaceTheme } from "@/features/appearance/theme-store";
-import { LayersPanel, MarkupContextMenu, MarkupsListPanel, MeasurementsPanel, PropertiesPanel, TextEditor, armArea, armCount, armLength, armPolylength, useEditorSession, useMeasureTools } from "@/features/editor";
+import { LayersPanel, MarkupContextMenu, MarkupsListPanel, MeasurementsPanel, PropertiesPanel, TextEditor, TextPrompt, armArea, armCount, armLength, armPolylength, useEditorSession, useMeasureTools } from "@/features/editor";
 import {
   DocumentTabs,
   DocumentViewer,
@@ -283,6 +283,7 @@ function ShellBody({ user, initialTheme }: { user: WorkspaceUser; initialTheme: 
           <AddToolDialog />
           <ExportDialog />
           <SavePrompt />
+          <TextPrompt />
           <FlattenDialog />
           <PrintDialog />
           <ShortcutsDialog />

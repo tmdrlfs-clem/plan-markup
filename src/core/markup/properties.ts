@@ -39,6 +39,7 @@ export const SUBJECT_NAMES: Record<MarkupType, string> = {
   underline: "Underline",
   texthighlight: "Text highlight",
   squiggly: "Squiggly",
+  caret: "Insert text",
   strikethrough: "Strikethrough",
   whiteout: "White-out",
   eraser: "Eraser",
@@ -65,7 +66,7 @@ export function fieldsOf(m: Markup): ReadonlySet<PropertyField> {
   if (m.type === "revision") fields.add("revision");
   // Story 7.8: a legend's title and scope (its text is sized to its box, so no font size).
   if (m.type === "legend") fields.add("legend");
-  if (isTextMarkup(m)) fields.add("text");
+  if (isTextMarkup(m) || m.type === "caret" || (m.type === "strikethrough" && m.replacement !== undefined)) fields.add("text");
   return fields;
 }
 
@@ -136,6 +137,9 @@ export function withChange(m: Markup, change: PropertyChange): Markup {
     }
   }
   if (change.text !== undefined && isTextMarkup(next) && next.text !== change.text) next = { ...next, text: change.text };
+  // Insert text's text; Replace text's replacement (the struck text stays what the PDF says).
+  if (change.text !== undefined && next.type === "caret" && next.text !== change.text) next = { ...next, text: change.text };
+  if (change.text !== undefined && next.type === "strikethrough" && next.replacement !== undefined && next.replacement !== change.text) next = { ...next, replacement: change.text };
   // Story 7.7: a stamp's fields, kept only when they still make a valid stamp.
   if (change.revision !== undefined && next.type === "revision") {
     const parsed = revisionMetaSchema.safeParse({ ...next.revision, ...change.revision });

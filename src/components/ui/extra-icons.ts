@@ -22,3 +22,16 @@ export const SquigglyIcon = createLucideIcon("squiggly", [
   ["path", { d: "M12 3v12", key: "stem" }],
   ["path", { d: "M3 20l3-2 3 2 3-2 3 2 3-2 3 2", key: "wave" }],
 ]);
+
+/** Insert text: a caret under a text line. */
+export const InsertTextIcon = createLucideIcon("insert-text", [
+  ["path", { d: "M4 6h16", key: "line" }],
+  ["path", { d: "M7 20l5-9 5 9", key: "caret" }],
+]);
+
+/** Replace text: struck text with a caret above. */
+export const ReplaceTextIcon = createLucideIcon("replace-text", [
+  ["path", { d: "M3 16h18", key: "strike" }],
+  ["path", { d: "M6 12v8M18 12v8", key: "ends" }],
+  ["path", { d: "M8 9l4-6 4 6", key: "caret" }],
+]);

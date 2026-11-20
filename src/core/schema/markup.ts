@@ -231,6 +231,8 @@ export const strikethroughMarkupSchema = z.object({
   /** Replace text (Bluebeam toolbar set, founder 2026-11-21): what the struck text is to be replaced by; a caret marks it. */
   replacement: z.string().max(MAX_TEXT_LENGTH).optional(),
 });
+/** Insert text (founder 2026-11-21): a caret at its point, and the text to insert there. */
+export const caretMarkupSchema = z.object({ ...base, type: z.literal("caret"), points: z.tuple([pointSchema]), text: z.string().max(MAX_TEXT_LENGTH) });
 /** Text highlight and squiggly underline of PDF text (founder 2026-11-21), stored as an underline is. */
 export const textHighlightMarkupSchema = z.object({ ...base, type: z.literal("texthighlight"), points: quadPoints, text: z.string().max(MAX_TEXT_LENGTH).optional() });
 export const squigglyMarkupSchema = z.object({ ...base, type: z.literal("squiggly"), points: quadPoints, text: z.string().max(MAX_TEXT_LENGTH).optional() });
@@ -334,6 +336,7 @@ export const markupSchema = z.discriminatedUnion("type", [
   strikethroughMarkupSchema,
   textHighlightMarkupSchema,
   squigglyMarkupSchema,
+  caretMarkupSchema,
   revisionMarkupSchema,
   legendMarkupSchema,
   zoneMarkupSchema,

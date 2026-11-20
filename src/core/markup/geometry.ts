@@ -51,6 +51,8 @@ export function outlinePoints(m: Markup): readonly Point[] {
 /** The user-space box of a markup: its points, or a radius's / diameter's whole circle. */
 export function markupBounds(m: Markup): Rect {
   if (m.type === "ellipse") return ellipseBounds(ellipseFrame(m.points));
+  // Insert text: its caret's box (8 pt, the tip at the point, the legs below it).
+  if (m.type === "caret") return { x: m.points[0].x - 4, y: m.points[0].y - 8, width: 8, height: 8 };
   const circle = circleOf(m);
   if (circle) {
     const { centre, radius } = circle;
@@ -154,6 +156,12 @@ export function hitMarkup(m: Markup, p: Point, tol: number, userUnit = 1): boole
     }
     case "arc":
       return nearPolyline(p, outlinePoints(m), tol, false);
+    // Insert text: its caret (8 pt, its tip at its point).
+    case "caret": {
+      const size = 8 / (userUnit > 0 ? userUnit : 1);
+      const q = m.points[0];
+      return Math.abs(p.x - q.x) <= size / 2 + tol && p.y <= q.y + tol && p.y >= q.y - size - tol;
+    }
     case "ellipse": {
       const local = ellipseLocal(ellipseFrame(m.points), p);
       if (local && Math.hypot(local.x, local.y) <= 1) return true;

@@ -254,6 +254,8 @@ function markups(): Markup[] {
     { ...base("pm-layer-b", "Layer test (Fire protection)"), type: "ellipse", rect: boxAt(34, 0.4, 0.1, 0.95, 0.7), color: RED, fill: [1, 0.85, 0.85], width: 1, layer: "fire" },
     // Last, so the cells above keep their order: a squiggly underline in the underline's cell.
     { ...base("pm-squiggly", "Squiggly"), type: "squiggly", quads: [runQuad(r.squiggly)], color: GREEN },
+    // Insert text, in the note's cell.
+    { ...base("pm-caret", "Insert text"), type: "caret", at: at(12, 0.8, 0.8), text: "TYP." },
   ];
 }
 

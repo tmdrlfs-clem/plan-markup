@@ -11,9 +11,10 @@ import { pageIdOf } from "@/core/calibration/calibration";
 import { uuidv7 } from "@/core/ids/uuid";
 import { charNear, decorationLines, quadsOf, selectionQuads, selectionText, wordSelection, type PageText } from "@/core/markup/text-select";
 import { DEFAULT_MARKUP_STYLE, type Markup, type MarkupStyle, type TextMarkMarkup } from "@/core/schema/markup";
-import { isTextMarkTool, viewerStore, type LayerView } from "@/features/viewer";
+import { isTextMarkTool, viewerStore, type LayerView, type TextMarkTool } from "@/features/viewer";
 
 import { editorStore, setDrawing } from "./editor-store";
+import { askText } from "./text-prompt";
 import { executeOp } from "./undo-store";
 
 type Point = { x: number; y: number };
@@ -22,7 +23,12 @@ export const ADD_UNDERLINE = "Add underline";
 export const ADD_STRIKETHROUGH = "Add strikethrough";
 export const ADD_TEXT_HIGHLIGHT = "Add text highlight";
 export const ADD_SQUIGGLY = "Add squiggly underline";
-const ADD: Record<TextMarkMarkup["type"], string> = { underline: ADD_UNDERLINE, strikethrough: ADD_STRIKETHROUGH, texthighlight: ADD_TEXT_HIGHLIGHT, squiggly: ADD_SQUIGGLY };
+export const ADD_REPLACE_TEXT = "Add replace text";
+const ADD: Record<TextMarkTool, string> = { underline: ADD_UNDERLINE, strikethrough: ADD_STRIKETHROUGH, texthighlight: ADD_TEXT_HIGHLIGHT, squiggly: ADD_SQUIGGLY, replacetext: ADD_REPLACE_TEXT };
+/** The markup a text tool's drag makes (Replace text: a strikethrough with its replacement). */
+export function textMarkKind(tool: TextMarkTool): TextMarkMarkup["type"] {
+  return tool === "replacetext" ? "strikethrough" : tool;
+}
 /** A text highlight's style: yellow at 40 %, multiplied over the sheet (as the Highlight pen). */
 const TEXT_HIGHLIGHT_STYLE: MarkupStyle = { ...DEFAULT_MARKUP_STYLE, color: "#ffff00", opacity: 0.4 };
 /** The press must be this near text on screen (CSS px). */
@@ -67,13 +73,28 @@ export function textMarkDrag(
   setDrawing(null);
   if (!selected) return;
   const style = tool === "texthighlight" ? TEXT_HIGHLIGHT_STYLE : DEFAULT_MARKUP_STYLE;
-  const markup: Markup = { id: uuidv7(), pageId, createdAt: new Date().toISOString(), style, type: tool, points: selected.quads, text: selected.text };
-  executeOp({ kind: "markups.add", documentId: at.documentId, markups: [markup] }, ADD[tool]);
+  const markup: Markup = { id: uuidv7(), pageId, createdAt: new Date().toISOString(), style, type: textMarkKind(tool), points: selected.quads, text: selected.text };
+  const documentId = at.documentId;
+  const tabId = viewerStore.getState().tabId ?? undefined;
+  if (tool === "replacetext") {
+    // Replace text: the struck words get their replacement (asked for; Cancel adds nothing).
+    const shown = selected.text.length > LABEL_CHARS ? `${selected.text.slice(0, LABEL_CHARS)}…` : selected.text;
+    askText({
+      title: "Replace text",
+      label: `Replace “${shown}” with`,
+      onSubmit: (replacement) => executeOp({ kind: "markups.add", documentId, markups: [{ ...markup, replacement } as Markup] }, ADD_REPLACE_TEXT, tabId),
+    });
+    return;
+  }
+  executeOp({ kind: "markups.add", documentId, markups: [markup] }, ADD[tool]);
 }
+
+const clip = (s: string) => (s.length > LABEL_CHARS ? `${s.slice(0, LABEL_CHARS)}…` : s);
 
 /** Layer 2's label: the kind and the start of the marked text. */
 export function textMarkLabel(m: TextMarkMarkup): string {
   const text = m.text ?? "";
+  if (m.type === "strikethrough" && m.replacement !== undefined) return `Replace: ${clip(text)} → ${clip(m.replacement)}`;
   if (!text) return LABEL[m.type];
   return `${LABEL[m.type]}: ${text.length > LABEL_CHARS ? `${text.slice(0, LABEL_CHARS)}…` : text}`;
 }

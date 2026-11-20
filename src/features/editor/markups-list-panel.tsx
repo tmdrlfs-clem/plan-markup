@@ -20,6 +20,7 @@
 // document (D1).
 
 import {
+  ChevronUp,
   Angle,
   ArrowDown,
   ArrowUp,
@@ -121,6 +122,7 @@ const TYPE_ICONS: Record<MarkupType, LucideIcon> = {
   underline: Underline,
   texthighlight: Highlighter,
   squiggly: Underline,
+  caret: ChevronUp,
   strikethrough: Strikethrough,
   whiteout: SquareDashed,
   eraser: Eraser,

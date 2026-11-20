@@ -6,6 +6,8 @@ import { markupSchema } from "@/core/schema/markup";
 import { buildPageText, type TextItem } from "@/core/search/page-text";
 import { setTool, viewerStore, type LayerView } from "@/features/viewer";
 
+import { textPromptStore } from "./text-prompt";
+
 import { editorStore, markupsOf, resetEditor } from "./editor-store";
 import { vertexIndices } from "./handles";
 import { installMeasureTools, measurePainter } from "./measure-tool";
@@ -109,6 +111,34 @@ describe("Underline and Strikethrough (Story 5.9)", () => {
     expect(measurePainter.paintStatic(r.ctx, view)).toEqual(["Text highlight: ROOM 101", "Squiggly: CH +2700"]);
     // The squiggle is a run of short segments, not one line.
     expect(r.ops.filter((o) => o.op === "lineTo").length).toBeGreaterThan(5);
+  });
+
+  it("Replace text: the drag asks for the replacement; Add strikes the words with it and a caret, Cancel adds nothing", () => {
+    setTool("replacetext");
+    measurePainter.textMark!("start", { x: 3, y: 102 }, AT);
+    measurePainter.textMark!("end", { x: 33, y: 102 }, AT);
+    const prompt = textPromptStore.getState().prompt!;
+    expect(prompt.label).toBe("Replace “ROOM 101” with");
+    expect(added()).toHaveLength(0);
+    prompt.onSubmit("ROOM 102");
+    const [m] = added();
+    expect(m).toMatchObject({ type: "strikethrough", text: "ROOM 101", replacement: "ROOM 102" });
+    expect(markupSchema.safeParse(m).success).toBe(true);
+    expect(undoLabel()).toBe("Add replace text");
+    expect(measurePainter.paintStatic(recorder().ctx, view)).toEqual(["Replace: ROOM 101 → ROOM 102"]);
+    textPromptStore.setState({ prompt: null });
+  });
+
+  it("Insert text: a click asks for the text; Add places a caret there with it", () => {
+    setTool("inserttext");
+    expect(measurePainter.place({ x: 50, y: 90 }, { ...AT, tolerance: 1 })).toBe("done");
+    textPromptStore.getState().prompt!.onSubmit("TYP.");
+    const [m] = added();
+    expect(m).toMatchObject({ type: "caret", points: [{ x: 50, y: 90 }], text: "TYP." });
+    expect(undoLabel()).toBe("Add insert text");
+    expect(measurePainter.paintStatic(recorder().ctx, view)).toEqual(["Insert: TYP."]);
+    expect(new MarkupIndex([m]).hit({ x: 51, y: 87 }, 0)?.id).toBe(m.id);
+    textPromptStore.setState({ prompt: null });
   });
 
   it("a press away from text, or before the page's text is read, marks nothing; a cancel drops the drag", () => {

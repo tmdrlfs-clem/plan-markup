@@ -57,6 +57,8 @@ export type ViewerTool =
   | "strikethrough"
   | "texthighlight"
   | "squiggly"
+  | "replacetext"
+  | "inserttext"
   | "whiteout"
   | "whiteoutpolygon"
   | "eraser"
@@ -104,9 +106,9 @@ export function isCoverTool(tool: ViewerTool): tool is CoverTool {
 }
 
 /** Story 5.9: the tools that mark PDF text (a drag selects words). */
-export type TextMarkTool = "underline" | "strikethrough" | "texthighlight" | "squiggly";
+export type TextMarkTool = "underline" | "strikethrough" | "texthighlight" | "squiggly" | "replacetext";
 export function isTextMarkTool(tool: ViewerTool): tool is TextMarkTool {
-  return tool === "underline" || tool === "strikethrough" || tool === "texthighlight" || tool === "squiggly";
+  return tool === "underline" || tool === "strikethrough" || tool === "texthighlight" || tool === "squiggly" || tool === "replacetext";
 }
 
 /**
@@ -115,10 +117,10 @@ export function isTextMarkTool(tool: ViewerTool): tool is TextMarkTool {
  * Story 7.3: Stamp places the armed Tool Chest tool at each click (S: the last one).
  * Story 7.7: Revision stamp places one stamp by a click; 7.8: Legend one legend.
  */
-export type MarkupTool = LineTool | BoxTool | "cloud" | TextTool | InkTool | "image" | "dimension" | TextMarkTool | CoverTool | "stamp" | "revision" | "legend";
+export type MarkupTool = LineTool | BoxTool | "cloud" | TextTool | InkTool | "image" | "dimension" | TextMarkTool | CoverTool | "stamp" | "revision" | "legend" | "inserttext";
 export function isMarkupTool(tool: ViewerTool): tool is MarkupTool {
   return (
-    LINE_TOOLS.has(tool) || isBoxTool(tool) || tool === "cloud" || TEXT_TOOLS.has(tool) || isInkTool(tool) || tool === "image" || tool === "dimension" || isTextMarkTool(tool) || isCoverTool(tool) || tool === "stamp" || tool === "revision" || tool === "legend"
+    LINE_TOOLS.has(tool) || isBoxTool(tool) || tool === "cloud" || TEXT_TOOLS.has(tool) || isInkTool(tool) || tool === "image" || tool === "dimension" || isTextMarkTool(tool) || isCoverTool(tool) || tool === "stamp" || tool === "revision" || tool === "legend" || tool === "inserttext"
   );
 }
 

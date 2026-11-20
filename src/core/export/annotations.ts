@@ -106,6 +106,7 @@ function contentsOf(m: Markup, cal: Calibration): string | undefined {
     case "callout":
     case "cloudPlus":
     case "note":
+    case "caret":
       return m.text;
     default:
       return m.comment;
@@ -157,6 +158,8 @@ function nativeKeys(m: Markup, cal: Calibration, form: FormContent, rd: [number,
       return { subtype: "StrikeOut", keys: { QuadPoints: quadPoints(m.quads) } };
     case "squiggly":
       return { subtype: "Squiggly", keys: { QuadPoints: quadPoints(m.quads) } };
+    case "caret":
+      return { subtype: "Caret", keys: { Sy: name("None") } };
     case "pen":
       return { subtype: "Ink", keys: { InkList: m.strokes.map(flat), BS: bs } };
     case "stamp":
