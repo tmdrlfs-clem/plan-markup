@@ -65,6 +65,7 @@ import { WorkspaceMenuBar } from "./workspace-menu-bar";
 import { ShortcutsDialog } from "./shortcuts-dialog";
 import { WorkspaceStatusBar } from "./workspace-status-bar";
 import { WorkspaceToolbar } from "./workspace-toolbar";
+import { NewDocumentDialog } from "./new-document-dialog";
 import type { Theme } from "@/lib/theme";
 
 export type { WorkspaceUser } from "./account-menu";
@@ -284,6 +285,7 @@ function ShellBody({ user, initialTheme }: { user: WorkspaceUser; initialTheme: 
           <ExportDialog />
           <SavePrompt />
           <TextPrompt />
+          <NewDocumentDialog />
           <FlattenDialog />
           <PrintDialog />
           <ShortcutsDialog />

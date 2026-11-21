@@ -1,6 +1,7 @@
 "use client";
 
 import { FileUp } from "lucide-react";
+import { openNewDocument } from "./new-document-dialog";
 import { useRef, useState, type DragEvent } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -77,9 +78,14 @@ export function EmptyWorkspace({ onOpen, onOpenFiles, recent, onOpenRecent }: Em
       >
         <FileUp size={32} aria-hidden="true" className="text-muted" />
         <h1 className="text-ws-xl font-semibold">{dragging ? "Drop to open" : "Drop a PDF here or Open…"}</h1>
-        <Button variant="primary" size="sm" onClick={onOpen}>
-          Open…
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="primary" size="sm" onClick={onOpen}>
+            Open…
+          </Button>
+          <Button size="sm" onClick={openNewDocument}>
+            New blank…
+          </Button>
+        </div>
         <section aria-labelledby="recent-drawings" className="mt-2 w-full text-left">
           <h2 id="recent-drawings" className="text-ws-sm font-semibold text-muted">
             Recent drawings
