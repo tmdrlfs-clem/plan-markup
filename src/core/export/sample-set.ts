@@ -102,10 +102,10 @@ export function cellCaption(i: number): { text: string; x: number; y: number; si
 /** A run of page text (Helvetica) that text markups (highlight, underline, …) refer to. */
 export type TextRun = { text: string; x: number; y: number; size: number };
 
-function runFor(i: number, str: string, size = 11): TextRun {
+function runFor(i: number, str: string, size = 11, fy = 0.45): TextRun {
   const [x0, , x1] = innerBox(i);
   const w = helveticaWidth(str, size);
-  const [, cy] = at(i, 0, 0.45);
+  const [, cy] = at(i, 0, fy);
   return { text: str, x: round(x0 + (x1 - x0 - w) / 2), y: cy, size };
 }
 
@@ -113,6 +113,8 @@ function runFor(i: number, str: string, size = 11): TextRun {
 export const TEXT_RUNS = {
   highlight: runFor(13, "OFFICE 1"),
   underline: runFor(15, "MEETING ROOM"),
+  // A squiggly underline shares the underline's cell, on a second line.
+  squiggly: runFor(15, "CHECK", 11, 0.15),
   strikeout: runFor(16, "STORE 2"),
   whiteout: runFor(31, "TEMP NOTE", 10),
   hyperlink: runFor(20, "SPEC SHEET", 10),
@@ -250,6 +252,12 @@ function markups(): Markup[] {
     { ...base("pm-group-text", "Group (text)"), type: "textBox", rect: boxAt(33, 0.6, 0.35, 0.9, 0.65), text: "G1", fontSize: 9, textColor: MAGENTA, group: "g1" },
     { ...base("pm-layer-a", "Layer test (Measurements)"), type: "rectangle", rect: boxAt(34, 0.05, 0.3, 0.6, 0.9), color: BLUE, fill: [0.85, 0.9, 1], width: 1, layer: "measure" },
     { ...base("pm-layer-b", "Layer test (Fire protection)"), type: "ellipse", rect: boxAt(34, 0.4, 0.1, 0.95, 0.7), color: RED, fill: [1, 0.85, 0.85], width: 1, layer: "fire" },
+    // Last, so the cells above keep their order: a squiggly underline in the underline's cell.
+    { ...base("pm-squiggly", "Squiggly"), type: "squiggly", quads: [runQuad(r.squiggly)], color: GREEN },
+    // Insert text, in the note's cell.
+    { ...base("pm-caret", "Insert text"), type: "caret", at: at(12, 0.8, 0.8), text: "TYP." },
+    // A file attachment (a tiny text file), in the note's cell.
+    { ...base("pm-attachment", "Attachment"), type: "fileAttachment", at: at(12, 0.8, 0.3), name: "spec.txt", mime: "text/plain", data: "U3ByaW5rbGVyIHNwZWMK" },
   ];
 }
 

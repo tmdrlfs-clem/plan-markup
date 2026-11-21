@@ -19,11 +19,12 @@ import { cloudRingOf, leaderTo, leaderToRing } from "@/core/markup/text";
 import { angleCaption } from "@/core/measure/angle";
 import { areaCaption, areaCaptionText } from "@/core/measure/area";
 import { circleCaption, circleThrough } from "@/core/measure/circle";
+import { arcGeometry } from "@/core/markup/arc";
 import { lengthCaption } from "@/core/measure/length";
 import type { Layer as AppLayer } from "@/core/schema/layer";
 import type { Markup as AppMarkup, MarkupStyle } from "@/core/schema/markup";
 
-import type { Box, Calibration, ExportDocument, Layer, Markup, MarkupBase, Pt, Rgb } from "./model";
+import type { Box, Calibration, ExportDocument, Layer, Markup, MarkupBase, Pt, Rgb, TextStyle } from "./model";
 
 type Point = { x: number; y: number };
 
@@ -145,7 +146,16 @@ export function exportMarkup(m: AppMarkup, ctx: ConvertContext): Markup | null {
     ...(m.layerId ? { layer: m.layerId } : {}),
     ...(m.groupId ? { group: m.groupId } : {}),
   };
-  const text = { fontSize: s.fontSize / u, textColor: rgbOf(s.color) };
+  const text: TextStyle = {
+    fontSize: s.fontSize / u,
+    textColor: rgbOf(s.color),
+    ...(s.font === "serif" || s.font === "mono" ? { font: s.font } : {}),
+    ...(s.bold ? { bold: true } : {}),
+    ...(s.italic ? { italic: true } : {}),
+    ...(s.underline ? { underline: true } : {}),
+    ...(s.strike ? { strike: true } : {}),
+    ...(s.align ? { align: s.align } : {}),
+  };
   const value = captionText(m, ctx.calibration, u);
   const measured = value !== undefined ? { ...base, valueText: value } : base;
   const box = (points: readonly Point[]): Box => boundsOf(points);
@@ -184,6 +194,12 @@ export function exportMarkup(m: AppMarkup, ctx: ConvertContext): Markup | null {
       return { ...base, type: "polyline", points: m.points.map(pt) };
     case "polygon":
       return { ...base, type: "polygon", points: m.points.map(pt) };
+    // An arc (three points in a line: the straight line).
+    case "arc": {
+      const g = arcGeometry(m.points[0], m.points[1], m.points[2]);
+      if (!g) return { ...base, type: "line", from: pt(m.points[0]), to: pt(m.points[2]) };
+      return { ...base, type: "arc", center: pt(g.centre), radius: g.radius, startDeg: (g.startAngle * 180) / Math.PI, sweepDeg: (g.sweep * 180) / Math.PI };
+    }
     case "rectangle":
       return axisAligned(m.points) ? { ...base, type: "rectangle", rect: box(m.points) } : { ...base, type: "polygon", points: m.points.map(pt) };
     case "ellipse":
@@ -191,13 +207,19 @@ export function exportMarkup(m: AppMarkup, ctx: ConvertContext): Markup | null {
     case "cloud":
       return { ...base, type: "cloud", points: m.points.map(pt), intensity: 1 };
     case "text":
-      return { ...base, ...text, type: "textBox", rect: box(m.points), text: m.text };
+      return { ...base, ...text, type: "textBox", rect: box(m.points), text: m.text, ...(s.cloud ? { cloud: true } : {}) };
     case "typewriter": {
       const [x0, , , y1] = box(m.points);
       return { ...noStroke(base), ...text, type: "typewriter", at: [x0, y1], text: m.text };
     }
     case "note":
       return { ...base, type: "note", at: pt(m.points[0]), text: m.text };
+    case "caret":
+      return { ...base, type: "caret", at: pt(m.points[0]), text: m.text };
+    case "link":
+      return { ...base, type: "hyperlink", rect: box(m.points), uri: m.uri };
+    case "attachment":
+      return { ...base, type: "fileAttachment", at: pt(m.points[0]), name: m.name, mime: m.mime, data: m.data };
     case "callout": {
       const frame = m.points.slice(0, 4);
       const [side, tip] = leaderTo(frame, m.points[4]);
@@ -220,10 +242,15 @@ export function exportMarkup(m: AppMarkup, ctx: ConvertContext): Markup | null {
       return { ...rest, fill: [1, 1, 1], width: 0, type: "polygon", points: m.points.map(pt) };
     }
     case "underline":
-    case "strikethrough": {
+    case "strikethrough":
+    case "texthighlight":
+    case "squiggly": {
       const quads: Box[] = [];
       for (let i = 0; i + 3 < m.points.length; i += 4) quads.push(box(m.points.slice(i, i + 4)));
-      return { ...base, type: m.type === "underline" ? "underline" : "strikeout", quads };
+      const type = m.type === "strikethrough" ? "strikeout" : m.type === "texthighlight" ? "highlight" : m.type;
+      // Replace text: the replacement is the strike-out's comment.
+      const comment = m.type === "strikethrough" && m.replacement ? { comment: m.replacement } : {};
+      return { ...base, ...comment, type, quads };
     }
     case "image": {
       const image = ctx.images.get(m.id);

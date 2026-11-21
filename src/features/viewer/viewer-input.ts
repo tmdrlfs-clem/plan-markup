@@ -7,8 +7,8 @@
 // Home / End and Ctrl+→ / Ctrl+← (text fields keep word navigation); repeats
 // are allowed, the engine cancels the stale renders. Ctrl+9 / Ctrl+0 act when the canvas has focus or the
 // pointer is over it, and then preventDefault so the browser's own zoom reset
-// does not run; elsewhere the browser keeps its defaults. Ctrl+wheel is only
-// listened to on the canvas. The browser's zoom is suppressed whenever a
+// does not run; elsewhere the browser keeps its defaults. The wheel is only
+// listened to on the canvas: it zooms at the cursor (Shift+wheel and Alt+wheel pan). The browser's zoom is suppressed whenever a
 // document area is shown (also while it loads or shows a render error); the
 // viewer only acts once a page is there.
 //
@@ -44,7 +44,18 @@ export function normalizeWheel(event: WheelLike, pageHeight: number): { dx: numb
   return { dx, dy };
 }
 
-/** Zoom factor of a Ctrl+wheel (or pinch) delta: wheel up/pinch out zooms in. */
+/**
+ * Founder 2026-11-21 (as Revu): the wheel zooms at the cursor (Ctrl+wheel and a pinch too);
+ * Shift+wheel pans sideways, Alt+wheel pans up and down, and a sideways-only wheel (a tilt wheel,
+ * a touchpad) pans.
+ */
+export function wheelZooms(e: Pick<WheelEvent, "ctrlKey" | "metaKey" | "shiftKey" | "altKey">, dx: number, dy: number): boolean {
+  if (e.ctrlKey || e.metaKey) return true;
+  if (e.shiftKey || e.altKey) return false;
+  return dy !== 0 && Math.abs(dy) >= Math.abs(dx);
+}
+
+/** Zoom factor of a wheel (or pinch) delta: wheel up/pinch out zooms in. */
 export function wheelZoomFactor(dy: number): number {
   const clamped = Math.max(-4 * WHEEL_PX_PER_STEP, Math.min(4 * WHEEL_PX_PER_STEP, dy));
   return Math.SQRT2 ** (-clamped / WHEEL_PX_PER_STEP);
@@ -130,6 +141,7 @@ export function cursorFor(state: { tool: ViewerTool; tempPan: boolean; dragging:
   if (isTextMarkTool(state.tool)) return "text";
   if (pointTool(state.tool)) return "crosshair";
   if (state.tool === "zoom") return state.zoomOut ? "zoom-out" : "zoom-in";
+  if (state.tool === "snapshot") return "crosshair";
   return "default";
 }
 
@@ -141,6 +153,8 @@ export interface ViewerInputTarget {
   zoomToRect(rect: Rect): void;
   zoomOutToRect(rect: Rect): void;
   setZoomRect(rect: Rect | null): void;
+  /** Snapshot: the viewport-relative box (CSS px) copied as an image. */
+  snapshot?(rect: Rect): void;
   fitPage(): void;
   fitWidth(): void;
   goToPage(index: number): void;
@@ -209,7 +223,7 @@ export type SnapModifiers = { alt: boolean; shift: boolean };
 
 type Drag =
   | { kind: "pan"; pointerId: number; last: Point }
-  | { kind: "zoom"; pointerId: number; start: Point; zoomOut: boolean }
+  | { kind: "zoom"; pointerId: number; start: Point; zoomOut: boolean; snapshot?: boolean }
   | { kind: "caption"; pointerId: number }
   | { kind: "press"; pointerId: number; brush: PressBrush }
   | { kind: "select"; pointerId: number; shift: boolean; alt: boolean; ctrl: boolean }
@@ -341,12 +355,11 @@ export class ViewerInput {
   }
 
   private onWheel(e: WheelEvent): void {
-    const zoom = e.ctrlKey || e.metaKey;
-    if (zoom && this.documentArea()) e.preventDefault();
+    if (this.documentArea()) e.preventDefault();
     if (!this.active()) return;
     e.preventDefault();
     const { dx, dy } = normalizeWheel(e, this.canvas.clientHeight || 600);
-    if (zoom) this.target.zoomBy(wheelZoomFactor(dy), this.point(e));
+    if (wheelZooms(e, dx, dy)) this.target.zoomBy(wheelZoomFactor(dy), this.point(e));
     else this.target.panBy(-dx, -dy);
   }
 
@@ -359,6 +372,9 @@ export class ViewerInput {
       this.drag = { kind: "pan", pointerId: e.pointerId, last: this.point(e) };
     } else if (e.button === 0 && tool === "zoom") {
       this.drag = { kind: "zoom", pointerId: e.pointerId, start: this.point(e), zoomOut: e.altKey };
+    } else if (e.button === 0 && tool === "snapshot") {
+      // Snapshot: the box dragged out (drawn as the Zoom tool's) is copied as an image.
+      this.drag = { kind: "zoom", pointerId: e.pointerId, start: this.point(e), zoomOut: false, snapshot: true };
     } else if (e.button === 0 && tool === "fill" && this.target.pressTool) {
       // Story 4.10: Dynamic fill spreads while held; Shift paints, Ctrl erases.
       e.preventDefault();
@@ -475,7 +491,9 @@ export class ViewerInput {
       const end = this.pointer;
       if (commit && end) {
         const rect = rectOf(drag.start, end);
-        if (rect.width < CLICK_SLOP && rect.height < CLICK_SLOP) this.target.zoomStep(drag.zoomOut ? -1 : 1, drag.start);
+        if (drag.snapshot) {
+          if (rect.width >= CLICK_SLOP && rect.height >= CLICK_SLOP) this.target.snapshot?.(rect);
+        } else if (rect.width < CLICK_SLOP && rect.height < CLICK_SLOP) this.target.zoomStep(drag.zoomOut ? -1 : 1, drag.start);
         else if (drag.zoomOut) this.target.zoomOutToRect(rect);
         else this.target.zoomToRect(rect);
       }
@@ -530,6 +548,13 @@ export class ViewerInput {
     // Story 4.3: Esc while picking calibration points cancels the pick (the dialog comes back).
     if (e.key === "Escape" && viewerStore.getState().tool === "calibrate") this.target.cancelCalibrationPick?.();
     if (e.key === "Escape") this.keyPointer = null;
+    // Zoom and Snapshot: Esc drops a box being dragged, else returns to Select.
+    if (e.key === "Escape" && (viewerStore.getState().tool === "zoom" || viewerStore.getState().tool === "snapshot") && this.active() && !e.defaultPrevented && this.canvasKeys()) {
+      e.preventDefault();
+      if (this.drag?.kind === "zoom") this.endDrag(false);
+      else setTool("select");
+      return;
+    }
     if (this.selectionKeys(e)) {
       e.preventDefault();
       return;
@@ -620,6 +645,7 @@ export class ViewerInput {
     }
     // Story 5.2: Ctrl+C copies the selection, Ctrl+V pastes at the pointer, Ctrl+Shift+V in place.
     if (ctrl && !e.altKey && !e.shiftKey && isLetter(e, "c")) return e.repeat || this.target.selectionKey("copy");
+    if (ctrl && !e.altKey && !e.shiftKey && isLetter(e, "x")) return e.repeat || this.target.selectionKey("cut");
     if (ctrl && !e.altKey && isLetter(e, "v")) return e.repeat || this.target.selectionKey(e.shiftKey ? "paste-in-place" : "paste");
     // Story 5.3: Ctrl+G groups, Ctrl+Shift+G ungroups (also over the browser's find next / previous).
     if (ctrl && !e.altKey && isLetter(e, "g")) return e.repeat || this.target.selectionKey(e.shiftKey ? "ungroup" : "group") || true;

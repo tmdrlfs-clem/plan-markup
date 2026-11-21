@@ -6,6 +6,9 @@ import { markupSchema } from "@/core/schema/markup";
 import { buildPageText, type TextItem } from "@/core/search/page-text";
 import { setTool, viewerStore, type LayerView } from "@/features/viewer";
 
+import { textPromptStore } from "./text-prompt";
+import { attachmentStore } from "./attachment-tool";
+
 import { editorStore, markupsOf, resetEditor } from "./editor-store";
 import { vertexIndices } from "./handles";
 import { installMeasureTools, measurePainter } from "./measure-tool";
@@ -91,6 +94,97 @@ describe("Underline and Strikethrough (Story 5.9)", () => {
     expect(index.hit({ x: 70, y: 103 }, 0)?.id).toBe(m.id);
     expect(index.hit({ x: 30, y: 103 }, 0)).toBeNull();
     expect(vertexIndices(m)).toEqual([]);
+  });
+
+  it("Text highlight (yellow, 40 %, filled) and Squiggly underline (a zigzag) mark the words the same way", () => {
+    setTool("texthighlight");
+    measurePainter.textMark!("start", { x: 3, y: 102 }, AT);
+    measurePainter.textMark!("end", { x: 33, y: 102 }, AT);
+    setTool("squiggly");
+    measurePainter.textMark!("start", { x: 3, y: 82 }, AT);
+    measurePainter.textMark!("end", { x: 40, y: 82 }, AT);
+    const [hl, sq] = added();
+    expect(hl).toMatchObject({ type: "texthighlight", text: "ROOM 101", style: { color: "#ffff00", opacity: 0.4 } });
+    expect(sq).toMatchObject({ type: "squiggly", text: "CH +2700" });
+    expect(markupSchema.safeParse(hl).success && markupSchema.safeParse(sq).success).toBe(true);
+    expect(undoLabel()).toBe("Add squiggly underline");
+    const r = recorder();
+    expect(measurePainter.paintStatic(r.ctx, view)).toEqual(["Text highlight: ROOM 101", "Squiggly: CH +2700"]);
+    // The squiggle is a run of short segments, not one line.
+    expect(r.ops.filter((o) => o.op === "lineTo").length).toBeGreaterThan(5);
+  });
+
+  it("Replace text: the drag asks for the replacement; Add strikes the words with it and a caret, Cancel adds nothing", () => {
+    setTool("replacetext");
+    measurePainter.textMark!("start", { x: 3, y: 102 }, AT);
+    measurePainter.textMark!("end", { x: 33, y: 102 }, AT);
+    const prompt = textPromptStore.getState().prompt!;
+    expect(prompt.label).toBe("Replace “ROOM 101” with");
+    expect(added()).toHaveLength(0);
+    prompt.onSubmit("ROOM 102");
+    const [m] = added();
+    expect(m).toMatchObject({ type: "strikethrough", text: "ROOM 101", replacement: "ROOM 102" });
+    expect(markupSchema.safeParse(m).success).toBe(true);
+    expect(undoLabel()).toBe("Add replace text");
+    expect(measurePainter.paintStatic(recorder().ctx, view)).toEqual(["Replace: ROOM 101 → ROOM 102"]);
+    textPromptStore.setState({ prompt: null });
+  });
+
+  it("Select text: the drag copies the words to the clipboard and adds nothing", async () => {
+    const writes: string[] = [];
+    Object.defineProperty(navigator, "clipboard", { value: { writeText: async (t: string) => void writes.push(t) }, configurable: true });
+    setTool("selecttext");
+    measurePainter.textMark!("start", { x: 3, y: 102 }, AT);
+    measurePainter.textMark!("end", { x: 33, y: 102 }, AT);
+    await Promise.resolve();
+    expect(writes).toEqual(["ROOM 101"]);
+    expect(added()).toHaveLength(0);
+  });
+
+  it("Insert text: a click asks for the text; Add places a caret there with it", () => {
+    setTool("inserttext");
+    expect(measurePainter.place({ x: 50, y: 90 }, { ...AT, tolerance: 1 })).toBe("done");
+    textPromptStore.getState().prompt!.onSubmit("TYP.");
+    const [m] = added();
+    expect(m).toMatchObject({ type: "caret", points: [{ x: 50, y: 90 }], text: "TYP." });
+    expect(undoLabel()).toBe("Add insert text");
+    expect(measurePainter.paintStatic(recorder().ctx, view)).toEqual(["Insert: TYP."]);
+    expect(new MarkupIndex([m]).hit({ x: 51, y: 87 }, 0)?.id).toBe(m.id);
+    textPromptStore.setState({ prompt: null });
+  });
+
+  it("File attachment: a picked file's paperclip at the click, then Select has it", () => {
+    attachmentStore.setState({ picked: { name: "spec.txt", mime: "text/plain", data: "aGk=" } });
+    setTool("attachment");
+    expect(measurePainter.place({ x: 40, y: 40 }, { ...AT, tolerance: 1 })).toBe("done");
+    const [m] = added();
+    expect(m).toMatchObject({ type: "attachment", name: "spec.txt", points: [{ x: 40, y: 40 }] });
+    expect(markupSchema.safeParse(m).success).toBe(true);
+    expect(undoLabel()).toBe("Add attachment");
+    expect(viewerStore.getState().tool).toBe("select");
+    expect(attachmentStore.getState().picked).toBeNull();
+    expect(new MarkupIndex([m]).hit({ x: 44, y: 36 }, 0)?.id).toBe(m.id);
+    const r = recorder();
+    expect(measurePainter.paintStatic(r.ctx, view)).toEqual(["Attachment: spec.txt"]);
+    expect(r.ops.some((o) => o.op === "stroke" || o.op === "strokeRect")).toBe(true);
+  });
+
+  it("Link: a box, then its address (made a web link); a bad address adds nothing", () => {
+    setTool("link");
+    measurePainter.place({ x: 10, y: 10 }, { ...AT, tolerance: 1 });
+    expect(measurePainter.place({ x: 60, y: 40 }, { ...AT, tolerance: 1 })).toBe("done");
+    textPromptStore.getState().prompt!.onSubmit("www.example.com/spec");
+    const [m] = added();
+    expect(m).toMatchObject({ type: "link", uri: "https://www.example.com/spec" });
+    expect(markupSchema.safeParse(m).success).toBe(true);
+    expect(undoLabel()).toBe("Add link");
+    expect(new MarkupIndex([m]).hit({ x: 30, y: 25 }, 0)?.id).toBe(m.id);
+    measurePainter.place({ x: 70, y: 10 }, { ...AT, tolerance: 1 });
+    measurePainter.place({ x: 90, y: 40 }, { ...AT, tolerance: 1 });
+    textPromptStore.getState().prompt!.onSubmit("javascript:alert(1)");
+    expect(added()).toHaveLength(1);
+    expect(markupSchema.safeParse({ ...m, uri: "javascript:alert(1)" }).success).toBe(false);
+    textPromptStore.setState({ prompt: null });
   });
 
   it("a press away from text, or before the page's text is read, marks nothing; a cancel drops the drag", () => {

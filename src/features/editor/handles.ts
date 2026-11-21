@@ -111,6 +111,8 @@ export function vertexIndices(m: Markup): number[] {
     // Story 5.9: marked text keeps its glyph boxes together.
     case "underline":
     case "strikethrough":
+    case "texthighlight":
+    case "squiggly":
       return [];
     case "callout":
       return [4];

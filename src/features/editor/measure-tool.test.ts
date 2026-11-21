@@ -550,6 +550,15 @@ describe("Line, Arrow, Polyline and Polygon tools (Story 5.4)", () => {
   const added = () => markupsOf(editorStore.getState(), SHA);
   const undoLabel = () => activeUndoLabels(editorStore.getState(), "t1").undo;
 
+  it("Arc: the start, the end, then a point on the arc add it, stored start, through, end", () => {
+    setTool("arc");
+    measurePainter.place({ x: 0, y: 0 }, AT);
+    expect(measurePainter.place({ x: 100, y: 0 }, AT)).toBe("continue");
+    expect(measurePainter.place({ x: 50, y: 30 }, AT)).toBe("done");
+    expect(added()[0]).toMatchObject({ type: "arc", points: [{ x: 0, y: 0 }, { x: 50, y: 30 }, { x: 100, y: 0 }] });
+    expect(undoLabel()).toBe("Add arc");
+  });
+
   it("Line and Arrow: two clicks add the markup (red, 1 pt), one undo step; the tool stays armed", () => {
     setTool("line");
     measurePainter.place({ x: 0, y: 0 }, AT);

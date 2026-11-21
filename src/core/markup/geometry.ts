@@ -13,6 +13,7 @@
 import { circleThrough } from "@/core/measure/circle";
 import type { Markup } from "@/core/schema/markup";
 
+import { arcPoints } from "./arc";
 import { dimensionLine, dimensionOutline } from "./dimension";
 import { NOTE_PT, cloudRingOf, leaderOf, textBoxOf } from "./text";
 import { quadsOf } from "./text-select";
@@ -36,6 +37,7 @@ function circleOf(m: Markup): { centre: Point; radius: number } | null {
 export function outlinePoints(m: Markup): readonly Point[] {
   if (m.type === "ellipse") return ellipseOutline(ellipseFrame(m.points), ELLIPSE_SAMPLES);
   if (m.type === "dimension") return dimensionOutline(m.points);
+  if (m.type === "arc") return arcPoints(m.points[0], m.points[1], m.points[2]);
   const circle = circleOf(m);
   if (!circle) return m.points;
   const out: Point[] = [];
@@ -49,6 +51,9 @@ export function outlinePoints(m: Markup): readonly Point[] {
 /** The user-space box of a markup: its points, or a radius's / diameter's whole circle. */
 export function markupBounds(m: Markup): Rect {
   if (m.type === "ellipse") return ellipseBounds(ellipseFrame(m.points));
+  // Insert text: its caret's box (8 pt, the tip at the point, the legs below it).
+  if (m.type === "attachment") return { x: m.points[0].x - 7, y: m.points[0].y - 7, width: 14, height: 14 };
+  if (m.type === "caret") return { x: m.points[0].x - 4, y: m.points[0].y - 8, width: 8, height: 8 };
   const circle = circleOf(m);
   if (circle) {
     const { centre, radius } = circle;
@@ -58,7 +63,7 @@ export function markupBounds(m: Markup): Rect {
   let y0 = Infinity;
   let x1 = -Infinity;
   let y1 = -Infinity;
-  for (const p of m.type === "dimension" ? dimensionOutline(m.points) : m.points) {
+  for (const p of m.type === "dimension" ? dimensionOutline(m.points) : m.type === "arc" ? outlinePoints(m) : m.points) {
     x0 = Math.min(x0, p.x);
     y0 = Math.min(y0, p.y);
     x1 = Math.max(x1, p.x);
@@ -111,6 +116,8 @@ export function hitMarkup(m: Markup, p: Point, tol: number, userUnit = 1): boole
     case "legend":
     // Story 5.11: a white-out, inside and on its outline.
     case "whiteout":
+    // A link, its whole box.
+    case "link":
       return nearPolyline(p, m.points, tol, true) || insidePolygon(p, m.points);
     case "cloud":
       return nearPolyline(p, m.points, tol + CLOUD_CHORD_PT / 2 / (userUnit > 0 ? userUnit : 1), true) || insidePolygon(p, m.points);
@@ -140,6 +147,8 @@ export function hitMarkup(m: Markup, p: Point, tol: number, userUnit = 1): boole
     // Story 5.9: any of its glyph boxes.
     case "underline":
     case "strikethrough":
+    case "texthighlight":
+    case "squiggly":
       return quadsOf(m.points).some((q) => insidePolygon(p, q) || nearPolyline(p, q, tol, true));
     // Story 5.8: the dimension line and the extension lines out to it.
     case "dimension": {
@@ -147,6 +156,20 @@ export function hitMarkup(m: Markup, p: Point, tol: number, userUnit = 1): boole
       const line = dimensionLine(a, b, c);
       if (!line) return nearPolyline(p, [a, b], tol, false);
       return segmentDistance(p, line.from, line.to) <= tol || segmentDistance(p, a, line.from) <= tol || segmentDistance(p, b, line.to) <= tol;
+    }
+    case "arc":
+      return nearPolyline(p, outlinePoints(m), tol, false);
+    // A file attachment: its paperclip (14 pt, centred on its point).
+    case "attachment": {
+      const half = 7 / (userUnit > 0 ? userUnit : 1);
+      const q = m.points[0];
+      return Math.abs(p.x - q.x) <= half + tol && Math.abs(p.y - q.y) <= half + tol;
+    }
+    // Insert text: its caret (8 pt, its tip at its point).
+    case "caret": {
+      const size = 8 / (userUnit > 0 ? userUnit : 1);
+      const q = m.points[0];
+      return Math.abs(p.x - q.x) <= size / 2 + tol && p.y <= q.y + tol && p.y >= q.y - size - tol;
     }
     case "ellipse": {
       const local = ellipseLocal(ellipseFrame(m.points), p);

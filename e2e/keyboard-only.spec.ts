@@ -20,7 +20,7 @@ const markups = (page: Page) => page.getByTestId("markups-canvas");
 const focused = (target: Locator) => target.evaluate((el) => el === document.activeElement);
 
 /** Presses Tab (Shift+Tab with `back`) until `target` has focus. */
-async function tabTo(page: Page, target: Locator, back = false, max = 80) {
+async function tabTo(page: Page, target: Locator, back = false, max = 120) {
   for (let i = 0; i < max; i++) {
     if (await focused(target)) return;
     await page.keyboard.press(back ? "Shift+Tab" : "Tab");

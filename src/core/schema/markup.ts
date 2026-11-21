@@ -7,6 +7,8 @@
 // (core/calibration pageIdOf). Measurements store geometry only: their value
 // comes from the page's calibration when shown (Story 4.5 AC 2).
 
+import { MAX_LINK_LENGTH, isLink } from "@/core/markup/link";
+import { ATTACHMENT_DATA_PATTERN, MAX_ATTACHMENT_DATA, MAX_ATTACHMENT_NAME, MIME_PATTERN } from "@/core/markup/attachment";
 import { z } from "zod";
 
 import { UUID_PATTERN } from "@/core/ids/uuid";
@@ -31,7 +33,15 @@ export const markupStyleSchema = z.object({
   /** Story 7.5: a dash pattern in points (on, off, …; a Revu import's /BS /D); absent: solid. */
   dash: z.array(z.number().finite().min(0).max(144)).min(1).max(8).optional(),
   /** Story 7.5: the text's face when not the app's own: Carlito (bundled, metric-compatible with Calibri). */
-  font: z.enum(["carlito"]).optional(),
+  font: z.enum(["carlito", "serif", "mono"]).optional(),
+  /** Text format bar (founder 2026-11-21): bold, italic, underlined, struck through, centred or right-aligned text; absent: plain, left. */
+  bold: z.boolean().optional(),
+  italic: z.boolean().optional(),
+  underline: z.boolean().optional(),
+  strike: z.boolean().optional(),
+  align: z.enum(["center", "right"]).optional(),
+  /** A text box with a cloud border (founder 2026-11-21); absent: a plain border. */
+  cloud: z.boolean().optional(),
 });
 export type MarkupStyle = z.infer<typeof markupStyleSchema>;
 
@@ -139,6 +149,8 @@ export const lineMarkupSchema = z.object({ ...base, type: z.literal("line"), poi
 export const arrowMarkupSchema = z.object({ ...base, type: z.literal("arrow"), points: z.tuple([pointSchema, pointSchema]) });
 export const polylineMarkupSchema = z.object({ ...base, type: z.literal("polyline"), points: z.array(pointSchema).min(2).max(MAX_POLYLINE_POINTS) });
 export const polygonMarkupSchema = z.object({ ...base, type: z.literal("polygon"), points: z.array(pointSchema).min(3).max(MAX_POLYLINE_POINTS) });
+/** An arc: its start, a point it passes through, its end (core/markup/arc.ts draws the circular arc). */
+export const arcMarkupSchema = z.object({ ...base, type: z.literal("arc"), points: z.tuple([pointSchema, pointSchema, pointSchema]) });
 
 /**
  * Story 5.5: a rectangle and an ellipse (the one inscribed in its box), both stored as the box's
@@ -215,7 +227,30 @@ const quadPoints = z
   .max(4 * MAX_TEXT_QUADS)
   .refine((pts) => pts.length % 4 === 0, "four points a quad");
 export const underlineMarkupSchema = z.object({ ...base, type: z.literal("underline"), points: quadPoints, text: z.string().max(MAX_TEXT_LENGTH).optional() });
-export const strikethroughMarkupSchema = z.object({ ...base, type: z.literal("strikethrough"), points: quadPoints, text: z.string().max(MAX_TEXT_LENGTH).optional() });
+export const strikethroughMarkupSchema = z.object({
+  ...base,
+  type: z.literal("strikethrough"),
+  points: quadPoints,
+  text: z.string().max(MAX_TEXT_LENGTH).optional(),
+  /** Replace text (Bluebeam toolbar set, founder 2026-11-21): what the struck text is to be replaced by; a caret marks it. */
+  replacement: z.string().max(MAX_TEXT_LENGTH).optional(),
+});
+/** Link (founder 2026-11-21): a box that opens a web or mail address (core/markup/link.ts keeps only those). */
+export const linkMarkupSchema = z.object({ ...base, type: z.literal("link"), points: fourPoints, uri: z.string().max(MAX_LINK_LENGTH).refine(isLink, "a web or mail link") });
+/** File attachment (founder 2026-11-21): a paperclip carrying a file (base64, at most 5 MB). */
+export const attachmentMarkupSchema = z.object({
+  ...base,
+  type: z.literal("attachment"),
+  points: z.tuple([pointSchema]),
+  name: z.string().min(1).max(MAX_ATTACHMENT_NAME),
+  mime: z.string().regex(MIME_PATTERN),
+  data: z.string().max(MAX_ATTACHMENT_DATA).regex(ATTACHMENT_DATA_PATTERN),
+});
+/** Insert text (founder 2026-11-21): a caret at its point, and the text to insert there. */
+export const caretMarkupSchema = z.object({ ...base, type: z.literal("caret"), points: z.tuple([pointSchema]), text: z.string().max(MAX_TEXT_LENGTH) });
+/** Text highlight and squiggly underline of PDF text (founder 2026-11-21), stored as an underline is. */
+export const textHighlightMarkupSchema = z.object({ ...base, type: z.literal("texthighlight"), points: quadPoints, text: z.string().max(MAX_TEXT_LENGTH).optional() });
+export const squigglyMarkupSchema = z.object({ ...base, type: z.literal("squiggly"), points: quadPoints, text: z.string().max(MAX_TEXT_LENGTH).optional() });
 
 /**
  * Story 7.7 (FR37, UX-DR27): a revision stamp, its box's four corners ordered like a text box's
@@ -297,6 +332,7 @@ export const markupSchema = z.discriminatedUnion("type", [
   arrowMarkupSchema,
   polylineMarkupSchema,
   polygonMarkupSchema,
+  arcMarkupSchema,
   rectangleMarkupSchema,
   ellipseMarkupSchema,
   cloudMarkupSchema,
@@ -313,6 +349,11 @@ export const markupSchema = z.discriminatedUnion("type", [
   dimensionMarkupSchema,
   underlineMarkupSchema,
   strikethroughMarkupSchema,
+  textHighlightMarkupSchema,
+  squigglyMarkupSchema,
+  caretMarkupSchema,
+  linkMarkupSchema,
+  attachmentMarkupSchema,
   revisionMarkupSchema,
   legendMarkupSchema,
   zoneMarkupSchema,
@@ -335,15 +376,20 @@ export type ShapeMarkup =
   | z.infer<typeof arrowMarkupSchema>
   | z.infer<typeof polylineMarkupSchema>
   | z.infer<typeof polygonMarkupSchema>
+  | z.infer<typeof arcMarkupSchema>
   | z.infer<typeof rectangleMarkupSchema>
   | z.infer<typeof ellipseMarkupSchema>
   | z.infer<typeof cloudMarkupSchema>;
 export type ImageMarkup = z.infer<typeof imageMarkupSchema>;
 export type DimensionMarkup = z.infer<typeof dimensionMarkupSchema>;
 /** Story 5.9: an underline or a strikethrough of PDF text. */
-export type TextMarkMarkup = z.infer<typeof underlineMarkupSchema> | z.infer<typeof strikethroughMarkupSchema>;
+export type TextMarkMarkup =
+  | z.infer<typeof underlineMarkupSchema>
+  | z.infer<typeof strikethroughMarkupSchema>
+  | z.infer<typeof textHighlightMarkupSchema>
+  | z.infer<typeof squigglyMarkupSchema>;
 export function isTextMarkMarkup(m: Markup): m is TextMarkMarkup {
-  return m.type === "underline" || m.type === "strikethrough";
+  return m.type === "underline" || m.type === "strikethrough" || m.type === "texthighlight" || m.type === "squiggly";
 }
 /** Story 5.7: the freehand strokes. */
 export type InkMarkup = z.infer<typeof penMarkupSchema> | z.infer<typeof highlightMarkupSchema> | z.infer<typeof eraserMarkupSchema>;

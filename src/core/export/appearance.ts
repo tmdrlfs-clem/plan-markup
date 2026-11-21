@@ -17,9 +17,11 @@ import {
   type Pt,
 } from "../pdf/content";
 import type { ExtGStateResource, FormContent, ImageResource } from "../pdf/form";
+import { ATTACHMENT_ICON_PT } from "../markup/attachment";
 import { HELVETICA_ASCENT, HELVETICA_DESCENT, helveticaWidth } from "../pdf/helvetica";
+import { faceWidth, pdfFace, type PdfFace } from "../pdf/std-fonts";
 import { measureValue, polygonCentroid } from "./measure";
-import type { Calibration, LineEndingStyle, Markup, Rgb } from "./model";
+import type { Calibration, LineEndingStyle, Markup, Rgb, TextStyle } from "./model";
 
 export const FONT_NAME = "Helv";
 /** Label size for measurement captions, in pt. */
@@ -30,6 +32,8 @@ export const NOTE_SIZE = 20;
 export const AREA_FILL_OPACITY = 0.35;
 /** Padding added around the drawn geometry (beyond half the stroke width). */
 const PAD = 1;
+/** Insert text's caret height, in points. */
+const CARET_SIZE = 8;
 
 // ---------------------------------------------------------------- builder
 
@@ -70,9 +74,15 @@ export class ApBuilder {
     return n;
   }
 
-  font(): string {
-    this.fonts[FONT_NAME] = "Helvetica";
-    return FONT_NAME;
+  /** Selects a standard-14 face for text (Helvetica by default) and returns its resource name. */
+  font(face?: PdfFace): string {
+    if (!face || face.baseFont === "Helvetica") {
+      this.fonts[FONT_NAME] = "Helvetica";
+      return FONT_NAME;
+    }
+    const n = `F${face.baseFont.replace(/[^A-Za-z]/g, "")}`;
+    this.fonts[n] = face.baseFont;
+    return n;
   }
 
   /** The bounds of everything included so far, or undefined. */
@@ -297,20 +307,35 @@ export function layoutText(str: string, size: number): TextLayout {
 }
 
 /** Width/height a text needs at `size` with the standard margin. */
-export function textBlockSize(str: string, size: number): [number, number] {
+export function textBlockSize(str: string, size: number, style?: Omit<TextStyle, "fontSize" | "textColor">): [number, number] {
   const l = layoutText(str, size);
-  const w = Math.max(...l.lines.map((s) => helveticaWidth(s, size)));
+  const f = pdfFace(style?.font, style?.bold, style?.italic);
+  const w = Math.max(...l.lines.map((s) => faceWidth(f, s, size)));
   return [w + 2 * l.margin, l.lines.length * l.lineHeight + 2 * l.margin - (l.lineHeight - size)];
 }
 
-function textBlock(ap: ApBuilder, box: Box, str: string, size: number, color: Rgb): void {
+/** A text's lines in `box` from its top, in its face, aligned, underlined or struck through as its style says. */
+function textBlock(ap: ApBuilder, box: Box, str: string, style: TextStyle): void {
+  const size = style.fontSize;
   const l = layoutText(str, size);
+  const f = pdfFace(style.font, style.bold, style.italic);
+  const font = ap.font(f);
   ap.push("q", `${nums(box[0], box[1], box[2] - box[0], box[3] - box[1])} re W n`);
-  let y = box[3] - l.margin - (HELVETICA_ASCENT / 1000) * size;
+  let y = box[3] - l.margin - (f.ascent / 1000) * size;
+  const decorations: string[] = [];
   for (const line of l.lines) {
-    textAt(ap, line, box[0] + l.margin, y, size, color);
+    const w = faceWidth(f, line, size);
+    const room = box[2] - box[0] - 2 * l.margin;
+    const x = box[0] + l.margin + (style.align === "center" ? (room - w) / 2 : style.align === "right" ? room - w : 0);
+    if (line !== "") {
+      ap.push("BT", colorOp(style.textColor, false)!, `/${font} ${fmt(size)} Tf`, `${nums(1, 0, 0, 1, x, y)} Tm`, `(${literalText(line)}) Tj`, "ET");
+      const t = Math.max(0.5, size / 18);
+      if (style.underline) decorations.push(`${nums(x, y - size * 0.12 - t / 2, w, t)} re`);
+      if (style.strike) decorations.push(`${nums(x, y + size * 0.28 - t / 2, w, t)} re`);
+    }
     y -= l.lineHeight;
   }
+  if (decorations.length > 0) ap.push(colorOp(style.textColor, false)!, ...decorations, "f");
   ap.push("Q");
 }
 
@@ -452,7 +477,7 @@ function sprinklerIcon(ap: ApBuilder, m: Markup & { center: Pt; size: number }):
   ap.includeBox([cx - r, cy - r, cx + r, cy + r], 0.4);
 }
 
-function quadAppearance(ap: ApBuilder, m: Markup & { type: "highlight" | "underline" | "strikeout"; quads: Box[] }): void {
+function quadAppearance(ap: ApBuilder, m: Markup & { type: "highlight" | "underline" | "strikeout" | "squiggly"; quads: Box[] }): void {
   const color = m.color ?? [1, 1, 0];
   if (m.type === "highlight") {
     ap.gs({ BM: "Multiply", ...(m.opacity !== undefined && m.opacity < 1 ? { ca: m.opacity, CA: m.opacity } : {}) });
@@ -468,8 +493,14 @@ function quadAppearance(ap: ApBuilder, m: Markup & { type: "highlight" | "underl
     const h = q[3] - q[1];
     const w = Math.max(0.5, h / 14);
     // Underline sits just above the quad bottom; strike-out at the middle of the x-height.
-    const y = m.type === "underline" ? q[1] + w / 2 + h * 0.05 : q[1] + h * 0.42;
-    ap.push(colorOp(color, true)!, `${fmt(w)} w`, `${nums(q[0], y)} m ${nums(q[2], y)} l S`);
+    const y = m.type === "strikeout" ? q[1] + h * 0.42 : q[1] + w / 2 + h * 0.05;
+    if (m.type === "squiggly") {
+      // A zigzag along the bottom, `amp` either side.
+      const amp = Math.max(0.6, h / 12);
+      const pts: string[] = [`${nums(q[0], y + amp)} m`];
+      for (let x = q[0] + amp * 2, i = 0; x < q[2]; x += amp * 2, i++) pts.push(`${nums(x, i % 2 === 0 ? y - amp : y + amp)} l`);
+      ap.push(colorOp(color, true)!, `${fmt(w)} w`, ...pts, "S");
+    } else ap.push(colorOp(color, true)!, `${fmt(w)} w`, `${nums(q[0], y)} m ${nums(q[2], y)} l S`);
     ap.includeBox(q);
   }
 }
@@ -541,16 +572,53 @@ export function markupAppearance(m: Markup, cal: Calibration): MarkupAppearance 
       return calloutAppearance(m, m.textRect, m.leader);
     case "textBox": {
       opacity(ap, m);
+      if (m.cloud) {
+        // A cloud border around the box (its bumps outside it), then the text in the box.
+        const s = strokeOf(m);
+        const [x0, y0, x1, y1] = m.rect;
+        const cloud = cloudPath([[x0, y0], [x1, y0], [x1, y1], [x0, y1]], 1);
+        const stroke = setStroke(ap, s, true);
+        if (m.fill) ap.push(colorOp(m.fill, false)!);
+        ap.push(cloud.ops, paint(!!m.fill, stroke));
+        includeAll(ap, cloud.controls, s.width / 2);
+        textBlock(ap, m.rect, m.text, m);
+        return { form: ap.finish() };
+      }
       frame(ap, m.rect, strokeOf(m), m.fill);
-      textBlock(ap, m.rect, m.text, m.fontSize, m.textColor);
+      textBlock(ap, m.rect, m.text, m);
       return { form: ap.finish(m.rect) };
     }
     case "typewriter": {
-      const [w, h] = textBlockSize(m.text, m.fontSize);
+      const [w, h] = textBlockSize(m.text, m.fontSize, m);
       const rect: Box = [m.at[0], m.at[1] - h, m.at[0] + w, m.at[1]];
       opacity(ap, m);
-      textBlock(ap, rect, m.text, m.fontSize, m.textColor);
+      textBlock(ap, rect, m.text, m);
       return { form: ap.finish(rect) };
+    }
+    case "caret": {
+      // An upright caret, its tip at the point (PDF y up: the legs go down).
+      const h = CARET_SIZE;
+      const s = strokeOf(m);
+      opacity(ap, m);
+      ap.push(colorOp(m.color ?? [1, 0, 0], true)!, `${fmt(Math.max(0.8, s.width))} w`, "1 j", `${nums(m.at[0] - h / 2, m.at[1] - h)} m ${nums(m.at[0], m.at[1])} l ${nums(m.at[0] + h / 2, m.at[1] - h)} l S`);
+      ap.includeBox([m.at[0] - h / 2, m.at[1] - h, m.at[0] + h / 2, m.at[1]], 1);
+      return { form: ap.finish() };
+    }
+    case "fileAttachment": {
+      // A paperclip, upright, centred on its point.
+      const h = ATTACHMENT_ICON_PT;
+      const [cx, cy] = m.at;
+      const x = cx - h / 2;
+      const y = cy - h / 2;
+      const p = (u: number, v: number) => nums(x + (u * h) / 14, y + (v * h) / 14);
+      opacity(ap, m);
+      ap.push(
+        colorOp(m.color ?? [0.2, 0.2, 0.2], true)!,
+        "1.2 w 1 J 1 j",
+        `${p(8.5, 4.5)} m ${p(8.5, 10.5)} l ${p(8.5, 12)} ${p(5.5, 12)} ${p(5.5, 10.5)} c ${p(5.5, 3)} l ${p(5.5, 0.8)} ${p(10.5, 0.8)} ${p(10.5, 3)} c ${p(10.5, 12.5)} l S`,
+      );
+      ap.includeBox([x, y, x + h, y + h], 1);
+      return { form: ap.finish() };
     }
     case "note":
       noteIcon(ap, m.at);
@@ -558,6 +626,7 @@ export function markupAppearance(m: Markup, cal: Calibration): MarkupAppearance 
     case "highlight":
     case "underline":
     case "strikeout":
+    case "squiggly":
       quadAppearance(ap, m);
       return { form: ap.finish() };
     case "pen": {
@@ -676,7 +745,7 @@ export function markupAppearance(m: Markup, cal: Calibration): MarkupAppearance 
   }
 }
 
-function calloutAppearance(m: Markup & { fontSize: number; textColor: Rgb; text: string }, textRect: Box, leader: Pt[]): MarkupAppearance {
+function calloutAppearance(m: Markup & TextStyle & { text: string }, textRect: Box, leader: Pt[]): MarkupAppearance {
   const ap = new ApBuilder();
   const s = strokeOf(m);
   opacity(ap, m);
@@ -687,7 +756,7 @@ function calloutAppearance(m: Markup & { fontSize: number; textColor: Rgb; text:
   }
   includeAll(ap, leader, s.width / 2);
   frame(ap, textRect, s, m.type === "cloudPlus" ? [1, 1, 1] : m.fill);
-  textBlock(ap, textRect, m.text, m.fontSize, m.textColor);
+  textBlock(ap, textRect, m.text, m);
   const form = ap.finish();
   const b = form.bbox;
   return { form, rd: [textRect[0] - b[0], b[3] - textRect[3], b[2] - textRect[2], textRect[1] - b[1]] };

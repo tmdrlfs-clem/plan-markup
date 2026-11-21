@@ -183,7 +183,7 @@ function VerifyItem() {
   );
 }
 
-/** Edit > Copy, Paste, Delete, Select all, Group, Ungroup (Story 5.3): the shown page's selection. */
+/** Edit > Cut, Copy, Paste, Delete, Select all, Group, Ungroup (Story 5.3): the shown page's selection. */
 function SelectionItems() {
   const documentId = useStore(viewerStore, (s) => (hasDocument(s) ? s.documentId : null));
   const pageIndex = useStore(viewerStore, (s) => s.pageIndex);
@@ -195,6 +195,7 @@ function SelectionItems() {
   );
   return (
     <>
+      {item("Cut", "Ctrl+X", "cut", s.editable > 0)}
       {item("Copy", "Ctrl+C", "copy", s.selected > 0)}
       {item("Paste", "Ctrl+V", "paste", hasClipboard())}
       {item("Delete", "Del", "delete", s.editable > 0)}

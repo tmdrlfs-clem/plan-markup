@@ -1,6 +1,7 @@
 // The export engine's input model (framework-free, plain data). Geometry is in
 // PDF user space of the target page (points, y up), as stored by the app.
 
+import type { FontFamily } from "../pdf/std-fonts";
 import type { Box, Pt } from "../pdf/content";
 
 export type { Box, Pt };
@@ -65,7 +66,17 @@ export type MarkupBase = {
   valueText?: string;
 };
 
-export type TextStyle = { fontSize: number; textColor: Rgb };
+/** A text's face and its format bar settings (absent: Helvetica, left, plain). */
+export type TextStyle = {
+  fontSize: number;
+  textColor: Rgb;
+  font?: FontFamily;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  strike?: boolean;
+  align?: "center" | "right";
+};
 
 export type Markup = MarkupBase &
   (
@@ -87,10 +98,15 @@ export type Markup = MarkupBase &
         leader: Pt[];
       } & TextStyle)
     | ({ type: "callout"; textRect: Box; text: string; leader: Pt[] } & TextStyle)
-    | ({ type: "textBox"; rect: Box; text: string } & TextStyle)
+    /** `cloud`: a cloud border instead of a plain one. */
+    | ({ type: "textBox"; rect: Box; text: string; cloud?: boolean } & TextStyle)
     | ({ type: "typewriter"; at: Pt; text: string } & TextStyle)
     | { type: "note"; at: Pt; text: string }
-    | { type: "highlight" | "underline" | "strikeout"; quads: Box[] }
+    /** Insert text: a caret, its tip at `at`, and the text to insert. */
+    | { type: "caret"; at: Pt; text: string }
+    /** A paperclip at `at` (its centre) carrying a file: `data` is its bytes in base64. */
+    | { type: "fileAttachment"; at: Pt; name: string; mime: string; data: string }
+    | { type: "highlight" | "underline" | "strikeout" | "squiggly"; quads: Box[] }
     | { type: "pen"; strokes: Pt[][] }
     | { type: "stamp"; rect: Box; label: string }
     | { type: "imageStamp"; rect: Box; image: { width: number; height: number; rgb: Uint8Array; alpha?: Uint8Array } }

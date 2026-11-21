@@ -32,6 +32,7 @@ const SNAPPING_TOOLS: ReadonlySet<ViewerTool> = new Set<ViewerTool>([
   "arrow",
   "polyline",
   "polygon",
+  "arc",
   // Story 5.5: the box tools and Cloud.
   "rectangle",
   "ellipse",

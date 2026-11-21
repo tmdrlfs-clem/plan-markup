@@ -20,6 +20,7 @@ import {
   BringToFront,
   ClipboardPaste,
   Copy,
+  Scissors,
   Group,
   Lock,
   LockOpen,
@@ -131,6 +132,16 @@ export function MarkupContextMenu() {
           viewerCommands.focusCanvas();
         }}
       >
+        <MenuItem
+          icon={Scissors}
+          shortcut="Ctrl+X"
+          disabled={s.editable === 0}
+          onSelect={() => {
+            if (selectionKey({ kind: "copy" }, at)) selectionKey({ kind: "delete" }, at);
+          }}
+        >
+          Cut
+        </MenuItem>
         <MenuItem icon={Copy} shortcut="Ctrl+C" disabled={s.selected === 0} onSelect={run({ kind: "copy" })}>
           Copy
         </MenuItem>

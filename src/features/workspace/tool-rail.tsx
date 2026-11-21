@@ -2,6 +2,9 @@
 
 import {
   Angle,
+  Camera,
+  Link2,
+  Paperclip,
   ArrowUpRight,
   ChevronDown,
   Circle,
@@ -35,17 +38,20 @@ import {
   StickyNote,
   Strikethrough,
   Type,
+  TextSelect,
   type LucideIcon,
   TypeOutline,
   Underline,
+  ZoomIn,
 } from "lucide-react";
 import { Fragment, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useStore } from "zustand";
 
 import { Menu, MenuContent, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "@/components/ui/menu";
+import { ArcIcon, TextCloudIcon, InsertTextIcon, ReplaceTextIcon, SquigglyIcon, TextHighlightIcon } from "@/components/ui/extra-icons";
 import { Toolbar, ToolbarButton, ToolbarSeparator, ToolbarToggleGroup, ToolbarToggleItem } from "@/components/ui/toolbar";
 import { dismissHint, showHint } from "@/components/ui/hint-store";
-import { pickImageFile } from "@/features/editor";
+import { pickAttachmentFile, pickImageFile } from "@/features/editor";
 import { hasDocument, isCoverTool, isLineTool, isMeasureTool, isTextMarkTool, isTextTool, type CoverTool, type TextMarkTool, setTool, viewerStore, type LineTool, type TextTool, type MeasureTool, type ViewerTool } from "@/features/viewer";
 
 import { NO_DRAWING } from "./workspace-toolbar";
@@ -62,7 +68,7 @@ interface Tool {
  * Tools that work today: Select and Pan (Story 3.2), and Length (snapping from
  * Story 4.1, measuring from Story 4.5). The others arrive with the editor.
  */
-const LIVE_TOOLS: ReadonlySet<string> = new Set<ViewerTool>(["select", "pan", "length", "polylength", "area", "count", "angle", "radius", "diameter", "line", "arrow", "polyline", "polygon", "rectangle", "ellipse", "cloud", "text", "callout", "typewriter", "note", "cloudplus", "pen", "highlight", "image", "dimension", "underline", "strikethrough", "whiteout", "whiteoutpolygon", "eraser", "revision", "legend"]);
+const LIVE_TOOLS: ReadonlySet<string> = new Set<ViewerTool>(["select", "pan", "zoom", "snapshot", "length", "polylength", "area", "count", "angle", "radius", "diameter", "line", "arrow", "polyline", "polygon", "arc", "rectangle", "ellipse", "cloud", "text", "callout", "typewriter", "note", "cloudplus", "pen", "highlight", "image", "dimension", "underline", "strikethrough", "texthighlight", "squiggly", "replacetext", "selecttext", "inserttext", "textcloud", "link", "attachment", "whiteout", "whiteoutpolygon", "eraser", "revision", "legend"]);
 
 export const SNAP_PREVIEW_HINT_ID = "snap-preview";
 /** Review S3: a page past the segment cap. */
@@ -89,6 +95,7 @@ const SNAPS = "Points snap to the drawing (Alt: off, Shift: 45° steps).";
 export const LINE_HINT = `Line: click the start and the end point. ${SNAPS} Esc cancels; Esc again returns to Select.`;
 export const ARROW_HINT = `Arrow: click the start, then the point the arrow points to. ${SNAPS} Esc cancels; Esc again returns to Select.`;
 export const POLYLINE_HINT = `Polyline: click each vertex; double-click or Enter finishes. Backspace removes the last vertex. ${SNAPS} Esc cancels; Esc again returns to Select.`;
+export const ARC_HINT = `Arc: click the start and the end, then a point the arc passes through. ${SNAPS} Esc cancels; Esc again returns to Select.`;
 export const POLYGON_HINT = `Polygon: click each corner; double-click, Enter or a click on the first corner closes it. Backspace removes the last corner. ${SNAPS} Esc cancels; Esc again returns to Select.`;
 /** Story 5.5: the HintBar while Rectangle, Ellipse or Cloud is armed. */
 const BOX_SNAPS = "Points snap to the drawing (Alt: off, Shift on the diagonal: a square).";
@@ -112,6 +119,12 @@ export const IMAGE_HINT = "Image: click where the image goes (its centre); then 
 const MARKS = "Drag across the words to mark (from a word); the release marks them. Esc while dragging cancels; Esc again returns to Select.";
 export const UNDERLINE_HINT = `Underline: ${MARKS}`;
 export const STRIKETHROUGH_HINT = `Strikethrough: ${MARKS}`;
+export const TEXT_HIGHLIGHT_HINT = `Text highlight: ${MARKS}`;
+export const SQUIGGLY_HINT = `Squiggly underline: ${MARKS}`;
+export const REPLACE_TEXT_HINT = "Replace text: drag across the words to replace (from a word); the release strikes them through and asks for their replacement. Esc returns to Select.";
+export const SELECT_TEXT_HINT = "Select text: drag across the words (from a word); the release copies them to the clipboard. Esc returns to Select.";
+export const TEXT_CLOUD_HINT = `Text box (cloud border): drag from one corner to the opposite one, or click both. ${TYPING}`;
+export const INSERT_TEXT_HINT = "Insert text: click where the text goes; a caret marks it and you type the text to insert. Esc returns to Select.";
 export const NO_PAGE_TEXT = "This page is an image: it has no text to mark";
 /** Story 5.11: the HintBar while White-out or the Eraser is armed. */
 const COVERS = "It hides the drawing on screen; the PDF is not changed until you flatten or export.";
@@ -124,7 +137,15 @@ export const REVISION_HINT = "Revision stamp: click where it goes. Edit its revi
 export const LEGEND_HINT = "Legend: click where it goes. It lists the devices placed on this page with their counts and keeps them up to date. Set its title and scope (page or document) in Properties.";
 export const STAMP_HINT = "Tool: click where it goes (its centre); it stays armed for the next. S arms the last tool again. Esc returns to Select.";
 export const DIMENSION_HINT = `Dimension: click the two points to dimension, then where its line goes. ${SNAPS} Esc cancels; Esc again returns to Select.`;
+export const ATTACHMENT_HINT = "File attachment: click where its paperclip goes. Esc cancels.";
+export const LINK_HINT = "Link: drag a box over what the link is for, then give its web or email address. Esc cancels; Esc again returns to Select.";
+export const SNAPSHOT_HINT = "Snapshot: drag a box; what it shows goes to the clipboard as an image. Esc returns to Select.";
+export const ZOOM_HINT = "Zoom: click to zoom in, Alt + click to zoom out; drag a box to zoom to it. Esc returns to Select.";
 const TOOL_HINTS: Partial<Record<ViewerTool, string>> = {
+  zoom: ZOOM_HINT,
+  snapshot: SNAPSHOT_HINT,
+  link: LINK_HINT,
+  attachment: ATTACHMENT_HINT,
   length: SNAP_PREVIEW_HINT,
   polylength: POLYLENGTH_HINT,
   area: AREA_HINT,
@@ -137,6 +158,7 @@ const TOOL_HINTS: Partial<Record<ViewerTool, string>> = {
   arrow: ARROW_HINT,
   polyline: POLYLINE_HINT,
   polygon: POLYGON_HINT,
+  arc: ARC_HINT,
   rectangle: RECTANGLE_HINT,
   ellipse: ELLIPSE_HINT,
   cloud: CLOUD_HINT,
@@ -151,6 +173,12 @@ const TOOL_HINTS: Partial<Record<ViewerTool, string>> = {
   dimension: DIMENSION_HINT,
   underline: UNDERLINE_HINT,
   strikethrough: STRIKETHROUGH_HINT,
+  texthighlight: TEXT_HIGHLIGHT_HINT,
+  squiggly: SQUIGGLY_HINT,
+  replacetext: REPLACE_TEXT_HINT,
+  inserttext: INSERT_TEXT_HINT,
+  textcloud: TEXT_CLOUD_HINT,
+  selecttext: SELECT_TEXT_HINT,
   whiteout: WHITEOUT_HINT,
   whiteoutpolygon: WHITEOUT_POLYGON_HINT,
   eraser: ERASER_HINT,
@@ -167,6 +195,10 @@ const GROUPS: { label: string; tools: Tool[] }[] = [
     tools: [
       { id: "select", label: "Select", icon: MousePointer2, shortcut: "V" },
       { id: "pan", label: "Pan", icon: Hand, shortcut: "Shift+V" },
+      // Click zooms in, Alt + click out; a drag zooms to the box (Alt + drag out).
+      { id: "zoom", label: "Zoom", icon: ZoomIn, shortcut: "Z" },
+      // Drag a box: the sheet and its markups there go to the clipboard as an image.
+      { id: "snapshot", label: "Snapshot", icon: Camera },
     ],
   },
   // Story 5.4 (D4): Line, Arrow, Polyline and Polygon share one button and a menu (LINE_TOOLS).
@@ -180,6 +212,8 @@ const GROUPS: { label: string; tools: Tool[] }[] = [
       { id: "highlight", label: "Highlight", icon: Highlighter, shortcut: "H" },
       // Story 5.8: Image picks a file first (no key, D4).
       { id: "image", label: "Image", icon: ImagePlus },
+      // A paperclip carrying a file (picked first, like Image).
+      { id: "attachment", label: "File attachment", icon: Paperclip },
       { id: "stamp", label: "Stamp", icon: Stamp, shortcut: "S" },
       // Story 7.7: no key (D).
       { id: "revision", label: "Revision stamp", icon: FileBadge },
@@ -222,6 +256,7 @@ export const LINE_TOOLS: readonly (Tool & { id: LineSlotTool })[] = [
   { id: "arrow", label: "Arrow", icon: ArrowUpRight, shortcut: "A" },
   { id: "polyline", label: "Polyline", icon: Spline, shortcut: "Shift+N" },
   { id: "polygon", label: "Polygon", icon: Hexagon, shortcut: "Shift+P" },
+  { id: "arc", label: "Arc", icon: ArcIcon },
   { id: "dimension", label: "Dimension", icon: RulerDimensionLine },
 ];
 export const MORE_LINE_TOOLS = "More line tools";
@@ -234,19 +269,27 @@ export const CLOUD_TOOLS: readonly (Tool & { id: CloudTool })[] = [
   { id: "cloudplus", label: "Cloud+", icon: CloudCog, shortcut: "K" },
 ];
 export const MORE_CLOUD_TOOLS = "More cloud tools";
-type TextSlotTool = Exclude<TextTool, "cloudplus">;
-const isTextSlotTool = (tool: ViewerTool): tool is TextSlotTool => isTextTool(tool) && tool !== "cloudplus";
+type TextSlotTool = Exclude<TextTool, "cloudplus"> | "inserttext" | "link";
+const isTextSlotTool = (tool: ViewerTool): tool is TextSlotTool => (isTextTool(tool) && tool !== "cloudplus") || tool === "inserttext" || tool === "link";
 export const TEXT_TOOLS: readonly (Tool & { id: TextSlotTool })[] = [
   { id: "text", label: "Text box", icon: Type, shortcut: "T" },
   { id: "callout", label: "Callout", icon: MessageSquareText, shortcut: "Q" },
   { id: "typewriter", label: "Typewriter", icon: TypeOutline },
   { id: "note", label: "Note", icon: StickyNote },
+  { id: "textcloud", label: "Text box (cloud border)", icon: TextCloudIcon },
+  { id: "inserttext", label: "Insert text", icon: InsertTextIcon },
+  // A box that opens a web or mail address (in this slot: the rail stays short enough for a 720 px window).
+  { id: "link", label: "Link", icon: Link2 },
 ];
 export const MORE_TEXT_TOOLS = "More text tools";
 /** Story 5.9: Underline and Strikethrough share a slot (no keys, D4). */
 export const TEXT_MARK_TOOLS: readonly (Tool & { id: TextMarkTool })[] = [
   { id: "underline", label: "Underline", icon: Underline },
   { id: "strikethrough", label: "Strikethrough", icon: Strikethrough },
+  { id: "texthighlight", label: "Text highlight", icon: TextHighlightIcon },
+  { id: "squiggly", label: "Squiggly underline", icon: SquigglyIcon },
+  { id: "replacetext", label: "Replace text", icon: ReplaceTextIcon },
+  { id: "selecttext", label: "Select text", icon: TextSelect },
 ];
 export const MORE_TEXT_MARK_TOOLS = "More text markup tools";
 /** Story 5.11: the cover tools share a slot (D4: Shift+W White-out; the others have no key). */
@@ -346,7 +389,21 @@ function FlyoutGroup<T extends ViewerTool>({
 }
 
 /** One rail group of buttons (the tools not yet live are disabled); Image (Story 5.8) asks for its file first (`onPickImage`). */
-function ToolGroup({ label, tools, open, active, onPickImage }: { label: string; tools: readonly Tool[]; open: boolean; active: ViewerTool; onPickImage?: () => void }) {
+function ToolGroup({
+  label,
+  tools,
+  open,
+  active,
+  onPickImage,
+  onPickFile,
+}: {
+  label: string;
+  tools: readonly Tool[];
+  open: boolean;
+  active: ViewerTool;
+  onPickImage?: () => void;
+  onPickFile?: () => void;
+}) {
   return (
     <ToolbarToggleGroup
       type="single"
@@ -356,6 +413,7 @@ function ToolGroup({ label, tools, open, active, onPickImage }: { label: string;
       onValueChange={(value: string) => {
         // Clicking the active tool again keeps it: a tool is always active.
         if (value === "image") onPickImage?.();
+        else if (value === "attachment") onPickFile?.();
         else if (LIVE_TOOLS.has(value)) setTool(value as ViewerTool);
       }}
     >
@@ -383,6 +441,7 @@ export function ToolRail() {
   const hint = open ? (TOOL_HINTS[active] ?? null) : null;
   const partial = useStore(viewerStore, (s) => s.snapPartial);
   const imageInput = useRef<HTMLInputElement>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
   // Story 5.9: an image-only page has no text to mark.
   const imageOnly = useStore(viewerStore, (s) => s.content?.imageOnly === true);
   useEffect(() => {
@@ -416,7 +475,7 @@ export function ToolRail() {
                 active={active}
                 unavailable={imageOnly ? NO_PAGE_TEXT : null}
               />
-              <ToolGroup label="Freehand" tools={group.tools.slice(2)} open={open} active={active} onPickImage={() => imageInput.current?.click()} />
+              <ToolGroup label="Freehand" tools={group.tools.slice(2)} open={open} active={active} onPickImage={() => imageInput.current?.click()} onPickFile={() => fileInput.current?.click()} />
             </>
           ) : (
             <ToolGroup label={group.label} tools={group.tools} open={open} active={active} />
@@ -435,6 +494,19 @@ export function ToolRail() {
           const file = e.target.files?.[0];
           e.target.value = "";
           if (file) void pickImageFile(file);
+        }}
+      />
+      {/* File attachment: any file up to 5 MB. */}
+      <input
+        ref={fileInput}
+        type="file"
+        aria-label="Attachment file"
+        data-testid="attachment-file-input"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          e.target.value = "";
+          if (file) void pickAttachmentFile(file);
         }}
       />
     </Toolbar>

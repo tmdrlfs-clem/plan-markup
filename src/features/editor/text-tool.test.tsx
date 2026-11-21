@@ -75,6 +75,15 @@ describe("placing and typing (Story 5.6)", () => {
     expect(viewerStore.getState().tool).toBe("text");
   });
 
+  it("Text box (cloud border): a text box whose border is a cloud", () => {
+    setTool("textcloud");
+    measurePainter.place({ x: 0, y: 0 }, AT);
+    expect(measurePainter.place({ x: 100, y: 50 }, AT)).toBe("done");
+    expect(type("Clouded")).toBe(true);
+    expect(added()[0]).toMatchObject({ type: "text", text: "Clouded", style: { cloud: true } });
+    expect(undoLabel()).toBe(ADD_TEXT);
+  });
+
   it("adds nothing for an empty or blank text (D2)", () => {
     setTool("note");
     measurePainter.place({ x: 10, y: 10 }, AT);

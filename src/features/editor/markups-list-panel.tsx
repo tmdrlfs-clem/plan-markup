@@ -20,6 +20,10 @@
 // document (D1).
 
 import {
+  ChevronUp,
+  FileSpreadsheet,
+  Link2,
+  Paperclip,
   Angle,
   ArrowDown,
   ArrowUp,
@@ -62,6 +66,7 @@ import { createStore } from "zustand/vanilla";
 
 import { Button } from "@/components/ui/button";
 import { cx } from "@/components/ui/cx";
+import { ArcIcon } from "@/components/ui/extra-icons";
 import { Menu, MenuCheckboxItem, MenuContent, MenuSub, MenuSubContent, MenuSubTrigger, MenuTrigger } from "@/components/ui/menu";
 import { markupBounds } from "@/core/markup/geometry";
 import { withGroups } from "@/core/markup/arrange";
@@ -83,10 +88,12 @@ import {
   type SortKey,
 } from "@/core/markup/markup-list";
 import { SUBJECT_NAMES } from "@/core/markup/properties";
+import { summaryCsv, summaryFileName } from "@/core/markup/summary";
 import { pageIdOf } from "@/core/calibration/calibration";
 import { sheetLabelOf } from "@/core/pdf/sheet-label";
-import type { MarkupType } from "@/core/schema/markup";
-import { hasDocument, setTool, viewerCommands, viewerStore } from "@/features/viewer";
+import type { Layer } from "@/core/schema/layer";
+import type { Markup, MarkupType } from "@/core/schema/markup";
+import { hasDocument, setTool, viewerCommands, viewerStore, type ViewerState } from "@/features/viewer";
 
 import { editorStore, layersOf, markupsOf, setSelection } from "./editor-store";
 
@@ -104,6 +111,7 @@ const TYPE_ICONS: Record<MarkupType, LucideIcon> = {
   arrow: ArrowUpRight,
   polyline: Spline,
   polygon: Hexagon,
+  arc: ArcIcon,
   rectangle: Square,
   ellipse: Circle,
   cloud: Cloud,
@@ -117,6 +125,11 @@ const TYPE_ICONS: Record<MarkupType, LucideIcon> = {
   image: ImagePlus,
   dimension: RulerDimensionLine,
   underline: Underline,
+  texthighlight: Highlighter,
+  squiggly: Underline,
+  caret: ChevronUp,
+  link: Link2,
+  attachment: Paperclip,
   strikethrough: Strikethrough,
   whiteout: SquareDashed,
   eraser: Eraser,
@@ -226,16 +239,10 @@ export function MarkupsListPanel({ author, emptyText = "Markups you add appear h
   const markups = useStore(editorStore, (s) => markupsOf(s, documentId));
   const layers = useStore(editorStore, (s) => layersOf(s, documentId));
 
-  const rows = useMemo(() => {
-    if (!documentId) return [];
-    const listPages: ListPage[] = pages.map((p, i) => ({
-      label: sheetLabelOf(i + 1, pageLabels?.[i], sheetLabels[i])?.short ?? `Page ${i + 1}`,
-      calibration: calibrations[pageIdOf(documentId, i)] ?? null,
-      userUnit: p.userUnit && p.userUnit > 0 ? p.userUnit : 1,
-    }));
-    // Story 9.2: zones are listed in the 4541 panel, not here.
-    return markupListRows(markups.filter((m) => m.type !== "zone"), documentId, listPages, layers);
-  }, [documentId, pages, calibrations, pageLabels, sheetLabels, markups, layers]);
+  const rows = useMemo(
+    () => listRowsOf({ documentId, pages, calibrations, pageLabels, sheetLabels }, markups, layers),
+    [documentId, pages, calibrations, pageLabels, sheetLabels, markups, layers],
+  );
 
   const view = useStore(markupListView);
   const visible = useMemo(() => applyListView(rows, view), [rows, view]);
@@ -251,7 +258,7 @@ export function MarkupsListPanel({ author, emptyText = "Markups you add appear h
   const filtered = isFiltered(view);
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <ListToolbar rows={rows} view={view} count={countText(visible.length, rows.length, filtered)} />
+      <ListToolbar rows={rows} view={view} count={countText(visible.length, rows.length, filtered)} onSummary={() => downloadSummary(visible, author)} />
       {visible.length === 0 ? (
         <div className="flex items-center gap-2 p-3 text-ws-md text-muted" data-testid="markups-list-no-match">
           <span>No markups match the filters.</span>
@@ -267,7 +274,42 @@ export function MarkupsListPanel({ author, emptyText = "Markups you add appear h
 }
 
 /** The quick filter, the Filter menu, the active filters as chips and the count. */
-function ListToolbar({ rows, view, count }: { rows: readonly MarkupListRow[]; view: ListView; count: string }) {
+type ListSource = Pick<ViewerState, "documentId" | "pages" | "calibrations" | "pageLabels" | "sheetLabels">;
+
+/** The list's rows of the shown drawing (Story 9.2: zones are listed in the 4541 panel, not here). */
+function listRowsOf(v: ListSource, markups: readonly Markup[], layers: readonly Layer[]): MarkupListRow[] {
+  const { documentId } = v;
+  if (!documentId) return [];
+  const listPages: ListPage[] = v.pages.map((p, i) => ({
+    label: sheetLabelOf(i + 1, v.pageLabels?.[i], v.sheetLabels[i])?.short ?? `Page ${i + 1}`,
+    calibration: v.calibrations[pageIdOf(documentId, i)] ?? null,
+    userUnit: p.userUnit && p.userUnit > 0 ? p.userUnit : 1,
+  }));
+  return markupListRows(markups.filter((m) => m.type !== "zone"), documentId, listPages, layers);
+}
+
+/** Summary from anywhere (the toolbar): the shown drawing's markups as the list shows them, as a CSV file. */
+export function downloadMarkupSummary(author: string): void {
+  const v = viewerStore.getState();
+  const e = editorStore.getState();
+  downloadSummary(applyListView(listRowsOf(v, markupsOf(e, v.documentId), layersOf(e, v.documentId)), markupListView.getState()), author);
+}
+
+/** Summary: the rows as shown (sorted and filtered) downloaded as a CSV file. */
+function downloadSummary(rows: readonly MarkupListRow[], author: string): void {
+  const name = summaryFileName(viewerStore.getState().fileName ?? "Markups");
+  const url = URL.createObjectURL(new Blob([summaryCsv(rows, author)], { type: "text/csv;charset=utf-8" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.rel = "noopener";
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+function ListToolbar({ rows, view, count, onSummary }: { rows: readonly MarkupListRow[]; view: ListView; count: string; onSummary: () => void }) {
   const chips = FILTER_KEYS.filter((k) => (view.filters[k]?.length ?? 0) > 0);
   return (
     <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-2 py-1" role="toolbar" aria-label="Markups list filters">
@@ -321,6 +363,10 @@ function ListToolbar({ rows, view, count }: { rows: readonly MarkupListRow[]; vi
       <span className="ml-auto text-ws-sm text-muted num" data-testid="markups-list-count" aria-live="polite">
         {count}
       </span>
+      <Button size="sm" title="Download the markups shown (sorted and filtered as here) as a CSV summary" onClick={onSummary}>
+        <FileSpreadsheet size={14} aria-hidden="true" />
+        Summary
+      </Button>
     </div>
   );
 }

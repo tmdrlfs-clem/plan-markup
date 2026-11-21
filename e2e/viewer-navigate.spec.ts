@@ -69,7 +69,10 @@ test("wheel scrolls, Shift+wheel scrolls sideways, Ctrl+wheel zooms around the c
   const fit = await view(page);
   await expect(page.getByRole("contentinfo")).toContainText(`${percent(fit.zoom)}%`);
 
+  // The wheel zooms (founder 2026-11-21); Alt+wheel pans up and down.
+  await page.keyboard.down("Alt");
   await page.mouse.wheel(0, 120);
+  await page.keyboard.up("Alt");
   const scrolled = await nextView(page, fit);
   expect(scrolled.zoom).toBe(fit.zoom);
   expect(scrolled.cy - fit.cy).toBeCloseTo(120 / fit.zoom, 1);
@@ -184,7 +187,21 @@ test("Zoom tool: click zooms in, a drag zooms to the rectangle; Pan tool drags",
   await canvas(page).focus();
   await page.keyboard.press("z");
   await expect(canvas(page)).toHaveCSS("cursor", "zoom-in");
-  const start = await view(page);
+  // Zoom's hint bar takes room from the canvas (the page refits): wait for it and the refit to settle.
+  await expect(page.getByTestId("hint-bar")).toContainText("Zoom:");
+  // Settled: the view is the same 300 ms apart.
+  let start = await view(page);
+  await expect
+    .poll(
+      async () => {
+        const before = start;
+        await page.waitForTimeout(300);
+        start = await view(page);
+        return start.zoom === before.zoom;
+      },
+      { intervals: [0] },
+    )
+    .toBe(true);
   await page.mouse.click(b.x + b.width / 2, b.y + b.height / 2);
   const clicked = await nextView(page, start);
   expect(clicked.zoom / start.zoom).toBeCloseTo(SQRT2, 6);

@@ -157,6 +157,7 @@ export const DRAWING_POINT_LABEL: Readonly<Record<DrawTool, string>> = {
   angle: "Angle point",
   radius: "Radius point",
   diameter: "Diameter point",
+  arc: "Arc point",
   // Story 4.10: while filling, Undo takes back the last stroke.
   fill: "Fill stroke",
   // Story 5.4.
@@ -174,6 +175,9 @@ export const DRAWING_POINT_LABEL: Readonly<Record<DrawTool, string>> = {
   typewriter: "Typewriter point",
   note: "Note point",
   cloudplus: "Cloud+ point",
+  textcloud: "Text box corner",
+  link: "Link corner",
+  attachment: "Attachment point",
   // Story 5.7 (a stroke is drawn in one press; Undo during it takes it back).
   pen: "Pen stroke",
   highlight: "Highlight stroke",
@@ -186,7 +190,12 @@ export const DRAWING_POINT_LABEL: Readonly<Record<DrawTool, string>> = {
   dimension: "Dimension point",
   // Story 5.9 (a drag; Undo during it takes it back).
   underline: "Underline selection",
+  texthighlight: "Highlight selection",
+  squiggly: "Squiggly selection",
   strikethrough: "Strikethrough selection",
+  replacetext: "Replace text selection",
+  selecttext: "Text selection",
+  inserttext: "Insert text",
   // Story 7.3 (a placement is one click).
   stamp: "Tool placement",
   revision: "Revision stamp",

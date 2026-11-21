@@ -143,6 +143,7 @@ function target() {
     panBy: vi.fn(),
     zoomToRect: vi.fn(),
     zoomOutToRect: vi.fn(),
+    snapshot: vi.fn(),
     setZoomRect: vi.fn(),
     fitPage: vi.fn(),
     fitWidth: vi.fn(),
@@ -180,18 +181,23 @@ describe("ViewerInput", () => {
     canvas.remove();
   });
 
-  it("wheel pans, Shift+wheel pans sideways, Ctrl+wheel zooms at the cursor (and prevents the page default)", () => {
+  it("wheel and Ctrl+wheel zoom at the cursor; Shift+wheel pans sideways, Alt+wheel up and down (and prevent the page default)", () => {
     const wheel = (init: WheelEventInit) => {
       const e = new WheelEvent("wheel", { bubbles: true, cancelable: true, clientX: 30, clientY: 40, ...init });
       canvas.dispatchEvent(e);
       return e;
     };
-    expect(wheel({ deltaY: 50 }).defaultPrevented).toBe(true);
-    expect(t.panBy).toHaveBeenLastCalledWith(-0, -50);
+    expect(wheel({ deltaY: -100 }).defaultPrevented).toBe(true);
+    expect(t.zoomBy).toHaveBeenLastCalledWith(expect.closeTo(Math.SQRT2, 9), { x: 30, y: 40 });
+    expect(t.panBy).not.toHaveBeenCalled();
     wheel({ deltaY: 50, shiftKey: true });
     expect(t.panBy).toHaveBeenLastCalledWith(-50, -0);
-    wheel({ deltaY: -100, ctrlKey: true });
-    expect(t.zoomBy).toHaveBeenCalledWith(expect.closeTo(Math.SQRT2, 9), { x: 30, y: 40 });
+    wheel({ deltaY: 50, altKey: true });
+    expect(t.panBy).toHaveBeenLastCalledWith(-0, -50);
+    wheel({ deltaX: 30 });
+    expect(t.panBy).toHaveBeenLastCalledWith(-30, -0);
+    wheel({ deltaY: 100, ctrlKey: true });
+    expect(t.zoomBy).toHaveBeenLastCalledWith(expect.closeTo(Math.SQRT1_2, 9), { x: 30, y: 40 });
   });
 
   it("tells the target where the pointer is over the canvas, and when it leaves (status bar X/Y, Story 3.7)", () => {
@@ -489,6 +495,20 @@ describe("ViewerInput", () => {
     canvas.dispatchEvent(pointer("pointermove", { x: 160, y: 140 }));
     canvas.dispatchEvent(pointer("pointerup", { x: 160, y: 140 }));
     expect(t.zoomOutToRect).toHaveBeenCalledWith({ x: 100, y: 100, width: 60, height: 40 });
+    expect(t.zoomToRect).not.toHaveBeenCalled();
+  });
+
+  it("Snapshot tool: a drag copies the box (shown as the zoom box); a click copies nothing and never zooms", () => {
+    setTool("snapshot");
+    canvas.dispatchEvent(pointer("pointerdown", { x: 100, y: 100 }));
+    canvas.dispatchEvent(pointer("pointermove", { x: 160, y: 140 }));
+    expect(t.setZoomRect).toHaveBeenLastCalledWith({ x: 100, y: 100, width: 60, height: 40 });
+    canvas.dispatchEvent(pointer("pointerup", { x: 160, y: 140 }));
+    expect(t.snapshot).toHaveBeenCalledWith({ x: 100, y: 100, width: 60, height: 40 });
+    canvas.dispatchEvent(pointer("pointerdown", { x: 50, y: 50 }));
+    canvas.dispatchEvent(pointer("pointerup", { x: 50, y: 50 }));
+    expect(t.snapshot).toHaveBeenCalledTimes(1);
+    expect(t.zoomStep).not.toHaveBeenCalled();
     expect(t.zoomToRect).not.toHaveBeenCalled();
   });
 

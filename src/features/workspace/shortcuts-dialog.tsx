@@ -21,7 +21,7 @@ export const SHORTCUTS: readonly ShortcutGroup[] = [
     rows: [
       { action: "Select", keys: "V" },
       { action: "Pan tool / temporary pan", keys: "Shift+V / Space", note: "Hold Space to pan without leaving the tool" },
-      { action: "Zoom in / out", keys: "+ / -", note: "Ctrl+wheel also zooms" },
+      { action: "Zoom in / out", keys: "+ / -", note: "The mouse wheel zooms at the cursor; Shift+wheel pans sideways, Alt+wheel up and down" },
       { action: "Zoom tool", keys: "Z" },
       { action: "Fit page / Fit width", keys: "Ctrl+9 / Ctrl+0" },
     ],
@@ -60,7 +60,7 @@ export const SHORTCUTS: readonly ShortcutGroup[] = [
     group: "Edit",
     rows: [
       { action: "Undo / Redo", keys: "Ctrl+Z / Ctrl+Y", note: "Also Ctrl+Shift+Z; while drawing, Undo removes the last point" },
-      { action: "Copy / Paste / Paste in place", keys: "Ctrl+C / Ctrl+V / Ctrl+Shift+V" },
+      { action: "Cut / Copy / Paste / Paste in place", keys: "Ctrl+X / Ctrl+C / Ctrl+V / Ctrl+Shift+V" },
       { action: "Delete", keys: "Del", note: "Also Backspace" },
       { action: "Select all", keys: "Ctrl+A" },
       { action: "Group / Ungroup", keys: "Ctrl+G / Ctrl+Shift+G" },

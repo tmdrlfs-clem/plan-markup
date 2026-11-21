@@ -27,6 +27,7 @@ export type ViewerTool =
   | "select"
   | "pan"
   | "zoom"
+  | "snapshot"
   | "length"
   | "polylength"
   | "area"
@@ -40,6 +41,7 @@ export type ViewerTool =
   | "arrow"
   | "polyline"
   | "polygon"
+  | "arc"
   | "rectangle"
   | "ellipse"
   | "cloud"
@@ -48,12 +50,20 @@ export type ViewerTool =
   | "typewriter"
   | "note"
   | "cloudplus"
+  | "textcloud"
   | "pen"
   | "highlight"
   | "image"
   | "dimension"
   | "underline"
   | "strikethrough"
+  | "texthighlight"
+  | "squiggly"
+  | "replacetext"
+  | "selecttext"
+  | "inserttext"
+  | "link"
+  | "attachment"
   | "whiteout"
   | "whiteoutpolygon"
   | "eraser"
@@ -69,21 +79,21 @@ export function isMeasureTool(tool: ViewerTool): tool is MeasureTool {
 }
 
 /** Story 5.4: the straight-line markup tools (they draw as the measuring tools do, with no value). */
-export type LineTool = "line" | "arrow" | "polyline" | "polygon";
-const LINE_TOOLS: ReadonlySet<ViewerTool> = new Set<ViewerTool>(["line", "arrow", "polyline", "polygon"]);
+export type LineTool = "line" | "arrow" | "polyline" | "polygon" | "arc";
+const LINE_TOOLS: ReadonlySet<ViewerTool> = new Set<ViewerTool>(["line", "arrow", "polyline", "polygon", "arc"]);
 export function isLineTool(tool: ViewerTool): tool is LineTool {
   return LINE_TOOLS.has(tool);
 }
 
 /** Story 5.5: the box tools (a rectangle, an ellipse: two corners, clicked or dragged; 5.6: a text box too). */
-export type BoxTool = "rectangle" | "ellipse" | "text" | "whiteout";
+export type BoxTool = "rectangle" | "ellipse" | "text" | "textcloud" | "whiteout" | "link";
 export function isBoxTool(tool: ViewerTool): tool is BoxTool {
-  return tool === "rectangle" || tool === "ellipse" || tool === "text" || tool === "whiteout";
+  return tool === "rectangle" || tool === "ellipse" || tool === "text" || tool === "textcloud" || tool === "whiteout" || tool === "link";
 }
 
 /** Story 5.6: the text tools (placed by points, then typed). */
-export type TextTool = "text" | "callout" | "typewriter" | "note" | "cloudplus";
-const TEXT_TOOLS: ReadonlySet<ViewerTool> = new Set<ViewerTool>(["text", "callout", "typewriter", "note", "cloudplus"]);
+export type TextTool = "text" | "callout" | "typewriter" | "note" | "cloudplus" | "textcloud";
+const TEXT_TOOLS: ReadonlySet<ViewerTool> = new Set<ViewerTool>(["text", "callout", "typewriter", "note", "cloudplus", "textcloud"]);
 export function isTextTool(tool: ViewerTool): tool is TextTool {
   return TEXT_TOOLS.has(tool);
 }
@@ -101,9 +111,9 @@ export function isCoverTool(tool: ViewerTool): tool is CoverTool {
 }
 
 /** Story 5.9: the tools that mark PDF text (a drag selects words). */
-export type TextMarkTool = "underline" | "strikethrough";
+export type TextMarkTool = "underline" | "strikethrough" | "texthighlight" | "squiggly" | "replacetext" | "selecttext";
 export function isTextMarkTool(tool: ViewerTool): tool is TextMarkTool {
-  return tool === "underline" || tool === "strikethrough";
+  return tool === "underline" || tool === "strikethrough" || tool === "texthighlight" || tool === "squiggly" || tool === "replacetext" || tool === "selecttext";
 }
 
 /**
@@ -112,10 +122,10 @@ export function isTextMarkTool(tool: ViewerTool): tool is TextMarkTool {
  * Story 7.3: Stamp places the armed Tool Chest tool at each click (S: the last one).
  * Story 7.7: Revision stamp places one stamp by a click; 7.8: Legend one legend.
  */
-export type MarkupTool = LineTool | BoxTool | "cloud" | TextTool | InkTool | "image" | "dimension" | TextMarkTool | CoverTool | "stamp" | "revision" | "legend";
+export type MarkupTool = LineTool | BoxTool | "cloud" | TextTool | InkTool | "image" | "dimension" | TextMarkTool | CoverTool | "stamp" | "revision" | "legend" | "inserttext" | "attachment";
 export function isMarkupTool(tool: ViewerTool): tool is MarkupTool {
   return (
-    LINE_TOOLS.has(tool) || isBoxTool(tool) || tool === "cloud" || TEXT_TOOLS.has(tool) || isInkTool(tool) || tool === "image" || tool === "dimension" || isTextMarkTool(tool) || isCoverTool(tool) || tool === "stamp" || tool === "revision" || tool === "legend"
+    LINE_TOOLS.has(tool) || isBoxTool(tool) || tool === "cloud" || TEXT_TOOLS.has(tool) || isInkTool(tool) || tool === "image" || tool === "dimension" || isTextMarkTool(tool) || isCoverTool(tool) || tool === "stamp" || tool === "revision" || tool === "legend" || tool === "inserttext" || tool === "attachment"
   );
 }
 
