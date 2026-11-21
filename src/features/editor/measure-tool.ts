@@ -1502,7 +1502,8 @@ export const measurePainter: MarkupPainter = {
     if (textEditing()) return endTextEdit(true) || true;
     const d = drawing();
     // Story 5.10: Esc puts the format painter away first; 4.11: with nothing being drawn, it clears the selection.
-    if (!d) return dropFormat() || setSelection([]);
+    // Stamp: Esc puts the tool away at once (what was just placed stays selected, for Select).
+    if (!d) return dropFormat() || (viewerStore.getState().tool !== "stamp" && setSelection([]));
     // D4: Esc finishes a count (its markers are kept); it cancels the other drawings.
     const documentId = viewerStore.getState().documentId;
     if (d.tool === "count" && documentId && d.pageId.startsWith(`${documentId}:`)) commit(documentId);

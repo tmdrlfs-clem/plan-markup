@@ -113,6 +113,9 @@ describe("Stamp: placing Tool Chest tools (Story 7.3)", () => {
     expect(Math.max(...xs) - Math.min(...xs)).toBeCloseTo(80, 6);
     expect(added()).toHaveLength(1);
     expect(viewerStore.getState().tool).toBe("stamp");
+    // Esc: nothing for the painter to undo first (the selection stays), so the engine puts Stamp away.
+    expect(measurePainter.escape()).toBe(false);
+    expect(editorStore.getState().selection.ids).toEqual([placed.id]);
   });
 
   it("a tool drawn at a scale needs the page's scale; at 1:50 a 1:100 tool is twice the paper size", () => {
