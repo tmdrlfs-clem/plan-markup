@@ -219,8 +219,6 @@ const GROUPS: { label: string; tools: Tool[] }[] = [
       { id: "revision", label: "Revision stamp", icon: FileBadge },
       // Story 7.8: no key (D).
       { id: "legend", label: "Legend", icon: TableProperties },
-      // A box that opens a web or mail address.
-      { id: "link", label: "Link", icon: Link2 },
     ],
   },
   // The measuring tools share one button and a menu (FlyoutGroup).
@@ -271,8 +269,8 @@ export const CLOUD_TOOLS: readonly (Tool & { id: CloudTool })[] = [
   { id: "cloudplus", label: "Cloud+", icon: CloudCog, shortcut: "K" },
 ];
 export const MORE_CLOUD_TOOLS = "More cloud tools";
-type TextSlotTool = Exclude<TextTool, "cloudplus"> | "inserttext";
-const isTextSlotTool = (tool: ViewerTool): tool is TextSlotTool => (isTextTool(tool) && tool !== "cloudplus") || tool === "inserttext";
+type TextSlotTool = Exclude<TextTool, "cloudplus"> | "inserttext" | "link";
+const isTextSlotTool = (tool: ViewerTool): tool is TextSlotTool => (isTextTool(tool) && tool !== "cloudplus") || tool === "inserttext" || tool === "link";
 export const TEXT_TOOLS: readonly (Tool & { id: TextSlotTool })[] = [
   { id: "text", label: "Text box", icon: Type, shortcut: "T" },
   { id: "callout", label: "Callout", icon: MessageSquareText, shortcut: "Q" },
@@ -280,6 +278,8 @@ export const TEXT_TOOLS: readonly (Tool & { id: TextSlotTool })[] = [
   { id: "note", label: "Note", icon: StickyNote },
   { id: "textcloud", label: "Text box (cloud border)", icon: TextCloudIcon },
   { id: "inserttext", label: "Insert text", icon: InsertTextIcon },
+  // A box that opens a web or mail address (in this slot: the rail stays short enough for a 720 px window).
+  { id: "link", label: "Link", icon: Link2 },
 ];
 export const MORE_TEXT_TOOLS = "More text tools";
 /** Story 5.9: Underline and Strikethrough share a slot (no keys, D4). */
