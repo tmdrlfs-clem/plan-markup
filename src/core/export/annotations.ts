@@ -19,6 +19,7 @@ import { FormWriter, type FormContent } from "../pdf/form";
 import { name, text, toPdfDict, toPdfObject, type PdfDictValue, type PdfValue } from "../pdf/value";
 import { AREA_FILL_OPACITY, arcVertices, markupAppearance } from "./appearance";
 import { measureDictionary, measureValue } from "./measure";
+import { fromBase64 } from "../markup/attachment";
 import type { Calibration, ExportDocument, Markup, MarkupType, Rgb, TextStyle } from "./model";
 
 export type ExportMode = "native" | "appearance-only";
@@ -47,6 +48,8 @@ export type AnnotationSpec = {
   layer?: string;
   /** Group key; the first spec with a key is the group root. */
   group?: string;
+  /** A file attachment's file, embedded as its /FS. */
+  embed?: { name: string; mime: string; data: string };
 };
 
 /** Revu stores counts as Polygon + /IT /PolygonCount with this /MeasurementTypes flag (observed). */
@@ -108,6 +111,8 @@ function contentsOf(m: Markup, cal: Calibration): string | undefined {
     case "note":
     case "caret":
       return m.text;
+    case "fileAttachment":
+      return m.comment ?? m.name;
     default:
       return m.comment;
   }
@@ -160,6 +165,9 @@ function nativeKeys(m: Markup, cal: Calibration, form: FormContent, rd: [number,
       return { subtype: "Squiggly", keys: { QuadPoints: quadPoints(m.quads) } };
     case "caret":
       return { subtype: "Caret", keys: { Sy: name("None") } };
+    // The file itself (FS) is embedded by writeAnnotations.
+    case "fileAttachment":
+      return { subtype: "FileAttachment", keys: { Name: name("Paperclip") } };
     case "pen":
       return { subtype: "Ink", keys: { InkList: m.strokes.map(flat), BS: bs } };
     case "stamp":
@@ -313,7 +321,9 @@ export function annotationSpecs(m: Markup, cal: Calibration, options: Pick<Expor
     delete dict.C;
     delete dict.CA;
   }
-  const specs: AnnotationSpec[] = [{ id: m.id, markupId: m.id, type: m.type, subtype, dict, form: ap.form, layer: m.layer, group }];
+  const specs: AnnotationSpec[] = [
+    { id: m.id, markupId: m.id, type: m.type, subtype, dict, form: ap.form, layer: m.layer, group, ...(m.type === "fileAttachment" ? { embed: { name: m.name, mime: m.mime, data: m.data } } : {}) },
+  ];
   if (m.type === "cloudPlus" && ap.extra?.[0]) {
     const form = ap.extra[0];
     const id = `${m.id}-text`;
@@ -387,6 +397,17 @@ export function addLayers(doc: PDFDocument, layers: ExportDocument["layers"]): M
 }
 
 /** Writes every markup of `model` as annotations on one page of `doc`. */
+/** A file specification with the file embedded (ISO 32000 7.11.4). */
+function embedFile(context: PDFDocument["context"], file: { name: string; mime: string; data: string }): PDFRef {
+  const bytes = fromBase64(file.data);
+  const stream = context.flateStream(bytes, { Type: "EmbeddedFile", Subtype: file.mime, Params: { Size: bytes.length } });
+  const fs = toPdfDict(context, { Type: name("Filespec"), F: text(file.name), UF: text(file.name), Desc: text(file.name) });
+  const ef = PDFDict.withContext(context);
+  ef.set(PDFName.of("F"), context.register(stream));
+  fs.set(PDFName.of("EF"), ef);
+  return context.register(fs);
+}
+
 export function writeAnnotations(doc: PDFDocument, model: ExportDocument, options: ExportOptions): WrittenAnnotations {
   const context = doc.context;
   const page: PDFPage = doc.getPage(options.pageIndex ?? 0);
@@ -404,6 +425,7 @@ export function writeAnnotations(doc: PDFDocument, model: ExportDocument, option
       ap.set(PDFName.of("N"), forms.form(spec.form));
       dict.set(PDFName.of("AP"), ap);
       if (spec.layer) dict.set(PDFName.of("OC"), ocgs.get(spec.layer)!);
+      if (spec.embed) dict.set(PDFName.of("FS"), embedFile(context, spec.embed));
       const ref = context.register(dict);
       if (spec.group) {
         const root = roots.get(spec.group);

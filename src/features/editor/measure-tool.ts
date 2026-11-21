@@ -140,6 +140,8 @@ import {
 import { ADD_REPLACE_TEXT, ADD_SQUIGGLY, ADD_STRIKETHROUGH, ADD_TEXT_HIGHLIGHT, ADD_UNDERLINE, textMarkKind, paintTextMark, paintTextMarkActive, textMarkDrag, textMarkLabel } from "./text-mark-tool";
 import { executeOp, registerDrawingUndo } from "./undo-store";
 import { askText } from "./text-prompt";
+import { ATTACHMENT_ICON_PT } from "@/core/markup/attachment";
+import { ADD_ATTACHMENT, attachmentMarkupAt, clearPickedAttachment, pickedAttachment } from "./attachment-tool";
 import { NOT_A_LINK, normalizeLink } from "@/core/markup/link";
 import { cssFontOf, fontFamilyOf } from "./fonts";
 import { revisionLabel, revisionText } from "@/core/markup/revision";
@@ -215,6 +217,7 @@ const ADD_LABEL: Record<DrawTool, string> = {
   cloudplus: ADD_CLOUD_PLUS,
   textcloud: ADD_TEXT,
   link: ADD_LINK,
+  attachment: ADD_ATTACHMENT,
   pen: ADD_PEN,
   highlight: ADD_HIGHLIGHT,
   image: ADD_IMAGE,
@@ -260,6 +263,7 @@ const MIN_POINTS: Record<DrawTool, number> = {
   cloudplus: 3,
   textcloud: 2,
   link: 2,
+  attachment: 1,
   pen: 2,
   highlight: 2,
   image: 1,
@@ -686,6 +690,25 @@ function drawCaret(c: CanvasRenderingContext2D, at: Point, style: MarkupStyle, v
   c.restore();
 }
 
+/** A file attachment's paperclip, centred on `at`, `half` device px each way (lucide's paperclip, 24 units). */
+function drawPaperclip(c: CanvasRenderingContext2D, at: Point, half: number, style: MarkupStyle): void {
+  const k = (half * 2) / 24;
+  c.save();
+  if ((style.opacity ?? 1) < 1) c.globalAlpha = style.opacity ?? 1;
+  c.fillStyle = "rgba(255,255,255,0.85)";
+  c.fillRect(at.x - half, at.y - half, half * 2, half * 2);
+  c.translate(at.x - half, at.y - half);
+  c.scale(k, k);
+  c.strokeStyle = style.color;
+  c.lineWidth = 2;
+  c.lineCap = "round";
+  c.lineJoin = "round";
+  if (typeof Path2D !== "undefined") c.stroke(new Path2D(PAPERCLIP_PATH));
+  else c.strokeRect(6, 3, 12, 18);
+  c.restore();
+}
+const PAPERCLIP_PATH = "m16 6-8.414 8.586a2 2 0 0 0 2.829 2.829l8.414-8.586a4 4 0 1 0-5.657-5.657l-8.379 8.551a6 6 0 1 0 8.485 8.485l8.379-8.551";
+
 /** Story 5.6 (D7): a note's icon, a page (folded corner) in page units, upright, centred on its point. */
 function drawNote(c: CanvasRenderingContext2D, at: Point, style: MarkupStyle, view: LayerView): void {
   const side = Math.max(8 * view.dpr, NOTE_PT * view.devicePerPt);
@@ -1061,6 +1084,22 @@ function paintList(c: CanvasRenderingContext2D, markups: readonly Markup[], view
       strokeShape(c, "rectangle", pts, { ...any.style, dash: [4, 3] }, view);
       continue;
     }
+    if (any.type === "attachment") {
+      // A file attachment: a paperclip, upright, centred on its point.
+      captions.push(`Attachment: ${any.name}`);
+      const at = view.toDevice(any.points[0]);
+      const half = Math.max(7 * view.dpr, (ATTACHMENT_ICON_PT / 2) * view.devicePerPt);
+      const box = [
+        { x: at.x - half, y: at.y - half },
+        { x: at.x + half, y: at.y - half },
+        { x: at.x + half, y: at.y + half },
+        { x: at.x - half, y: at.y + half },
+      ];
+      if (!onCanvas(box, any.style, view)) continue;
+      if (selected.has(any.id)) strokeSelection(c, box, view);
+      drawPaperclip(c, at, half, any.style);
+      continue;
+    }
     if (any.type === "caret") {
       // Insert text: a caret where the text goes.
       captions.push(`Insert: ${any.text.length > 40 ? `${any.text.slice(0, 40)}…` : any.text}`);
@@ -1338,7 +1377,7 @@ export const measurePainter: MarkupPainter = {
       paintCover(c, pts);
       strokeShape(c, d.tool === "whiteout" ? "rectangle" : "polyline", pts, DEFAULT_MARKUP_STYLE, view);
     }
-    else if (isMarkupTool(d.tool) && !isTextTool(d.tool) && !isInkTool(d.tool) && !isCoverTool(d.tool) && d.tool !== "image" && d.tool !== "stamp" && d.tool !== "revision" && d.tool !== "legend" && d.tool !== "inserttext" && !isTextMarkTool(d.tool)) strokeShape(c, d.tool, pts, DEFAULT_MARKUP_STYLE, view);
+    else if (isMarkupTool(d.tool) && !isTextTool(d.tool) && !isInkTool(d.tool) && !isCoverTool(d.tool) && d.tool !== "image" && d.tool !== "stamp" && d.tool !== "revision" && d.tool !== "legend" && d.tool !== "inserttext" && d.tool !== "attachment" && !isTextMarkTool(d.tool)) strokeShape(c, d.tool, pts, DEFAULT_MARKUP_STYLE, view);
     else strokeMeasure(c, pts, DEFAULT_MEASURE_STYLE, view);
     c.restore();
     if (!live) return null;
@@ -1378,6 +1417,17 @@ export const measurePainter: MarkupPainter = {
     const pageId = pageIdOf(at.documentId, at.pageIndex);
     // Story 5.8: the picked image, centred on the click; then Select has it (to resize).
     if (tool === "image") return placeImage(point, at.documentId, pageId);
+    // A file attachment: the picked file's paperclip at the click; then Select has it.
+    if (tool === "attachment") {
+      const picked = pickedAttachment();
+      if (!picked) return "ignored";
+      const markup = attachmentMarkupAt(picked, point, pageId);
+      executeOp({ kind: "markups.add", documentId: at.documentId, markups: [markup] }, ADD_ATTACHMENT);
+      clearPickedAttachment();
+      setTool("select");
+      setSelection([markup.id]);
+      return "done";
+    }
     // Story 7.3: the armed tool, its top-left corner at the click; it stays armed (Esc returns to Select).
     // Story 9.10: in head mode (the 4541 panel's Add head) a click adds a manual head.
     if (tool === "stamp" && placingHeads()) return placeHeadAt(point, at.documentId, at.pageIndex) ? "done" : "ignored";
@@ -1781,6 +1831,8 @@ function markupOf(d: Drawing): Markup {
       throw new Error("insert text is placed by one click (placeCaret)");
     case "link":
       throw new Error("a link is added once its address is given (commit)");
+    case "attachment":
+      throw new Error("an attachment is placed from its picked file (attachment-tool.ts)");
     case "text":
     case "callout":
     case "typewriter":
@@ -1900,6 +1952,7 @@ export function installMeasureTools(): () => void {
       if (moved && textEditing()) endTextEdit(true);
       // Story 5.8: leaving Image drops the image waiting for its click.
       if (prev.tool === "image" && s.tool !== "image") clearPickedImage();
+      if (prev.tool === "attachment" && s.tool !== "attachment") clearPickedAttachment();
       // Story 4.11 (D5): arming another tool, another tab or document clears the selection;
       // Story 5.1 (D4): another page too. A move in progress is dropped.
       const otherDocument = s.tabId !== prev.tabId || s.openSeq !== prev.openSeq || s.documentId !== prev.documentId;

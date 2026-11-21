@@ -104,6 +104,8 @@ export type Markup = MarkupBase &
     | { type: "note"; at: Pt; text: string }
     /** Insert text: a caret, its tip at `at`, and the text to insert. */
     | { type: "caret"; at: Pt; text: string }
+    /** A paperclip at `at` (its centre) carrying a file: `data` is its bytes in base64. */
+    | { type: "fileAttachment"; at: Pt; name: string; mime: string; data: string }
     | { type: "highlight" | "underline" | "strikeout" | "squiggly"; quads: Box[] }
     | { type: "pen"; strokes: Pt[][] }
     | { type: "stamp"; rect: Box; label: string }

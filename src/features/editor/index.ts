@@ -45,3 +45,4 @@ export { TextFormatBar } from "./text-format-bar";
 export { TextPrompt, askText } from "./text-prompt";
 export { copyFormat, dropFormat, formatPainter, selectedMarkups } from "./properties";
 export { downloadMarkupSummary } from "./markups-list-panel";
+export { pickAttachmentFile, saveAttachment } from "./attachment-tool";

@@ -63,6 +63,7 @@ export type ViewerTool =
   | "selecttext"
   | "inserttext"
   | "link"
+  | "attachment"
   | "whiteout"
   | "whiteoutpolygon"
   | "eraser"
@@ -121,10 +122,10 @@ export function isTextMarkTool(tool: ViewerTool): tool is TextMarkTool {
  * Story 7.3: Stamp places the armed Tool Chest tool at each click (S: the last one).
  * Story 7.7: Revision stamp places one stamp by a click; 7.8: Legend one legend.
  */
-export type MarkupTool = LineTool | BoxTool | "cloud" | TextTool | InkTool | "image" | "dimension" | TextMarkTool | CoverTool | "stamp" | "revision" | "legend" | "inserttext";
+export type MarkupTool = LineTool | BoxTool | "cloud" | TextTool | InkTool | "image" | "dimension" | TextMarkTool | CoverTool | "stamp" | "revision" | "legend" | "inserttext" | "attachment";
 export function isMarkupTool(tool: ViewerTool): tool is MarkupTool {
   return (
-    LINE_TOOLS.has(tool) || isBoxTool(tool) || tool === "cloud" || TEXT_TOOLS.has(tool) || isInkTool(tool) || tool === "image" || tool === "dimension" || isTextMarkTool(tool) || isCoverTool(tool) || tool === "stamp" || tool === "revision" || tool === "legend" || tool === "inserttext"
+    LINE_TOOLS.has(tool) || isBoxTool(tool) || tool === "cloud" || TEXT_TOOLS.has(tool) || isInkTool(tool) || tool === "image" || tool === "dimension" || isTextMarkTool(tool) || isCoverTool(tool) || tool === "stamp" || tool === "revision" || tool === "legend" || tool === "inserttext" || tool === "attachment"
   );
 }
 

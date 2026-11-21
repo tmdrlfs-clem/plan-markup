@@ -8,6 +8,7 @@
 // comes from the page's calibration when shown (Story 4.5 AC 2).
 
 import { MAX_LINK_LENGTH, isLink } from "@/core/markup/link";
+import { ATTACHMENT_DATA_PATTERN, MAX_ATTACHMENT_DATA, MAX_ATTACHMENT_NAME, MIME_PATTERN } from "@/core/markup/attachment";
 import { z } from "zod";
 
 import { UUID_PATTERN } from "@/core/ids/uuid";
@@ -236,6 +237,15 @@ export const strikethroughMarkupSchema = z.object({
 });
 /** Link (founder 2026-11-21): a box that opens a web or mail address (core/markup/link.ts keeps only those). */
 export const linkMarkupSchema = z.object({ ...base, type: z.literal("link"), points: fourPoints, uri: z.string().max(MAX_LINK_LENGTH).refine(isLink, "a web or mail link") });
+/** File attachment (founder 2026-11-21): a paperclip carrying a file (base64, at most 5 MB). */
+export const attachmentMarkupSchema = z.object({
+  ...base,
+  type: z.literal("attachment"),
+  points: z.tuple([pointSchema]),
+  name: z.string().min(1).max(MAX_ATTACHMENT_NAME),
+  mime: z.string().regex(MIME_PATTERN),
+  data: z.string().max(MAX_ATTACHMENT_DATA).regex(ATTACHMENT_DATA_PATTERN),
+});
 /** Insert text (founder 2026-11-21): a caret at its point, and the text to insert there. */
 export const caretMarkupSchema = z.object({ ...base, type: z.literal("caret"), points: z.tuple([pointSchema]), text: z.string().max(MAX_TEXT_LENGTH) });
 /** Text highlight and squiggly underline of PDF text (founder 2026-11-21), stored as an underline is. */
@@ -343,6 +353,7 @@ export const markupSchema = z.discriminatedUnion("type", [
   squigglyMarkupSchema,
   caretMarkupSchema,
   linkMarkupSchema,
+  attachmentMarkupSchema,
   revisionMarkupSchema,
   legendMarkupSchema,
   zoneMarkupSchema,

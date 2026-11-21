@@ -8,7 +8,9 @@
 // markup's style for the format painter (properties.ts). Story 7.7: a
 // revision stamp's revision, description, author and date.
 
-import { ExternalLink } from "lucide-react";
+import { Download, ExternalLink } from "lucide-react";
+import { sizeText } from "@/core/markup/attachment";
+import { saveAttachment } from "./attachment-tool";
 import { MAX_LINK_LENGTH, NOT_A_LINK, normalizeLink } from "@/core/markup/link";
 import { useId, useState, type KeyboardEvent } from "react";
 import { Paintbrush } from "lucide-react";
@@ -240,6 +242,17 @@ export function PropertiesPanel({ emptyText }: { emptyText: string }) {
         ) : null}
         {fields.has("revision") && one?.type === "revision" ? <RevisionFields markup={one} onChange={change} /> : null}
         {fields.has("legend") && one?.type === "legend" ? <LegendFields markup={one} onChange={change} /> : null}
+        {fields.has("attachment") && one?.type === "attachment" ? (
+          <>
+            <p className="text-ws-md text-text break-all" data-testid="attachment-name">
+              {one.name} <span className="text-muted num">({sizeText(Math.floor((one.data.length * 3) / 4))})</span>
+            </p>
+            <Button size="sm" variant="secondary" onClick={() => saveAttachment(one)}>
+              <Download size={14} aria-hidden="true" />
+              Save file
+            </Button>
+          </>
+        ) : null}
         {fields.has("link") && one?.type === "link" ? (
           <>
             <TextValueField

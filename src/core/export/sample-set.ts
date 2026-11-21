@@ -256,6 +256,8 @@ function markups(): Markup[] {
     { ...base("pm-squiggly", "Squiggly"), type: "squiggly", quads: [runQuad(r.squiggly)], color: GREEN },
     // Insert text, in the note's cell.
     { ...base("pm-caret", "Insert text"), type: "caret", at: at(12, 0.8, 0.8), text: "TYP." },
+    // A file attachment (a tiny text file), in the note's cell.
+    { ...base("pm-attachment", "Attachment"), type: "fileAttachment", at: at(12, 0.8, 0.3), name: "spec.txt", mime: "text/plain", data: "U3ByaW5rbGVyIHNwZWMK" },
   ];
 }
 

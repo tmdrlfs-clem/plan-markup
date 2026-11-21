@@ -17,6 +17,7 @@ import {
   type Pt,
 } from "../pdf/content";
 import type { ExtGStateResource, FormContent, ImageResource } from "../pdf/form";
+import { ATTACHMENT_ICON_PT } from "../markup/attachment";
 import { HELVETICA_ASCENT, HELVETICA_DESCENT, helveticaWidth } from "../pdf/helvetica";
 import { faceWidth, pdfFace, type PdfFace } from "../pdf/std-fonts";
 import { measureValue, polygonCentroid } from "./measure";
@@ -601,6 +602,22 @@ export function markupAppearance(m: Markup, cal: Calibration): MarkupAppearance 
       opacity(ap, m);
       ap.push(colorOp(m.color ?? [1, 0, 0], true)!, `${fmt(Math.max(0.8, s.width))} w`, "1 j", `${nums(m.at[0] - h / 2, m.at[1] - h)} m ${nums(m.at[0], m.at[1])} l ${nums(m.at[0] + h / 2, m.at[1] - h)} l S`);
       ap.includeBox([m.at[0] - h / 2, m.at[1] - h, m.at[0] + h / 2, m.at[1]], 1);
+      return { form: ap.finish() };
+    }
+    case "fileAttachment": {
+      // A paperclip, upright, centred on its point.
+      const h = ATTACHMENT_ICON_PT;
+      const [cx, cy] = m.at;
+      const x = cx - h / 2;
+      const y = cy - h / 2;
+      const p = (u: number, v: number) => nums(x + (u * h) / 14, y + (v * h) / 14);
+      opacity(ap, m);
+      ap.push(
+        colorOp(m.color ?? [0.2, 0.2, 0.2], true)!,
+        "1.2 w 1 J 1 j",
+        `${p(8.5, 4.5)} m ${p(8.5, 10.5)} l ${p(8.5, 12)} ${p(5.5, 12)} ${p(5.5, 10.5)} c ${p(5.5, 3)} l ${p(5.5, 0.8)} ${p(10.5, 0.8)} ${p(10.5, 3)} c ${p(10.5, 12.5)} l S`,
+      );
+      ap.includeBox([x, y, x + h, y + h], 1);
       return { form: ap.finish() };
     }
     case "note":

@@ -52,6 +52,7 @@ export function outlinePoints(m: Markup): readonly Point[] {
 export function markupBounds(m: Markup): Rect {
   if (m.type === "ellipse") return ellipseBounds(ellipseFrame(m.points));
   // Insert text: its caret's box (8 pt, the tip at the point, the legs below it).
+  if (m.type === "attachment") return { x: m.points[0].x - 7, y: m.points[0].y - 7, width: 14, height: 14 };
   if (m.type === "caret") return { x: m.points[0].x - 4, y: m.points[0].y - 8, width: 8, height: 8 };
   const circle = circleOf(m);
   if (circle) {
@@ -158,6 +159,12 @@ export function hitMarkup(m: Markup, p: Point, tol: number, userUnit = 1): boole
     }
     case "arc":
       return nearPolyline(p, outlinePoints(m), tol, false);
+    // A file attachment: its paperclip (14 pt, centred on its point).
+    case "attachment": {
+      const half = 7 / (userUnit > 0 ? userUnit : 1);
+      const q = m.points[0];
+      return Math.abs(p.x - q.x) <= half + tol && Math.abs(p.y - q.y) <= half + tol;
+    }
     // Insert text: its caret (8 pt, its tip at its point).
     case "caret": {
       const size = 8 / (userUnit > 0 ? userUnit : 1);

@@ -7,6 +7,7 @@ import { buildPageText, type TextItem } from "@/core/search/page-text";
 import { setTool, viewerStore, type LayerView } from "@/features/viewer";
 
 import { textPromptStore } from "./text-prompt";
+import { attachmentStore } from "./attachment-tool";
 
 import { editorStore, markupsOf, resetEditor } from "./editor-store";
 import { vertexIndices } from "./handles";
@@ -150,6 +151,22 @@ describe("Underline and Strikethrough (Story 5.9)", () => {
     expect(measurePainter.paintStatic(recorder().ctx, view)).toEqual(["Insert: TYP."]);
     expect(new MarkupIndex([m]).hit({ x: 51, y: 87 }, 0)?.id).toBe(m.id);
     textPromptStore.setState({ prompt: null });
+  });
+
+  it("File attachment: a picked file's paperclip at the click, then Select has it", () => {
+    attachmentStore.setState({ picked: { name: "spec.txt", mime: "text/plain", data: "aGk=" } });
+    setTool("attachment");
+    expect(measurePainter.place({ x: 40, y: 40 }, { ...AT, tolerance: 1 })).toBe("done");
+    const [m] = added();
+    expect(m).toMatchObject({ type: "attachment", name: "spec.txt", points: [{ x: 40, y: 40 }] });
+    expect(markupSchema.safeParse(m).success).toBe(true);
+    expect(undoLabel()).toBe("Add attachment");
+    expect(viewerStore.getState().tool).toBe("select");
+    expect(attachmentStore.getState().picked).toBeNull();
+    expect(new MarkupIndex([m]).hit({ x: 44, y: 36 }, 0)?.id).toBe(m.id);
+    const r = recorder();
+    expect(measurePainter.paintStatic(r.ctx, view)).toEqual(["Attachment: spec.txt"]);
+    expect(r.ops.some((o) => o.op === "stroke" || o.op === "strokeRect")).toBe(true);
   });
 
   it("Link: a box, then its address (made a web link); a bad address adds nothing", () => {

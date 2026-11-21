@@ -31,6 +31,7 @@ const EXPECTED: Record<MarkupType, { subtype: string; it?: string }> = {
   strikeout: { subtype: "StrikeOut" },
   squiggly: { subtype: "Squiggly" },
   caret: { subtype: "Caret" },
+  fileAttachment: { subtype: "FileAttachment" },
   pen: { subtype: "Ink" },
   stamp: { subtype: "Stamp" },
   imageStamp: { subtype: "Stamp" },

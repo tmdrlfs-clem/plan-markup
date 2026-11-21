@@ -177,6 +177,7 @@ export const DRAWING_POINT_LABEL: Readonly<Record<DrawTool, string>> = {
   cloudplus: "Cloud+ point",
   textcloud: "Text box corner",
   link: "Link corner",
+  attachment: "Attachment point",
   // Story 5.7 (a stroke is drawn in one press; Undo during it takes it back).
   pen: "Pen stroke",
   highlight: "Highlight stroke",
