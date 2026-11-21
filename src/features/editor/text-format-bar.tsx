@@ -69,7 +69,9 @@ export function TextFormatBar() {
   const scope = targets.length > 0 ? `${targets.length} selected text markup${targets.length === 1 ? "" : "s"}` : "the next text";
 
   return (
-    <Toolbar aria-label="Text format" className="h-9 border-b border-border" data-testid="text-format-bar">
+    // The native fields are their own tab stops, outside the Radix toolbar: inside it, Shift+Tab onto
+    // the toolbar would send focus back to its current button (a loop keyboard users cannot leave).
+    <div role="group" aria-label="Text format" className="flex h-9 items-center gap-1 border-b border-border bg-surface-2 px-2" data-testid="text-format-bar">
       <select
         aria-label="Font"
         title={`Font of ${scope}`}
@@ -110,7 +112,7 @@ export function TextFormatBar() {
         value={color === MIXED ? "#000000" : color}
         onChange={(e) => apply({ color: e.target.value })}
       />
-      <ToolbarSeparator orientation="vertical" />
+      <Toolbar aria-label="Text style and alignment" className="h-9 border-0 px-0">
       {/* One tab stop with the alignment: the toolbar's arrows move between them. */}
       <ToolbarToggleGroup
         type="multiple"
@@ -137,7 +139,8 @@ export function TextFormatBar() {
         <ToolbarToggleItem value="center" label="Align centre" icon={AlignCenter} disabled={disabled} disabledReason="Open a drawing first" />
         <ToolbarToggleItem value="right" label="Align right" icon={AlignRight} disabled={disabled} disabledReason="Open a drawing first" />
       </ToolbarToggleGroup>
+      </Toolbar>
       <span className="ml-2 truncate text-ws-sm text-muted">{documentId ? `Applies to ${scope}` : ""}</span>
-    </Toolbar>
+    </div>
   );
 }
