@@ -57,6 +57,8 @@ test("a ToolRail button explains why it is disabled", async ({ browser }) => {
   await expect(length).toHaveAttribute("aria-disabled", "true");
   // Keyboard focus opens the tooltip deterministically; Playwright's one-step mouse jumps can
   // leave Radix's pointer-in-transit state set between hovers (hover is unit-tested).
+  // The rail scrolls on a short window, and a tooltip closes when its rail scrolls: bring it into view first.
+  await length.scrollIntoViewIfNeeded();
   await length.focus();
   await expect(page.getByRole("tooltip")).toHaveText("Open a drawing first");
   await page.context().close();
