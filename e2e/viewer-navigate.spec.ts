@@ -69,7 +69,10 @@ test("wheel scrolls, Shift+wheel scrolls sideways, Ctrl+wheel zooms around the c
   const fit = await view(page);
   await expect(page.getByRole("contentinfo")).toContainText(`${percent(fit.zoom)}%`);
 
+  // The wheel zooms (founder 2026-11-21); Alt+wheel pans up and down.
+  await page.keyboard.down("Alt");
   await page.mouse.wheel(0, 120);
+  await page.keyboard.up("Alt");
   const scrolled = await nextView(page, fit);
   expect(scrolled.zoom).toBe(fit.zoom);
   expect(scrolled.cy - fit.cy).toBeCloseTo(120 / fit.zoom, 1);

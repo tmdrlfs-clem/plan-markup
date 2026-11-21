@@ -7,8 +7,8 @@
 // Home / End and Ctrl+→ / Ctrl+← (text fields keep word navigation); repeats
 // are allowed, the engine cancels the stale renders. Ctrl+9 / Ctrl+0 act when the canvas has focus or the
 // pointer is over it, and then preventDefault so the browser's own zoom reset
-// does not run; elsewhere the browser keeps its defaults. Ctrl+wheel is only
-// listened to on the canvas. The browser's zoom is suppressed whenever a
+// does not run; elsewhere the browser keeps its defaults. The wheel is only
+// listened to on the canvas: it zooms at the cursor (Shift+wheel and Alt+wheel pan). The browser's zoom is suppressed whenever a
 // document area is shown (also while it loads or shows a render error); the
 // viewer only acts once a page is there.
 //
@@ -44,7 +44,18 @@ export function normalizeWheel(event: WheelLike, pageHeight: number): { dx: numb
   return { dx, dy };
 }
 
-/** Zoom factor of a Ctrl+wheel (or pinch) delta: wheel up/pinch out zooms in. */
+/**
+ * Founder 2026-11-21 (as Revu): the wheel zooms at the cursor (Ctrl+wheel and a pinch too);
+ * Shift+wheel pans sideways, Alt+wheel pans up and down, and a sideways-only wheel (a tilt wheel,
+ * a touchpad) pans.
+ */
+export function wheelZooms(e: Pick<WheelEvent, "ctrlKey" | "metaKey" | "shiftKey" | "altKey">, dx: number, dy: number): boolean {
+  if (e.ctrlKey || e.metaKey) return true;
+  if (e.shiftKey || e.altKey) return false;
+  return dy !== 0 && Math.abs(dy) >= Math.abs(dx);
+}
+
+/** Zoom factor of a wheel (or pinch) delta: wheel up/pinch out zooms in. */
 export function wheelZoomFactor(dy: number): number {
   const clamped = Math.max(-4 * WHEEL_PX_PER_STEP, Math.min(4 * WHEEL_PX_PER_STEP, dy));
   return Math.SQRT2 ** (-clamped / WHEEL_PX_PER_STEP);
@@ -344,12 +355,11 @@ export class ViewerInput {
   }
 
   private onWheel(e: WheelEvent): void {
-    const zoom = e.ctrlKey || e.metaKey;
-    if (zoom && this.documentArea()) e.preventDefault();
+    if (this.documentArea()) e.preventDefault();
     if (!this.active()) return;
     e.preventDefault();
     const { dx, dy } = normalizeWheel(e, this.canvas.clientHeight || 600);
-    if (zoom) this.target.zoomBy(wheelZoomFactor(dy), this.point(e));
+    if (wheelZooms(e, dx, dy)) this.target.zoomBy(wheelZoomFactor(dy), this.point(e));
     else this.target.panBy(-dx, -dy);
   }
 

@@ -181,18 +181,23 @@ describe("ViewerInput", () => {
     canvas.remove();
   });
 
-  it("wheel pans, Shift+wheel pans sideways, Ctrl+wheel zooms at the cursor (and prevents the page default)", () => {
+  it("wheel and Ctrl+wheel zoom at the cursor; Shift+wheel pans sideways, Alt+wheel up and down (and prevent the page default)", () => {
     const wheel = (init: WheelEventInit) => {
       const e = new WheelEvent("wheel", { bubbles: true, cancelable: true, clientX: 30, clientY: 40, ...init });
       canvas.dispatchEvent(e);
       return e;
     };
-    expect(wheel({ deltaY: 50 }).defaultPrevented).toBe(true);
-    expect(t.panBy).toHaveBeenLastCalledWith(-0, -50);
+    expect(wheel({ deltaY: -100 }).defaultPrevented).toBe(true);
+    expect(t.zoomBy).toHaveBeenLastCalledWith(expect.closeTo(Math.SQRT2, 9), { x: 30, y: 40 });
+    expect(t.panBy).not.toHaveBeenCalled();
     wheel({ deltaY: 50, shiftKey: true });
     expect(t.panBy).toHaveBeenLastCalledWith(-50, -0);
-    wheel({ deltaY: -100, ctrlKey: true });
-    expect(t.zoomBy).toHaveBeenCalledWith(expect.closeTo(Math.SQRT2, 9), { x: 30, y: 40 });
+    wheel({ deltaY: 50, altKey: true });
+    expect(t.panBy).toHaveBeenLastCalledWith(-0, -50);
+    wheel({ deltaX: 30 });
+    expect(t.panBy).toHaveBeenLastCalledWith(-30, -0);
+    wheel({ deltaY: 100, ctrlKey: true });
+    expect(t.zoomBy).toHaveBeenLastCalledWith(expect.closeTo(Math.SQRT1_2, 9), { x: 30, y: 40 });
   });
 
   it("tells the target where the pointer is over the canvas, and when it leaves (status bar X/Y, Story 3.7)", () => {

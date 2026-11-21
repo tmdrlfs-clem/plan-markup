@@ -21,7 +21,7 @@ export const SHORTCUTS: readonly ShortcutGroup[] = [
     rows: [
       { action: "Select", keys: "V" },
       { action: "Pan tool / temporary pan", keys: "Shift+V / Space", note: "Hold Space to pan without leaving the tool" },
-      { action: "Zoom in / out", keys: "+ / -", note: "Ctrl+wheel also zooms" },
+      { action: "Zoom in / out", keys: "+ / -", note: "The mouse wheel zooms at the cursor; Shift+wheel pans sideways, Alt+wheel up and down" },
       { action: "Zoom tool", keys: "Z" },
       { action: "Fit page / Fit width", keys: "Ctrl+9 / Ctrl+0" },
     ],
