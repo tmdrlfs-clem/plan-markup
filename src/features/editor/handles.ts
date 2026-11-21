@@ -73,8 +73,9 @@ export function handlesOf(markups: readonly Markup[], view: LayerView): Handles 
   const d = { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
   const centre = { x: (d.x0 + d.x1) / 2, y: (d.y0 + d.y1) / 2 };
   const handles: Handle[] = [];
-  // D2: a box too thin for its handles (a straight line) has none.
-  const min = 3 * HANDLE_PX * view.dpr;
+  // D2: a flat box (a straight line) has none. Founder 2026-11-22: a small one (a Tool Chest
+  // symbol) has them all the same (they sit outside its box), so it can be resized.
+  const min = 2 * view.dpr;
   if (d.x1 - d.x0 >= min && d.y1 - d.y0 >= min) {
     const gap = HANDLE_GAP_PX * view.dpr;
     for (const at of RESIZE_AT) {

@@ -171,6 +171,16 @@ export function lockedNote(): void {
 }
 
 /** Story 5.1 / 5.2: the Select cursor at the pointer: a handle's, `move` over a markup (5.3: not-allowed when locked), else null. */
+/** Whether a Select press, drag or handle edit is under way. */
+export function selectGestureActive(): boolean {
+  return gesture !== null;
+}
+
+/** The cursor of the selection's handle at the pointer (a placed tool's, while Stamp is armed); null: none there. */
+export function handleCursorAt(at: SelectContext): string | null {
+  return handleAt(handlesOf(editableOnPage(at), at.view), at.device, at.view.dpr)?.cursor ?? null;
+}
+
 export function selectCursorAt(point: Point, at: SelectContext, captionAt: CaptionAt): string | null {
   // Story 9.11: a rule-break marker is a button.
   if (ruleMarkerAt(at.device, at, at.view.dpr)) return "pointer";

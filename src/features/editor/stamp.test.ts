@@ -5,9 +5,10 @@ import { factorForRatio, pageIdOf, type Calibration } from "@/core/calibration/c
 import { DEFAULT_MARKUP_STYLE, type Markup } from "@/core/schema/markup";
 import { toolContentOf } from "@/core/tools/tool";
 import { resetStamps, setArmedStamp, setDraggedStamp, type StampTool } from "@/features/tool-chest/stamp-store";
-import { setTool, viewerStore, type LayerView } from "@/features/viewer";
+import { setTool, viewerStore, type LayerView, type SelectContext } from "@/features/viewer";
 
 import { editorStore, markupsOf, resetEditor } from "./editor-store";
+import { handlesOf } from "./handles";
 import { NO_STAMP, PLACE_TOOL, installMeasureTools, measurePainter } from "./measure-tool";
 import { activeUndoLabels, clearUndo } from "./undo-store";
 
@@ -88,6 +89,30 @@ describe("Stamp: placing Tool Chest tools (Story 7.3)", () => {
     expect(a.device).toEqual({ group: "Sprinklers", label: "Pendant" });
     expect(a.pageId).toBe(pageIdOf(SHA, 0));
     expect(activeUndoLabels(editorStore.getState(), "t1").undo).toBe(PLACE_TOOL);
+  });
+
+  it("what was placed is selected, and its handles resize it while Stamp stays armed (founder 2026-11-22)", () => {
+    setArmedStamp(stamp(null));
+    setTool("stamp");
+    expect(measurePainter.place({ x: 300, y: 200 }, AT)).toBe("done");
+    const [placed] = added();
+    expect(editorStore.getState().selection.ids).toEqual([placed.id]);
+    const handles = handlesOf([placed], view)!;
+    const corner = handles.handles.find((h) => h.kind === "resize" && h.at.u === 1 && h.at.v === 1)!;
+    const ctx = (device: { x: number; y: number }): SelectContext => ({ ...AT, view, device, px: 1, tolerance: 5, shift: false, alt: false, ctrl: false });
+    const user = (d: { x: number; y: number }) => ({ x: d.x, y: 600 - d.y });
+    expect(measurePainter.handleCursorAt!(user(corner.device), ctx(corner.device))).toBe(corner.cursor);
+    expect(measurePainter.handleCursorAt!({ x: 100, y: 100 }, ctx({ x: 100, y: 500 }))).toBeNull();
+    // Drag the corner handle 40 px right: the box is twice as wide; one undo step; Stamp still armed.
+    const to = { x: corner.device.x + 40, y: corner.device.y };
+    measurePainter.select!("start", user(corner.device), ctx(corner.device));
+    measurePainter.select!("move", user(to), ctx(to));
+    measurePainter.select!("end", user(to), ctx(to));
+    const [resized] = added();
+    const xs = resized.points.map((q) => q.x);
+    expect(Math.max(...xs) - Math.min(...xs)).toBeCloseTo(80, 6);
+    expect(added()).toHaveLength(1);
+    expect(viewerStore.getState().tool).toBe("stamp");
   });
 
   it("a tool drawn at a scale needs the page's scale; at 1:50 a 1:100 tool is twice the paper size", () => {

@@ -156,6 +156,8 @@ export interface MarkupPainter {
   select?(phase: "start" | "move" | "end" | "cancel", point: Point, at: SelectContext): void;
   /** Story 5.1 / 5.2: the cursor at `point` with Select (a markup: move; a handle: its action); null: the default. */
   cursorAt?(point: Point, at: SelectContext): string | null;
+  /** The selection's handle cursor at the pointer; null when no handle is there (Stamp: resize what was just placed). */
+  handleCursorAt?(point: Point, at: SelectContext): string | null;
   /** Story 5.1: a selection key on the shown page (5.3: as shown in `view`, for align); true when it acted. */
   selectionKey?(key: SelectionKey, at: { documentId: string; pageIndex: number; view?: LayerView }): boolean;
   /**

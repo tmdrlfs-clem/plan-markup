@@ -115,10 +115,10 @@ import {
 
 import { editorStore, gestureMarkups, isLocked, markupsOf, pageMarkups, setCaptionDrag, type EditorState, setDrawing, setMarkupMenu, setMoveDrag, setPreview, setSelection, type Drawing, type MoveDrag } from "./editor-store";
 import { discardFill, fillAreaUser, fillPress, paintFill, takeFillRings, undoFillStroke } from "./fill-tool";
-import { handlesOf, paintHandles } from "./handles";
+import { handleAt, handlesOf, paintHandles } from "./handles";
 import { ADD_IMAGE, ADD_SIGNATURE, clearPickedImage, forgetDecodedImages, imageMarkupAt, paintImage, pickedImage } from "./image-tool";
 import { dropFormat } from "./properties";
-import { lockedNote, openMarkupMenu, paintSelectGesture, resetSelectTool, selectCursorAt, selectGesture, selectionKey, toggleSelected } from "./select-tool";
+import { handleCursorAt, selectGestureActive, lockedNote, openMarkupMenu, paintSelectGesture, resetSelectTool, selectCursorAt, selectGesture, selectionKey, toggleSelected } from "./select-tool";
 import {
   ADD_CALLOUT,
   ADD_CLOUD_PLUS,
@@ -1293,7 +1293,8 @@ export const measurePainter: MarkupPainter = {
         return null;
       }
       const armed = stampStore.getState().armed;
-      if (armed && pointer) paintStampGhost(c, armed, pointer, view);
+      // Not while a handle of what was just placed is under the pointer or being dragged.
+      if (armed && pointer && !selectGestureActive() && !onSelectionHandle(pointer, view)) paintStampGhost(c, armed, pointer, view);
       return null;
     }
     // Story 7.7: the stamp under the pointer, at half strength.
@@ -1575,6 +1576,10 @@ export const measurePainter: MarkupPainter = {
     return selectCursorAt(point, at, (view, device) => measurePainter.captionAt(view, device));
   },
 
+  handleCursorAt(_point, at) {
+    return handleCursorAt(at);
+  },
+
   selectionKey(key, at) {
     return selectionKey(key, at);
   },
@@ -1756,7 +1761,18 @@ function placeStamp(tool: StampTool | null, point: Point, documentId: string, pa
     return false;
   }
   executeOp({ kind: "markups.add", documentId, markups }, PLACE_TOOL);
+  // Founder 2026-11-22: what was placed is selected, so its handles resize it at once (Stamp stays armed).
+  setSelection(markups.map((m) => m.id));
   return true;
+}
+
+/** Whether `pointer` (user space) is on a handle of the selection on the page shown. */
+function onSelectionHandle(pointer: Point, view: LayerView): boolean {
+  const ids = new Set(editorStore.getState().selection.ids);
+  if (ids.size === 0) return false;
+  const pageId = pageIdOf(view.documentId, view.pageIndex);
+  const selected = markupsOf(editorStore.getState(), view.documentId).filter((m) => ids.has(m.id) && m.pageId === pageId && !isLocked(m));
+  return handleAt(handlesOf(selected, view), view.toDevice(pointer), view.dpr) !== null;
 }
 
 function paintStampGhost(c: CanvasRenderingContext2D, tool: StampTool, pointer: Point, view: LayerView): void {
@@ -1956,7 +1972,7 @@ export function installMeasureTools(): () => void {
       // Story 4.11 (D5): arming another tool, another tab or document clears the selection;
       // Story 5.1 (D4): another page too. A move in progress is dropped.
       const otherDocument = s.tabId !== prev.tabId || s.openSeq !== prev.openSeq || s.documentId !== prev.documentId;
-      if (otherDocument || s.pageIndex !== prev.pageIndex || (s.tool !== prev.tool && s.tool !== "select")) setSelection([]);
+      if (otherDocument || s.pageIndex !== prev.pageIndex || (s.tool !== prev.tool && s.tool !== "select" && s.tool !== "stamp")) setSelection([]);
       if (moved) {
         setMoveDrag(null);
         setPreview(null);
