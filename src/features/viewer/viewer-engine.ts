@@ -1875,6 +1875,13 @@ export class ViewerEngine {
     return true;
   }
 
+  /** The selection's handle cursor at the pointer (viewport CSS px); null when no handle is there. */
+  selectHandleCursor(at: Point): string | null {
+    const painter = markupPainter();
+    const s = this.selectContext(at, { shift: false, alt: false, ctrl: false });
+    return painter?.handleCursorAt && s ? painter.handleCursorAt(s.point, s.context) : null;
+  }
+
   /** Story 5.1 / 5.2: the Select cursor at the pointer (viewport CSS px); null: the default. */
   selectCursor(at: Point, mods: { ctrl: boolean } = { ctrl: false }): string | null {
     const painter = markupPainter();

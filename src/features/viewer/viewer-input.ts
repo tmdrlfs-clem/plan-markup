@@ -196,6 +196,8 @@ export interface ViewerInputTarget {
   selectGesture?(phase: "start" | "move" | "end" | "cancel", at: Point, mods: { shift: boolean; alt: boolean; ctrl: boolean }): boolean;
   /** Story 5.1 / 5.2: the Select cursor at the pointer (a markup: move; a handle: its action); null: the default. */
   selectCursor?(at: Point, mods?: { ctrl: boolean }): string | null;
+  /** The selection's handle cursor at the pointer (viewport CSS px); null when none is there. */
+  selectHandleCursor?(at: Point): string | null;
   /** Stories 5.1 / 5.2: Delete / Backspace, Ctrl+A, an arrow's nudge (screen px) and its release, Ctrl+C, Ctrl+V, Ctrl+Shift+V; true when it acted. */
   selectionKey?(key: SelectionCommand): boolean;
   /** Story 5.3: a right-click with Select (viewport CSS px; null: the menu key) opening the context menu at `client`. */
@@ -331,7 +333,7 @@ export class ViewerInput {
   private updateCursor(): void {
     const { tool, tempPan } = viewerStore.getState();
     const zoomOut = this.drag?.kind === "zoom" ? this.drag.zoomOut : this.altDown;
-    const over = !this.drag && !tempPan && tool === "select" ? this.overCursor : null;
+    const over = !this.drag && !tempPan && (tool === "select" || tool === "stamp") ? this.overCursor : null;
     const cursor = this.drag?.kind === "caption" ? "move" : (over ?? cursorFor({ tool, tempPan, dragging: this.drag?.kind === "pan", zoomOut }));
     if (this.canvas.style.cursor !== cursor) this.canvas.style.cursor = cursor;
     // Story 5.3 (UX: never fail silently): a locked markup says so.
@@ -397,6 +399,15 @@ export class ViewerInput {
       // Story 5.1: click, Shift + click, marquee, Alt + drag lasso, or a drag that moves markups (5.2: handles, Ctrl copies).
       e.preventDefault();
       this.drag = { kind: "select", pointerId: e.pointerId, shift: e.shiftKey, alt: e.altKey, ctrl: e.ctrlKey || e.metaKey };
+    } else if (
+      e.button === 0 &&
+      tool === "stamp" &&
+      this.target.selectHandleCursor?.(this.point(e)) &&
+      this.target.selectGesture?.("start", this.point(e), { shift: e.shiftKey, alt: e.altKey, ctrl: false })
+    ) {
+      // Founder 2026-11-22: a press on a handle of the tool just placed resizes or turns it (not another placement).
+      e.preventDefault();
+      this.drag = { kind: "select", pointerId: e.pointerId, shift: e.shiftKey, alt: e.altKey, ctrl: false };
     } else if (e.button === 0 && pointTool(tool)) {
       // Story 4.1: a snapping tool's click places its point (the snapped one).
       const wasDrawing = this.target.toolTracking?.() ?? true;
@@ -425,6 +436,14 @@ export class ViewerInput {
     this.target.pointerAt?.(p, { alt: e.altKey, shift: e.shiftKey });
     const drag = this.drag;
     // Story 5.1 / 5.2: the move cursor over a markup, a handle's cursor over a handle, with Select.
+    if (!drag && this.active() && viewerStore.getState().tool === "stamp" && this.target.selectHandleCursor) {
+      // A handle of the tool just placed shows its resize cursor.
+      const over = this.target.selectHandleCursor(p);
+      if (over !== this.overCursor) {
+        this.overCursor = over;
+        this.updateCursor();
+      }
+    }
     if (!drag && this.active() && viewerStore.getState().tool === "select" && this.target.selectCursor) {
       // Review R1: Ctrl over a markup shows the copy cursor.
       const over = this.target.selectCursor(p, { ctrl: e.ctrlKey || e.metaKey });
