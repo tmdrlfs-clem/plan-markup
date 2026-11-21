@@ -3,6 +3,7 @@
 import {
   ClipboardPaste,
   Copy,
+  FileSpreadsheet,
   FolderOpen,
   Paintbrush,
   Maximize,
@@ -24,7 +25,7 @@ import { useStore } from "zustand";
 
 import { ToggleButton } from "@/components/ui/toggle-button";
 import { Toolbar, ToolbarButton, ToolbarSeparator } from "@/components/ui/toolbar";
-import { TextFormatBar, copyFormat, dropFormat, formatPainter, markupsOf, activeUndoLabels, editorStore, hasClipboard, redoActive, undoActive, useSelectionState } from "@/features/editor";
+import { TextFormatBar, downloadMarkupSummary, copyFormat, dropFormat, formatPainter, markupsOf, activeUndoLabels, editorStore, hasClipboard, redoActive, undoActive, useSelectionState } from "@/features/editor";
 import { openPrint } from "@/features/export";
 import { saveNow } from "@/features/markup-set/sync";
 import { hasDocument, viewerCommands, viewerStore, type SelectionCommand, type ViewerCommand } from "@/features/viewer";
@@ -163,8 +164,15 @@ function FormatPainterButton() {
   );
 }
 
+/** Summary: the drawing's markups, as the Markups list shows them, downloaded as a CSV file. */
+function SummaryButton({ author }: { author: string }) {
+  const open = useStore(viewerStore, hasDocument);
+  if (!open) return <Needs label="Markup summary (CSV)" icon={FileSpreadsheet} />;
+  return <ToolbarButton label="Markup summary (CSV)" icon={FileSpreadsheet} onClick={() => downloadMarkupSummary(author)} />;
+}
+
 /** Row 1: document and view commands. Row 2: options of the active tool. */
-export function WorkspaceToolbar({ onOpen }: { onOpen: () => void }) {
+export function WorkspaceToolbar({ onOpen, author = "" }: { onOpen: () => void; author?: string }) {
   return (
     <>
       <Toolbar aria-label="Document" className="border-b border-border">
@@ -177,6 +185,8 @@ export function WorkspaceToolbar({ onOpen }: { onOpen: () => void }) {
         <ToolbarSeparator />
         <ClipboardButtons />
         <FormatPainterButton />
+        <ToolbarSeparator />
+        <SummaryButton author={author} />
         <ToolbarSeparator />
         <ViewButton label="Zoom out" icon={ZoomOut} shortcut="-" command="zoomOut" />
         <ViewButton label="Zoom in" icon={ZoomIn} shortcut="+" command="zoomIn" />

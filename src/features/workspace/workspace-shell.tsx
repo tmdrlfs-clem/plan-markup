@@ -236,7 +236,7 @@ function ShellBody({ user, initialTheme }: { user: WorkspaceUser; initialTheme: 
           <SignatureDialog name={user.name} email={user.email} plan={user.plan} />
         </div>
         <div data-region="toolbar">
-          <WorkspaceToolbar onOpen={open} />
+          <WorkspaceToolbar onOpen={open} author={displayName(user)} />
         </div>
         {/* File-level notices sit in the flow under toolbar row 2, never over the canvas. */}
         <HintBar />
