@@ -1,6 +1,7 @@
 "use client";
 
-import { FileDown, FolderOpen, LogOut, Palette } from "lucide-react";
+import { FileDown, FilePlus, FolderOpen, LogOut, Palette } from "lucide-react";
+import { openNewDocument } from "./new-document-dialog";
 import { useStore } from "zustand";
 
 import {
@@ -231,6 +232,9 @@ export function WorkspaceMenuBar({ onOpen, onSignOut, theme, onThemeChange, onAc
       <MenuBarMenu>
         <MenuBarTrigger>File</MenuBarTrigger>
         <MenuBarContent>
+          <MenuBarItem icon={FilePlus} onSelect={openNewDocument}>
+            New…
+          </MenuBarItem>
           <MenuBarItem icon={FolderOpen} shortcut="Ctrl+O" onSelect={onOpen}>
             Open…
           </MenuBarItem>

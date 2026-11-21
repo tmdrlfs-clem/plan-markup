@@ -5,6 +5,7 @@ import {
   ClipboardPaste,
   Copy,
   FileSpreadsheet,
+  FilePlus,
   FolderOpen,
   Paintbrush,
   Maximize,
@@ -25,6 +26,7 @@ import {
 import { useStore } from "zustand";
 
 import { ToggleButton } from "@/components/ui/toggle-button";
+import { openNewDocument } from "./new-document-dialog";
 import { Toolbar, ToolbarButton, ToolbarSeparator } from "@/components/ui/toolbar";
 import { TextFormatBar, downloadMarkupSummary, copyFormat, dropFormat, formatPainter, markupsOf, activeUndoLabels, editorStore, hasClipboard, redoActive, undoActive, useSelectionState } from "@/features/editor";
 import { openPrint } from "@/features/export";
@@ -180,6 +182,7 @@ export function WorkspaceToolbar({ onOpen, author = "" }: { onOpen: () => void; 
   return (
     <>
       <Toolbar aria-label="Document" className="border-b border-border">
+        <ToolbarButton label="New…" icon={FilePlus} onClick={openNewDocument} />
         <ToolbarButton label="Open…" icon={FolderOpen} shortcut="Ctrl+O" onClick={onOpen} />
         {/* Story 6.3: saving is automatic; Save sends what waits now. */}
         <ToolbarButton label="Save" icon={Save} shortcut="Ctrl+S" onClick={() => saveNow()} />
