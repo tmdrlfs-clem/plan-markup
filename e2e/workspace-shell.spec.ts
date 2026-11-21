@@ -59,6 +59,8 @@ test("a ToolRail button explains why it is disabled", async ({ browser }) => {
   // leave Radix's pointer-in-transit state set between hovers (hover is unit-tested).
   // The rail scrolls on a short window, and a tooltip closes when its rail scrolls: bring it into view first.
   await length.scrollIntoViewIfNeeded();
+  // The scroll event arrives a frame later; focusing before it would open the tooltip only to close it.
+  await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done(null)))));
   await length.focus();
   await expect(page.getByRole("tooltip")).toHaveText("Open a drawing first");
   await page.context().close();
