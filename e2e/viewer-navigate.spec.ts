@@ -186,13 +186,19 @@ test("Zoom tool: click zooms in, a drag zooms to the rectangle; Pan tool drags",
   await expect(canvas(page)).toHaveCSS("cursor", "zoom-in");
   // Zoom's hint bar takes room from the canvas (the page refits): wait for it and the refit to settle.
   await expect(page.getByTestId("hint-bar")).toContainText("Zoom:");
+  // Settled: the view is the same 300 ms apart.
   let start = await view(page);
-  await expect.poll(async () => {
-    const now = await view(page);
-    const same = now.zoom === start.zoom;
-    start = now;
-    return same;
-  }).toBe(true);
+  await expect
+    .poll(
+      async () => {
+        const before = start;
+        await page.waitForTimeout(300);
+        start = await view(page);
+        return start.zoom === before.zoom;
+      },
+      { intervals: [0] },
+    )
+    .toBe(true);
   await page.mouse.click(b.x + b.width / 2, b.y + b.height / 2);
   const clicked = await nextView(page, start);
   expect(clicked.zoom / start.zoom).toBeCloseTo(SQRT2, 6);
