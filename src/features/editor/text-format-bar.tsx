@@ -10,7 +10,6 @@ import { AlignCenter, AlignLeft, AlignRight, Bold, Italic, Strikethrough, Underl
 import { useStore } from "zustand";
 
 import { Toolbar, ToolbarSeparator, ToolbarToggleGroup, ToolbarToggleItem } from "@/components/ui/toolbar";
-import { ToggleButton } from "@/components/ui/toggle-button";
 import { hasTextFormat, sharedValue, type PropertyChange } from "@/core/markup/properties";
 import type { Markup, MarkupStyle } from "@/core/schema/markup";
 import { hasDocument, viewerStore } from "@/features/viewer";
@@ -47,6 +46,8 @@ function useApply(documentId: string | null, targets: readonly Markup[]) {
     textFormatStore.setState(next);
   };
 }
+
+const STYLE_KEYS = ["bold", "italic", "underline", "strike"] as const;
 
 export function TextFormatBar() {
   const documentId = useStore(viewerStore, (s) => (hasDocument(s) ? s.documentId : null));
@@ -110,10 +111,21 @@ export function TextFormatBar() {
         onChange={(e) => apply({ color: e.target.value })}
       />
       <ToolbarSeparator orientation="vertical" />
-      <ToggleButton label="Bold" icon={Bold} disabled={disabled} disabledReason="Open a drawing first" pressed={on("bold")} onPressedChange={(p) => apply({ bold: p })} />
-      <ToggleButton label="Italic" icon={Italic} disabled={disabled} disabledReason="Open a drawing first" pressed={on("italic")} onPressedChange={(p) => apply({ italic: p })} />
-      <ToggleButton label="Underline" icon={Underline} disabled={disabled} disabledReason="Open a drawing first" pressed={on("underline")} onPressedChange={(p) => apply({ underline: p })} />
-      <ToggleButton label="Strikethrough" icon={Strikethrough} disabled={disabled} disabledReason="Open a drawing first" pressed={on("strike")} onPressedChange={(p) => apply({ strike: p })} />
+      {/* One tab stop with the alignment: the toolbar's arrows move between them. */}
+      <ToolbarToggleGroup
+        type="multiple"
+        aria-label="Text style"
+        value={STYLE_KEYS.filter((k) => on(k))}
+        onValueChange={(v: string[]) => {
+          const next = STYLE_KEYS.find((k) => v.includes(k) !== on(k));
+          if (next) apply({ [next]: v.includes(next) });
+        }}
+      >
+        <ToolbarToggleItem value="bold" label="Bold" icon={Bold} disabled={disabled} disabledReason="Open a drawing first" />
+        <ToolbarToggleItem value="italic" label="Italic" icon={Italic} disabled={disabled} disabledReason="Open a drawing first" />
+        <ToolbarToggleItem value="underline" label="Underline" icon={Underline} disabled={disabled} disabledReason="Open a drawing first" />
+        <ToolbarToggleItem value="strike" label="Strikethrough" icon={Strikethrough} disabled={disabled} disabledReason="Open a drawing first" />
+      </ToolbarToggleGroup>
       <ToolbarSeparator orientation="vertical" />
       <ToolbarToggleGroup
         type="single"

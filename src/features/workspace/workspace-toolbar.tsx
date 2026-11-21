@@ -1,5 +1,6 @@
 "use client";
 
+import { Toolbar as ToolbarPrimitive } from "radix-ui";
 import {
   ClipboardPaste,
   Copy,
@@ -147,20 +148,23 @@ function FormatPainterButton() {
     return selected.length === 1 || (selected.length > 0 && selected.every((m) => m.groupId && m.groupId === selected[0].groupId)) ? selected[0] : null;
   });
   if (!documentId) return <Needs label="Format painter" icon={Paintbrush} />;
+  // A toolbar item: the toolbar's arrows reach it (one tab stop for the toolbar).
   return (
-    <ToggleButton
-      label="Format painter"
-      tooltip={painting ? "Click a markup to apply the format (Esc cancels)" : "Copy the selected markup's format, then click a markup to apply it"}
-      icon={Paintbrush}
-      pressed={painting}
-      disabled={!source && !painting}
-      disabledReason="Select one markup first"
-      onPressedChange={() => {
-        if (painting) dropFormat();
-        else if (source) copyFormat(source);
-        viewerCommands.focusCanvas();
-      }}
-    />
+    <ToolbarPrimitive.Button asChild>
+      <ToggleButton
+        label="Format painter"
+        tooltip={painting ? "Click a markup to apply the format (Esc cancels)" : "Copy the selected markup's format, then click a markup to apply it"}
+        icon={Paintbrush}
+        pressed={painting}
+        disabled={!source && !painting}
+        disabledReason="Select one markup first"
+        onPressedChange={() => {
+          if (painting) dropFormat();
+          else if (source) copyFormat(source);
+          viewerCommands.focusCanvas();
+        }}
+      />
+    </ToolbarPrimitive.Button>
   );
 }
 
